@@ -1,0 +1,29 @@
+# Credentials and secrets - NEVER commit these
+.credentials.json
+*.pem
+*.key
+*.env
+.env.*
+secrets/
+credentials/
+
+# Claude Code configuration - contains user-specific data
+.claude/
+.claude.json
+
+# Docker volumes and state
+.docker/
+
+# OS and editor files
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build artifacts
+dist/
+build/
+*.log
+node_modules/
