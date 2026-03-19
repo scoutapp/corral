@@ -161,7 +161,7 @@ claude --prompt "What firewall domains are allowed?"
 
 ## What's Included
 
-- Ubuntu 24.04, Node.js 22, Python 3, gh CLI
+- Ubuntu 24.04, Node.js 22, Python 3, gh CLI, uv
 - Build tools (make, gcc, etc.)
 - Firewall tools (iptables, ipset, dnsutils)
 

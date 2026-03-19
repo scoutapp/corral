@@ -63,14 +63,13 @@ USER claude
 ENV HOME=/home/claude
 ENV TERM=xterm-256color
 
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/home/claude/.cargo/bin:${PATH}"
+
 # Install Claude Code
 RUN curl -fsSL https://claude.ai/install.sh | bash
 ENV PATH="/home/claude/.claude/bin:/home/claude/.local/bin:${PATH}"
-
-# Install Python dependencies for launcher
-COPY requirements.txt /tmp/requirements.txt
-RUN pip3 install --no-cache-dir -r /tmp/requirements.txt && \
-    rm /tmp/requirements.txt
 
 # Copy launcher and entrypoint
 COPY --chown=claude:claude launcher.py /home/claude/launcher.py

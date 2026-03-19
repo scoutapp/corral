@@ -1,4 +1,0 @@
-# Sandclaude Python dependencies
-
-# No external dependencies needed
-# Uses gh CLI (GitHub CLI) which is already installed in the container

@@ -171,7 +171,6 @@ cmd_copy() {
     cp "$SCRIPT_DIR/init-firewall.sh" "$target/"
     cp "$SCRIPT_DIR/firewall-helper.sh" "$target/"
     cp "$SCRIPT_DIR/launcher.py" "$target/"
-    cp "$SCRIPT_DIR/requirements.txt" "$target/"
 
     # Copy devcontainer.json
     cp "$SCRIPT_DIR/devcontainer.template.json" "$target/devcontainer.json"
