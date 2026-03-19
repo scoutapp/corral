@@ -9,10 +9,15 @@ Runs Claude Code in **dangerous mode** (no permission prompts). Network firewall
 ## Quick Start
 
 ```bash
-git clone https://github.com/yourname/sandclaude.git
-cd sandclaude
+# Clone into .devcontainer of your project
+cd ~/my-project
+git clone https://github.com/scoutapp/sandclaude.git .devcontainer
+cd .devcontainer
 
+# Initialize (defaults to parent directory as workspace)
 bash sandclaude init myapp
+
+# Start Claude
 bash sandclaude start myapp
 ```
 
@@ -51,7 +56,7 @@ bash sandclaude init myapp
 Prompts for:
 - **GitHub monitoring?** (optional): Provide `owner/repo`
 - **AWS credentials?** (optional): Mounts `~/.aws`
-- **Workspace directory**: Default `~/projects/myapp`
+- **Workspace directory**: Defaults to parent directory (resolved absolute path)
 
 Config stored in `~/.config/sandclaude/projects/myapp/config/`
 
@@ -147,7 +152,7 @@ Creates `~/my-project/.devcontainer/` with all files.
 
 ```bash
 cd ~/my-project
-git clone https://github.com/yourname/sandclaude .devcontainer
+git clone https://github.com/scoutapp/sandclaude.git .devcontainer
 rm -rf .devcontainer/.git
 code .
 ```

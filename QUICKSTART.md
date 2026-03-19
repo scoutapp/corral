@@ -28,11 +28,12 @@ bash sandclaude init myapp
 bash sandclaude copy ~/my-project
 code ~/my-project
 
-# Method 2: Clone directly
+# Method 2: Clone directly (recommended)
 cd ~/my-project
-git clone https://github.com/yourname/sandclaude .devcontainer
-rm -rf .devcontainer/.git
-code .
+git clone https://github.com/scoutapp/sandclaude.git .devcontainer
+cd .devcontainer
+bash sandclaude init myapp  # Defaults to ~/my-project as workspace
+code ..
 ```
 
 ## Verify Skill Loading

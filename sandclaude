@@ -104,10 +104,12 @@ cmd_init() {
         echo "⚠️  AWS credentials will not be mounted"
     fi
 
-    # Ask for workspace directory
+    # Ask for workspace directory (default to parent of current directory)
     echo ""
-    read -r -p "Workspace directory (default: ~/projects/$project): " workspace
-    workspace="${workspace:-$HOME/projects/$project}"
+    local default_workspace
+    default_workspace="$(cd "$(dirname "$(pwd)")" && pwd)"
+    read -r -p "Workspace directory (default: $default_workspace): " workspace
+    workspace="${workspace:-$default_workspace}"
     echo "$workspace" > "$project_dir/config/workspace"
 
     # Create workspace if it doesn't exist
