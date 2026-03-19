@@ -152,6 +152,8 @@ rm -rf .devcontainer/.git
 code .
 ```
 
+**Note**: Python launcher uses [uv](https://docs.astral.sh/uv/) for dependency management - no pip or requirements.txt needed.
+
 ### Validate Skill Loading
 
 ```bash
