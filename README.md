@@ -87,6 +87,16 @@ When enabled:
 - Works with STS temporary credentials
 - Sets AWS env vars automatically
 
+### Credential Proxy
+
+When enabled:
+- Hides real credentials from Claude using mitmproxy
+- Claude uses dummy credentials inside container
+- Proxy intercepts requests and injects real credentials
+- Prevents credential exfiltration
+- Run `bash start-proxy.sh` on host before starting container
+- Configure credentials in `~/.config/sandclaude/proxy-credentials.json`
+
 ## Firewall Management
 
 ### Interactive Approval

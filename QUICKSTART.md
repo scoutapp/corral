@@ -95,6 +95,21 @@ firewall-helper.sh monitor                 # Interactive approval
 - Works with STS temporary credentials
 - Supports all standard AWS credential methods
 
+**Credential Proxy:**
+- Hides real credentials from Claude using mitmproxy
+- Claude uses dummy credentials, proxy injects real ones
+- Prevents credential exfiltration
+- Enable during init, then run `bash start-proxy.sh` on host
+- Configure in `~/.config/sandclaude/proxy-credentials.json`:
+```json
+{
+  "api.example.com": {
+    "header": "X-API-Key",
+    "value": "your-real-key"
+  }
+}
+```
+
 ## Troubleshooting
 
 **Connection refused:**

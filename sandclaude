@@ -104,6 +104,17 @@ cmd_init() {
         echo "⚠️  AWS credentials will not be mounted"
     fi
 
+    # Ask for proxy usage (optional)
+    echo ""
+    read -r -p "Enable credential proxy (hides secrets from Claude)? [y/N]: " enable_proxy
+    if [[ "$enable_proxy" =~ ^[Yy]$ ]]; then
+        echo "enabled" > "$project_dir/config/proxy_enabled"
+        echo "✅ Proxy mode enabled - Claude will use dummy credentials"
+        echo "   Configure real credentials in ~/.config/sandclaude/proxy-credentials.json"
+    else
+        echo "⚠️  Proxy mode disabled"
+    fi
+
     # Ask for workspace directory (default to parent of current directory)
     echo ""
     local default_workspace
@@ -173,6 +184,8 @@ cmd_copy() {
     cp "$SCRIPT_DIR/init-firewall.sh" "$target/"
     cp "$SCRIPT_DIR/firewall-helper.sh" "$target/"
     cp "$SCRIPT_DIR/launcher.py" "$target/"
+    cp "$SCRIPT_DIR/proxy-addon.py" "$target/"
+    cp "$SCRIPT_DIR/start-proxy.sh" "$target/"
 
     # Copy devcontainer.json
     cp "$SCRIPT_DIR/devcontainer.template.json" "$target/devcontainer.json"
@@ -332,6 +345,13 @@ cmd_start() {
     local skill_path="$SCRIPT_DIR/skill/SKILL.md"
     if [ -f "$skill_path" ]; then
         docker_args+=(-v "$skill_path:/home/claude/.claude/skills/sandclaude.md:ro")
+    fi
+
+    # Enable proxy if configured
+    if [ -f "$project_dir/config/proxy_enabled" ]; then
+        docker_args+=(-e HTTP_PROXY="http://host.docker.internal:8080")
+        docker_args+=(-e HTTPS_PROXY="http://host.docker.internal:8080")
+        echo "🔒 Proxy mode enabled - run 'bash start-proxy.sh' on host first"
     fi
 
     exec docker run "${docker_args[@]}" "$IMAGE_NAME"

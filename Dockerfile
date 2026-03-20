@@ -27,11 +27,12 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Python 3
+# Install Python 3 and mitmproxy
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-venv \
+    mitmproxy \
     && rm -rf /var/lib/apt/lists/*
 
 # Install gh (GitHub CLI)
@@ -71,9 +72,10 @@ ENV PATH="/home/claude/.cargo/bin:${PATH}"
 RUN curl -fsSL https://claude.ai/install.sh | bash
 ENV PATH="/home/claude/.claude/bin:/home/claude/.local/bin:${PATH}"
 
-# Copy launcher and entrypoint
+# Copy launcher, entrypoint, and proxy addon
 COPY --chown=claude:claude launcher.py /home/claude/launcher.py
 COPY --chown=claude:claude entrypoint.sh /home/claude/entrypoint.sh
-RUN chmod +x /home/claude/launcher.py /home/claude/entrypoint.sh
+COPY --chown=claude:claude proxy-addon.py /usr/local/bin/proxy-addon.py
+RUN chmod +x /home/claude/launcher.py /home/claude/entrypoint.sh /usr/local/bin/proxy-addon.py
 
 ENTRYPOINT ["/home/claude/entrypoint.sh"]
