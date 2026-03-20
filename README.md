@@ -6,6 +6,8 @@ Docker sandbox for running Claude Code in dangerous mode with network firewall p
 
 Runs Claude Code in **dangerous mode** (no permission prompts). Network firewall restricts outbound connections to approved domains only.
 
+Proxy requires `mitmproxy` https://www.mitmproxy.org/
+
 ## Quick Start
 
 ```bash
@@ -13,9 +15,13 @@ Runs Claude Code in **dangerous mode** (no permission prompts). Network firewall
 cd ~/my-project
 git clone https://github.com/scoutapp/sandclaude.git .devcontainer
 cd .devcontainer
+rm -rf .git
 
 # Initialize (defaults to parent directory as workspace)
 bash sandclaude init myapp
+
+# If using proxy (see below on setting proxy-credentials), in a separate terminal run:
+bash start-proxy.sh
 
 # Start Claude
 bash sandclaude start myapp
@@ -95,7 +101,29 @@ When enabled:
 - Proxy intercepts requests and injects real credentials
 - Prevents credential exfiltration
 - Run `bash start-proxy.sh` on host before starting container
-- Configure credentials in `~/.config/sandclaude/proxy-credentials.json`
+- Configure credentials in `~/.config/sandclaude/proxy-credentials.json`:
+- **CLAUDE TOKEN** To get the claude code oauth token run `claude setup-token` 
+
+```json
+{
+  "api.anthropic.com": {
+    "header": "Authorization",
+    "value": "Bearer sk-ant-oat01-..."
+  },
+  "platform.claude.com": {
+    "header": "Authorization",
+    "value": "Bearer sk-ant-oat01-..."
+  },
+  "mcp-proxy.anthropic.com": {
+    "header": "Authorization",
+    "value": "Bearer sk-ant-oat01-..."
+  },
+   "api.github.com": {
+    "header": "Authorization",
+    "value": "Bearer ghp_real_token_here"
+  },
+}
+```
 
 ## Firewall Management
 

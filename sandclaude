@@ -291,10 +291,26 @@ cmd_start() {
 
     # Check Claude credentials
     local claude_config="$HOME/.claude"
-    if [ ! -f "$claude_config/.credentials.json" ]; then
-        echo "Error: No Claude credentials found at $claude_config/.credentials.json"
-        echo "Run 'claude' locally first to log in via OAuth."
-        exit 1
+
+    if [ -f "$project_dir/config/proxy_enabled" ]; then
+        # Proxy mode: use dummy ANTHROPIC_AUTH_TOKEN environment variable
+        echo "Setting up dummy auth token for proxy mode..."
+
+        # Generate realistic-looking dummy token in format: sk-ant-oat01-#{86_characters}-#{8_characters}
+        local dummy_part1
+        dummy_part1="$(openssl rand -hex 43 2>/dev/null || printf '0%.0s' {1..86})"
+        local dummy_part2
+        dummy_part2="$(openssl rand -hex 4 2>/dev/null || printf '0%.0s' {1..8})"
+
+        DUMMY_AUTH_TOKEN="sk-ant-oat01-${dummy_part1}-${dummy_part2}"
+        echo "✅ Dummy auth token created (proxy will inject real credentials)"
+    else
+        # Normal mode: require real credentials
+        if [ ! -f "$claude_config/.credentials.json" ]; then
+            echo "Error: No Claude credentials found at $claude_config/.credentials.json"
+            echo "Run 'claude' locally first to log in via OAuth."
+            exit 1
+        fi
     fi
 
     # Build image if needed
@@ -351,7 +367,21 @@ cmd_start() {
     if [ -f "$project_dir/config/proxy_enabled" ]; then
         docker_args+=(-e HTTP_PROXY="http://host.docker.internal:8080")
         docker_args+=(-e HTTPS_PROXY="http://host.docker.internal:8080")
-        echo "🔒 Proxy mode enabled - run 'bash start-proxy.sh' on host first"
+        docker_args+=(-e CLAUDE_CODE_OAUTH_TOKEN="$DUMMY_AUTH_TOKEN")
+
+        # Create mitmproxy directory if it doesn't exist
+        mkdir -p "$HOME/.mitmproxy"
+
+        # Mount mitmproxy certificate directory
+        docker_args+=(-v "$HOME/.mitmproxy:/home/claude/.mitmproxy:ro")
+
+        echo "🔒 Proxy mode enabled"
+        if [ -f "$HOME/.mitmproxy/mitmproxy-ca-cert.pem" ]; then
+            echo "   Certificate found on host: ✅"
+        else
+            echo "   Certificate not found on host: ❌"
+            echo "   Run 'bash start-proxy.sh' to start proxy and generate certificate"
+        fi
     fi
 
     exec docker run "${docker_args[@]}" "$IMAGE_NAME"
