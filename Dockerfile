@@ -4,6 +4,28 @@ FROM ubuntu:24.04
 RUN apt-get update && apt-get install -y --no-install-recommends golang-go && \
     rm -rf /var/lib/apt/lists/*
 
+# Install Google Chrome and matching ChromeDriver
+# (chromium-browser on Ubuntu 24.04 is a snap stub that doesn't work in Docker)
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget \
+    curl \
+    unzip \
+    gnupg \
+    ca-certificates \
+    && wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends google-chrome-stable \
+    && CHROME_VERSION=$(google-chrome --version | grep -oP '\d+' | head -1) \
+    && CHROMEDRIVER_VERSION=$(curl -s "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROME_VERSION}") \
+    && wget -q "https://storage.googleapis.com/chrome-for-testing-public/${CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip" \
+    && unzip chromedriver-linux64.zip \
+    && mv chromedriver-linux64/chromedriver /usr/local/bin/chromedriver \
+    && chmod +x /usr/local/bin/chromedriver \
+    && rm -rf chromedriver-linux64.zip chromedriver-linux64 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Build allowlist-proxy
 COPY allowlist-proxy/ /build/allowlist-proxy/
 RUN cd /build/allowlist-proxy && go build -o /usr/local/bin/allowlist-proxy . && \
@@ -32,11 +54,12 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Python 3 and mitmproxy
+# Install Python 3, mitmproxy, and selenium
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-venv \
+    python3-selenium \
     mitmproxy \
     && rm -rf /var/lib/apt/lists/*
 
@@ -74,6 +97,8 @@ ENV PATH="/home/claude/.claude/bin:/home/claude/.local/bin:${PATH}"
 COPY --chown=claude:claude launcher.py /home/claude/launcher.py
 COPY --chown=claude:claude entrypoint.sh /home/claude/entrypoint.sh
 COPY --chown=claude:claude proxy-addon.py /usr/local/bin/proxy-addon.py
-RUN chmod +x /home/claude/launcher.py /home/claude/entrypoint.sh /usr/local/bin/proxy-addon.py
+COPY --chown=claude:claude website/ /home/claude/website/
+COPY --chown=claude:claude test_chromium.py /home/claude/test_chromium.py
+RUN chmod +x /home/claude/launcher.py /home/claude/entrypoint.sh /usr/local/bin/proxy-addon.py /home/claude/test_chromium.py
 
 ENTRYPOINT ["/home/claude/entrypoint.sh"]

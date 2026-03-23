@@ -26,8 +26,10 @@ registry.hub.docker.com
 ghcr.io
 quay.io
 
-# Google Cloud Storage
+# Google Cloud Storage and Chrome downloads
 storage.googleapis.com
+dl.google.com
+googlechromelabs.github.io
 
 # GitHub raw content
 raw.githubusercontent.com

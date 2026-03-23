@@ -119,9 +119,55 @@ type ProxyHandler struct {
 	upstream  *url.URL // nil = direct
 }
 
+// handlePlainHTTP handles non-CONNECT proxy requests (plain HTTP).
+// It requires an absolute request URI, checks the allowlist, then forwards
+// the request directly to the target and streams the response back.
+// Loopback addresses (localhost, 127.x.x.x, ::1) bypass the allowlist.
+func (p *ProxyHandler) handlePlainHTTP(w http.ResponseWriter, r *http.Request) {
+	if !r.URL.IsAbs() {
+		http.Error(w, "plain HTTP proxy requires absolute URL", http.StatusBadRequest)
+		return
+	}
+
+	host := r.URL.Host
+	hostname := r.URL.Hostname()
+
+	isLoopback := hostname == "localhost" || hostname == "::1" ||
+		strings.HasPrefix(hostname, "127.")
+
+	if !isLoopback && !p.allowlist.Allowed(host) {
+		log.Printf("BLOCKED  %s (plain HTTP)", host)
+		http.Error(w, fmt.Sprintf("domain not in allowlist: %s", host), http.StatusForbidden)
+		return
+	}
+
+	log.Printf("ALLOWED  %s (plain HTTP)", host)
+
+	outReq := r.Clone(r.Context())
+	outReq.RequestURI = ""
+	outReq.Header.Del("Proxy-Connection")
+	outReq.Header.Del("Proxy-Authenticate")
+	outReq.Header.Del("Proxy-Authorization")
+
+	resp, err := http.DefaultTransport.RoundTrip(outReq)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("request failed: %v", err), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	for key, vals := range resp.Header {
+		for _, v := range vals {
+			w.Header().Add(key, v)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+}
+
 func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodConnect {
-		http.Error(w, "only CONNECT is supported", http.StatusMethodNotAllowed)
+		p.handlePlainHTTP(w, r)
 		return
 	}
 
