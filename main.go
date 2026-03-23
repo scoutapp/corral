@@ -26,6 +26,7 @@ type SandClaude struct {
 	addonScript      string
 	scriptDir        string
 	proxyEnabled     bool
+	disableFirewall  bool
 }
 
 func NewSandClaude() (*SandClaude, error) {
@@ -217,17 +218,21 @@ func (sc *SandClaude) startDocker(projectDir, workspace, project string) error {
 	}
 
 	// Build docker args
-	args := []string{
-		"run", "--rm", "-it",
-		"--cap-add=NET_ADMIN",
-		"--cap-add=NET_RAW",
+	containerName := "sandclaude-" + project
+	args := []string{"run", "--rm", "-it", "--name", containerName}
+
+	if sc.disableFirewall {
+		args = append(args, "-e", "DISABLE_FIREWALL=1")
+	}
+
+	args = append(args,
 		"-v", fmt.Sprintf("%s:/home/claude/.claude", claudeConfig),
 		"-v", fmt.Sprintf("%s:/home/claude/.claude.json", filepath.Join(home, ".claude.json")),
 		"-v", fmt.Sprintf("%s:/home/claude/.config/gh:ro", filepath.Join(home, ".config/gh")),
 		"-v", fmt.Sprintf("%s:%s", workspace, workspace),
 		"-w", workspace,
 		"-e", fmt.Sprintf("PROJECT_NAME=%s", project),
-	}
+	)
 
 	if ghToken != "" {
 		args = append(args, "-e", fmt.Sprintf("GH_TOKEN=%s", ghToken))
@@ -264,6 +269,11 @@ func (sc *SandClaude) startDocker(projectDir, workspace, project string) error {
 	// Enable proxy if it was started
 	if sc.proxyEnabled {
 		args = append(args,
+			// Force host.docker.internal to resolve to IPv4 gateway.
+			// Without this, Docker Desktop on Mac may set host.docker.internal
+			// to an IPv6-only address, which mitmproxy (bound to 0.0.0.0) won't
+			// answer, causing immediate connection refused before anything hits mitm.
+			"--add-host=host.docker.internal:host-gateway",
 			"-e", "HTTP_PROXY=http://host.docker.internal:8080",
 			"-e", "HTTPS_PROXY=http://host.docker.internal:8080",
 			"-e", fmt.Sprintf("CLAUDE_CODE_OAUTH_TOKEN=%s", os.Getenv("DUMMY_AUTH_TOKEN")),
@@ -551,7 +561,18 @@ func cmdInit(project string) error {
 }
 
 // cmdStart starts Claude Code for a project
-func cmdStart(project string) error {
+func cmdStart(args []string) error {
+	project := ""
+	disableFirewall := false
+
+	for _, arg := range args {
+		if arg == "--disable-firewall" {
+			disableFirewall = true
+		} else if !strings.HasPrefix(arg, "--") {
+			project = arg
+		}
+	}
+
 	if project == "" {
 		// Use current directory name as default
 		cwd, err := os.Getwd()
@@ -580,6 +601,7 @@ func cmdStart(project string) error {
 		return err
 	}
 
+	sc.disableFirewall = disableFirewall
 	return sc.Run(project)
 }
 
@@ -631,6 +653,27 @@ func cmdList() error {
 	}
 
 	return nil
+}
+
+// cmdFirewallMonitor tails the allowlist proxy log inside the running container
+func cmdFirewallMonitor(project string) error {
+	project = getProjectName(project)
+	containerName := "sandclaude-" + project
+
+	cmd := exec.Command("docker", "inspect", "--format={{.Config.WorkingDir}}", containerName)
+	workdirOut, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("no running container found for project '%s'", project)
+	}
+	workdir := strings.TrimSpace(string(workdirOut))
+
+	// less +F: tails live; Ctrl+C to stop following and search, F to resume
+	dockerCmd := exec.Command("docker", "exec", "-it", containerName,
+		"less", "+F", workdir+"/.firewall/proxy.log")
+	dockerCmd.Stdin = os.Stdin
+	dockerCmd.Stdout = os.Stdout
+	dockerCmd.Stderr = os.Stderr
+	return dockerCmd.Run()
 }
 
 // cmdShell opens a bash shell in the container
@@ -823,11 +866,8 @@ func cmdCopy(target string) error {
 	files := []string{
 		"Dockerfile",
 		"entrypoint.sh",
-		"init-firewall.sh",
-		"firewall-helper.sh",
 		"launcher.py",
 		"proxy-addon.py",
-		"start-proxy.sh",
 	}
 
 	for _, file := range files {
@@ -868,7 +908,7 @@ func cmdCopy(target string) error {
 	log.Println()
 	log.Println("Next steps:")
 	log.Printf("  1. Customize %s/Dockerfile if needed\n", targetAbs)
-	log.Printf("  2. Add domains to %s/init-firewall.sh\n", targetAbs)
+	log.Printf("  2. Add domains to %s/.firewall/allowed-domains.txt\n", targetAbs)
 	log.Printf("  3. Open in VS Code: code %s\n", parentDir)
 	log.Println("  4. Click 'Reopen in Container'")
 	log.Println()
@@ -887,9 +927,11 @@ func usage() {
 	fmt.Println()
 	fmt.Println("Commands:")
 	fmt.Println("  init [project]           Initialize a new project with credentials")
-	fmt.Println("  start [project]          Start Claude Code for a project (default: current directory)")
+	fmt.Println("  start [project] [flags]  Start Claude Code for a project (default: current directory)")
+	fmt.Println("    --disable-firewall       Skip firewall initialization")
 	fmt.Println("  list                     List configured projects")
 	fmt.Println("  remove <project>         Remove a project and its configuration")
+	fmt.Println("  firewall-monitor [project] Tail allowlist proxy log")
 	fmt.Println("  shell [project]          Open bash shell in container")
 	fmt.Println("  copy <target>            Copy sandclaude files to target directory")
 	fmt.Println("  rebuild                  Force rebuild container image")
@@ -928,11 +970,7 @@ func main() {
 		err = cmdInit(project)
 
 	case "start":
-		project := ""
-		if len(os.Args) > 2 {
-			project = os.Args[2]
-		}
-		err = cmdStart(project)
+		err = cmdStart(os.Args[2:])
 
 	case "list":
 		err = cmdList()
@@ -943,6 +981,13 @@ func main() {
 			project = os.Args[2]
 		}
 		err = cmdRemove(project)
+
+	case "firewall-monitor":
+		project := ""
+		if len(os.Args) > 2 {
+			project = os.Args[2]
+		}
+		err = cmdFirewallMonitor(project)
 
 	case "shell":
 		project := ""

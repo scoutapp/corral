@@ -32,21 +32,80 @@ else
 fi
 echo ""
 
-echo "🚀 Starting sandclaude with firewall protection..."
-echo ""
-echo "Firewall is active. Blocked connections can be approved via:"
-echo "  firewall-helper.sh monitor"
-echo ""
-echo "To manage firewall rules:"
-echo "  firewall-helper.sh list          - List allowed domains"
-echo "  firewall-helper.sh add <domain>  - Add a domain"
-echo "  firewall-helper.sh remove <domain> - Remove a domain"
-echo ""
+FIREWALL_CONFIG_DIR="${PWD}/.firewall"
+ALLOWED_DOMAINS_FILE="$FIREWALL_CONFIG_DIR/allowed-domains.txt"
 
-# Start firewall monitor in background if interactive mode is enabled
-if [ -f "/home/claude/.firewall/interactive-mode" ] && [ "$(cat /home/claude/.firewall/interactive-mode)" = "enabled" ]; then
-    echo "📊 Interactive firewall mode enabled"
-    echo "   Run 'firewall-helper.sh monitor' to approve blocked connections"
+# Create config directory and default allowlist if they don't exist
+mkdir -p "$FIREWALL_CONFIG_DIR"
+if [ ! -f "$ALLOWED_DOMAINS_FILE" ]; then
+    cat > "$ALLOWED_DOMAINS_FILE" <<EOF
+# Default allowed domains
+api.anthropic.com
+sentry.io
+statsig.anthropic.com
+statsig.com
+
+# npm / Node
+registry.npmjs.org
+registry.yarnpkg.com
+npm.pkg.github.com
+
+# Go modules
+proxy.golang.org
+sum.golang.org
+golang.org
+
+# GitHub
+api.github.com
+raw.githubusercontent.com
+github.com
+
+# CDNs / other registries
+cdn.jsdelivr.net
+storage.googleapis.com
+EOF
+fi
+
+if [ -z "$DISABLE_FIREWALL" ]; then
+    # Determine upstream: if HTTP_PROXY is set (mitmproxy on host), chain through it.
+    # allowlist-proxy itself must NOT use the outer HTTP_PROXY env var — it IS the proxy.
+    UPSTREAM_ARG=""
+    if [ -n "$HTTP_PROXY" ]; then
+        UPSTREAM_ARG="--upstream $HTTP_PROXY"
+    fi
+
+    echo "Starting allowlist proxy (listen :3128, upstream: ${HTTP_PROXY:-direct})..."
+    # Unset proxy env vars so the proxy binary connects directly to the upstream,
+    # not recursively through itself.
+    env -u HTTP_PROXY -u HTTPS_PROXY \
+        /usr/local/bin/allowlist-proxy \
+            --listen 127.0.0.1:3128 \
+            --allowlist "$ALLOWED_DOMAINS_FILE" \
+            $UPSTREAM_ARG \
+        > "$FIREWALL_CONFIG_DIR/proxy.log" 2>&1 &
+    PROXY_PID=$!
+    echo "Allowlist proxy started (PID $PROXY_PID)"
+    # Brief pause to confirm it bound successfully
+    sleep 0.3
+    if ! kill -0 $PROXY_PID 2>/dev/null; then
+        echo "ERROR: allowlist-proxy failed to start. Check $FIREWALL_CONFIG_DIR/proxy.log"
+        cat "$FIREWALL_CONFIG_DIR/proxy.log"
+        exit 1
+    fi
+
+    # Route Claude's traffic through the allowlist proxy
+    export HTTP_PROXY=http://127.0.0.1:3128
+    export HTTPS_PROXY=http://127.0.0.1:3128
+
+    echo ""
+    echo "Allowlist proxy active. To add domains:"
+    echo "  echo 'example.com' >> $ALLOWED_DOMAINS_FILE"
+    echo "  kill -HUP $PROXY_PID   # reload without restart"
+    echo ""
+    echo "Proxy log: $FIREWALL_CONFIG_DIR/proxy.log"
+    echo ""
+else
+    echo "WARNING: FIREWALL IS DISABLED - Claude has unrestricted network access!"
     echo ""
 fi
 

@@ -6,7 +6,7 @@ Docker sandbox for running Claude Code in dangerous mode with network firewall p
 
 Runs Claude Code in **dangerous mode** (no permission prompts). Network firewall restricts outbound connections to approved domains only.
 
-Proxy requires `mitmproxy` https://www.mitmproxy.org/
+Credential proxy requires `mitmproxy` — install via `brew install mitmproxy` or https://www.mitmproxy.org/
 
 ## Quick Start
 
@@ -51,6 +51,7 @@ go build -o sandclaude main.go
 | `./sandclaude list` | List configured projects |
 | `./sandclaude remove <project>` | Remove a project |
 | `./sandclaude shell [project]` | Open debug shell in container |
+| `./sandclaude firewall-monitor [project]` | Tail the allowlist proxy log |
 | `./sandclaude copy <target>` | Copy files to .devcontainer/ |
 | `./sandclaude rebuild` | Force rebuild Docker image |
 | `./sandclaude help` | Show help |
@@ -106,15 +107,23 @@ When enabled:
 
 ### Credential Proxy
 
-When enabled during `init`:
-- Hides real credentials from Claude using mitmproxy
-- Claude uses dummy credentials inside container
-- Proxy intercepts requests and injects real credentials
-- Prevents credential exfiltration
-- Proxy starts automatically when running `sandclaude start`
-- Proxy logs written to `mitm.log`
-- Configure credentials in `~/.config/sandclaude/proxy-credentials.json`:
-- **CLAUDE TOKEN** To get the claude code oauth token run `claude setup-token` 
+When enabled during `init`, `sandclaude` runs `mitmweb` on the host and routes all container traffic through it. This prevents Claude from seeing or exfiltrating real credentials.
+
+**How it works:**
+1. `sandclaude start` launches `mitmweb` on `0.0.0.0:8080` (host)
+2. Container is started with `HTTP_PROXY`/`HTTPS_PROXY` pointing to `host.docker.internal:8080`
+3. Claude receives a dummy OAuth token inside the container
+4. `mitmweb` intercepts outbound requests and injects the real credentials from `proxy-credentials.json`
+5. Proxy stops automatically when the container exits
+
+**Setup:**
+
+Get your Claude OAuth token:
+```bash
+claude setup-token
+```
+
+Configure credentials in `~/.config/sandclaude/proxy-credentials.json`:
 
 ```json
 {
@@ -130,45 +139,58 @@ When enabled during `init`:
     "header": "Authorization",
     "value": "Bearer sk-ant-oat01-..."
   },
-   "api.github.com": {
+  "api.github.com": {
     "header": "Authorization",
     "value": "Bearer ghp_real_token_here"
-  },
+  }
 }
 ```
 
+**mitmproxy certificate trust** (required on first run):
+
+The mitmproxy CA cert is generated at `~/.mitmproxy/mitmproxy-ca-cert.pem` on first launch. It is mounted read-only into the container automatically. If you see TLS errors, run mitmweb once standalone to generate the cert, then rebuild:
+```bash
+mitmweb --listen-port 8080
+# Ctrl+C once cert is generated (~/.mitmproxy/ created)
+./sandclaude rebuild
+```
+
+**Proxy logs** are written to `mitm.log` in the directory where you run `sandclaude start`. View the mitmweb UI at `http://127.0.0.1:8081` while the session is running.
+
 ## Firewall Management
 
-### Interactive Approval
+The firewall is implemented as a Go HTTP CONNECT proxy (`allowlist-proxy`) running inside the container on `127.0.0.1:3128`. All of Claude's traffic is routed through it via `HTTP_PROXY`/`HTTPS_PROXY`. Connections to domains not in the allowlist are rejected.
+
+### Allowed Domains File
+
+The allowlist lives at `{workspace}/.firewall/allowed-domains.txt` and is created automatically on first run. Edit it to add or remove domains:
 
 ```bash
-firewall-helper.sh monitor
+echo 'example.com' >> /path/to/workspace/.firewall/allowed-domains.txt
 ```
 
-Prompts to allow/deny blocked connections permanently.
-
-### Manual Management
+Send `SIGHUP` to the proxy process to reload without restarting:
 
 ```bash
-firewall-helper.sh list                    # List allowed domains
-firewall-helper.sh add example.com         # Add domain
-firewall-helper.sh remove example.com      # Remove domain
+# Inside the container:
+kill -HUP $(pgrep allowlist-proxy)
 ```
 
-### Configuration File
-
-Edit `/home/claude/.firewall/allowed-domains.txt` and reload:
+### Monitor Proxy Log
 
 ```bash
-sudo /usr/local/bin/init-firewall.sh
+./sandclaude firewall-monitor [project]
 ```
+
+Tails `{workspace}/.firewall/proxy.log` inside the running container. Blocked connections appear as `BLOCKED` lines with the destination host.
 
 ### Pre-configured Domains
 
-- **Claude/Dev**: `api.anthropic.com`, `registry.npmjs.org`, `github.com`, VS Code marketplace
-- **Go**: `proxy.golang.org`, `sum.golang.org`
-- **CDNs**: `cdn.jsdelivr.net`, `unpkg.com`
-- **Registries**: Docker Hub, `ghcr.io`, `quay.io`
+- **Claude/Anthropic**: `api.anthropic.com`, `statsig.anthropic.com`, `statsig.com`, `sentry.io`
+- **npm / Node**: `registry.npmjs.org`, `registry.yarnpkg.com`, `npm.pkg.github.com`
+- **Go**: `proxy.golang.org`, `sum.golang.org`, `golang.org`
+- **GitHub**: `api.github.com`, `raw.githubusercontent.com`, `github.com`
+- **CDNs**: `cdn.jsdelivr.net`, `storage.googleapis.com`
 
 ## How It Works
 
@@ -179,7 +201,7 @@ sudo /usr/local/bin/init-firewall.sh
 5. Monitors GitHub issues in background (if enabled)
 6. Logs blocked connections for approval
 
-**Firewall**: Uses iptables + ipset to block all outbound traffic except DNS, SSH, localhost, and allowed IPs. Domains resolved to IPs at startup.
+**Firewall**: A Go HTTP CONNECT proxy (`allowlist-proxy`) runs inside the container on `127.0.0.1:3128`. Claude's `HTTP_PROXY`/`HTTPS_PROXY` env vars point to it. Connections to domains not in the allowlist are rejected with a `403`. The allowlist is a plain text file at `{workspace}/.firewall/allowed-domains.txt` that supports `SIGHUP` reloads.
 
 **Skill System**: `skill/SKILL.md` auto-mounted at `/home/claude/.claude/skills/sandclaude.md` teaches Claude:
 - Firewall architecture and allowed domains
@@ -198,7 +220,6 @@ code ~/my-project  # Click "Reopen in Container"
 
 Creates `~/my-project/.devcontainer/` with all files.
 
-**Note**: Python launcher uses [uv](https://docs.astral.sh/uv/) for dependency management - no pip or requirements.txt needed.
 
 ### Validate Skill Loading
 
@@ -215,23 +236,29 @@ claude --prompt "What firewall domains are allowed?"
 
 ## Troubleshooting
 
-**Connection refused:**
+**Domain blocked (connection refused / 403):**
 ```bash
-firewall-helper.sh monitor  # Approve interactively
-firewall-helper.sh add domain.com  # Or add manually
+# Check what's being blocked
+./sandclaude firewall-monitor myapp
+
+# Add a domain (from the host, while container is running or before next start)
+echo 'example.com' >> ~/my-project/.firewall/allowed-domains.txt
+
+# Reload allowlist without restarting (inside container shell)
+./sandclaude shell myapp
+kill -HUP $(pgrep allowlist-proxy)
 ```
 
-**Firewall not working:**
+**Proxy not starting:**
 ```bash
-sudo /usr/local/bin/init-firewall.sh  # Reload
+# Check proxy log inside container
+./sandclaude shell myapp
+cat .firewall/proxy.log
 ```
 
-Ensure `--cap-add=NET_ADMIN` and `--cap-add=NET_RAW` are set.
-
-**Reset firewall:**
+**Disable firewall for debugging:**
 ```bash
-rm -rf /home/claude/.firewall
-sudo /usr/local/bin/init-firewall.sh
+./sandclaude start myapp --disable-firewall
 ```
 
 ## Security

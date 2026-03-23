@@ -1,6 +1,15 @@
 FROM ubuntu:24.04
 
-# Install base tools and firewall dependencies
+# Install Go for building allowlist-proxy
+RUN apt-get update && apt-get install -y --no-install-recommends golang-go && \
+    rm -rf /var/lib/apt/lists/*
+
+# Build allowlist-proxy
+COPY allowlist-proxy/ /build/allowlist-proxy/
+RUN cd /build/allowlist-proxy && go build -o /usr/local/bin/allowlist-proxy . && \
+    rm -rf /build
+
+# Install base tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     curl \
@@ -15,11 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     sudo \
     vim \
-    iptables \
-    ipset \
-    iproute2 \
-    dnsutils \
-    aggregate \
+    less \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 22
@@ -50,15 +55,8 @@ RUN groupadd -f -g ${GROUP_ID} claude && \
     useradd -m -u ${USER_ID} -g claude -o claude && \
     echo "claude ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/claude
 
-# Copy and set up firewall scripts
-COPY init-firewall.sh /usr/local/bin/
-COPY firewall-helper.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/init-firewall.sh && \
-    chmod +x /usr/local/bin/firewall-helper.sh && \
-    echo "claude ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" >> /etc/sudoers.d/claude && \
-    echo "claude ALL=(root) NOPASSWD: /usr/local/bin/firewall-helper.sh" >> /etc/sudoers.d/claude && \
-    echo "claude ALL=(root) NOPASSWD: /usr/bin/dmesg" >> /etc/sudoers.d/claude && \
-    chmod 0440 /etc/sudoers.d/claude
+# allowlist-proxy is already at /usr/local/bin/allowlist-proxy from the build stage
+RUN chmod 0440 /etc/sudoers.d/claude
 
 USER claude
 ENV HOME=/home/claude
