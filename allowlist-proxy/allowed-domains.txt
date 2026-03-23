@@ -1,0 +1,38 @@
+# Default allowed domains
+registry.npmjs.org
+api.anthropic.com
+sentry.io
+statsig.anthropic.com
+statsig.com
+marketplace.visualstudio.com
+vscode.blob.core.windows.net
+update.code.visualstudio.com
+
+# Node.js package repositories
+registry.yarnpkg.com
+npm.pkg.github.com
+pkgs.dev.azure.com
+
+# Go package repositories
+proxy.golang.org
+sum.golang.org
+go.googlesource.com
+golang.org
+
+# Popular CDNs and registries
+cdn.jsdelivr.net
+unpkg.com
+registry.hub.docker.com
+ghcr.io
+quay.io
+
+# Google Cloud Storage and Chrome downloads
+storage.googleapis.com
+dl.google.com
+googlechromelabs.github.io
+
+# GitHub raw content
+raw.githubusercontent.com
+
+# Datadog log intake
+http-intake.logs.us5.datadoghq.com

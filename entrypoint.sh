@@ -33,38 +33,8 @@ fi
 echo ""
 
 FIREWALL_CONFIG_DIR="${PWD}/.firewall"
-ALLOWED_DOMAINS_FILE="$FIREWALL_CONFIG_DIR/allowed-domains.txt"
 
-# Create config directory and default allowlist if they don't exist
 mkdir -p "$FIREWALL_CONFIG_DIR"
-if [ ! -f "$ALLOWED_DOMAINS_FILE" ]; then
-    cat > "$ALLOWED_DOMAINS_FILE" <<EOF
-# Default allowed domains
-api.anthropic.com
-sentry.io
-statsig.anthropic.com
-statsig.com
-
-# npm / Node
-registry.npmjs.org
-registry.yarnpkg.com
-npm.pkg.github.com
-
-# Go modules
-proxy.golang.org
-sum.golang.org
-golang.org
-
-# GitHub
-api.github.com
-raw.githubusercontent.com
-github.com
-
-# CDNs / other registries
-cdn.jsdelivr.net
-storage.googleapis.com
-EOF
-fi
 
 if [ -z "$DISABLE_FIREWALL" ]; then
     # Determine upstream: if HTTP_PROXY is set (mitmproxy on host), chain through it.
@@ -75,12 +45,12 @@ if [ -z "$DISABLE_FIREWALL" ]; then
     fi
 
     echo "Starting allowlist proxy (listen :3128, upstream: ${HTTP_PROXY:-direct})..."
-    # Unset proxy env vars so the proxy binary connects directly to the upstream,
-    # not recursively through itself.
-    env -u HTTP_PROXY -u HTTPS_PROXY \
+    # Run as proxyuser so iptables --uid-owner rules can allow only the proxy
+    # process to make direct outbound TCP connections.
+    sudo -u proxyuser \
+        env -u HTTP_PROXY -u HTTPS_PROXY \
         /usr/local/bin/allowlist-proxy \
             --listen 127.0.0.1:3128 \
-            --allowlist "$ALLOWED_DOMAINS_FILE" \
             $UPSTREAM_ARG \
         > "$FIREWALL_CONFIG_DIR/proxy.log" 2>&1 &
     PROXY_PID=$!
@@ -93,14 +63,35 @@ if [ -z "$DISABLE_FIREWALL" ]; then
         exit 1
     fi
 
-    # Route Claude's traffic through the allowlist proxy
+    # Route Claude's traffic through the allowlist proxy.
+    # Explicitly clear NO_PROXY/no_proxy so nothing can bypass the allowlist
+    # by setting no_proxy=some.domain (curl, Python requests, etc. all honour it).
     export HTTP_PROXY=http://127.0.0.1:3128
     export HTTPS_PROXY=http://127.0.0.1:3128
+    export NO_PROXY=""
+    export no_proxy=""
 
-    echo ""
-    echo "Allowlist proxy active. To add domains:"
-    echo "  echo 'example.com' >> $ALLOWED_DOMAINS_FILE"
-    echo "  kill -HUP $PROXY_PID   # reload without restart"
+    # Enforce at the network level: only proxyuser may make direct outbound TCP
+    # connections. All other processes must connect via the allowlist proxy on
+    # 127.0.0.1:3128. This closes the no_proxy / direct-connect bypass regardless
+    # of which tool or env var is used.
+    #
+    # Rules (evaluated top-to-bottom in OUTPUT chain):
+    #   1. Allow loopback (proxy listens here; clients connect here)
+    #   2. Allow DNS (UDP 53) so resolution still works for all processes
+    #   3. Allow proxyuser to make direct outbound TCP (proxy's own connections)
+    #   4. Reject all other outbound TCP
+    echo "Applying iptables egress enforcement..."
+    if sudo iptables -F OUTPUT 2>/dev/null && \
+       sudo iptables -A OUTPUT -o lo -j ACCEPT && \
+       sudo iptables -A OUTPUT -p udp --dport 53 -j ACCEPT && \
+       sudo iptables -A OUTPUT -p tcp -m owner --uid-owner proxyuser -j ACCEPT && \
+       sudo iptables -A OUTPUT -p tcp -j REJECT --reject-with tcp-reset; then
+        echo "✅ iptables egress rules applied — only proxyuser may make direct TCP connections"
+    else
+        echo "⚠️  WARNING: iptables not available — no_proxy bypass is possible"
+    fi
+
     echo ""
     echo "Proxy log: $FIREWALL_CONFIG_DIR/proxy.log"
     echo ""

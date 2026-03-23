@@ -219,7 +219,10 @@ func (sc *SandClaude) startDocker(projectDir, workspace, project string) error {
 
 	// Build docker args
 	containerName := "sandclaude-" + project
-	args := []string{"run", "--rm", "-it", "--name", containerName}
+	args := []string{"run", "--rm", "-it", "--name", containerName,
+		"--cap-add=NET_ADMIN",
+		"--cap-add=NET_RAW",
+	}
 
 	if sc.disableFirewall {
 		args = append(args, "-e", "DISABLE_FIREWALL=1")
@@ -258,12 +261,6 @@ func (sc *SandClaude) startDocker(projectDir, workspace, project string) error {
 		} else {
 			log.Println("Warning: AWS credentials requested but ~/.aws not found")
 		}
-	}
-
-	// Mount skill if it exists
-	skillPath := filepath.Join(sc.scriptDir, "skill/SKILL.md")
-	if _, err := os.Stat(skillPath); err == nil {
-		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/.claude/skills/sandclaude.md:ro", skillPath))
 	}
 
 	// Enable proxy if it was started

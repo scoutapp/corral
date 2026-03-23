@@ -1,8 +1,16 @@
+# ── Stage 1: build allowlist-proxy ───────────────────────────────────────────
+FROM golang:1.22-alpine AS proxy-builder
+
+WORKDIR /build
+COPY allowlist-proxy/ .
+# CGO_ENABLED=0 produces a fully static binary — no libc needed in final image
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o allowlist-proxy .
+
+# ── Stage 2: runtime image ────────────────────────────────────────────────────
 FROM ubuntu:24.04
 
-# Install Go for building allowlist-proxy
-RUN apt-get update && apt-get install -y --no-install-recommends golang-go && \
-    rm -rf /var/lib/apt/lists/*
+# Copy the static proxy binary from the builder stage
+COPY --from=proxy-builder /build/allowlist-proxy /usr/local/bin/allowlist-proxy
 
 # Install Google Chrome and matching ChromeDriver
 # (chromium-browser on Ubuntu 24.04 is a snap stub that doesn't work in Docker)
@@ -26,11 +34,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf chromedriver-linux64.zip chromedriver-linux64 \
     && rm -rf /var/lib/apt/lists/*
 
-# Build allowlist-proxy
-COPY allowlist-proxy/ /build/allowlist-proxy/
-RUN cd /build/allowlist-proxy && go build -o /usr/local/bin/allowlist-proxy . && \
-    rm -rf /build
-
 # Install base tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
@@ -47,6 +50,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sudo \
     vim \
     less \
+    iptables \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 22
@@ -71,14 +75,19 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     apt-get update && apt-get install -y --no-install-recommends gh && \
     rm -rf /var/lib/apt/lists/*
 
+# Create a dedicated user for the allowlist proxy (fixed UID 900).
+# iptables --uid-owner rules use this UID to allow only the proxy process
+# to make direct outbound TCP connections; all other traffic must go through it.
+RUN useradd -r -u 900 -s /usr/sbin/nologin proxyuser
+
 # Create non-root user matching host UID/GID
 ARG USER_ID=1000
 ARG GROUP_ID=1000
 RUN groupadd -f -g ${GROUP_ID} claude && \
     useradd -m -u ${USER_ID} -g claude -o claude && \
-    echo "claude ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/claude
+    echo "claude ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/claude && \
+    echo "claude ALL=(proxyuser) NOPASSWD: /usr/local/bin/allowlist-proxy" >> /etc/sudoers.d/claude
 
-# allowlist-proxy is already at /usr/local/bin/allowlist-proxy from the build stage
 RUN chmod 0440 /etc/sudoers.d/claude
 
 USER claude
@@ -93,12 +102,11 @@ ENV PATH="/home/claude/.cargo/bin:${PATH}"
 RUN curl -fsSL https://claude.ai/install.sh | bash
 ENV PATH="/home/claude/.claude/bin:/home/claude/.local/bin:${PATH}"
 
-# Copy launcher, entrypoint, and proxy addon
+# Copy launcher, entrypoint, proxy addon, and skill
 COPY --chown=claude:claude launcher.py /home/claude/launcher.py
 COPY --chown=claude:claude entrypoint.sh /home/claude/entrypoint.sh
 COPY --chown=claude:claude proxy-addon.py /usr/local/bin/proxy-addon.py
-COPY --chown=claude:claude website/ /home/claude/website/
-COPY --chown=claude:claude test_chromium.py /home/claude/test_chromium.py
-RUN chmod +x /home/claude/launcher.py /home/claude/entrypoint.sh /usr/local/bin/proxy-addon.py /home/claude/test_chromium.py
+COPY --chown=claude:claude skill/SKILL.md /home/claude/.claude/skills/sandclaude.md
+RUN chmod +x /home/claude/launcher.py /home/claude/entrypoint.sh /usr/local/bin/proxy-addon.py
 
 ENTRYPOINT ["/home/claude/entrypoint.sh"]
