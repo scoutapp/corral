@@ -7,6 +7,8 @@
 secrets/
 credentials/
 
+__pycache__/
+
 # Claude Code configuration - contains user-specific data
 .claude/
 .claude.json
@@ -27,3 +29,5 @@ dist/
 build/
 *.log
 node_modules/
+
+sandclaude

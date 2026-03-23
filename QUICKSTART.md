@@ -1,39 +1,65 @@
 # Sandclaude Quick Reference
 
+## First Time Setup
+
+```bash
+# Clone into your project's .devcontainer directory
+cd ~/my-project
+git clone https://github.com/scoutapp/sandclaude.git .devcontainer
+cd .devcontainer
+
+# Build the Go binary (required)
+go build -o sandclaude main.go
+```
+
 ## Commands
 
 ```bash
-bash sandclaude init [project]       # Setup project with credentials
-bash sandclaude start [project]      # Start Claude + GitHub monitoring
-bash sandclaude copy <target>        # Copy to .devcontainer/ in target
-bash sandclaude list                 # List all projects
-bash sandclaude shell [project]      # Debug shell
-bash sandclaude rebuild              # Rebuild Docker image
+./sandclaude init [project]       # Setup project with credentials (prompts if no arg)
+./sandclaude start [project]      # Start Claude + proxy (prompts if no arg)
+./sandclaude list                 # List all projects
+./sandclaude remove <project>     # Remove a project
+./sandclaude shell [project]      # Debug shell
+./sandclaude copy <target>        # Copy to .devcontainer/ in target
+./sandclaude rebuild              # Rebuild Docker image
+./sandclaude help                 # Show help
 ```
 
 ## Setup New Project
 
 ```bash
-bash sandclaude init myapp
+./sandclaude init myapp
+# Or use current directory name:
+./sandclaude init
+
 # Prompts for:
+#   - Project name (defaults to current directory)
 #   - Enable GitHub monitoring? (optional)
 #   - Mount AWS credentials? (optional)
-#   - Workspace directory
+#   - Enable credential proxy? (optional)
+#   - Workspace directory (defaults to parent directory)
+```
+
+## Start Claude
+
+```bash
+./sandclaude start myapp
+# Or use current directory name:
+./sandclaude start
+
+# Automatically:
+#   - Starts proxy if configured during init
+#   - Starts Docker container with firewall
+#   - Runs Claude Code in dangerous mode
+#   - Starts GitHub monitoring if enabled
 ```
 
 ## Add to Existing Project
 
 ```bash
-# Method 1: Copy command (creates .devcontainer/)
-bash sandclaude copy ~/my-project
-code ~/my-project
-
-# Method 2: Clone directly (recommended)
-cd ~/my-project
-git clone https://github.com/scoutapp/sandclaude.git .devcontainer
-cd .devcontainer
-bash sandclaude init myapp  # Defaults to ~/my-project as workspace
-code ..
+# Copy command (creates .devcontainer/)
+./sandclaude copy ~/my-project
+code ~/my-project  # Click "Reopen in Container"
 ```
 
 ## Verify Skill Loading
@@ -99,7 +125,8 @@ firewall-helper.sh monitor                 # Interactive approval
 - Hides real credentials from Claude using mitmproxy
 - Claude uses dummy credentials, proxy injects real ones
 - Prevents credential exfiltration
-- Enable during init, then run `bash start-proxy.sh` on host
+- Enable during init - proxy starts automatically with `sandclaude start`
+- Proxy logs written to `mitm.log`
 - Configure in `~/.config/sandclaude/proxy-credentials.json`:
 ```json
 {

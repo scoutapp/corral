@@ -11,20 +11,20 @@ Proxy requires `mitmproxy` https://www.mitmproxy.org/
 ## Quick Start
 
 ```bash
-# Clone into .devcontainer of your project
+# Clone into your project's .devcontainer directory
 cd ~/my-project
 git clone https://github.com/scoutapp/sandclaude.git .devcontainer
 cd .devcontainer
-rm -rf .git
 
-# Initialize (defaults to parent directory as workspace)
-bash sandclaude init myapp
+# Build the sandclaude binary
+go build -o sandclaude main.go
 
-# If using proxy (see below on setting proxy-credentials), in a separate terminal run:
-bash start-proxy.sh
+# Initialize a project (prompts for configuration)
+./sandclaude init myapp
 
-# Start Claude
-bash sandclaude start myapp
+# Start Claude (proxy starts automatically if configured)
+# Will need to set proxy configuration values. See Credential Proxy below.
+./sandclaude start myapp
 ```
 
 ## Features
@@ -37,31 +37,39 @@ bash sandclaude start myapp
 
 ## Prerequisites
 
+- Go 1.21+ (to build the binary)
 - Docker
 - Claude Code credentials (`claude` to authenticate)
-- Optional: `gh` CLI (GitHub monitoring), AWS credentials
+- Optional: `gh` CLI (GitHub monitoring), AWS credentials, mitmproxy (for proxy mode)
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `bash sandclaude init [project]` | Initialize project |
-| `bash sandclaude start [project]` | Start Claude Code |
-| `bash sandclaude copy <target>` | Copy to .devcontainer/ |
-| `bash sandclaude list` | List projects |
-| `bash sandclaude shell [project]` | Debug shell |
+| `./sandclaude init [project]` | Initialize project (prompts if no arg) |
+| `./sandclaude start [project]` | Start Claude Code (prompts if no arg) |
+| `./sandclaude list` | List configured projects |
+| `./sandclaude remove <project>` | Remove a project |
+| `./sandclaude shell [project]` | Open debug shell in container |
+| `./sandclaude copy <target>` | Copy files to .devcontainer/ |
+| `./sandclaude rebuild` | Force rebuild Docker image |
+| `./sandclaude help` | Show help |
 
 ## Usage
 
 ### Initialize Project
 
 ```bash
-bash sandclaude init myapp
+./sandclaude init myapp
+# Or run without argument to use current directory name:
+./sandclaude init
 ```
 
 Prompts for:
+- **Project name**: Defaults to current directory name
 - **GitHub monitoring?** (optional): Provide `owner/repo`
 - **AWS credentials?** (optional): Mounts `~/.aws`
+- **Credential proxy?** (optional): Enable proxy to hide real credentials from Claude
 - **Workspace directory**: Defaults to parent directory (resolved absolute path)
 
 Config stored in `~/.config/sandclaude/projects/myapp/config/`
@@ -69,10 +77,13 @@ Config stored in `~/.config/sandclaude/projects/myapp/config/`
 ### Start Working
 
 ```bash
-bash sandclaude start myapp
+./sandclaude start myapp
+# Or run without argument to use current directory name:
+./sandclaude start
 ```
 
 Starts:
+- Credential proxy (automatically if configured during init)
 - Docker container with firewall
 - Claude Code in dangerous mode
 - GitHub issue monitor (if enabled)
@@ -95,12 +106,13 @@ When enabled:
 
 ### Credential Proxy
 
-When enabled:
+When enabled during `init`:
 - Hides real credentials from Claude using mitmproxy
 - Claude uses dummy credentials inside container
 - Proxy intercepts requests and injects real credentials
 - Prevents credential exfiltration
-- Run `bash start-proxy.sh` on host before starting container
+- Proxy starts automatically when running `sandclaude start`
+- Proxy logs written to `mitm.log`
 - Configure credentials in `~/.config/sandclaude/proxy-credentials.json`:
 - **CLAUDE TOKEN** To get the claude code oauth token run `claude setup-token` 
 
@@ -180,20 +192,11 @@ sudo /usr/local/bin/init-firewall.sh
 ### Quick Copy
 
 ```bash
-bash sandclaude copy ~/my-project
+./sandclaude copy ~/my-project
 code ~/my-project  # Click "Reopen in Container"
 ```
 
 Creates `~/my-project/.devcontainer/` with all files.
-
-### Clone as .devcontainer
-
-```bash
-cd ~/my-project
-git clone https://github.com/scoutapp/sandclaude.git .devcontainer
-rm -rf .devcontainer/.git
-code .
-```
 
 **Note**: Python launcher uses [uv](https://docs.astral.sh/uv/) for dependency management - no pip or requirements.txt needed.
 
