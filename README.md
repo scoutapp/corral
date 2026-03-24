@@ -19,20 +19,19 @@ cd .devcontainer
 # Build the sandclaude binary
 go build -o sandclaude main.go
 
-# Initialize a project (prompts for configuration)
-./sandclaude init myapp
+# Initialize (creates ./project/ and encrypts allowlist automatically)
+./sandclaude init
 
-# Start Claude (proxy starts automatically if configured)
-# Will need to set proxy configuration values. See Credential Proxy below.
-./sandclaude start myapp
+# Start Claude
+./sandclaude start
 ```
 
 ## Features
 
-- **Network Firewall**: iptables allowlist restricts outbound connections
+- **Network Firewall**: Domain allowlist proxy restricts outbound connections
 - **GitHub Integration**: Auto-monitors and works on issues every 60s (optional)
-- **AWS Support**: Mounts `~/.aws` credentials read-only (optional)
-- **Multi-Project**: Separate configs and workspaces per project
+- **AWS Support**: Reads `~/.aws` credentials, passes as env vars (never volume-mounted)
+- **No credential mounts**: Claude credentials, gh tokens, and AWS keys are passed as env vars only
 - **Claude Skill**: Teaches Claude the firewall rules automatically
 
 ## Prerequisites
@@ -46,12 +45,14 @@ go build -o sandclaude main.go
 
 | Command | Description |
 |---------|-------------|
-| `./sandclaude init [project]` | Initialize project (prompts if no arg) |
-| `./sandclaude start [project]` | Start Claude Code (prompts if no arg) |
-| `./sandclaude list` | List configured projects |
-| `./sandclaude remove <project>` | Remove a project |
-| `./sandclaude shell [project]` | Open debug shell in container |
-| `./sandclaude firewall-monitor [project]` | Tail the allowlist proxy log |
+| `./sandclaude init` | Initialize project (creates `./project/` and encrypts allowlist) |
+| `./sandclaude start` | Start Claude Code |
+| `./sandclaude start --disable-firewall` | Start without firewall (unrestricted network) |
+| `./sandclaude list` | Show project configuration |
+| `./sandclaude remove` | Remove project and encrypted allowlist |
+| `./sandclaude firewall-reload` | Re-encrypt allowlist and SIGHUP running proxy |
+| `./sandclaude firewall-monitor` | Tail the allowlist proxy log |
+| `./sandclaude shell` | Open debug shell in container |
 | `./sandclaude copy <target>` | Copy files to .devcontainer/ |
 | `./sandclaude rebuild` | Force rebuild Docker image |
 | `./sandclaude help` | Show help |
@@ -61,25 +62,21 @@ go build -o sandclaude main.go
 ### Initialize Project
 
 ```bash
-./sandclaude init myapp
-# Or run without argument to use current directory name:
 ./sandclaude init
 ```
 
-Prompts for:
-- **Project name**: Defaults to current directory name
+Creates `./project/` in this directory. Prompts for:
 - **GitHub monitoring?** (optional): Provide `owner/repo`
-- **AWS credentials?** (optional): Mounts `~/.aws`
-- **Credential proxy?** (optional): Enable proxy to hide real credentials from Claude
+- **AWS credentials?** (optional): Reads from `~/.aws`, passes as env vars
+- **Credential proxy?** (optional): Enable mitmproxy to hide real credentials from Claude
 - **Workspace directory**: Defaults to parent directory (resolved absolute path)
 
-Config stored in `~/.config/sandclaude/projects/myapp/config/`
+Config stored in `./project/config/`. Add `./project/` to `.gitignore`.
 
 ### Start Working
 
 ```bash
-./sandclaude start myapp
-# Or run without argument to use current directory name:
+export ALLOWLIST_KEY=<your-passphrase>  # required
 ./sandclaude start
 ```
 
@@ -101,9 +98,10 @@ When enabled:
 ### AWS Integration
 
 When enabled:
-- Mounts `~/.aws` read-only
+- Reads `~/.aws/credentials` and `~/.aws/config` on the host
+- Passes `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION` as env vars
 - Works with STS temporary credentials
-- Sets AWS env vars automatically
+- The `~/.aws` directory is never volume-mounted into the container
 
 ### Credential Proxy
 
@@ -123,7 +121,7 @@ Get your Claude OAuth token:
 claude setup-token
 ```
 
-Configure credentials in `~/.config/sandclaude/proxy-credentials.json`:
+Configure credentials in `./project/proxy-credentials.json`:
 
 ```json
 {
@@ -155,7 +153,7 @@ mitmweb --listen-port 8080
 ./sandclaude rebuild
 ```
 
-**Proxy logs** are written to `mitm.log` in the directory where you run `sandclaude start`. View the mitmweb UI at `http://127.0.0.1:8081` while the session is running.
+**Proxy logs** are written to `logs/mitm.log` in the directory where you run `sandclaude start`. View the mitmweb UI at `http://127.0.0.1:8081` while the session is running.
 
 ## Firewall Management
 
@@ -163,26 +161,27 @@ The firewall is implemented as a Go HTTP CONNECT proxy (`allowlist-proxy`) runni
 
 ### Allowed Domains File
 
-The allowlist lives at `{workspace}/.firewall/allowed-domains.txt` and is created automatically on first run. Edit it to add or remove domains:
+The allowlist lives at `allowlist-proxy/allowed-domains.txt` (plaintext). When you modify it, run `firewall-reload` to re-encrypt and reload:
 
 ```bash
-echo 'example.com' >> /path/to/workspace/.firewall/allowed-domains.txt
+echo 'example.com' >> allowlist-proxy/allowed-domains.txt
+./sandclaude firewall-reload
 ```
 
-Send `SIGHUP` to the proxy process to reload without restarting:
+This command:
+1. Reads the encryption key from `project/.allowlist-key`
+2. Re-encrypts `allowed-domains.txt` → `allowed-domains.txt.enc`
+3. If a container is running, sends SIGHUP to reload the allowlist without restart
 
-```bash
-# Inside the container:
-kill -HUP $(pgrep allowlist-proxy)
-```
+**Note**: The encryption key is auto-generated during `init` and stored in `project/.allowlist-key` (never committed).
 
 ### Monitor Proxy Log
 
 ```bash
-./sandclaude firewall-monitor [project]
+./sandclaude firewall-monitor
 ```
 
-Tails `{workspace}/.firewall/proxy.log` inside the running container. Blocked connections appear as `BLOCKED` lines with the destination host.
+Tails the allowlist proxy log inside the running container. Blocked connections appear as `BLOCKED` lines with the destination host.
 
 ### Pre-configured Domains
 
@@ -201,7 +200,7 @@ Tails `{workspace}/.firewall/proxy.log` inside the running container. Blocked co
 5. Monitors GitHub issues in background (if enabled)
 6. Logs blocked connections for approval
 
-**Firewall**: A Go HTTP CONNECT proxy (`allowlist-proxy`) runs inside the container on `127.0.0.1:3128`. Claude's `HTTP_PROXY`/`HTTPS_PROXY` env vars point to it. Connections to domains not in the allowlist are rejected with a `403`. The allowlist is a plain text file at `{workspace}/.firewall/allowed-domains.txt` that supports `SIGHUP` reloads.
+**Firewall**: A Go HTTP CONNECT proxy (`allowlist-proxy`) runs inside the container on `127.0.0.1:3128`. Claude's `HTTP_PROXY`/`HTTPS_PROXY` env vars point to it. Connections to domains not in the allowlist are rejected with a `403`. The allowlist is stored encrypted at `allowlist-proxy/allowed-domains.txt.enc` (bind-mounted into the container) and supports hot-reload via `sandclaude reload-firewall`. Logs go to `logs/proxy.log` inside the container.
 
 **Skill System**: `skill/SKILL.md` auto-mounted at `/home/claude/.claude/skills/sandclaude.md` teaches Claude:
 - Firewall architecture and allowed domains
@@ -241,24 +240,22 @@ claude --prompt "What firewall domains are allowed?"
 # Check what's being blocked
 ./sandclaude firewall-monitor myapp
 
-# Add a domain (from the host, while container is running or before next start)
-echo 'example.com' >> ~/my-project/.firewall/allowed-domains.txt
-
-# Reload allowlist without restarting (inside container shell)
-./sandclaude shell myapp
-kill -HUP $(pgrep allowlist-proxy)
+# Add a domain and hot-reload (no container restart needed)
+echo 'example.com' >> allowlist-proxy/allowed-domains.txt
+export ALLOWLIST_KEY=<your-passphrase>
+./sandclaude reload-firewall
 ```
 
 **Proxy not starting:**
 ```bash
 # Check proxy log inside container
 ./sandclaude shell myapp
-cat .firewall/proxy.log
+cat logs/proxy.log
 ```
 
 **Disable firewall for debugging:**
 ```bash
-./sandclaude start myapp --disable-firewall
+./sandclaude start --disable-firewall
 ```
 
 ## Security

@@ -15,36 +15,38 @@ go build -o sandclaude main.go
 ## Commands
 
 ```bash
-./sandclaude init [project]       # Setup project with credentials (prompts if no arg)
-./sandclaude start [project]      # Start Claude + proxy (prompts if no arg)
-./sandclaude list                 # List all projects
-./sandclaude remove <project>     # Remove a project
-./sandclaude shell [project]      # Debug shell
+./sandclaude init                 # Setup ./project/ config in this directory
+./sandclaude start                # Start Claude + proxy
+./sandclaude list                 # Show project configuration
+./sandclaude remove               # Remove ./project/ directory
+./sandclaude shell                # Debug shell in container
+./sandclaude reload-firewall      # Encrypt allowlist + SIGHUP proxy
+./sandclaude firewall-monitor     # Tail logs/proxy.log
 ./sandclaude copy <target>        # Copy to .devcontainer/ in target
 ./sandclaude rebuild              # Rebuild Docker image
 ./sandclaude help                 # Show help
 ```
 
-## Setup New Project
+## Setup
 
 ```bash
-./sandclaude init myapp
-# Or use current directory name:
 ./sandclaude init
 
 # Prompts for:
-#   - Project name (defaults to current directory)
 #   - Enable GitHub monitoring? (optional)
-#   - Mount AWS credentials? (optional)
+#   - Pass AWS credentials? (optional, reads from ~/.aws)
 #   - Enable credential proxy? (optional)
 #   - Workspace directory (defaults to parent directory)
+
+# Then encrypt the allowlist (required):
+export ALLOWLIST_KEY=<your-passphrase>
+./sandclaude reload-firewall
 ```
 
 ## Start Claude
 
 ```bash
-./sandclaude start myapp
-# Or use current directory name:
+export ALLOWLIST_KEY=<your-passphrase>
 ./sandclaude start
 
 # Automatically:
@@ -98,36 +100,36 @@ firewall-helper.sh monitor                 # Interactive approval
 ## Configuration Location
 
 ```
-~/.config/sandclaude/projects/
-└── myapp/
+.devcontainer/          (or wherever sandclaude lives)
+└── project/
+    ├── proxy-credentials.json  (mitmproxy credential injection, gitignored)
     └── config/
         ├── repo                (optional: GitHub owner/repo)
-        ├── aws_enabled         (optional: if AWS mount enabled)
+        ├── aws_enabled         (optional: if AWS env vars enabled)
         ├── workspace
         └── metadata.json
 ```
 
+All of `project/` is gitignored — credentials and config stay local.
+
 ## Optional Integrations
 
 **GitHub Issue Monitoring:**
-- Uses `gh` CLI (authenticated via host mount at `~/.config/gh`)
+- Uses `gh auth token` on the host — token passed as `GH_TOKEN` env var
 - Checks every 60 seconds for new unassigned issues
 - Auto-assigns issues to bot
-- Generates prompt with title/description
-- Adds comment to GitHub tracking progress
 
 **AWS Credentials:**
-- Mounts `~/.aws` directory read-only
-- Works with STS temporary credentials
-- Supports all standard AWS credential methods
+- Reads `~/.aws/credentials` on the host
+- Passes `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION` as env vars
+- `~/.aws` is never volume-mounted
 
 **Credential Proxy:**
 - Hides real credentials from Claude using mitmproxy
 - Claude uses dummy credentials, proxy injects real ones
-- Prevents credential exfiltration
-- Enable during init - proxy starts automatically with `sandclaude start`
-- Proxy logs written to `mitm.log`
-- Configure in `~/.config/sandclaude/proxy-credentials.json`:
+- Enable during init — proxy starts automatically with `sandclaude start`
+- Proxy logs written to `logs/mitm.log`
+- Configure in `./project/proxy-credentials.json`:
 ```json
 {
   "api.example.com": {
@@ -139,11 +141,10 @@ firewall-helper.sh monitor                 # Interactive approval
 
 ## Troubleshooting
 
-**Connection refused:**
+**Connection refused / 403:**
 ```bash
-firewall-helper.sh monitor  # Approve domains interactively
-# OR
-firewall-helper.sh add domain.com
+echo 'example.com' >> allowlist-proxy/allowed-domains.txt
+./sandclaude reload-firewall
 ```
 
 **Skill not loading:**

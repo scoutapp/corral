@@ -32,11 +32,25 @@ else
 fi
 echo ""
 
-FIREWALL_CONFIG_DIR="${PWD}/.firewall"
-
-mkdir -p "$FIREWALL_CONFIG_DIR"
+mkdir -p "${HOME}/logs"
+PROXY_LOG="${HOME}/logs/proxy.log"
+ALLOWLIST_ENC="${HOME}/allowed-domains.txt.enc"
 
 if [ -z "$DISABLE_FIREWALL" ]; then
+    # Verify encrypted allowlist exists
+    if [ ! -f "$ALLOWLIST_ENC" ]; then
+        echo "ERROR: encrypted allowlist not found at $ALLOWLIST_ENC"
+        echo "       Run 'sandclaude firewall-reload' on the host"
+        exit 1
+    fi
+
+    # Verify encryption key is provided
+    if [ -z "$ALLOWLIST_KEY" ]; then
+        echo "ERROR: ALLOWLIST_KEY environment variable is not set"
+        echo "       Run 'sandclaude init' to generate the key"
+        exit 1
+    fi
+
     # Determine upstream: if HTTP_PROXY is set (mitmproxy on host), chain through it.
     # allowlist-proxy itself must NOT use the outer HTTP_PROXY env var — it IS the proxy.
     UPSTREAM_ARG=""
@@ -44,22 +58,33 @@ if [ -z "$DISABLE_FIREWALL" ]; then
         UPSTREAM_ARG="--upstream $HTTP_PROXY"
     fi
 
+    # Copy the encrypted allowlist to a location proxyuser can read
+    # (the mounted file is owned by the host user, proxyuser can't read it directly)
+    ALLOWLIST_COPY="/tmp/allowed-domains.txt.enc"
+    cp "$ALLOWLIST_ENC" "$ALLOWLIST_COPY"
+    chmod 644 "$ALLOWLIST_COPY"
+
+    # Create log file with write permissions for proxyuser
+    touch "$PROXY_LOG"
+    chmod 666 "$PROXY_LOG"
+
     echo "Starting allowlist proxy (listen :3128, upstream: ${HTTP_PROXY:-direct})..."
     # Run as proxyuser so iptables --uid-owner rules can allow only the proxy
     # process to make direct outbound TCP connections.
     sudo -u proxyuser \
-        env -u HTTP_PROXY -u HTTPS_PROXY \
+        env -u HTTP_PROXY -u HTTPS_PROXY ALLOWLIST_KEY="$ALLOWLIST_KEY" \
         /usr/local/bin/allowlist-proxy \
             --listen 127.0.0.1:3128 \
+            --allowlist "$ALLOWLIST_COPY" \
             $UPSTREAM_ARG \
-        > "$FIREWALL_CONFIG_DIR/proxy.log" 2>&1 &
+        >> "$PROXY_LOG" 2>&1 &
     PROXY_PID=$!
     echo "Allowlist proxy started (PID $PROXY_PID)"
     # Brief pause to confirm it bound successfully
     sleep 0.3
     if ! kill -0 $PROXY_PID 2>/dev/null; then
-        echo "ERROR: allowlist-proxy failed to start. Check $FIREWALL_CONFIG_DIR/proxy.log"
-        cat "$FIREWALL_CONFIG_DIR/proxy.log"
+        echo "ERROR: allowlist-proxy failed to start. Check $PROXY_LOG"
+        cat "$PROXY_LOG"
         exit 1
     fi
 
@@ -93,7 +118,7 @@ if [ -z "$DISABLE_FIREWALL" ]; then
     fi
 
     echo ""
-    echo "Proxy log: $FIREWALL_CONFIG_DIR/proxy.log"
+    echo "Proxy log: $PROXY_LOG"
     echo ""
 else
     echo "WARNING: FIREWALL IS DISABLED - Claude has unrestricted network access!"
