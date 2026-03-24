@@ -25,14 +25,17 @@ const (
 )
 
 type SandClaude struct {
-	proxyCmd               *exec.Cmd
-	proxyPort              string
-	credentialsFile        string
-	addonScript            string
-	scriptDir              string
-	proxyEnabled           bool
-	disableFirewall        bool
+	proxyCmd                *exec.Cmd
+	proxyPort               string
+	credentialsFile         string
+	addonScript             string
+	scriptDir               string
+	proxyEnabled            bool
+	disableFirewall         bool
 	disableFirewallAndWrite bool
+	disableDind             bool
+	dindEnabled             bool
+	dindPorts               []string
 }
 
 func NewSandClaude() (*SandClaude, error) {
@@ -276,11 +279,13 @@ func readAWSCredentials() (accessKey, secretKey, sessionToken, region string, er
 // ----------------------------------------------------------------------------
 
 type ProjectConfig struct {
-	Workspace    string `json:"workspace"`
-	GitHubRepo   string `json:"github_repo,omitempty"`
-	AWSEnabled   bool   `json:"aws_enabled,omitempty"`
-	ProxyEnabled bool   `json:"proxy_enabled,omitempty"`
-	CreatedAt    string `json:"created_at"`
+	Workspace    string   `json:"workspace"`
+	GitHubRepo   string   `json:"github_repo,omitempty"`
+	AWSEnabled   bool     `json:"aws_enabled,omitempty"`
+	ProxyEnabled bool     `json:"proxy_enabled,omitempty"`
+	DindEnabled  bool     `json:"dind_enabled,omitempty"`
+	DindPorts    []string `json:"dind_ports,omitempty"`
+	CreatedAt    string   `json:"created_at"`
 }
 
 func readConfig(projectDir string) (*ProjectConfig, error) {
@@ -343,9 +348,14 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 
 	// Build docker args
 	containerName := "sandclaude"
-	args := []string{"run", "--rm", "-it", "--name", containerName,
-		"--cap-add=NET_ADMIN",
-		"--cap-add=NET_RAW",
+	args := []string{"run", "--rm", "-it", "--name", containerName}
+
+	// DinD requires --privileged (superset of NET_ADMIN + NET_RAW + SYS_ADMIN).
+	// Without DinD, use minimal capabilities.
+	if sc.dindEnabled {
+		args = append(args, "--privileged")
+	} else {
+		args = append(args, "--cap-add=NET_ADMIN", "--cap-add=NET_RAW")
 	}
 
 	if sc.disableFirewall {
@@ -504,6 +514,19 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 		log.Println()
 	}
 
+	// DinD: signal entrypoint to start inner dockerd and expose ports
+	if sc.dindEnabled {
+		args = append(args, "-e", "DIND_ENABLED=1")
+		for _, port := range sc.dindPorts {
+			args = append(args, "-p", port)
+		}
+		log.Printf("🐳 DinD enabled")
+		if len(sc.dindPorts) > 0 {
+			log.Printf("   Ports: %s", strings.Join(sc.dindPorts, ", "))
+		}
+		log.Println()
+	}
+
 	args = append(args, imageName)
 
 	// Start docker
@@ -568,6 +591,12 @@ func (sc *SandClaude) Run() error {
 
 	if _, err := os.Stat(cfg.Workspace); os.IsNotExist(err) {
 		return fmt.Errorf("workspace not found: %s", cfg.Workspace)
+	}
+
+	// Check if DinD is enabled (unless --disable-dind was passed)
+	if !sc.disableDind && cfg.DindEnabled {
+		sc.dindEnabled = true
+		sc.dindPorts = cfg.DindPorts
 	}
 
 	if cfg.ProxyEnabled {
@@ -640,6 +669,29 @@ func cmdInit() error {
 	if askYesNo("Pass AWS credentials from host ~/.aws?") {
 		cfg.AWSEnabled = true
 		log.Println("AWS credentials will be read from host ~/.aws/credentials")
+	}
+
+	log.Println()
+
+	// Docker-in-Docker
+	if askYesNo("Enable Docker-in-Docker (Claude can start inner containers)?") {
+		cfg.DindEnabled = true
+		log.Println("✅ DinD enabled — Claude will run a private inner Docker daemon")
+		log.Println("   Inner containers' network egress goes through the allowlist proxy")
+
+		reader2 := bufio.NewReader(os.Stdin)
+		fmt.Print("Port mappings to expose to host (e.g. 3000:3000,8000:8000, blank for none): ")
+		portsInput, _ := reader2.ReadString('\n')
+		portsInput = strings.TrimSpace(portsInput)
+		if portsInput != "" {
+			ports := strings.FieldsFunc(portsInput, func(r rune) bool {
+				return r == ',' || r == ' '
+			})
+			cfg.DindPorts = ports
+			log.Printf("   Port mappings: %s\n", strings.Join(ports, ", "))
+		}
+	} else {
+		log.Println("⚠️  DinD disabled")
 	}
 
 	log.Println()
@@ -763,6 +815,7 @@ func cmdInit() error {
 func cmdStart(args []string) error {
 	disableFirewall := false
 	disableFirewallAndWrite := false
+	disableDind := false
 
 	for _, arg := range args {
 		switch arg {
@@ -770,6 +823,8 @@ func cmdStart(args []string) error {
 			disableFirewall = true
 		case "--disable-firewall-and-write":
 			disableFirewallAndWrite = true
+		case "--disable-dind":
+			disableDind = true
 		}
 	}
 
@@ -780,6 +835,7 @@ func cmdStart(args []string) error {
 
 	sc.disableFirewall = disableFirewall
 	sc.disableFirewallAndWrite = disableFirewallAndWrite
+	sc.disableDind = disableDind
 	return sc.Run()
 }
 
@@ -802,6 +858,13 @@ func cmdList() error {
 	}
 	if cfg.AWSEnabled {
 		log.Println("  AWS:       enabled")
+	}
+	if cfg.DindEnabled {
+		log.Print("  DinD:      enabled")
+		if len(cfg.DindPorts) > 0 {
+			log.Printf(" (ports: %s)", strings.Join(cfg.DindPorts, ", "))
+		}
+		log.Println()
 	}
 	if cfg.ProxyEnabled {
 		log.Println("  Proxy:     enabled")
@@ -1139,6 +1202,7 @@ func usage() {
 	fmt.Println("  start [flags]            Start Claude Code (uses ./project/ config)")
 	fmt.Println("    --disable-firewall             Skip firewall initialization")
 	fmt.Println("    --disable-firewall-and-write   Keep proxy but allow all domains; write unknown ones to allowed-domains.txt")
+	fmt.Println("    --disable-dind                 Skip inner dockerd startup")
 	fmt.Println("  list                     Show ./project/ configuration")
 	fmt.Println("  remove                   Remove ./project/ directory after confirmation")
 	fmt.Println("  firewall-reload          Encrypt allowed-domains.txt and SIGHUP proxy")

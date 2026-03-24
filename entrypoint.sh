@@ -2,6 +2,20 @@
 # Sandclaude entrypoint - Starts Python launcher with Linear monitoring
 # After Claude exits, drop to an interactive bash shell
 
+# Cleanup inner dockerd and containers on exit
+DOCKERD_PID=""
+cleanup_dind() {
+    if [ -n "$DOCKERD_PID" ]; then
+        echo "Stopping inner containers..."
+        docker --host="unix:///var/run/dind/docker.sock" \
+            ps -q 2>/dev/null | xargs -r docker --host="unix:///var/run/dind/docker.sock" stop --time=5 2>/dev/null || true
+        echo "Stopping inner dockerd (PID $DOCKERD_PID)..."
+        sudo kill "$DOCKERD_PID" 2>/dev/null || true
+        wait "$DOCKERD_PID" 2>/dev/null || true
+    fi
+}
+trap cleanup_dind EXIT
+
 # Configure mitmproxy CA certificate if proxy is enabled
 echo "🔒 Proxy configuration:"
 echo "   HTTP_PROXY=${HTTP_PROXY:-not set}"
@@ -158,6 +172,86 @@ if [ -z "$DISABLE_FIREWALL" ]; then
     echo ""
 else
     echo "WARNING: FIREWALL IS DISABLED - Claude has unrestricted network access!"
+    echo ""
+fi
+
+# ── DinD: start inner dockerd ─────────────────────────────────────────────
+if [ -n "$DIND_ENABLED" ]; then
+    echo "Starting inner dockerd..."
+
+    DIND_SOCKET=/var/run/dind/docker.sock
+    DIND_DATA=/var/lib/docker-dind
+    STORAGE_DRIVER="${DIND_STORAGE_DRIVER:-overlay2}"
+
+    # Write daemon config
+    sudo mkdir -p /etc/docker-dind
+    sudo tee /etc/docker-dind/daemon.json > /dev/null <<DAEMONCFG
+{
+  "data-root": "${DIND_DATA}",
+  "hosts": ["unix://${DIND_SOCKET}"],
+  "storage-driver": "${STORAGE_DRIVER}",
+  "iptables": true,
+  "ip-masq": false,
+  "bip": "172.18.0.1/16"
+}
+DAEMONCFG
+
+    sudo dockerd --config-file /etc/docker-dind/daemon.json \
+        > "$FIREWALL_CONFIG_DIR/dockerd.log" 2>&1 &
+    DOCKERD_PID=$!
+
+    # Wait for dockerd to be ready (poll socket, max 15s)
+    echo "Waiting for inner dockerd..."
+    for i in $(seq 1 30); do
+        if sudo docker --host="unix://${DIND_SOCKET}" info > /dev/null 2>&1; then
+            echo "✅ Inner dockerd ready (PID $DOCKERD_PID)"
+            break
+        fi
+        sleep 0.5
+        if [ "$i" -eq 30 ]; then
+            echo "ERROR: inner dockerd failed to start. Check $FIREWALL_CONFIG_DIR/dockerd.log"
+            cat "$FIREWALL_CONFIG_DIR/dockerd.log"
+            exit 1
+        fi
+    done
+
+    # Export DOCKER_HOST so all docker commands use the inner daemon
+    export DOCKER_HOST="unix://${DIND_SOCKET}"
+
+    # Configure ~/.docker/config.json to inject proxy into inner containers
+    mkdir -p /home/claude/.docker
+    cat > /home/claude/.docker/config.json <<'DOCKERCFG'
+{
+  "proxies": {
+    "default": {
+      "httpProxy": "http://127.0.0.1:3128",
+      "httpsProxy": "http://127.0.0.1:3128",
+      "noProxy": "172.18.0.0/16,127.0.0.0/8"
+    }
+  }
+}
+DOCKERCFG
+
+    # Enable IP forwarding (required for docker bridge networking)
+    sudo sysctl -w net.ipv4.ip_forward=1 > /dev/null
+
+    # PREROUTING REDIRECT: intercept inner container TCP egress -> allowlist proxy
+    # Inner containers (172.18.0.0/16) trying to reach external hosts get redirected
+    # to the allowlist proxy on 127.0.0.1:3128 before being forwarded.
+    sudo iptables -t nat -A PREROUTING \
+        -s 172.18.0.0/16 \
+        ! -d 172.18.0.0/16 \
+        ! -d 127.0.0.0/8 \
+        -p tcp \
+        -j REDIRECT --to-port 3128
+
+    # FORWARD rules: allow bridge <-> external interface traffic
+    sudo iptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+    sudo iptables -A FORWARD -s 172.18.0.0/16 -j ACCEPT
+    sudo iptables -A FORWARD -d 172.18.0.0/16 -j ACCEPT
+
+    echo "✅ Inner container proxy enforcement applied (172.18.0.0/16 -> :3128)"
+    echo "   DOCKER_HOST=${DOCKER_HOST}"
     echo ""
 fi
 

@@ -221,6 +221,122 @@ Tails the allowlist proxy log inside the running container. Blocked connections 
 - **GitHub**: `api.github.com`, `raw.githubusercontent.com`, `github.com`
 - **CDNs**: `cdn.jsdelivr.net`, `storage.googleapis.com`
 
+## Docker-in-Docker (DinD)
+
+When enabled, sandclaude runs a private Docker daemon (`dockerd`) inside the container. Claude can start, exec into, and manage inner containers — for example, spinning up a Rails app, Django server, Postgres database, or any other service.
+
+**All inner container network egress is automatically routed through the same allowlist proxy.** Inner containers cannot reach unapproved domains regardless of what runs inside them.
+
+### Setup
+
+During `sandclaude init`, answer yes to the DinD prompt and enter any ports you want accessible from your host:
+
+```bash
+./sandclaude init myapp
+# ...
+# Enable Docker-in-Docker (Claude can start inner containers)? [y/N]: y
+# Port mappings to expose to host (e.g. 3000:3000,8000:8000, blank for none): 3000:3000
+```
+
+Port mappings can also be edited later:
+
+```bash
+echo "5432:5432" >> ~/.config/sandclaude/projects/myapp/config/dind_ports
+# Then restart: ./sandclaude start myapp
+```
+
+### Rails Workflow
+
+```bash
+# Init with port 3000
+./sandclaude init rails-app
+# Answer: DinD yes, ports: 3000:3000
+
+./sandclaude start rails-app
+
+# Claude can now:
+docker build -t my-rails-app .
+docker run -d -p 3000:3000 --name rails my-rails-app
+docker exec -it rails bash
+docker logs rails -f
+
+# Access from your Mac/host: http://localhost:3000
+```
+
+### Django Workflow
+
+```bash
+# Init with port 8000
+./sandclaude init django-app
+# Answer: DinD yes, ports: 8000:8000
+
+./sandclaude start django-app
+
+# Claude can now:
+docker run -d -p 8000:8000 --name django my-django-image
+# Access from your Mac/host: http://localhost:8000
+```
+
+### Multi-service (Rails + Postgres + Redis)
+
+```bash
+# Init with multiple ports
+./sandclaude init myapp
+# ports: 3000:3000,5432:5432
+
+# Claude can use docker compose or individual containers:
+docker run -d --name postgres -e POSTGRES_PASSWORD=secret postgres:16
+docker run -d --name redis redis:7
+docker run -d -p 3000:3000 --link postgres --link redis --name app my-rails-app
+```
+
+### How It Works
+
+```
+Your host (Mac)
+  └── Docker Desktop VM
+        └── sandclaude container (--privileged)
+              ├── allowlist-proxy (:3128)
+              ├── dockerd (inner daemon, unix:///var/run/dind/docker.sock)
+              │     ├── rails container (172.18.x.x)
+              │     ├── postgres container (172.18.x.x)
+              │     └── ...
+              └── iptables PREROUTING: 172.18.0.0/16 TCP -> :3128
+```
+
+Inner containers sit on a `172.18.0.0/16` bridge. Any outbound TCP they attempt is intercepted by a PREROUTING REDIRECT rule and handed to the allowlist proxy. The proxy checks the domain against `allowed-domains.txt` and either forwards or blocks it.
+
+`DOCKER_HOST` inside the sandclaude container is automatically set to `unix:///var/run/dind/docker.sock`, so all `docker` commands Claude runs go to the inner daemon — not the host Docker socket (which is never mounted).
+
+### Troubleshooting DinD
+
+**overlay2 fails ("operation not permitted"):**
+```bash
+# Set storage driver to vfs (slower but always works):
+./sandclaude start myapp --dind-storage-driver=vfs
+# Or set env var before starting:
+DIND_STORAGE_DRIVER=vfs ./sandclaude start myapp
+```
+
+**Check inner dockerd logs:**
+```bash
+./sandclaude shell myapp
+cat .firewall/dockerd.log
+```
+
+**Inner container can't reach a domain:**
+```bash
+# Add domain to allowlist and reload proxy:
+echo 'rubygems.org' >> /path/to/workspace/.firewall/allowed-domains.txt
+./sandclaude shell myapp
+kill -HUP $(pgrep allowlist-proxy)
+```
+
+**Skip DinD for a single run:**
+```bash
+./sandclaude start myapp --disable-dind
+```
+
 ## How It Works
 
 1. Builds Docker image (matches host UID/GID)

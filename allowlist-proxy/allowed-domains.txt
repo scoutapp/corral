@@ -24,6 +24,9 @@ golang.org
 cdn.jsdelivr.net
 unpkg.com
 registry.hub.docker.com
+index.docker.io
+auth.docker.io
+production.cloudflare.docker.com
 ghcr.io
 quay.io
 

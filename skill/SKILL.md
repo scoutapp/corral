@@ -143,6 +143,62 @@ If Claude needs authenticated access:
 - npm: Use `npm login` interactively (persists to mounted `~/.claude` if needed)
 - Other services: Mount credentials read-only or use env vars
 
+## Docker-in-Docker (DinD)
+
+When `DIND_ENABLED=1` is set in the environment, an inner Docker daemon is running at `unix:///var/run/dind/docker.sock`. `DOCKER_HOST` is already exported to point there.
+
+**Key facts:**
+- All `docker` commands you run go to the **inner daemon**, not the host
+- Inner containers sit on `172.18.0.0/16` bridge network
+- All inner container TCP egress is **automatically** intercepted by the allowlist proxy — no manual proxy configuration needed when starting containers
+- `~/.docker/config.json` also injects `HTTP_PROXY`/`HTTPS_PROXY` into inner containers at the application layer
+- Inner containers are destroyed when sandclaude exits
+
+**Running inner containers:**
+```bash
+# Build and start a Rails app
+docker build -t myapp .
+docker run -d -p 3000:3000 --name rails myapp
+
+# Shell into it
+docker exec -it rails bash
+
+# Logs
+docker logs rails -f
+
+# Port 3000 is accessible on the user's host machine at http://localhost:3000
+# (because the outer sandclaude container has -p 3000:3000)
+```
+
+**Inner container network access:**
+- Inner containers go through the same allowlist proxy as everything else
+- If an inner container needs a domain not in the allowlist, add it:
+  ```bash
+  echo 'rubygems.org' >> .firewall/allowed-domains.txt
+  kill -HUP $(pgrep allowlist-proxy)
+  ```
+- Common domains to add for Rails: `rubygems.org`, `index.rubygems.org`
+- Common domains to add for Django/Python: `pypi.org`, `files.pythonhosted.org`
+
+**Multi-container apps:**
+```bash
+# Containers can talk to each other by name when on the same docker network
+docker network create app-net
+docker run -d --network app-net --name postgres postgres:16
+docker run -d --network app-net --name redis redis:7
+docker run -d --network app-net -p 3000:3000 --name web myapp
+```
+
+**Verify inner daemon:**
+```bash
+docker info          # Shows inner daemon info
+docker ps            # Lists only inner containers
+echo $DOCKER_HOST    # unix:///var/run/dind/docker.sock
+```
+
+**Storage driver issues:**
+If image builds fail with overlay2 errors, the `DIND_STORAGE_DRIVER=vfs` fallback works universally (slower but compatible). Check `cat .firewall/dockerd.log` for errors.
+
 ## When to Use This Skill
 
 **Use this environment when:**
