@@ -2,7 +2,13 @@ package main
 
 import (
 	"bufio"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -14,19 +20,18 @@ import (
 )
 
 const (
-	defaultProxyPort        = "8080"
-	defaultCredentialsPath  = ".config/sandclaude/proxy-credentials.json"
-	mitmwebProcessName      = "mitmweb"
+	defaultProxyPort   = "8080"
+	mitmwebProcessName = "mitmweb"
 )
 
 type SandClaude struct {
-	proxyCmd         *exec.Cmd
-	proxyPort        string
-	credentialsFile  string
-	addonScript      string
-	scriptDir        string
-	proxyEnabled     bool
-	disableFirewall  bool
+	proxyCmd        *exec.Cmd
+	proxyPort       string
+	credentialsFile string
+	addonScript     string
+	scriptDir       string
+	proxyEnabled    bool
+	disableFirewall bool
 }
 
 func NewSandClaude() (*SandClaude, error) {
@@ -43,16 +48,17 @@ func NewSandClaude() (*SandClaude, error) {
 		proxyPort = defaultProxyPort
 	}
 
-	credentialsFile := os.Getenv("SANDCLAUDE_PROXY_CREDS")
-	if credentialsFile == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get home directory: %w", err)
-		}
-		credentialsFile = filepath.Join(home, defaultCredentialsPath)
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get working directory: %w", err)
 	}
 
-	addonScript := filepath.Join(scriptDir, "proxy-addon.py")
+	credentialsFile := os.Getenv("SANDCLAUDE_PROXY_CREDS")
+	if credentialsFile == "" {
+		credentialsFile = filepath.Join(cwd, "project", "proxy-credentials.json")
+	}
+
+	addonScript := filepath.Join(cwd, "proxy-addon.py")
 
 	return &SandClaude{
 		proxyPort:       proxyPort,
@@ -124,9 +130,14 @@ func (sc *SandClaude) startProxy() error {
 	}
 
 	// Open log file for mitmweb output
-	logFile, err := os.OpenFile("mitm.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	logsDir := getLogsDir()
+	if err := os.MkdirAll(logsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create logs dir: %w", err)
+	}
+	mitmLog := filepath.Join(logsDir, "mitm.log")
+	logFile, err := os.OpenFile(mitmLog, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		return fmt.Errorf("failed to open mitm.log: %w", err)
+		return fmt.Errorf("failed to open %s: %w", mitmLog, err)
 	}
 
 	// Start mitmweb
@@ -148,7 +159,7 @@ func (sc *SandClaude) startProxy() error {
 	}
 
 	log.Printf("mitmweb started with PID %d\n", sc.proxyCmd.Process.Pid)
-	log.Printf("Logs written to: mitm.log\n")
+	log.Printf("Logs written to: %s\n", mitmLog)
 
 	// Give proxy time to start
 	time.Sleep(2 * time.Second)
@@ -174,16 +185,152 @@ func (sc *SandClaude) stopProxy() {
 	}
 }
 
+// readAWSCredentials reads AWS credentials from ~/.aws/credentials (INI format)
+// Returns access key, secret key, session token (may be empty), and region from ~/.aws/config.
+func readAWSCredentials() (accessKey, secretKey, sessionToken, region string, err error) {
+	home, homeErr := os.UserHomeDir()
+	if homeErr != nil {
+		err = fmt.Errorf("failed to get home directory: %w", homeErr)
+		return
+	}
+
+	credsPath := filepath.Join(home, ".aws", "credentials")
+	credsData, readErr := os.ReadFile(credsPath)
+	if readErr != nil {
+		err = fmt.Errorf("failed to read ~/.aws/credentials: %w", readErr)
+		return
+	}
+
+	// Simple INI parser: find [default] section and extract key=value pairs
+	inDefault := false
+	scanner := bufio.NewScanner(strings.NewReader(string(credsData)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+			continue
+		}
+		if strings.HasPrefix(line, "[") {
+			inDefault = line == "[default]"
+			continue
+		}
+		if !inDefault {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		k := strings.TrimSpace(parts[0])
+		v := strings.TrimSpace(parts[1])
+		switch k {
+		case "aws_access_key_id":
+			accessKey = v
+		case "aws_secret_access_key":
+			secretKey = v
+		case "aws_session_token":
+			sessionToken = v
+		}
+	}
+
+	if accessKey == "" || secretKey == "" {
+		err = fmt.Errorf("aws_access_key_id or aws_secret_access_key not found in ~/.aws/credentials [default] section")
+		return
+	}
+
+	// Try to get region from ~/.aws/config
+	configPath := filepath.Join(home, ".aws", "config")
+	if configData, configErr := os.ReadFile(configPath); configErr == nil {
+		inDefaultProfile := false
+		configScanner := bufio.NewScanner(strings.NewReader(string(configData)))
+		for configScanner.Scan() {
+			line := strings.TrimSpace(configScanner.Text())
+			if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+				continue
+			}
+			if strings.HasPrefix(line, "[") {
+				inDefaultProfile = line == "[default]" || line == "[profile default]"
+				continue
+			}
+			if !inDefaultProfile {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			k := strings.TrimSpace(parts[0])
+			v := strings.TrimSpace(parts[1])
+			if k == "region" {
+				region = v
+				break
+			}
+		}
+	}
+
+	return
+}
+
+// ----------------------------------------------------------------------------
+// Project config (project/config.json)
+// ----------------------------------------------------------------------------
+
+type ProjectConfig struct {
+	Workspace    string `json:"workspace"`
+	GitHubRepo   string `json:"github_repo,omitempty"`
+	AWSEnabled   bool   `json:"aws_enabled,omitempty"`
+	ProxyEnabled bool   `json:"proxy_enabled,omitempty"`
+	CreatedAt    string `json:"created_at"`
+}
+
+func readConfig(projectDir string) (*ProjectConfig, error) {
+	data, err := os.ReadFile(filepath.Join(projectDir, "config.json"))
+	if err != nil {
+		return nil, fmt.Errorf("config not found — run: sandclaude init")
+	}
+	var cfg ProjectConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("invalid config.json: %w", err)
+	}
+	return &cfg, nil
+}
+
+func writeConfig(projectDir string, cfg *ProjectConfig) error {
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(projectDir, "config.json"), data, 0600)
+}
+
+// getProjectDir returns ./project/ relative to the current working directory.
+func getProjectDir() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatalf("Failed to get working directory: %v", err)
+	}
+	return filepath.Join(cwd, "project")
+}
+
+// getLogsDir returns ./logs/ relative to the current working directory.
+func getLogsDir() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatalf("Failed to get working directory: %v", err)
+	}
+	return filepath.Join(cwd, "logs")
+}
+
 // startDocker starts the Docker container with Claude Code
-func (sc *SandClaude) startDocker(projectDir, workspace, project string) error {
+func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
+	workspace := cfg.Workspace
 	// Build image if needed
 	imageName := "sandclaude"
 	if err := sc.ensureImage(imageName); err != nil {
 		return err
 	}
 
-	log.Printf("🚀 Starting sandclaude for project: %s\n", project)
-	log.Printf("📁 Workspace: %s\n", workspace)
+	log.Printf("Starting sandclaude\n")
+	log.Printf("Workspace: %s\n", workspace)
 	log.Println()
 
 	// Get home directory
@@ -192,33 +339,8 @@ func (sc *SandClaude) startDocker(projectDir, workspace, project string) error {
 		return fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	claudeConfig := filepath.Join(home, ".claude")
-
-	// Check Claude credentials
-	if sc.proxyEnabled {
-		// Proxy mode: generate dummy auth token
-		log.Println("Setting up dummy auth token for proxy mode...")
-		// Generate realistic-looking dummy token
-		dummyToken := "sk-ant-oat01-" + strings.Repeat("0", 86) + "-" + strings.Repeat("0", 8)
-		os.Setenv("DUMMY_AUTH_TOKEN", dummyToken)
-		log.Println("✅ Dummy auth token created (proxy will inject real credentials)")
-	} else {
-		// Normal mode: require real credentials
-		credPath := filepath.Join(claudeConfig, ".credentials.json")
-		if _, err := os.Stat(credPath); os.IsNotExist(err) {
-			return fmt.Errorf("no Claude credentials found at %s\nRun 'claude' locally first to log in via OAuth", credPath)
-		}
-	}
-
-	// Get gh token if available
-	ghToken := ""
-	cmd := exec.Command("gh", "auth", "token")
-	if output, err := cmd.Output(); err == nil {
-		ghToken = strings.TrimSpace(string(output))
-	}
-
 	// Build docker args
-	containerName := "sandclaude-" + project
+	containerName := "sandclaude"
 	args := []string{"run", "--rm", "-it", "--name", containerName,
 		"--cap-add=NET_ADMIN",
 		"--cap-add=NET_RAW",
@@ -226,38 +348,87 @@ func (sc *SandClaude) startDocker(projectDir, workspace, project string) error {
 
 	if sc.disableFirewall {
 		args = append(args, "-e", "DISABLE_FIREWALL=1")
+	} else {
+		// Read encryption key from project
+		projectDir := getProjectDir()
+		keyPath := filepath.Join(projectDir, ".allowlist-key")
+		keyData, err := os.ReadFile(keyPath)
+		if err != nil {
+			return fmt.Errorf("encryption key not found at %s\nRun 'sandclaude init' to generate it", keyPath)
+		}
+		args = append(args, "-e", fmt.Sprintf("ALLOWLIST_KEY=%s", strings.TrimSpace(string(keyData))))
+
+		// Mount the encrypted allowlist file
+		cwd, _ := os.Getwd()
+		encPath := filepath.Join(cwd, "allowlist-proxy", "allowed-domains.txt.enc")
+		if _, err := os.Stat(encPath); os.IsNotExist(err) {
+			return fmt.Errorf("encrypted allowlist not found at %s\nRun 'sandclaude firewall-reload' to create it", encPath)
+		}
+		// Make sure the file is world-readable so proxyuser can read it
+		os.Chmod(encPath, 0644)
+		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/allowed-domains.txt.enc:ro", encPath))
 	}
 
-	args = append(args,
-		"-v", fmt.Sprintf("%s:/home/claude/.claude", claudeConfig),
-		"-v", fmt.Sprintf("%s:/home/claude/.claude.json", filepath.Join(home, ".claude.json")),
-		"-v", fmt.Sprintf("%s:/home/claude/.config/gh:ro", filepath.Join(home, ".config/gh")),
-		"-v", fmt.Sprintf("%s:%s", workspace, workspace),
-		"-w", workspace,
-		"-e", fmt.Sprintf("PROJECT_NAME=%s", project),
-	)
+	// Claude auth: in proxy mode, generate dummy token; otherwise let Claude handle auth
+	if sc.proxyEnabled {
+		// Proxy mode: generate dummy auth token
+		log.Println("Setting up dummy auth token for proxy mode...")
+		dummyToken := "sk-ant-oat01-" + strings.Repeat("0", 86) + "-" + strings.Repeat("0", 8)
+		args = append(args, "-e", fmt.Sprintf("CLAUDE_CODE_OAUTH_TOKEN=%s", dummyToken))
+		log.Println("Dummy auth token created (proxy will inject real credentials)")
+	}
+	// In non-proxy mode, Claude Code will handle its own authentication
 
+	// Get gh token if available
+	ghToken := ""
+	cmd := exec.Command("gh", "auth", "token")
+	if output, err := cmd.Output(); err == nil {
+		ghToken = strings.TrimSpace(string(output))
+	}
 	if ghToken != "" {
 		args = append(args, "-e", fmt.Sprintf("GH_TOKEN=%s", ghToken))
 	}
 
-	// Mount GitHub repo configuration
-	repoFile := filepath.Join(projectDir, "config/repo")
-	if data, err := os.ReadFile(repoFile); err == nil {
-		repo := strings.TrimSpace(string(data))
-		args = append(args, "-e", fmt.Sprintf("GITHUB_REPO=%s", repo))
+	// Mount .claude directory from host for Claude Code state
+	claudeConfig := filepath.Join(home, ".claude")
+	args = append(args,
+		"-v", fmt.Sprintf("%s:/home/claude/.claude", claudeConfig),
+		// Very important that we mount this in. This lives at the user's home directory, at least on Mac x86.
+		"-v", fmt.Sprintf("%s:/home/claude/.claude.json", filepath.Join(home, ".claude.json")),
+		"-v", fmt.Sprintf("%s:%s", workspace, workspace),
+		"-w", workspace,
+	)
+
+	// Mount logs directory from host so proxy.log is accessible
+	cwd, _ := os.Getwd()
+	logsDir := filepath.Join(cwd, "logs")
+	os.MkdirAll(logsDir, 0755)
+	args = append(args, "-v", fmt.Sprintf("%s:/home/claude/logs", logsDir))
+
+	// GitHub repo from config
+	if cfg.GitHubRepo != "" {
+		args = append(args, "-e", fmt.Sprintf("GITHUB_REPO=%s", cfg.GitHubRepo))
 	}
 
-	// Mount AWS credentials if enabled
-	awsEnabledFile := filepath.Join(projectDir, "config/aws_enabled")
-	if _, err := os.Stat(awsEnabledFile); err == nil {
+	// AWS credentials if enabled
+	if cfg.AWSEnabled {
 		awsDir := filepath.Join(home, ".aws")
 		if _, err := os.Stat(awsDir); err == nil {
-			args = append(args,
-				"-v", fmt.Sprintf("%s:/home/claude/.aws:ro", awsDir),
-				"-e", "AWS_SHARED_CREDENTIALS_FILE=/home/claude/.aws/credentials",
-				"-e", "AWS_CONFIG_FILE=/home/claude/.aws/config",
-			)
+			accessKey, secretKey, sessionToken, region, awsErr := readAWSCredentials()
+			if awsErr != nil {
+				log.Printf("Warning: AWS credentials requested but could not be read: %v", awsErr)
+			} else {
+				args = append(args,
+					"-e", fmt.Sprintf("AWS_ACCESS_KEY_ID=%s", accessKey),
+					"-e", fmt.Sprintf("AWS_SECRET_ACCESS_KEY=%s", secretKey),
+				)
+				if sessionToken != "" {
+					args = append(args, "-e", fmt.Sprintf("AWS_SESSION_TOKEN=%s", sessionToken))
+				}
+				if region != "" {
+					args = append(args, "-e", fmt.Sprintf("AWS_REGION=%s", region))
+				}
+			}
 		} else {
 			log.Println("Warning: AWS credentials requested but ~/.aws not found")
 		}
@@ -273,23 +444,17 @@ func (sc *SandClaude) startDocker(projectDir, workspace, project string) error {
 			"--add-host=host.docker.internal:host-gateway",
 			"-e", "HTTP_PROXY=http://host.docker.internal:8080",
 			"-e", "HTTPS_PROXY=http://host.docker.internal:8080",
-			"-e", fmt.Sprintf("CLAUDE_CODE_OAUTH_TOKEN=%s", os.Getenv("DUMMY_AUTH_TOKEN")),
 		)
 
-		// Create mitmproxy directory if it doesn't exist
+		// Mount just the mitmproxy CA cert (public cert, not a secret)
 		mitmDir := filepath.Join(home, ".mitmproxy")
 		os.MkdirAll(mitmDir, 0755)
-
-		// Mount mitmproxy certificate directory
-		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/.mitmproxy:ro", mitmDir))
-
-		log.Println("🔒 Proxy mode enabled")
 		certPath := filepath.Join(mitmDir, "mitmproxy-ca-cert.pem")
 		if _, err := os.Stat(certPath); err == nil {
-			log.Println("   Certificate found on host: ✅")
+			args = append(args, "-v", fmt.Sprintf("%s:/home/claude/.mitmproxy/mitmproxy-ca-cert.pem:ro", certPath))
+			log.Println("Proxy mode enabled — certificate found on host")
 		} else {
-			log.Println("   Certificate not found on host: ❌")
-			log.Println("   It will be generated when proxy starts")
+			log.Println("Proxy mode enabled — certificate not found on host, will be generated when proxy starts")
 		}
 		log.Println()
 	}
@@ -344,61 +509,36 @@ func (sc *SandClaude) ensureImage(imageName string) error {
 }
 
 // Run starts the full sandclaude environment
-func (sc *SandClaude) Run(project string) error {
+func (sc *SandClaude) Run() error {
 	log.Println("============================================================")
 	log.Println("SandClaude - Secure Claude Code Environment")
 	log.Println("============================================================")
 	log.Println()
 
-	// Get project directory
-	home, err := os.UserHomeDir()
+	projectDir := getProjectDir()
+	cfg, err := readConfig(projectDir)
 	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
+		return err
 	}
 
-	projectsDir := filepath.Join(home, ".config/sandclaude/projects")
-	projectDir := filepath.Join(projectsDir, project)
-
-	// Check if project exists
-	if _, err := os.Stat(projectDir); os.IsNotExist(err) {
-		return fmt.Errorf("project '%s' not found\nRun: sandclaude init %s", project, project)
+	if _, err := os.Stat(cfg.Workspace); os.IsNotExist(err) {
+		return fmt.Errorf("workspace not found: %s", cfg.Workspace)
 	}
 
-	// Get workspace
-	workspaceFile := filepath.Join(projectDir, "config/workspace")
-	workspaceBytes, err := os.ReadFile(workspaceFile)
-	if err != nil {
-		return fmt.Errorf("no workspace configured for project '%s'", project)
-	}
-	workspace := strings.TrimSpace(string(workspaceBytes))
-
-	if _, err := os.Stat(workspace); os.IsNotExist(err) {
-		return fmt.Errorf("workspace not found: %s", workspace)
-	}
-
-	// Check if proxy is enabled for this project
-	proxyEnabledFile := filepath.Join(projectDir, "config/proxy_enabled")
-	if _, err := os.Stat(proxyEnabledFile); err == nil {
-		// Proxy is configured, start it automatically
+	if cfg.ProxyEnabled {
 		sc.proxyEnabled = true
-		log.Println("🔒 Proxy configured for this project, starting...")
+		log.Println("Proxy configured for this project, starting...")
 		log.Println()
 
-		// Kill any existing mitmweb processes
 		if err := sc.killExistingMitmweb(); err != nil {
 			return err
 		}
-
-		// Start proxy
 		if err := sc.startProxy(); err != nil {
 			return err
 		}
 
-		// Set up signal handling for cleanup
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
-		// Cleanup goroutine
 		go func() {
 			<-sigChan
 			log.Println("\nReceived interrupt signal, cleaning up...")
@@ -407,10 +547,8 @@ func (sc *SandClaude) Run(project string) error {
 		}()
 	}
 
-	// Start Docker container (blocks until it exits)
-	err = sc.startDocker(projectDir, workspace, project)
+	err = sc.startDocker(cfg)
 
-	// Cleanup proxy when Docker exits
 	if sc.proxyEnabled {
 		sc.stopProxy()
 	}
@@ -418,104 +556,62 @@ func (sc *SandClaude) Run(project string) error {
 	return err
 }
 
-// getProjectName gets project name from argument or current directory
-func getProjectName(arg string) string {
-	if arg != "" {
-		return arg
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "unknown"
-	}
-	return filepath.Base(cwd)
-}
+// cmdInit initializes the ./project/ structure
+func cmdInit() error {
+	projectDir := getProjectDir()
 
-// getProjectDir returns the project configuration directory
-func getProjectDir(project string) string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("Failed to get home directory: %v", err)
-	}
-	return filepath.Join(home, ".config/sandclaude/projects", project)
-}
-
-// cmdInit initializes a new project
-func cmdInit(project string) error {
-	if project == "" {
-		// Use current directory name as default
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("failed to get current directory: %w", err)
-		}
-		project = filepath.Base(cwd)
-
-		reader := bufio.NewReader(os.Stdin)
-		fmt.Printf("Project name (default: %s): ", project)
-		input, err := reader.ReadString('\n')
-		if err != nil {
-			return fmt.Errorf("failed to read input: %w", err)
-		}
-		inputTrimmed := strings.TrimSpace(input)
-		if inputTrimmed != "" {
-			project = inputTrimmed
-		}
-		if project == "" {
-			return fmt.Errorf("project name required")
-		}
-	}
-
-	projectDir := getProjectDir(project)
-
-	// Check if project already exists
 	if _, err := os.Stat(projectDir); err == nil {
-		return fmt.Errorf("project '%s' already exists at %s", project, projectDir)
+		return fmt.Errorf("project already initialized at %s", projectDir)
 	}
 
-	log.Printf("Initializing project: %s\n", project)
+	if err := os.MkdirAll(projectDir, 0700); err != nil {
+		return fmt.Errorf("failed to create project dir: %w", err)
+	}
+
+	log.Printf("Initializing project at: %s\n", projectDir)
 	log.Println()
 
-	// Create project structure
-	os.MkdirAll(filepath.Join(projectDir, "credentials"), 0700)
-	os.MkdirAll(filepath.Join(projectDir, "config"), 0755)
+	cfg := &ProjectConfig{
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+	}
 
-	// Ask for repository (optional)
-	log.Println()
+	// GitHub monitoring
 	if askYesNo("Enable GitHub issue monitoring?") {
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Print("GitHub repository (e.g. owner/repo): ")
 		repo, _ := reader.ReadString('\n')
 		repo = strings.TrimSpace(repo)
 		if repo != "" {
-			os.WriteFile(filepath.Join(projectDir, "config/repo"), []byte(repo), 0644)
-			log.Printf("✅ GitHub monitoring enabled for %s\n", repo)
+			cfg.GitHubRepo = repo
+			log.Printf("GitHub monitoring enabled for %s\n", repo)
 		} else {
-			log.Println("⚠️  No repo provided. GitHub monitoring disabled.")
+			log.Println("No repo provided. GitHub monitoring disabled.")
 		}
-	} else {
-		log.Println("⚠️  GitHub monitoring disabled")
 	}
 
-	// Ask for AWS credentials (optional)
 	log.Println()
-	if askYesNo("Mount AWS credentials?") {
-		os.WriteFile(filepath.Join(projectDir, "config/aws_enabled"), []byte("enabled"), 0644)
-		log.Println("✅ AWS credentials will be mounted from ~/.aws")
-	} else {
-		log.Println("⚠️  AWS credentials will not be mounted")
+
+	// AWS credentials
+	if askYesNo("Pass AWS credentials from host ~/.aws?") {
+		cfg.AWSEnabled = true
+		log.Println("AWS credentials will be read from host ~/.aws/credentials")
 	}
 
-	// Ask for proxy usage (optional)
 	log.Println()
+
+	// Credential proxy
 	if askYesNo("Enable credential proxy (hides secrets from Claude)?") {
-		os.WriteFile(filepath.Join(projectDir, "config/proxy_enabled"), []byte("enabled"), 0644)
-		log.Println("✅ Proxy mode enabled - Claude will use dummy credentials")
-		log.Println("   Configure real credentials in ~/.config/sandclaude/proxy-credentials.json")
-	} else {
-		log.Println("⚠️  Proxy mode disabled")
+		cfg.ProxyEnabled = true
+		log.Println("✅ Proxy mode enabled")
+		log.Println()
+		log.Println("⚠️  IMPORTANT: You must configure real credentials before starting!")
+		log.Println("   A template will be created at: project/proxy-credentials.json")
+		log.Println("   Edit this file with your actual API keys/tokens")
 	}
 
-	// Ask for workspace directory (default to parent of current directory)
 	log.Println()
+
+	// Workspace directory
 	cwd, _ := os.Getwd()
 	defaultWorkspace := filepath.Dir(cwd)
 	reader := bufio.NewReader(os.Stdin)
@@ -525,9 +621,8 @@ func cmdInit(project string) error {
 	if workspace == "" {
 		workspace = defaultWorkspace
 	}
-	os.WriteFile(filepath.Join(projectDir, "config/workspace"), []byte(workspace), 0644)
+	cfg.Workspace = workspace
 
-	// Create workspace if it doesn't exist
 	if _, err := os.Stat(workspace); os.IsNotExist(err) {
 		if askYesNo("Workspace doesn't exist. Create it?") {
 			os.MkdirAll(workspace, 0755)
@@ -535,61 +630,97 @@ func cmdInit(project string) error {
 		}
 	}
 
-	// Save metadata
-	metadata := fmt.Sprintf(`{
-  "project": "%s",
-  "created": "%s",
-  "workspace": "%s"
-}`, project, time.Now().UTC().Format(time.RFC3339), workspace)
-	os.WriteFile(filepath.Join(projectDir, "config/metadata.json"), []byte(metadata), 0644)
+	if err := writeConfig(projectDir, cfg); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	// Generate encryption key for allowlist
+	keyPath := filepath.Join(projectDir, ".allowlist-key")
+	keyData := make([]byte, 32)
+	if _, err := rand.Read(keyData); err != nil {
+		return fmt.Errorf("failed to generate encryption key: %w", err)
+	}
+	// Store as hex string
+	keyHex := fmt.Sprintf("%x", keyData)
+	if err := os.WriteFile(keyPath, []byte(keyHex), 0600); err != nil {
+		return fmt.Errorf("failed to write encryption key: %w", err)
+	}
+	log.Println("✅ Encryption key generated")
+
+	// Create dummy proxy credentials template if proxy is enabled
+	if cfg.ProxyEnabled {
+		proxyCredsPath := filepath.Join(projectDir, "proxy-credentials.json")
+		proxyCredsTemplate := `{
+  "api.anthropic.com": {
+    "header": "Authorization",
+    "value": "Bearer sk-ant-oat01-..."
+  },
+  "platform.claude.com": {
+    "header": "Authorization",
+    "value": "Bearer sk-ant-oat01-..."
+  },
+  "mcp-proxy.anthropic.com": {
+    "header": "Authorization",
+    "value": "Bearer sk-ant-oat01-..."
+  },
+  "api.github.com": {
+    "header": "Authorization",
+    "value": "Bearer ghp_real_token_here"
+  }
+}
+`
+		if err := os.WriteFile(proxyCredsPath, []byte(proxyCredsTemplate), 0600); err != nil {
+			return fmt.Errorf("failed to write proxy credentials template: %w", err)
+		}
+		log.Printf("✅ Proxy credentials template created at: %s\n", proxyCredsPath)
+		log.Println("   Edit this file with your real credentials")
+	}
+
+	// Generate encrypted allowlist using the new key
+	log.Println()
+	log.Println("Encrypting allowlist...")
+	plaintextPath := filepath.Join(cwd, "allowlist-proxy", "allowed-domains.txt")
+	encPath := filepath.Join(cwd, "allowlist-proxy", "allowed-domains.txt.enc")
+
+	plaintext, err := os.ReadFile(plaintextPath)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", plaintextPath, err)
+	}
+
+	key, err := allowlistDeriveKey(keyHex)
+	if err != nil {
+		return err
+	}
+
+	ciphertext, err := allowlistEncrypt(key, plaintext)
+	if err != nil {
+		return fmt.Errorf("encrypt: %w", err)
+	}
+
+	if err := os.WriteFile(encPath, ciphertext, 0644); err != nil {
+		return fmt.Errorf("write %s: %w", encPath, err)
+	}
+	log.Printf("✅ Allowlist encrypted\n")
 
 	log.Println()
-	log.Printf("✅ Project '%s' initialized at %s\n", project, projectDir)
-	log.Println()
-	log.Printf("Credentials stored securely in: %s/credentials/\n", projectDir)
-	log.Printf("Configuration: %s/config/\n", projectDir)
+	log.Printf("✅ Project initialized at: %s\n", projectDir)
+	log.Printf("   Config: %s/config.json\n", projectDir)
+	log.Printf("   Encryption key: %s/.allowlist-key (DO NOT commit)\n", projectDir)
 	log.Println()
 	log.Println("Next steps:")
-	log.Printf("  sandclaude start %s    # Start Claude Code\n", project)
-	log.Println("  sandclaude start              # Start (will prompt for project)")
+	log.Println("  sandclaude start")
 	log.Println()
 
 	return nil
 }
 
-// cmdStart starts Claude Code for a project
+// cmdStart starts Claude Code
 func cmdStart(args []string) error {
-	project := ""
 	disableFirewall := false
 
 	for _, arg := range args {
 		if arg == "--disable-firewall" {
 			disableFirewall = true
-		} else if !strings.HasPrefix(arg, "--") {
-			project = arg
-		}
-	}
-
-	if project == "" {
-		// Use current directory name as default
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("failed to get current directory: %w", err)
-		}
-		project = filepath.Base(cwd)
-
-		reader := bufio.NewReader(os.Stdin)
-		fmt.Printf("Project name (default: %s): ", project)
-		input, err := reader.ReadString('\n')
-		if err != nil {
-			return fmt.Errorf("failed to read input: %w", err)
-		}
-		inputTrimmed := strings.TrimSpace(input)
-		if inputTrimmed != "" {
-			project = inputTrimmed
-		}
-		if project == "" {
-			return fmt.Errorf("project name required")
 		}
 	}
 
@@ -599,74 +730,49 @@ func cmdStart(args []string) error {
 	}
 
 	sc.disableFirewall = disableFirewall
-	return sc.Run(project)
+	return sc.Run()
 }
 
-// cmdList lists all configured projects
+// cmdList shows the ./project/config.json
 func cmdList() error {
-	home, err := os.UserHomeDir()
+	projectDir := getProjectDir()
+
+	cfg, err := readConfig(projectDir)
 	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
-	}
-
-	projectsDir := filepath.Join(home, ".config/sandclaude/projects")
-
-	entries, err := os.ReadDir(projectsDir)
-	if err != nil || len(entries) == 0 {
-		log.Println("No projects configured")
-		log.Println("Run: sandclaude init <project>")
+		log.Println("No project configured. Run: sandclaude init")
 		return nil
 	}
 
-	log.Println("Configured projects:")
+	log.Println("Project configuration:")
 	log.Println()
-
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		project := entry.Name()
-		projectDir := filepath.Join(projectsDir, project)
-
-		log.Printf("  %s\n", project)
-
-		// Show workspace
-		if data, err := os.ReadFile(filepath.Join(projectDir, "config/workspace")); err == nil {
-			log.Printf("    Workspace: %s\n", strings.TrimSpace(string(data)))
-		}
-
-		// Show GitHub repo
-		if data, err := os.ReadFile(filepath.Join(projectDir, "config/repo")); err == nil {
-			log.Printf("    GitHub: %s\n", strings.TrimSpace(string(data)))
-		}
-
-		// Show AWS status
-		if _, err := os.Stat(filepath.Join(projectDir, "config/aws_enabled")); err == nil {
-			log.Println("    AWS: enabled")
-		}
-
-		log.Println()
+	log.Printf("  Config:    %s/config.json\n", projectDir)
+	log.Printf("  Workspace: %s\n", cfg.Workspace)
+	if cfg.GitHubRepo != "" {
+		log.Printf("  GitHub:    %s\n", cfg.GitHubRepo)
 	}
+	if cfg.AWSEnabled {
+		log.Println("  AWS:       enabled")
+	}
+	if cfg.ProxyEnabled {
+		log.Println("  Proxy:     enabled")
+	}
+	log.Println()
 
 	return nil
 }
 
 // cmdFirewallMonitor tails the allowlist proxy log inside the running container
-func cmdFirewallMonitor(project string) error {
-	project = getProjectName(project)
-	containerName := "sandclaude-" + project
+func cmdFirewallMonitor() error {
+	containerName := "sandclaude"
 
-	cmd := exec.Command("docker", "inspect", "--format={{.Config.WorkingDir}}", containerName)
-	workdirOut, err := cmd.Output()
-	if err != nil {
-		return fmt.Errorf("no running container found for project '%s'", project)
+	// Verify container is running.
+	if out, err := exec.Command("docker", "inspect", "--format={{.Id}}", containerName).Output(); err != nil || len(strings.TrimSpace(string(out))) == 0 {
+		return fmt.Errorf("no running container found (expected container name: '%s')", containerName)
 	}
-	workdir := strings.TrimSpace(string(workdirOut))
 
 	// less +F: tails live; Ctrl+C to stop following and search, F to resume
 	dockerCmd := exec.Command("docker", "exec", "-it", containerName,
-		"less", "+F", workdir+"/.firewall/proxy.log")
+		"less", "+F", "/home/claude/logs/proxy.log")
 	dockerCmd.Stdin = os.Stdin
 	dockerCmd.Stdout = os.Stdout
 	dockerCmd.Stderr = os.Stderr
@@ -674,22 +780,13 @@ func cmdFirewallMonitor(project string) error {
 }
 
 // cmdShell opens a bash shell in the container
-func cmdShell(project string) error {
-	project = getProjectName(project)
-	projectDir := getProjectDir(project)
+func cmdShell() error {
+	projectDir := getProjectDir()
 
-	if _, err := os.Stat(projectDir); os.IsNotExist(err) {
-		return fmt.Errorf("project '%s' not found", project)
+	workspace := projectDir // fallback
+	if cfg, err := readConfig(projectDir); err == nil {
+		workspace = cfg.Workspace
 	}
-
-	// Get workspace
-	workspaceBytes, err := os.ReadFile(filepath.Join(projectDir, "config/workspace"))
-	if err != nil {
-		// Use current directory if no workspace configured
-		workspace, _ := os.Getwd()
-		workspaceBytes = []byte(workspace)
-	}
-	workspace := strings.TrimSpace(string(workspaceBytes))
 
 	// Ensure image exists
 	sc, err := NewSandClaude()
@@ -702,13 +799,6 @@ func cmdShell(project string) error {
 		return err
 	}
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
-	}
-
-	claudeConfig := filepath.Join(home, ".claude")
-
 	// Get gh token if available
 	ghToken := ""
 	cmd := exec.Command("gh", "auth", "token")
@@ -720,7 +810,6 @@ func cmdShell(project string) error {
 		"run", "--rm", "-it",
 		"--cap-add=NET_ADMIN",
 		"--cap-add=NET_RAW",
-		"-v", fmt.Sprintf("%s:/home/claude/.claude", claudeConfig),
 		"-v", fmt.Sprintf("%s:%s", workspace, workspace),
 		"-w", workspace,
 		"--entrypoint", "/bin/bash",
@@ -776,40 +865,17 @@ func cmdRebuild() error {
 	return buildCmd.Run()
 }
 
-// cmdRemove removes a project
-func cmdRemove(project string) error {
-	if project == "" {
-		// Use current directory name as default
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("failed to get current directory: %w", err)
-		}
-		project = filepath.Base(cwd)
-
-		reader := bufio.NewReader(os.Stdin)
-		fmt.Printf("Project name to remove (default: %s): ", project)
-		input, err := reader.ReadString('\n')
-		if err != nil {
-			return fmt.Errorf("failed to read input: %w", err)
-		}
-		inputTrimmed := strings.TrimSpace(input)
-		if inputTrimmed != "" {
-			project = inputTrimmed
-		}
-		if project == "" {
-			return fmt.Errorf("project name required")
-		}
-	}
-
-	projectDir := getProjectDir(project)
+// cmdRemove removes the ./project/ directory
+func cmdRemove() error {
+	projectDir := getProjectDir()
 
 	// Check if project exists
 	if _, err := os.Stat(projectDir); os.IsNotExist(err) {
-		return fmt.Errorf("project '%s' not found", project)
+		return fmt.Errorf("no project found at %s", projectDir)
 	}
 
 	// Confirm deletion
-	log.Printf("⚠️  This will permanently delete project '%s'\n", project)
+	log.Printf("Warning: This will permanently delete the project directory\n")
 	log.Printf("   Location: %s\n", projectDir)
 	log.Println()
 
@@ -823,7 +889,105 @@ func cmdRemove(project string) error {
 		return fmt.Errorf("failed to remove project: %w", err)
 	}
 
-	log.Printf("✅ Project '%s' removed\n", project)
+	// Remove encrypted allowlist file
+	cwd, _ := os.Getwd()
+	encPath := filepath.Join(cwd, "allowlist-proxy", "allowed-domains.txt.enc")
+	if _, err := os.Stat(encPath); err == nil {
+		if err := os.Remove(encPath); err != nil {
+			log.Printf("Warning: failed to remove encrypted allowlist: %v\n", err)
+		} else {
+			log.Printf("Removed encrypted allowlist: %s\n", encPath)
+		}
+	}
+
+	log.Printf("✅ Project removed: %s\n", projectDir)
+	return nil
+}
+
+// ----------------------------------------------------------------------------
+// Encryption helpers (must match allowlist-proxy/main.go)
+// ----------------------------------------------------------------------------
+
+// allowlistDeriveKey derives a 32-byte AES-256 key from the passphrase.
+func allowlistDeriveKey(passphrase string) ([32]byte, error) {
+	if passphrase == "" {
+		return [32]byte{}, fmt.Errorf("ALLOWLIST_KEY environment variable is not set")
+	}
+	return sha256.Sum256([]byte(passphrase + ":allowlist-proxy-v1")), nil
+}
+
+// allowlistEncrypt encrypts plaintext with AES-256-GCM. Format: nonce || ciphertext.
+func allowlistEncrypt(key [32]byte, plaintext []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		return nil, err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, err
+	}
+	return gcm.Seal(nonce, nonce, plaintext, nil), nil
+}
+
+// cmdFirewallReload encrypts allowed-domains.txt → allowed-domains.txt.enc
+// using the key from project/.allowlist-key, and sends SIGHUP to the proxy.
+func cmdFirewallReload() error {
+	projectDir := getProjectDir()
+
+	keyPath := filepath.Join(projectDir, ".allowlist-key")
+	keyData, err := os.ReadFile(keyPath)
+	if err != nil {
+		return fmt.Errorf("read %s: %w\n\nRun 'sandclaude init' first to generate the encryption key", keyPath, err)
+	}
+
+	key, err := allowlistDeriveKey(strings.TrimSpace(string(keyData)))
+	if err != nil {
+		return err
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	plaintextPath := filepath.Join(cwd, "allowlist-proxy", "allowed-domains.txt")
+	encPath := filepath.Join(cwd, "allowlist-proxy", "allowed-domains.txt.enc")
+
+	plaintext, err := os.ReadFile(plaintextPath)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", plaintextPath, err)
+	}
+
+	ciphertext, err := allowlistEncrypt(key, plaintext)
+	if err != nil {
+		return fmt.Errorf("encrypt: %w", err)
+	}
+
+	if err := os.WriteFile(encPath, ciphertext, 0644); err != nil {
+		return fmt.Errorf("write %s: %w", encPath, err)
+	}
+	log.Printf("Encrypted allowlist written to %s", encPath)
+
+	// If a container is running, SIGHUP the proxy so it re-reads the .enc file.
+	// The file is bind-mounted, so the container already sees the new content.
+	containerName := "sandclaude"
+	checkCmd := exec.Command("docker", "inspect", "--format={{.State.Running}}", containerName)
+	if out, err := checkCmd.Output(); err == nil && strings.TrimSpace(string(out)) == "true" {
+		sighupCmd := exec.Command("docker", "exec", containerName,
+			"bash", "-c", "pkill -HUP -x allowlist-proxy")
+		if err := sighupCmd.Run(); err != nil {
+			log.Printf("Warning: SIGHUP failed (proxy may not be running yet): %v", err)
+		} else {
+			log.Printf("✅ SIGHUP sent to allowlist-proxy in container '%s'", containerName)
+		}
+	} else {
+		log.Printf("✅ No running container found — encrypted file ready for next start")
+	}
+
 	return nil
 }
 
@@ -901,13 +1065,14 @@ func cmdCopy(target string) error {
 		}
 	}
 
-	log.Printf("✅ Files copied to %s\n", targetAbs)
+	log.Printf("Files copied to %s\n", targetAbs)
 	log.Println()
 	log.Println("Next steps:")
 	log.Printf("  1. Customize %s/Dockerfile if needed\n", targetAbs)
-	log.Printf("  2. Add domains to %s/.firewall/allowed-domains.txt\n", targetAbs)
-	log.Printf("  3. Open in VS Code: code %s\n", parentDir)
-	log.Println("  4. Click 'Reopen in Container'")
+	log.Printf("  2. Edit %s/allowlist-proxy/allowed-domains.txt\n", targetAbs)
+	log.Printf("  3. Run: export ALLOWLIST_KEY=<passphrase> && sandclaude firewall-reload\n")
+	log.Printf("  4. Open in VS Code: code %s\n", parentDir)
+	log.Println("  5. Click 'Reopen in Container'")
 	log.Println()
 
 	return nil
@@ -915,35 +1080,33 @@ func cmdCopy(target string) error {
 
 // usage prints help information
 func usage() {
-	home, _ := os.UserHomeDir()
-	projectsDir := filepath.Join(home, ".config/sandclaude/projects")
-
 	fmt.Println("sandclaude - Sandboxed Claude Code with network firewall")
 	fmt.Println()
 	fmt.Println("Usage: sandclaude <command> [options]")
 	fmt.Println()
 	fmt.Println("Commands:")
-	fmt.Println("  init [project]           Initialize a new project with credentials")
-	fmt.Println("  start [project] [flags]  Start Claude Code for a project (default: current directory)")
+	fmt.Println("  init                     Initialize ./project/ structure in current repo")
+	fmt.Println("  start [flags]            Start Claude Code (uses ./project/ config)")
 	fmt.Println("    --disable-firewall       Skip firewall initialization")
-	fmt.Println("  list                     List configured projects")
-	fmt.Println("  remove <project>         Remove a project and its configuration")
-	fmt.Println("  firewall-monitor [project] Tail allowlist proxy log")
-	fmt.Println("  shell [project]          Open bash shell in container")
+	fmt.Println("  list                     Show ./project/ configuration")
+	fmt.Println("  remove                   Remove ./project/ directory after confirmation")
+	fmt.Println("  firewall-reload          Encrypt allowed-domains.txt and SIGHUP proxy")
+	fmt.Println("  firewall-monitor         Tail allowlist proxy log in running container")
+	fmt.Println("  shell                    Open bash shell in container")
 	fmt.Println("  copy <target>            Copy sandclaude files to target directory")
 	fmt.Println("  rebuild                  Force rebuild container image")
 	fmt.Println("  help                     Show this help")
 	fmt.Println()
 	fmt.Println("Examples:")
-	fmt.Println("  sandclaude init myapp              # Setup new project with credentials")
-	fmt.Println("  sandclaude start myapp             # Start Claude for 'myapp' project")
-	fmt.Println("  sandclaude start                   # Start with current directory name as project")
+	fmt.Println("  sandclaude init                    # Initialize ./project/ in this repo")
+	fmt.Println("  sandclaude start                   # Start Claude Code")
+	fmt.Println("  sandclaude start --disable-firewall  # Start without firewall")
 	fmt.Println("  sandclaude copy ~/my-project       # Copy files to integrate into another project")
-	fmt.Println("  sandclaude shell myapp             # Debug container for 'myapp'")
+	fmt.Println("  sandclaude shell                   # Debug container")
 	fmt.Println()
-	fmt.Println("Environment:")
-	fmt.Printf("  Projects are stored in: %s\n", projectsDir)
-	fmt.Println("  Each project has its own credentials and configuration")
+	fmt.Println("Project config lives in ./project/ (relative to current working directory)")
+	fmt.Println("  ./project/config.json          — workspace, GitHub, AWS, proxy settings")
+	fmt.Println("  ./project/proxy-credentials.json — mitmproxy credential injection")
 	fmt.Println()
 }
 
@@ -960,11 +1123,7 @@ func main() {
 
 	switch command {
 	case "init":
-		project := ""
-		if len(os.Args) > 2 {
-			project = os.Args[2]
-		}
-		err = cmdInit(project)
+		err = cmdInit()
 
 	case "start":
 		err = cmdStart(os.Args[2:])
@@ -973,25 +1132,16 @@ func main() {
 		err = cmdList()
 
 	case "remove":
-		project := ""
-		if len(os.Args) > 2 {
-			project = os.Args[2]
-		}
-		err = cmdRemove(project)
+		err = cmdRemove()
+
+	case "firewall-reload":
+		err = cmdFirewallReload()
 
 	case "firewall-monitor":
-		project := ""
-		if len(os.Args) > 2 {
-			project = os.Args[2]
-		}
-		err = cmdFirewallMonitor(project)
+		err = cmdFirewallMonitor()
 
 	case "shell":
-		project := ""
-		if len(os.Args) > 2 {
-			project = os.Args[2]
-		}
-		err = cmdShell(project)
+		err = cmdShell()
 
 	case "rebuild":
 		err = cmdRebuild()

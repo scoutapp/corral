@@ -1,6 +1,7 @@
 # Default allowed domains
 registry.npmjs.org
 api.anthropic.com
+platform.claude.com
 sentry.io
 statsig.anthropic.com
 statsig.com
@@ -36,3 +37,6 @@ raw.githubusercontent.com
 
 # Datadog log intake
 http-intake.logs.us5.datadoghq.com
+
+# General github
+github.com

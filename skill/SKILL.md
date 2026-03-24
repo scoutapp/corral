@@ -24,10 +24,10 @@ This is a sandboxed environment for running Claude Code in "dangerous mode" (no 
 - `NET_RAW` - Required for network packet filtering
 
 **Firewall implementation:**
-- **Tool**: iptables + ipset
-- **Config**: `/home/claude/.firewall/allowed-domains.txt`
-- **Logging**: Blocked connections logged with `FIREWALL_BLOCKED` prefix
-- **Interactive mode**: Enabled by default at `/home/claude/.firewall/interactive-mode`
+- **Tool**: Go allowlist-proxy (HTTP CONNECT proxy) + iptables egress enforcement
+- **Config**: `/home/claude/allowed-domains.txt.enc` (AES-256-GCM encrypted, bind-mounted from host)
+- **Logging**: `/home/claude/logs/proxy.log` (ALLOWED/BLOCKED entries per request)
+- **Hot-reload**: Send SIGHUP to allowlist-proxy or run `sandclaude reload-firewall` from host
 
 ## Pre-approved Domains
 
@@ -71,70 +71,54 @@ The firewall comes with these domains pre-configured:
 
 ### Adding Domains
 
-When Claude Code needs to access a blocked domain, you can approve it:
+When Claude Code needs to access a blocked domain, edit the allowlist and reload:
 
-**Method 1: Interactive monitoring**
+**Method 1: Hot-reload from host (container stays running)**
 ```bash
-firewall-helper.sh monitor
-```
-This watches kernel logs and prompts you to approve blocked connections in real-time.
-
-**Method 2: Manual addition**
-```bash
-firewall-helper.sh add example.com
+# Edit the plaintext allowlist
+vim allowlist-proxy/allowed-domains.txt
+# Encrypt and SIGHUP the proxy
+export ALLOWLIST_KEY=<your-passphrase>
+./sandclaude reload-firewall [project]
 ```
 
-**Method 3: Edit config file**
+**Method 2: Restart the container**
 ```bash
-vim /home/claude/.firewall/allowed-domains.txt
-sudo /usr/local/bin/init-firewall.sh
+# Edit the plaintext allowlist
+vim allowlist-proxy/allowed-domains.txt
+# Re-encrypt
+./sandclaude reload-firewall
+# Restart
+./sandclaude start [project]
 ```
 
-### Listing Allowed Domains
+### Viewing the Proxy Log
 ```bash
-firewall-helper.sh list
-```
-
-### Removing Domains
-```bash
-firewall-helper.sh remove example.com
-```
-
-### Clearing Cache
-The helper maintains a cache of already-prompted blocked IPs. To reset:
-```bash
-firewall-helper.sh clear-cache
-```
-
-### Disabling Interactive Mode
-```bash
-echo 'disabled' > /home/claude/.firewall/interactive-mode
+# From host
+./sandclaude firewall-monitor [project]
+# Inside container
+tail -f ~/logs/proxy.log
 ```
 
 ## Firewall Technical Details
 
-**Initialization:** `sudo /usr/local/bin/init-firewall.sh`
-- Runs on container start via devcontainer postStartCommand
-- Preserves Docker DNS rules (127.0.0.11)
-- Resolves all configured domains to IPs
-- Creates ipset with all allowed IPs and CIDR ranges
-- Sets iptables rules: default DROP, allow only ipset members
+**Initialization:** Runs automatically in `entrypoint.sh` on container start.
 
 **Architecture:**
-1. Domain list → DNS resolution → IP addresses
-2. IP addresses → ipset (hash:net) → allows CIDR ranges
-3. iptables OUTPUT chain → match ipset → ACCEPT or REJECT
-4. Rejected packets → logged with `FIREWALL_BLOCKED` prefix
+1. Encrypted `allowed-domains.txt.enc` (bind-mounted from host) → decrypted in-memory by allowlist-proxy
+2. allowlist-proxy listens on `127.0.0.1:3128` — validates each CONNECT/HTTP request by domain
+3. iptables OUTPUT chain → allow only `proxyuser` (the proxy's UID) for direct TCP; all others REJECT
+4. All traffic must flow through the proxy; ALLOWED/BLOCKED logged to `~/logs/proxy.log`
+
+**Hot-reload:**
+- Write new `.enc` file to host (via `sandclaude reload-firewall`)
+- Bind mount means container sees it immediately
+- SIGHUP to allowlist-proxy atomically swaps the in-memory domain set
 
 **Performance:**
-- ipset lookups are O(1)
-- No per-packet DNS resolution
-- Re-initialization required when adding domains (handles DNS changes)
-
-**Limitations:**
-- IPs resolved at firewall init time (changes require reload)
-- Domain names not stored in iptables (only resolved IPs)
-- Wildcard domains not supported (add specific subdomains)
+- O(1) domain lookups (hash map)
+- No DNS resolution — domain-level matching with subdomain support
+- No restart required to update allowlist
 
 ## Credential Handling
 
@@ -188,16 +172,17 @@ dangerous-claude ~/projects/my-new-app
 # - Access Claude API
 ```
 
-### Approving a new domain on-the-fly
+### Adding a domain on-the-fly (hot-reload)
 ```bash
 # Terminal 1: Run Claude
-dangerous-claude
+sandclaude start myproject
 
-# Terminal 2: Monitor firewall (inside container via docker exec)
-firewall-helper.sh monitor
+# Terminal 2: When a connection is blocked, add the domain and reload
+echo "api.example.com" >> allowlist-proxy/allowed-domains.txt
+export ALLOWLIST_KEY=<your-passphrase>
+./sandclaude reload-firewall myproject
 
-# When blocked connection appears, approve or deny
-# Firewall reloads automatically, Claude can retry
+# Claude can now retry — no container restart needed
 ```
 
 ### Using with VS Code devcontainer
@@ -212,17 +197,17 @@ code ~/projects/my-app
 
 ### Debugging firewall issues
 ```bash
-# Check firewall status
-sudo iptables -L -v -n
+# View proxy log (ALLOWED/BLOCKED entries)
+tail -f ~/logs/proxy.log
 
-# Check ipset contents
-sudo ipset list allowed-domains
+# Check iptables rules
+sudo iptables -L OUTPUT -v -n
 
-# View recent blocked connections
-sudo dmesg | grep FIREWALL_BLOCKED | tail -20
+# Check which process is the proxy
+ps aux | grep allowlist-proxy
 
-# Manually reload firewall
-sudo /usr/local/bin/init-firewall.sh
+# Manual SIGHUP to reload allowlist (inside container)
+pkill -HUP -x allowlist-proxy
 ```
 
 ## Integration Patterns
@@ -235,13 +220,12 @@ git submodule add https://github.com/yourname/dangerous-claude .dangerous-claude
 ```
 
 ### As a devcontainer base
-Copy `.devcontainer/` and firewall scripts to your project:
+Copy files to your project using the built-in command:
 ```bash
-cp -r .devcontainer ~/my-project/
-cp init-firewall.sh ~/my-project/
-cp firewall-helper.sh ~/my-project/
+./sandclaude copy ~/my-project
 # Edit Dockerfile to add project-specific tools
-# Edit init-firewall.sh to add project-specific domains
+# Edit allowlist-proxy/allowed-domains.txt to add project-specific domains
+# Run: export ALLOWLIST_KEY=<passphrase> && ./sandclaude reload-firewall
 ```
 
 ### As a skill for other projects
@@ -259,66 +243,51 @@ Claude will then know:
 
 ## Firewall Troubleshooting
 
-**Symptom:** `curl: (7) Failed to connect`
+**Symptom:** `curl: (7) Failed to connect` or HTTP 403 from proxy
 - **Cause:** Domain not in allowlist
-- **Fix:** `firewall-helper.sh add example.com` or run `firewall-helper.sh monitor`
+- **Fix:** Add domain to `allowlist-proxy/allowed-domains.txt`, run `sandclaude reload-firewall`
 
 **Symptom:** DNS resolution fails
 - **Cause:** Firewall blocks DNS or Docker DNS broken
 - **Fix:** Check DNS rules: `sudo iptables -L OUTPUT -n | grep 53`
 
-**Symptom:** GitHub access works but npm install fails
-- **Cause:** npm registry IPs changed since last firewall init
-- **Fix:** `sudo /usr/local/bin/init-firewall.sh` (re-resolves all domains)
+**Symptom:** Proxy fails to start — "decrypt allowlist" error
+- **Cause:** Wrong `ALLOWLIST_KEY` or corrupted `.enc` file
+- **Fix:** Re-run `sandclaude reload-firewall` with the correct `ALLOWLIST_KEY`
 
-**Symptom:** Firewall init fails with "permission denied"
+**Symptom:** Firewall not enforced (processes bypass proxy)
 - **Cause:** Container missing `NET_ADMIN` capability
 - **Fix:** Ensure `--cap-add=NET_ADMIN --cap-add=NET_RAW` in docker run args
 
 **Symptom:** All connections blocked including allowed domains
-- **Cause:** ipset not loaded or iptables rules not applied
-- **Fix:** Check `sudo ipset list allowed-domains` and `sudo iptables -L OUTPUT -v`
+- **Cause:** iptables rules not applied or proxy not running
+- **Fix:** Check `sudo iptables -L OUTPUT -n` and `ps aux | grep allowlist-proxy`
 
 ## Architecture Decisions
 
-**Why iptables instead of application-level proxies?**
-- No need to configure each tool (npm, curl, gh, etc.)
-- Transparent to all applications
-- Lower overhead
-- Harder to bypass accidentally
+**Why application-level proxy instead of iptables/ipset?**
+- Domain-level matching (not IP-level) — handles CDNs and cloud services correctly
+- Hot-reloadable allowlist without touching iptables
+- Readable ALLOWED/BLOCKED log per request
+- No DNS pre-resolution needed
 
-**Why ipset instead of individual iptables rules?**
-- O(1) lookups vs O(n) rule traversal
-- Supports CIDR ranges efficiently
-- Single ipset can hold thousands of IPs
+**Why encrypt the allowlist?**
+- Allowlist reflects permitted capabilities — shouldn't be trivially editable inside the container
+- AES-256-GCM provides both confidentiality and integrity (tamper detection)
+- Key stays on host; container only has the ciphertext + key via env var at runtime
 
-**Why DNS resolution at init instead of runtime?**
-- No DNS lookup latency per connection
-- Simpler iptables rules (IP-based)
-- Tradeoff: Must reload firewall when IPs change
-
-**Why interactive mode by default?**
-- Developer-friendly: see what's blocked, approve easily
-- Opt-out design: Can disable for production-like testing
-- Logging has minimal overhead
+**Why iptables on top of the proxy?**
+- Prevents processes from bypassing the proxy via direct TCP (env var bypass, etc.)
+- Only `proxyuser` (the proxy UID) can make direct outbound TCP connections
 
 ## Extending the Firewall
 
-**Adding bulk domains:**
+**Adding domains:**
 ```bash
-cat >> /home/claude/.firewall/allowed-domains.txt <<EOF
-api.stripe.com
-api.twilio.com
-slack.com
-EOF
-sudo /usr/local/bin/init-firewall.sh
-```
-
-**Adding IP ranges directly:**
-Edit `init-firewall.sh` and add after domain resolution:
-```bash
-ipset add allowed-domains 192.168.1.0/24
-ipset add allowed-domains 10.0.0.0/8
+# On host
+echo "api.stripe.com" >> allowlist-proxy/allowed-domains.txt
+export ALLOWLIST_KEY=<your-passphrase>
+./sandclaude reload-firewall [project]
 ```
 
 **Allowing all traffic (disable firewall):**
@@ -327,18 +296,12 @@ sudo iptables -P OUTPUT ACCEPT
 sudo iptables -F OUTPUT
 ```
 
-**Re-enabling firewall:**
-```bash
-sudo /usr/local/bin/init-firewall.sh
-```
-
 ## Known Limitations
 
 1. **No wildcard domain support** - Must add each subdomain explicitly
-2. **DNS changes require reload** - IPs cached at init time
-3. **No per-process rules** - Firewall applies to entire container
-4. **Logging overhead** - High connection rate can flood kernel log
-5. **Requires privileged capabilities** - NET_ADMIN and NET_RAW needed
+2. **No per-process rules** - Firewall applies to entire container
+3. **Requires privileged capabilities** - NET_ADMIN and NET_RAW needed
+4. **Key in env var** - ALLOWLIST_KEY visible in process list inside container
 
 ## Security Considerations
 

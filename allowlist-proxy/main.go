@@ -1,18 +1,25 @@
 // allowlist-proxy: HTTP CONNECT proxy that enforces a domain allowlist.
 //
-// The allowlist is compiled into the binary via go:embed. It cannot be
-// changed at runtime — rebuild the binary to update allowed domains.
+// The allowlist is loaded from an AES-256-GCM encrypted file at startup and
+// can be hot-reloaded by sending SIGHUP. The encryption key is derived from
+// the ALLOWLIST_KEY environment variable using SHA-256.
 //
 // Usage:
 //
 //	allowlist-proxy \
 //	  --listen 127.0.0.1:3128 \
+//	  --allowlist /path/to/allowed-domains.txt.enc \
 //	  --upstream http://host.docker.internal:8080
 package main
 
 import (
 	"bufio"
-	_ "embed"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -20,32 +27,107 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"os/signal"
 	"strings"
+	"sync"
+	"syscall"
 )
 
-//go:embed allowed-domains.txt
-var embeddedDomains string
+// ----------------------------------------------------------------------------
+// Encryption helpers
+// ----------------------------------------------------------------------------
+
+// deriveKey derives a 32-byte AES-256 key from the given passphrase using
+// SHA-256(passphrase || ":allowlist-proxy-v1"). Simple and stdlib-only.
+func deriveKey(passphrase string) ([]byte, error) {
+	if passphrase == "" {
+		return nil, errors.New("ALLOWLIST_KEY environment variable is not set")
+	}
+	h := sha256.Sum256([]byte(passphrase + ":allowlist-proxy-v1"))
+	return h[:], nil
+}
+
+// encryptFile encrypts plaintext using AES-256-GCM and writes the result to
+// dst. Format: 12-byte random nonce || GCM ciphertext+tag.
+func encryptFile(key []byte, plaintext []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, err
+	}
+	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
+	return ciphertext, nil
+}
+
+// decryptFile decrypts AES-256-GCM ciphertext produced by encryptFile.
+func decryptFile(key []byte, ciphertext []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	if len(ciphertext) < gcm.NonceSize() {
+		return nil, errors.New("ciphertext too short")
+	}
+	nonce, data := ciphertext[:gcm.NonceSize()], ciphertext[gcm.NonceSize():]
+	return gcm.Open(nil, nonce, data, nil)
+}
 
 // ----------------------------------------------------------------------------
 // Allowlist
 // ----------------------------------------------------------------------------
 
 type Allowlist struct {
+	mu      sync.RWMutex
 	domains map[string]struct{}
 }
 
-func NewAllowlist() *Allowlist {
+// load reads the encrypted allowlist file, decrypts it with key, and replaces
+// the in-memory domain set atomically.
+func (al *Allowlist) load(path string, key []byte) error {
+	ciphertext, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read allowlist: %w", err)
+	}
+	plaintext, err := decryptFile(key, ciphertext)
+	if err != nil {
+		return fmt.Errorf("decrypt allowlist: %w", err)
+	}
+
 	domains := make(map[string]struct{})
-	scanner := bufio.NewScanner(strings.NewReader(embeddedDomains))
+	domainList := []string{}
+	scanner := bufio.NewScanner(strings.NewReader(string(plaintext)))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		domains[strings.ToLower(line)] = struct{}{}
+		lower := strings.ToLower(line)
+		domains[lower] = struct{}{}
+		domainList = append(domainList, lower)
 	}
-	log.Printf("allowlist: loaded %d domains (compiled-in)", len(domains))
-	return &Allowlist{domains: domains}
+
+	al.mu.Lock()
+	al.domains = domains
+	al.mu.Unlock()
+
+	log.Printf("allowlist: loaded %d domains from %s", len(domains), path)
+	log.Printf("allowed domains:")
+	for _, d := range domainList {
+		log.Printf("  - %s", d)
+	}
+	return nil
 }
 
 // Allowed returns true if host (without port) is in the allowlist or is a
@@ -56,6 +138,9 @@ func (al *Allowlist) Allowed(host string) bool {
 		h = host
 	}
 	h = strings.ToLower(h)
+
+	al.mu.RLock()
+	defer al.mu.RUnlock()
 
 	if _, ok := al.domains[h]; ok {
 		return true
@@ -204,11 +289,69 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // ----------------------------------------------------------------------------
 
 func main() {
-	listen := flag.String("listen", "127.0.0.1:3128", "address to listen on")
+	listen      := flag.String("listen", "127.0.0.1:3128", "address to listen on")
 	upstreamStr := flag.String("upstream", "", "upstream proxy URL (e.g. http://host.docker.internal:8080); empty = direct")
+	allowlistPath := flag.String("allowlist", "", "path to encrypted allowlist file (allowed-domains.txt.enc)")
+
+	// Encrypt subcommand: allowlist-proxy encrypt <plaintext> <output.enc>
+	// Checked before flag.Parse so it doesn't conflict with flags.
+	if len(os.Args) >= 2 && os.Args[1] == "encrypt" {
+		if len(os.Args) != 4 {
+			fmt.Fprintln(os.Stderr, "usage: allowlist-proxy encrypt <plaintext-file> <output.enc>")
+			os.Exit(1)
+		}
+		key, err := deriveKey(os.Getenv("ALLOWLIST_KEY"))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		plaintext, err := os.ReadFile(os.Args[2])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error reading input: %v\n", err)
+			os.Exit(1)
+		}
+		ciphertext, err := encryptFile(key, plaintext)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error encrypting: %v\n", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(os.Args[3], ciphertext, 0600); err != nil {
+			fmt.Fprintf(os.Stderr, "error writing output: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Encrypted %s → %s (%d bytes, key fingerprint: %s)\n",
+			os.Args[2], os.Args[3], len(ciphertext),
+			keyFingerprint(key))
+		return
+	}
+
 	flag.Parse()
 
-	al := NewAllowlist()
+	if *allowlistPath == "" {
+		log.Fatalf("--allowlist is required: path to encrypted allowed-domains.txt.enc")
+	}
+
+	key, err := deriveKey(os.Getenv("ALLOWLIST_KEY"))
+	if err != nil {
+		log.Fatalf("encryption key error: %v", err)
+	}
+
+	al := &Allowlist{}
+	if err := al.load(*allowlistPath, key); err != nil {
+		log.Fatalf("failed to load allowlist: %v", err)
+	}
+
+	// Hot-reload on SIGHUP.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGHUP)
+	go func() {
+		for range sigCh {
+			log.Printf("SIGHUP received — reloading allowlist from %s", *allowlistPath)
+			if err := al.load(*allowlistPath, key); err != nil {
+				log.Printf("allowlist reload failed: %v", err)
+			}
+		}
+	}()
 
 	var upstream *url.URL
 	if *upstreamStr != "" {
@@ -232,4 +375,10 @@ func main() {
 	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
+}
+
+// keyFingerprint returns the first 8 hex chars of the key's SHA-256 for display.
+func keyFingerprint(key []byte) string {
+	h := sha256.Sum256(key)
+	return hex.EncodeToString(h[:4])
 }
