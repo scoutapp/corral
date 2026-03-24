@@ -241,6 +241,11 @@ Claude will then know:
 - Credential handling rules
 - When to ask for domain approval
 
+**Important:** If Claude attempts to access a site blocked by the proxy, Claude should:
+1. Add the domain to `.devcontainer/allowlist-proxy/allowed-domains.txt`
+2. Notify the user to run `firewall-reload` from the host
+3. Explain that Claude cannot run `firewall-reload` directly as it lives outside the container
+
 ## Firewall Troubleshooting
 
 **Symptom:** `curl: (7) Failed to connect` or HTTP 403 from proxy

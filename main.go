@@ -311,13 +311,14 @@ func getProjectDir() string {
 	return filepath.Join(cwd, "project")
 }
 
-// getLogsDir returns ./logs/ relative to the current working directory.
+// getLogsDir returns ./logs/ relative to the binary's directory.
 func getLogsDir() string {
-	cwd, err := os.Getwd()
+	exePath, err := os.Executable()
 	if err != nil {
-		log.Fatalf("Failed to get working directory: %v", err)
+		log.Fatalf("Failed to get executable path: %v", err)
 	}
-	return filepath.Join(cwd, "logs")
+	binDir := filepath.Dir(exePath)
+	return filepath.Join(binDir, "logs")
 }
 
 // startDocker starts the Docker container with Claude Code
@@ -399,8 +400,14 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 		"-w", workspace,
 	)
 
-	// Mount logs directory from host so proxy.log is accessible
+	// Mount empty tmpfs over .devcontainer to hide it from the container
+	args = append(args, "--tmpfs", fmt.Sprintf("%s/.devcontainer:rw,noexec,nosuid,size=1m", workspace))
+
+	// Mount allowlist file into the tmpfs .devcontainer directory and logs directory from host
 	cwd, _ := os.Getwd()
+	allowlistPath := filepath.Join(cwd, ".devcontainer", "allowlist-proxy", "allowed-domains.txt")
+	args = append(args, "-v", fmt.Sprintf("%s:%s/.devcontainer/allowlist-proxy/allowed-domains.txt:rw", allowlistPath, workspace))
+
 	logsDir := filepath.Join(cwd, "logs")
 	os.MkdirAll(logsDir, 0755)
 	args = append(args, "-v", fmt.Sprintf("%s:/home/claude/logs", logsDir))
