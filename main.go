@@ -389,7 +389,12 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 		args = append(args, "-e", fmt.Sprintf("GH_TOKEN=%s", ghToken))
 	}
 
+	// Mount .claude directory from host for Claude Code state
+	claudeConfig := filepath.Join(home, ".claude")
 	args = append(args,
+		"-v", fmt.Sprintf("%s:/home/claude/.claude", claudeConfig),
+		// Very important that we mount this in. This lives at the user's home directory, at least on Mac x86.
+		"-v", fmt.Sprintf("%s:/home/claude/.claude.json", filepath.Join(home, ".claude.json")),
 		"-v", fmt.Sprintf("%s:%s", workspace, workspace),
 		"-w", workspace,
 	)

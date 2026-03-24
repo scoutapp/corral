@@ -38,8 +38,10 @@ go build -o sandclaude main.go
 
 - Go 1.21+ (to build the binary)
 - Docker
-- Claude Code credentials (`claude` to authenticate)
+- Claude Code installed and authenticated on the host (`claude` to sign in first)
 - Optional: `gh` CLI (GitHub monitoring), AWS credentials, mitmproxy (for proxy mode)
+
+**Important**: You must authenticate Claude Code on your host machine before running `sandclaude`. Run `claude` to sign in. This creates `~/.claude.json` with your session state (does NOT contain auth credentials), which is mounted into the container. If you skip this step, Claude will prompt for authentication inside the container.
 
 ## Commands
 
@@ -76,7 +78,6 @@ Config stored in `./project/config/`. Add `./project/` to `.gitignore`.
 ### Start Working
 
 ```bash
-export ALLOWLIST_KEY=<your-passphrase>  # required
 ./sandclaude start
 ```
 
@@ -173,7 +174,7 @@ This command:
 2. Re-encrypts `allowed-domains.txt` → `allowed-domains.txt.enc`
 3. If a container is running, sends SIGHUP to reload the allowlist without restart
 
-**Note**: The encryption key is auto-generated during `init` and stored in `project/.allowlist-key` (never committed).
+**Encryption Key**: The encryption key is auto-generated during `init` and stored in `project/.allowlist-key` (never committed). It is automatically read from this file by `sandclaude start` and `firewall-reload` - you don't need to set anything manually.
 
 ### Monitor Proxy Log
 
@@ -242,8 +243,7 @@ claude --prompt "What firewall domains are allowed?"
 
 # Add a domain and hot-reload (no container restart needed)
 echo 'example.com' >> allowlist-proxy/allowed-domains.txt
-export ALLOWLIST_KEY=<your-passphrase>
-./sandclaude reload-firewall
+./sandclaude reload-firewall  # Uses ALLOWLIST_KEY from project/.allowlist-key
 ```
 
 **Proxy not starting:**
