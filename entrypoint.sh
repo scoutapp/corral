@@ -181,7 +181,7 @@ if [ -n "$DIND_ENABLED" ]; then
 
     DIND_SOCKET=/var/run/dind/docker.sock
     DIND_DATA=/var/lib/docker-dind
-    STORAGE_DRIVER="${DIND_STORAGE_DRIVER:-overlay2}"
+    STORAGE_DRIVER="${DIND_STORAGE_DRIVER:-vfs}"
 
     # Write daemon config
     sudo mkdir -p /etc/docker-dind
@@ -197,7 +197,7 @@ if [ -n "$DIND_ENABLED" ]; then
 DAEMONCFG
 
     sudo dockerd --config-file /etc/docker-dind/daemon.json \
-        > "$FIREWALL_CONFIG_DIR/dockerd.log" 2>&1 &
+        > "$HOME/logs/dockerd.log" 2>&1 &
     DOCKERD_PID=$!
 
     # Wait for dockerd to be ready (poll socket, max 15s)
@@ -209,8 +209,8 @@ DAEMONCFG
         fi
         sleep 0.5
         if [ "$i" -eq 30 ]; then
-            echo "ERROR: inner dockerd failed to start. Check $FIREWALL_CONFIG_DIR/dockerd.log"
-            cat "$FIREWALL_CONFIG_DIR/dockerd.log"
+            echo "ERROR: inner dockerd failed to start. Check $HOME/logs/dockerd.log"
+            cat "$HOME/logs/dockerd.log"
             exit 1
         fi
     done

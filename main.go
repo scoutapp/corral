@@ -630,6 +630,122 @@ func (sc *SandClaude) Run() error {
 	return err
 }
 
+// cmdUpdate updates project config fields without touching credentials or the allowlist key.
+func cmdUpdate() error {
+	projectDir := getProjectDir()
+	cfg, err := readConfig(projectDir)
+	if err != nil {
+		return err
+	}
+
+	log.Println("Updating project config (press Enter to keep current value)")
+	log.Println()
+
+	// GitHub monitoring
+	reader := bufio.NewReader(os.Stdin)
+	if cfg.GitHubRepo != "" {
+		fmt.Printf("GitHub repository (current: %s, blank to clear): ", cfg.GitHubRepo)
+	} else {
+		fmt.Print("GitHub repository (e.g. owner/repo, blank to disable): ")
+	}
+	repoInput, _ := reader.ReadString('\n')
+	repoInput = strings.TrimSpace(repoInput)
+	if repoInput == "" && cfg.GitHubRepo != "" {
+		log.Printf("  GitHub repo unchanged: %s\n", cfg.GitHubRepo)
+	} else {
+		cfg.GitHubRepo = repoInput
+		if repoInput != "" {
+			log.Printf("  GitHub repo set to: %s\n", repoInput)
+		} else {
+			log.Println("  GitHub monitoring disabled")
+		}
+	}
+
+	log.Println()
+
+	// AWS
+	awsPrompt := "n"
+	if cfg.AWSEnabled {
+		awsPrompt = "Y"
+	}
+	fmt.Printf("Pass AWS credentials from host ~/.aws? (current: %s) [y/N]: ", awsPrompt)
+	awsInput, _ := reader.ReadString('\n')
+	awsInput = strings.TrimSpace(strings.ToLower(awsInput))
+	if awsInput == "" {
+		log.Printf("  AWS unchanged: %v\n", cfg.AWSEnabled)
+	} else {
+		cfg.AWSEnabled = awsInput == "y" || awsInput == "yes"
+		log.Printf("  AWS enabled: %v\n", cfg.AWSEnabled)
+	}
+
+	log.Println()
+
+	// Docker-in-Docker
+	dindPrompt := "n"
+	if cfg.DindEnabled {
+		dindPrompt = "Y"
+	}
+	fmt.Printf("Enable Docker-in-Docker? (current: %s) [y/N]: ", dindPrompt)
+	dindInput, _ := reader.ReadString('\n')
+	dindInput = strings.TrimSpace(strings.ToLower(dindInput))
+	if dindInput == "" {
+		log.Printf("  DinD unchanged: %v\n", cfg.DindEnabled)
+	} else {
+		cfg.DindEnabled = dindInput == "y" || dindInput == "yes"
+		log.Printf("  DinD enabled: %v\n", cfg.DindEnabled)
+		if !cfg.DindEnabled {
+			cfg.DindPorts = nil
+		}
+	}
+
+	if cfg.DindEnabled {
+		currentPorts := strings.Join(cfg.DindPorts, ",")
+		if currentPorts == "" {
+			currentPorts = "none"
+		}
+		fmt.Printf("  Port mappings to expose to host (current: %s, blank to keep, 'none' to clear): ", currentPorts)
+		portsInput, _ := reader.ReadString('\n')
+		portsInput = strings.TrimSpace(portsInput)
+		if portsInput == "" {
+			log.Printf("  DinD ports unchanged: %s\n", currentPorts)
+		} else if portsInput == "none" {
+			cfg.DindPorts = nil
+			log.Println("  DinD ports cleared — inner containers accessible to Claude only")
+		} else {
+			cfg.DindPorts = strings.FieldsFunc(portsInput, func(r rune) bool {
+				return r == ',' || r == ' '
+			})
+			log.Printf("  DinD ports set to: %s\n", strings.Join(cfg.DindPorts, ", "))
+		}
+	}
+
+	log.Println()
+
+	// Workspace
+	fmt.Printf("Workspace directory (current: %s, blank to keep): ", cfg.Workspace)
+	wsInput, _ := reader.ReadString('\n')
+	wsInput = strings.TrimSpace(wsInput)
+	if wsInput == "" {
+		log.Printf("  Workspace unchanged: %s\n", cfg.Workspace)
+	} else {
+		cfg.Workspace = wsInput
+		log.Printf("  Workspace set to: %s\n", wsInput)
+		if _, err := os.Stat(wsInput); os.IsNotExist(err) {
+			if askYesNo("Workspace doesn't exist. Create it?") {
+				os.MkdirAll(wsInput, 0755)
+				log.Printf("  Created workspace: %s\n", wsInput)
+			}
+		}
+	}
+
+	if err := writeConfig(projectDir, cfg); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+	log.Println()
+	log.Println("✅ Config updated (credentials and allowlist key unchanged)")
+	return nil
+}
+
 // cmdInit initializes the ./project/ structure
 func cmdInit() error {
 	projectDir := getProjectDir()
@@ -674,9 +790,9 @@ func cmdInit() error {
 	log.Println()
 
 	// Docker-in-Docker
-	if askYesNo("Enable Docker-in-Docker (Claude can start inner containers)?") {
+	if askYesNo("Enable Docker-in-Docker (inner containers, Claude-accessible)?") {
 		cfg.DindEnabled = true
-		log.Println("✅ DinD enabled — Claude will run a private inner Docker daemon")
+		log.Println("Docker-in-Docker enabled — Claude can start inner containers")
 		log.Println("   Inner containers' network egress goes through the allowlist proxy")
 
 		reader2 := bufio.NewReader(os.Stdin)
@@ -689,9 +805,11 @@ func cmdInit() error {
 			})
 			cfg.DindPorts = ports
 			log.Printf("   Port mappings: %s\n", strings.Join(ports, ", "))
+		} else {
+			log.Println("   No host port mappings — inner containers accessible to Claude only")
 		}
 	} else {
-		log.Println("⚠️  DinD disabled")
+		log.Println("Docker-in-Docker disabled")
 	}
 
 	log.Println()
@@ -1199,6 +1317,7 @@ func usage() {
 	fmt.Println()
 	fmt.Println("Commands:")
 	fmt.Println("  init                     Initialize ./project/ structure in current repo")
+	fmt.Println("  update                   Update project config (preserves credentials and allowlist key)")
 	fmt.Println("  start [flags]            Start Claude Code (uses ./project/ config)")
 	fmt.Println("    --disable-firewall             Skip firewall initialization")
 	fmt.Println("    --disable-firewall-and-write   Keep proxy but allow all domains; write unknown ones to allowed-domains.txt")
@@ -1240,6 +1359,9 @@ func main() {
 	switch command {
 	case "init":
 		err = cmdInit()
+
+	case "update":
+		err = cmdUpdate()
 
 	case "start":
 		err = cmdStart(os.Args[2:])

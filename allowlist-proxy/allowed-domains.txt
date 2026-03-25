@@ -2,6 +2,7 @@
 registry.npmjs.org
 api.anthropic.com
 platform.claude.com
+downloads.claude.ai
 sentry.io
 statsig.anthropic.com
 statsig.com
@@ -42,4 +43,8 @@ raw.githubusercontent.com
 http-intake.logs.us5.datadoghq.com
 
 # General github
+github.comapi.github.com
+api.github.com
 github.com
+
+# Unapproved domains:
