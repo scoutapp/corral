@@ -163,8 +163,39 @@ func (al *Allowlist) Allowed(host string) bool {
 // ----------------------------------------------------------------------------
 
 type ProxyHandler struct {
-	allowlist *Allowlist
-	upstream  *url.URL // nil = direct
+	allowlist      *Allowlist
+	upstream       *url.URL // nil = direct
+	passthroughLog string   // if set, allow unknown domains and append them here
+}
+
+// appendDomain appends a domain to the passthrough log file if not already present.
+func (p *ProxyHandler) appendDomain(domain string) {
+	h, _, err := net.SplitHostPort(domain)
+	if err != nil {
+		h = domain
+	}
+	h = strings.ToLower(h)
+
+	// Read current contents to check for duplicates, then reopen for append.
+	existing, _ := os.ReadFile(p.passthroughLog)
+	for _, line := range strings.Split(string(existing), "\n") {
+		if strings.TrimSpace(line) == h {
+			return // already present
+		}
+	}
+
+	f, err := os.OpenFile(p.passthroughLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		log.Printf("passthrough-log: failed to open %s: %v", p.passthroughLog, err)
+		return
+	}
+	defer f.Close()
+
+	if _, err := fmt.Fprintf(f, "%s\n", h); err != nil {
+		log.Printf("passthrough-log: failed to write %s: %v", p.passthroughLog, err)
+	} else {
+		log.Printf("WROTE    %s → %s", h, p.passthroughLog)
+	}
 }
 
 // handlePlainHTTP handles non-CONNECT proxy requests (plain HTTP).
@@ -182,12 +213,17 @@ func (p *ProxyHandler) handlePlainHTTP(w http.ResponseWriter, r *http.Request) {
 		strings.HasPrefix(hostname, "127.")
 
 	if !isLoopback && !p.allowlist.Allowed(host) {
-		log.Printf("BLOCKED  %s (plain HTTP)", host)
-		http.Error(w, fmt.Sprintf("domain not in allowlist: %s", host), http.StatusForbidden)
-		return
+		if p.passthroughLog != "" {
+			p.appendDomain(host)
+			log.Printf("ALLOWED* %s (plain HTTP, unknown — logged)", host)
+		} else {
+			log.Printf("BLOCKED  %s (plain HTTP)", host)
+			http.Error(w, fmt.Sprintf("domain not in allowlist: %s", host), http.StatusForbidden)
+			return
+		}
+	} else {
+		log.Printf("ALLOWED  %s (plain HTTP)", host)
 	}
-
-	log.Printf("ALLOWED  %s (plain HTTP)", host)
 
 	outReq := r.Clone(r.Context())
 	outReq.RequestURI = ""
@@ -220,12 +256,17 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	host := r.Host // "hostname:port"
 
 	if !p.allowlist.Allowed(host) {
-		log.Printf("BLOCKED  %s", host)
-		http.Error(w, fmt.Sprintf("domain not in allowlist: %s", host), http.StatusForbidden)
-		return
+		if p.passthroughLog != "" {
+			p.appendDomain(host)
+			log.Printf("ALLOWED* %s (unknown — logged)", host)
+		} else {
+			log.Printf("BLOCKED  %s", host)
+			http.Error(w, fmt.Sprintf("domain not in allowlist: %s", host), http.StatusForbidden)
+			return
+		}
+	} else {
+		log.Printf("ALLOWED  %s", host)
 	}
-
-	log.Printf("ALLOWED  %s", host)
 
 	var targetConn net.Conn
 	var err error
@@ -289,9 +330,10 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // ----------------------------------------------------------------------------
 
 func main() {
-	listen      := flag.String("listen", "127.0.0.1:3128", "address to listen on")
-	upstreamStr := flag.String("upstream", "", "upstream proxy URL (e.g. http://host.docker.internal:8080); empty = direct")
-	allowlistPath := flag.String("allowlist", "", "path to encrypted allowlist file (allowed-domains.txt.enc)")
+	listen         := flag.String("listen", "127.0.0.1:3128", "address to listen on")
+	upstreamStr    := flag.String("upstream", "", "upstream proxy URL (e.g. http://host.docker.internal:8080); empty = direct")
+	allowlistPath  := flag.String("allowlist", "", "path to encrypted allowlist file (allowed-domains.txt.enc)")
+	passthroughLog := flag.String("passthrough-log", "", "if set, allow unknown domains and append them to this file instead of blocking")
 
 	// Encrypt subcommand: allowlist-proxy encrypt <plaintext> <output.enc>
 	// Checked before flag.Parse so it doesn't conflict with flags.
@@ -365,7 +407,11 @@ func main() {
 		log.Printf("upstream proxy: none (direct connections)")
 	}
 
-	handler := &ProxyHandler{allowlist: al, upstream: upstream}
+	if *passthroughLog != "" {
+		log.Printf("passthrough mode: unknown domains will be allowed and appended to %s", *passthroughLog)
+	}
+
+	handler := &ProxyHandler{allowlist: al, upstream: upstream, passthroughLog: *passthroughLog}
 	server := &http.Server{
 		Addr:    *listen,
 		Handler: handler,

@@ -78,7 +78,6 @@ When Claude Code needs to access a blocked domain, edit the allowlist and reload
 # Edit the plaintext allowlist
 vim allowlist-proxy/allowed-domains.txt
 # Encrypt and SIGHUP the proxy
-export ALLOWLIST_KEY=<your-passphrase>
 ./sandclaude reload-firewall [project]
 ```
 
@@ -185,6 +184,24 @@ export ALLOWLIST_KEY=<your-passphrase>
 # Claude can now retry — no container restart needed
 ```
 
+### Passthrough mode (auto-discover domains)
+Use `--disable-firewall-and-write` to allow all outbound traffic while automatically logging unknown domains to `allowlist-proxy/allowed-domains.txt` on the host. Useful for discovering what domains a workflow needs before locking it down.
+
+```bash
+# Start in passthrough mode
+sandclaude start --disable-firewall-and-write
+
+# Inside the container, unknown domains are allowed and appended to:
+#   /home/claude/allowed-domains.txt  (bind-mounted from host at allowlist-proxy/allowed-domains.txt)
+
+# After your session, the host file allowlist-proxy/allowed-domains.txt
+# will contain all domains that were accessed. Review and encrypt:
+export ALLOWLIST_KEY=<your-passphrase>
+./sandclaude reload-firewall
+```
+
+**Note:** The passthrough log is mounted at `/home/claude/allowed-domains.txt` inside the container. This is the same file as `allowlist-proxy/allowed-domains.txt` on the host — changes are reflected immediately on both sides.
+
 ### Using with VS Code devcontainer
 ```bash
 # Open project in VS Code
@@ -242,15 +259,17 @@ Claude will then know:
 - When to ask for domain approval
 
 **Important:** If Claude attempts to access a site blocked by the proxy, Claude should:
-1. Add the domain to `.devcontainer/allowlist-proxy/allowed-domains.txt`
-2. Notify the user to run `firewall-reload` from the host
-3. Explain that Claude cannot run `firewall-reload` directly as it lives outside the container
+1. Add the domain to `/home/claude/allowed-domains.txt` — this file is always bind-mounted from `allowlist-proxy/allowed-domains.txt` on the host (read-write), so edits are immediately visible to the host
+2. Notify the user to run `sandclaude reload-firewall` from the host to encrypt the updated file and SIGHUP the proxy
+3. Retry the request once the user confirms the reload is done
+
+In passthrough mode (`--disable-firewall-and-write`), unknown domains are appended to `/home/claude/allowed-domains.txt` automatically — no manual editing needed.
 
 ## Firewall Troubleshooting
 
 **Symptom:** `curl: (7) Failed to connect` or HTTP 403 from proxy
 - **Cause:** Domain not in allowlist
-- **Fix:** Add domain to `allowlist-proxy/allowed-domains.txt`, run `sandclaude reload-firewall`
+- **Fix:** Restart with `sandclaude start --disable-firewall-and-write` to auto-log needed domains, then `sandclaude reload-firewall` to lock it back down
 
 **Symptom:** DNS resolution fails
 - **Cause:** Firewall blocks DNS or Docker DNS broken

@@ -36,6 +36,10 @@ mkdir -p "${HOME}/logs"
 PROXY_LOG="${HOME}/logs/proxy.log"
 ALLOWLIST_ENC="${HOME}/allowed-domains.txt.enc"
 
+if [ -n "$DISABLE_FIREWALL_AND_WRITE" ]; then
+    DISABLE_FIREWALL=""
+fi
+
 if [ -z "$DISABLE_FIREWALL" ]; then
     # Verify encrypted allowlist exists
     if [ ! -f "$ALLOWLIST_ENC" ]; then
@@ -58,6 +62,19 @@ if [ -z "$DISABLE_FIREWALL" ]; then
         UPSTREAM_ARG="--upstream $HTTP_PROXY"
     fi
 
+    PASSTHROUGH_ARG=""
+    if [ -n "$DISABLE_FIREWALL_AND_WRITE" ]; then
+        ALLOWED_DOMAINS_TXT="${HOME}/allowed-domains.txt"
+        # Write to a /tmp path owned by proxyuser to avoid bind-mount permission issues
+        # (on macOS Docker Desktop, VirtioFS doesn't reliably honor chmod for non-owners).
+        PASSTHROUGH_TMP="/tmp/passthrough-domains.txt"
+        sudo -u proxyuser touch "$PASSTHROUGH_TMP"
+        PASSTHROUGH_ARG="--passthrough-log $PASSTHROUGH_TMP"
+        echo "WARNING: PASSTHROUGH MODE — unknown domains will be allowed and written to:"
+        echo "  $ALLOWED_DOMAINS_TXT (on host)"
+        echo ""
+    fi
+
     # Copy the encrypted allowlist to a location proxyuser can read
     # (the mounted file is owned by the host user, proxyuser can't read it directly)
     ALLOWLIST_COPY="/tmp/allowed-domains.txt.enc"
@@ -77,9 +94,28 @@ if [ -z "$DISABLE_FIREWALL" ]; then
             --listen 127.0.0.1:3128 \
             --allowlist "$ALLOWLIST_COPY" \
             $UPSTREAM_ARG \
+            $PASSTHROUGH_ARG \
         >> "$PROXY_LOG" 2>&1 &
     PROXY_PID=$!
     echo "Allowlist proxy started (PID $PROXY_PID)"
+
+    # In passthrough mode, sync new domains from the proxyuser-owned tmp file
+    # to the bind-mounted file (which claude user can write to).
+    if [ -n "$DISABLE_FIREWALL_AND_WRITE" ]; then
+        (
+            while true; do
+                sleep 2
+                if [ -f "$PASSTHROUGH_TMP" ]; then
+                    while IFS= read -r domain; do
+                        [ -z "$domain" ] && continue
+                        if ! grep -qxF "$domain" "$ALLOWED_DOMAINS_TXT" 2>/dev/null; then
+                            echo "$domain" >> "$ALLOWED_DOMAINS_TXT"
+                        fi
+                    done < "$PASSTHROUGH_TMP"
+                fi
+            done
+        ) &
+    fi
     # Brief pause to confirm it bound successfully
     sleep 0.3
     if ! kill -0 $PROXY_PID 2>/dev/null; then

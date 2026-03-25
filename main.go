@@ -25,13 +25,14 @@ const (
 )
 
 type SandClaude struct {
-	proxyCmd        *exec.Cmd
-	proxyPort       string
-	credentialsFile string
-	addonScript     string
-	scriptDir       string
-	proxyEnabled    bool
-	disableFirewall bool
+	proxyCmd               *exec.Cmd
+	proxyPort              string
+	credentialsFile        string
+	addonScript            string
+	scriptDir              string
+	proxyEnabled           bool
+	disableFirewall        bool
+	disableFirewallAndWrite bool
 }
 
 func NewSandClaude() (*SandClaude, error) {
@@ -349,6 +350,24 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 
 	if sc.disableFirewall {
 		args = append(args, "-e", "DISABLE_FIREWALL=1")
+	} else if sc.disableFirewallAndWrite {
+		args = append(args, "-e", "DISABLE_FIREWALL_AND_WRITE=1")
+		// Still need the allowlist key and file for the proxy to start
+		projectDir := getProjectDir()
+		keyPath := filepath.Join(projectDir, ".allowlist-key")
+		keyData, err := os.ReadFile(keyPath)
+		if err != nil {
+			return fmt.Errorf("encryption key not found at %s\nRun 'sandclaude init' to generate it", keyPath)
+		}
+		args = append(args, "-e", fmt.Sprintf("ALLOWLIST_KEY=%s", strings.TrimSpace(string(keyData))))
+
+		cwd, _ := os.Getwd()
+		encPath := filepath.Join(cwd, "allowlist-proxy", "allowed-domains.txt.enc")
+		if _, err := os.Stat(encPath); os.IsNotExist(err) {
+			return fmt.Errorf("encrypted allowlist not found at %s\nRun 'sandclaude firewall-reload' to create it", encPath)
+		}
+		os.Chmod(encPath, 0644)
+		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/allowed-domains.txt.enc:ro", encPath))
 	} else {
 		// Read encryption key from project
 		projectDir := getProjectDir()
@@ -403,10 +422,29 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 	// Mount empty tmpfs over .devcontainer to hide it from the container
 	args = append(args, "--tmpfs", fmt.Sprintf("%s/.devcontainer:rw,noexec,nosuid,size=1m", workspace))
 
-	// Mount allowlist file into the tmpfs .devcontainer directory and logs directory from host
+	// Mount the plaintext allowlist to a stable path outside the tmpfs'd .devcontainer dir.
+	// (.devcontainer is hidden under tmpfs so any bind-mount targeting a path inside it
+	// would have Docker auto-create the target as a directory, not a file.)
 	cwd, _ := os.Getwd()
-	allowlistPath := filepath.Join(cwd, ".devcontainer", "allowlist-proxy", "allowed-domains.txt")
-	args = append(args, "-v", fmt.Sprintf("%s:%s/.devcontainer/allowlist-proxy/allowed-domains.txt:rw", allowlistPath, workspace))
+	allowlistPath := filepath.Join(cwd, "allowlist-proxy", "allowed-domains.txt")
+	if sc.disableFirewallAndWrite {
+		// Ensure the file exists and is world-writable before the container starts,
+		// so proxyuser (which doesn't own the file) can append to it.
+		// Must create parent dirs first — OpenFile won't create them, and if the
+		// source path doesn't exist Docker will bind-mount it as a directory.
+		if err := os.MkdirAll(filepath.Dir(allowlistPath), 0755); err != nil {
+			return fmt.Errorf("failed to create allowlist directory: %w", err)
+		}
+		if f, err := os.OpenFile(allowlistPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666); err != nil {
+			return fmt.Errorf("failed to create allowlist file %s: %w", allowlistPath, err)
+		} else {
+			f.Close()
+		}
+		if err := os.Chmod(allowlistPath, 0666); err != nil {
+			return fmt.Errorf("failed to chmod allowlist file: %w", err)
+		}
+	}
+	args = append(args, "-v", fmt.Sprintf("%s:/home/claude/allowed-domains.txt:rw", allowlistPath))
 
 	logsDir := filepath.Join(cwd, "logs")
 	os.MkdirAll(logsDir, 0755)
@@ -724,10 +762,14 @@ func cmdInit() error {
 // cmdStart starts Claude Code
 func cmdStart(args []string) error {
 	disableFirewall := false
+	disableFirewallAndWrite := false
 
 	for _, arg := range args {
-		if arg == "--disable-firewall" {
+		switch arg {
+		case "--disable-firewall":
 			disableFirewall = true
+		case "--disable-firewall-and-write":
+			disableFirewallAndWrite = true
 		}
 	}
 
@@ -737,6 +779,7 @@ func cmdStart(args []string) error {
 	}
 
 	sc.disableFirewall = disableFirewall
+	sc.disableFirewallAndWrite = disableFirewallAndWrite
 	return sc.Run()
 }
 
@@ -1094,7 +1137,8 @@ func usage() {
 	fmt.Println("Commands:")
 	fmt.Println("  init                     Initialize ./project/ structure in current repo")
 	fmt.Println("  start [flags]            Start Claude Code (uses ./project/ config)")
-	fmt.Println("    --disable-firewall       Skip firewall initialization")
+	fmt.Println("    --disable-firewall             Skip firewall initialization")
+	fmt.Println("    --disable-firewall-and-write   Keep proxy but allow all domains; write unknown ones to allowed-domains.txt")
 	fmt.Println("  list                     Show ./project/ configuration")
 	fmt.Println("  remove                   Remove ./project/ directory after confirmation")
 	fmt.Println("  firewall-reload          Encrypt allowed-domains.txt and SIGHUP proxy")
@@ -1107,7 +1151,8 @@ func usage() {
 	fmt.Println("Examples:")
 	fmt.Println("  sandclaude init                    # Initialize ./project/ in this repo")
 	fmt.Println("  sandclaude start                   # Start Claude Code")
-	fmt.Println("  sandclaude start --disable-firewall  # Start without firewall")
+	fmt.Println("  sandclaude start --disable-firewall              # Start without firewall")
+	fmt.Println("  sandclaude start --disable-firewall-and-write   # Allow all, log unknowns to allowed-domains.txt")
 	fmt.Println("  sandclaude copy ~/my-project       # Copy files to integrate into another project")
 	fmt.Println("  sandclaude shell                   # Debug container")
 	fmt.Println()

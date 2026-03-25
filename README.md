@@ -26,6 +26,34 @@ go build -o sandclaude main.go
 ./sandclaude start
 ```
 
+### New Projects: Auto-Discover Required Domains
+
+When working with a new project that downloads dependencies from various sources (npm packages, go modules, pip packages, CDNs, etc.), use **passthrough mode** to automatically discover what domains are needed:
+
+```bash
+# Start in passthrough mode - allows all traffic and logs unknown domains
+./sandclaude start --disable-firewall-and-write
+
+# Work on your project normally:
+# - Install dependencies (npm install, go get, pip install, etc.)
+# - Download assets from CDNs
+# - Clone git repos
+# - Run build tools
+# All accessed domains are automatically written to allowlist-proxy/allowed-domains.txt
+
+# When done, lock down the firewall with the discovered domains:
+./sandclaude firewall-reload
+
+# Restart with firewall enforced:
+./sandclaude start
+```
+
+This workflow is ideal for:
+- **New projects** with unknown dependencies
+- **Legacy projects** where the full dependency graph isn't documented
+- **Build pipelines** that fetch from multiple package registries
+- **CDN-heavy frontends** that load assets from various sources
+
 ## Features
 
 - **Network Firewall**: Domain allowlist proxy restricts outbound connections
@@ -50,6 +78,7 @@ go build -o sandclaude main.go
 | `./sandclaude init` | Initialize project (creates `./project/` and encrypts allowlist) |
 | `./sandclaude start` | Start Claude Code |
 | `./sandclaude start --disable-firewall` | Start without firewall (unrestricted network) |
+| `./sandclaude start --disable-firewall-and-write` | Allow all traffic, log unknown domains to `allowed-domains.txt` |
 | `./sandclaude list` | Show project configuration |
 | `./sandclaude remove` | Remove project and encrypted allowlist |
 | `./sandclaude firewall-reload` | Re-encrypt allowlist and SIGHUP running proxy |
