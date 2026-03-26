@@ -2,6 +2,7 @@
 registry.npmjs.org
 api.anthropic.com
 platform.claude.com
+downloads.claude.ai
 sentry.io
 statsig.anthropic.com
 statsig.com
@@ -24,6 +25,10 @@ golang.org
 cdn.jsdelivr.net
 unpkg.com
 registry.hub.docker.com
+index.docker.io
+auth.docker.io
+registry-1.docker.io
+production.cloudflare.docker.com
 ghcr.io
 quay.io
 
@@ -39,4 +44,8 @@ raw.githubusercontent.com
 http-intake.logs.us5.datadoghq.com
 
 # General github
+github.comapi.github.com
+api.github.com
 github.com
+
+# Unapproved domains:

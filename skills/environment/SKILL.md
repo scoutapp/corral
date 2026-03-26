@@ -143,6 +143,64 @@ If Claude needs authenticated access:
 - npm: Use `npm login` interactively (persists to mounted `~/.claude` if needed)
 - Other services: Mount credentials read-only or use env vars
 
+## Docker-in-Docker (DinD)
+
+When `DIND_ENABLED=1` is set in the environment, an inner Docker daemon is running at `unix:///var/run/dind/docker.sock`. `DOCKER_HOST` is already exported to point there.
+
+**Key facts:**
+- All `docker` commands you run go to the **inner daemon**, not the host
+- Inner containers sit on `172.18.0.0/16` bridge network
+- `~/.docker/config.json` injects `HTTP_PROXY` and `HTTPS_PROXY` into every inner container automatically — **no Dockerfile or compose env changes needed**
+- The allowlist proxy listens on `0.0.0.0:3128`, reachable from inner containers via their bridge gateway (`172.18.0.1` for the default DinD bridge; compose networks get addresses in `172.18.0.0/15`)
+- The allowlist proxy forwards to mitmproxy — inner containers must trust the mitmproxy CA cert. The `~/bin/docker` wrapper automatically injects the CA cert into any image built via `docker build` or `docker compose build` via the **cert-injector** sidecar. In most cases this is transparent. However, if an inner container produces SSL errors like `509 Certificate Verify Failed` or similar TLS errors, the mitmproxy CA was likely not injected correctly — check `/usr/local/share/ca-certificates/mitmproxy-ca.crt` inside the container and re-run `update-ca-certificates` if missing
+- iptables allows `172.18.0.0/15` in the OUTPUT chain so the proxy can respond to inner container connections
+- Inner containers are destroyed when sandclaude exits
+
+**Running inner containers:**
+```bash
+# Build and start a Rails app
+docker build -t myapp .
+docker run -d -p 3000:3000 --name rails myapp
+
+# Shell into it
+docker exec -it rails bash
+
+# Logs
+docker logs rails -f
+
+# Port 3000 is accessible on the user's host machine at http://localhost:3000
+# (because the outer sandclaude container has -p 3000:3000)
+```
+
+**Inner container network access:**
+- Inner containers go through the same allowlist proxy as everything else
+- If an inner container needs a domain not in the allowlist, add it:
+  ```bash
+  echo 'rubygems.org' >> .firewall/allowed-domains.txt
+  kill -HUP $(pgrep allowlist-proxy)
+  ```
+- Common domains to add for Rails: `rubygems.org`, `index.rubygems.org`
+- Common domains to add for Django/Python: `pypi.org`, `files.pythonhosted.org`
+
+**Multi-container apps:**
+```bash
+# Containers can talk to each other by name when on the same docker network
+docker network create app-net
+docker run -d --network app-net --name postgres postgres:16
+docker run -d --network app-net --name redis redis:7
+docker run -d --network app-net -p 3000:3000 --name web myapp
+```
+
+**Verify inner daemon:**
+```bash
+docker info          # Shows inner daemon info
+docker ps            # Lists only inner containers
+echo $DOCKER_HOST    # unix:///var/run/dind/docker.sock
+```
+
+**Storage driver issues:**
+If image builds fail with overlay2 errors, the `DIND_STORAGE_DRIVER=vfs` fallback works universally (slower but compatible). Check `cat .firewall/dockerd.log` for errors.
+
 ## When to Use This Skill
 
 **Use this environment when:**
@@ -201,6 +259,8 @@ export ALLOWLIST_KEY=<your-passphrase>
 ```
 
 **Note:** The passthrough log is mounted at `/home/claude/allowed-domains.txt` inside the container. This is the same file as `allowlist-proxy/allowed-domains.txt` on the host — changes are reflected immediately on both sides.
+
+**Important:** The container may also have been started with `--disable-firewall-and-start`, which disables the firewall entirely (no proxy, no iptables enforcement). In this mode, all outbound traffic is allowed unconditionally. If you are unsure whether the firewall is active, **always attempt to reach the URL anyway** — do not assume it is blocked. Check `ps aux | grep allowlist-proxy` to confirm whether the proxy is running.
 
 ### Using with VS Code devcontainer
 ```bash

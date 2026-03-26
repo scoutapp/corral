@@ -2,6 +2,20 @@
 # Sandclaude entrypoint - Starts Python launcher with Linear monitoring
 # After Claude exits, drop to an interactive bash shell
 
+# Cleanup inner dockerd and containers on exit
+DOCKERD_PID=""
+cleanup_dind() {
+    if [ -n "$DOCKERD_PID" ]; then
+        echo "Stopping inner containers..."
+        docker --host="unix:///var/run/dind/docker.sock" \
+            ps -q 2>/dev/null | xargs -r docker --host="unix:///var/run/dind/docker.sock" stop --time=5 2>/dev/null || true
+        echo "Stopping inner dockerd (PID $DOCKERD_PID)..."
+        sudo kill "$DOCKERD_PID" 2>/dev/null || true
+        wait "$DOCKERD_PID" 2>/dev/null || true
+    fi
+}
+trap cleanup_dind EXIT
+
 # Configure mitmproxy CA certificate if proxy is enabled
 echo "🔒 Proxy configuration:"
 echo "   HTTP_PROXY=${HTTP_PROXY:-not set}"
@@ -18,6 +32,22 @@ if [ -n "$HTTP_PROXY" ]; then
         export REQUESTS_CA_BUNDLE="$HOME/.mitmproxy/mitmproxy-ca-cert.pem"
         export NODE_EXTRA_CA_CERTS="$HOME/.mitmproxy/mitmproxy-ca-cert.pem"
         export CURL_CA_BUNDLE="$HOME/.mitmproxy/mitmproxy-ca-cert.pem"
+
+        # Install into system trust store so dockerd (DinD) trusts the proxy CA.
+        # We bypass update-ca-certificates because it uses change-detection that skips
+        # regenerating the bundle if symlinks already exist from a prior image layer.
+        # Direct install is reliable: copy cert, create symlinks, append to bundle.
+        MITM_CRT=/usr/local/share/ca-certificates/mitmproxy-ca.crt
+        sudo cp "$HOME/.mitmproxy/mitmproxy-ca-cert.pem" "$MITM_CRT"
+        MITM_HASH=$(openssl x509 -hash -noout -in "$MITM_CRT")
+        sudo ln -sf "$MITM_CRT" /etc/ssl/certs/mitmproxy-ca.pem
+        sudo ln -sf mitmproxy-ca.pem /etc/ssl/certs/${MITM_HASH}.0
+        # Append to the bundle only if not already present (idempotent)
+        if ! openssl crl2pkcs7 -nocrl -certfile /etc/ssl/certs/ca-certificates.crt 2>/dev/null \
+                | openssl pkcs7 -print_certs -noout 2>/dev/null \
+                | grep -q "mitmproxy"; then
+            sudo sh -c "cat '$MITM_CRT' >> /etc/ssl/certs/ca-certificates.crt"
+        fi
 
         echo "   SSL_CERT_FILE=$SSL_CERT_FILE"
         echo "   REQUESTS_CA_BUNDLE=$REQUESTS_CA_BUNDLE"
@@ -91,13 +121,15 @@ if [ -z "$DISABLE_FIREWALL" ]; then
     sudo -u proxyuser \
         env -u HTTP_PROXY -u HTTPS_PROXY ALLOWLIST_KEY="$ALLOWLIST_KEY" \
         /usr/local/bin/allowlist-proxy \
-            --listen 127.0.0.1:3128 \
+            --listen 0.0.0.0:3128 \
             --allowlist "$ALLOWLIST_COPY" \
             $UPSTREAM_ARG \
             $PASSTHROUGH_ARG \
         >> "$PROXY_LOG" 2>&1 &
     PROXY_PID=$!
     echo "Allowlist proxy started (PID $PROXY_PID)"
+
+    DIND_PROXY_PORT=3128
 
     # In passthrough mode, sync new domains from the proxyuser-owned tmp file
     # to the bind-mounted file (which claude user can write to).
@@ -141,12 +173,16 @@ if [ -z "$DISABLE_FIREWALL" ]; then
     #   1. Allow loopback (proxy listens here; clients connect here)
     #   2. Allow DNS (UDP 53) so resolution still works for all processes
     #   3. Allow proxyuser to make direct outbound TCP (proxy's own connections)
-    #   4. Reject all other outbound TCP
+    #   4. Allow TCP to DinD bridge networks so the proxy can accept connections
+    #      from inner containers and respond to them (SYN-ACK, data) without
+    #      the REJECT rule blocking the response packets.
+    #   5. Reject all other outbound TCP
     echo "Applying iptables egress enforcement..."
     if sudo iptables -F OUTPUT 2>/dev/null && \
        sudo iptables -A OUTPUT -o lo -j ACCEPT && \
        sudo iptables -A OUTPUT -p udp --dport 53 -j ACCEPT && \
        sudo iptables -A OUTPUT -p tcp -m owner --uid-owner proxyuser -j ACCEPT && \
+       sudo iptables -A OUTPUT -p tcp -d 172.16.0.0/12 -j ACCEPT && \
        sudo iptables -A OUTPUT -p tcp -j REJECT --reject-with tcp-reset; then
         echo "✅ iptables egress rules applied — only proxyuser may make direct TCP connections"
     else
@@ -159,6 +195,125 @@ if [ -z "$DISABLE_FIREWALL" ]; then
 else
     echo "WARNING: FIREWALL IS DISABLED - Claude has unrestricted network access!"
     echo ""
+fi
+
+# ── DinD: start inner dockerd ─────────────────────────────────────────────
+if [ -n "$DIND_ENABLED" ]; then
+    echo "Starting inner dockerd..."
+
+    DIND_SOCKET=/var/run/dind/docker.sock
+    DIND_DATA=/var/lib/docker-dind
+    STORAGE_DRIVER="${DIND_STORAGE_DRIVER:-vfs}"
+
+    # Write daemon config
+    sudo mkdir -p /etc/docker-dind
+    sudo tee /etc/docker-dind/daemon.json > /dev/null <<DAEMONCFG
+{
+  "data-root": "${DIND_DATA}",
+  "hosts": ["unix://${DIND_SOCKET}"],
+  "storage-driver": "${STORAGE_DRIVER}",
+  "iptables": true,
+  "ip-masq": false,
+  "bip": "172.18.0.1/16",
+  "proxies": {
+    "http-proxy": "http://172.18.0.1:${DIND_PROXY_PORT}",
+    "https-proxy": "http://172.18.0.1:${DIND_PROXY_PORT}",
+    "no-proxy": "172.18.0.0/16,127.0.0.0/8"
+  }
+}
+DAEMONCFG
+
+    # Refresh system CA trust store right before starting dockerd so it picks
+    # up the mitmproxy cert even if it wasn't fully available at container start.
+    # Re-run the same direct install (idempotent) in case the cert wasn't readable
+    # at container start time (VirtioFS bind-mount timing on macOS).
+    if [ -f "$HOME/.mitmproxy/mitmproxy-ca-cert.pem" ]; then
+        MITM_CRT=/usr/local/share/ca-certificates/mitmproxy-ca.crt
+        sudo cp "$HOME/.mitmproxy/mitmproxy-ca-cert.pem" "$MITM_CRT"
+        MITM_HASH=$(openssl x509 -hash -noout -in "$MITM_CRT")
+        sudo ln -sf "$MITM_CRT" /etc/ssl/certs/mitmproxy-ca.pem
+        sudo ln -sf mitmproxy-ca.pem /etc/ssl/certs/${MITM_HASH}.0
+        if ! openssl crl2pkcs7 -nocrl -certfile /etc/ssl/certs/ca-certificates.crt 2>/dev/null \
+                | openssl pkcs7 -print_certs -noout 2>/dev/null \
+                | grep -q "mitmproxy"; then
+            sudo sh -c "cat '$MITM_CRT' >> /etc/ssl/certs/ca-certificates.crt"
+        fi
+    fi
+
+    sudo dockerd --config-file /etc/docker-dind/daemon.json \
+        > "$HOME/logs/dockerd.log" 2>&1 &
+    DOCKERD_PID=$!
+
+    # Wait for dockerd to be ready (poll socket, max 15s)
+    echo "Waiting for inner dockerd..."
+    for i in $(seq 1 30); do
+        if sudo docker --host="unix://${DIND_SOCKET}" info > /dev/null 2>&1; then
+            echo "✅ Inner dockerd ready (PID $DOCKERD_PID)"
+            break
+        fi
+        sleep 0.5
+        if [ "$i" -eq 30 ]; then
+            echo "ERROR: inner dockerd failed to start. Check $HOME/logs/dockerd.log"
+            cat "$HOME/logs/dockerd.log"
+            exit 1
+        fi
+    done
+
+    # Export DOCKER_HOST so all docker commands use the inner daemon
+    export DOCKER_HOST="unix://${DIND_SOCKET}"
+
+    # Configure ~/.docker/config.json to inject proxy into inner containers at runtime.
+    # Docker daemon's "proxies" block sets HTTP_PROXY/HTTPS_PROXY env vars inside every
+    # container it starts, so apps pick them up automatically with no Dockerfile changes.
+    mkdir -p /home/claude/.docker
+    cat > /home/claude/.docker/config.json <<DOCKERCFG
+{
+  "proxies": {
+    "default": {
+      "httpProxy": "http://172.18.0.1:${DIND_PROXY_PORT}",
+      "httpsProxy": "http://172.18.0.1:${DIND_PROXY_PORT}",
+      "noProxy": "172.18.0.0/16,127.0.0.0/8"
+    }
+  }
+}
+DOCKERCFG
+
+    # Make the proxy CA cert available at a well-known path.
+    # The cert-injector daemon will automatically inject it into every new inner container.
+    if [ -f "$HOME/.mitmproxy/mitmproxy-ca-cert.pem" ]; then
+        sudo cp "$HOME/.mitmproxy/mitmproxy-ca-cert.pem" /etc/proxy-ca.crt
+        sudo chmod 644 /etc/proxy-ca.crt
+        echo "✅ Proxy CA cert available at /etc/proxy-ca.crt"
+    fi
+
+    # Enable IP forwarding (required for docker bridge networking)
+    sudo sysctl -w net.ipv4.ip_forward=1 > /dev/null
+
+    # PREROUTING REDIRECT: intercept inner container TCP egress -> allowlist proxy
+    # Inner containers (172.18.0.0/16) trying to reach external hosts get redirected
+    # to the allowlist proxy on 127.0.0.1:3128 before being forwarded.
+    sudo iptables -t nat -A PREROUTING \
+        -s 172.16.0.0/12 \
+        -p tcp \
+        ! -d 172.16.0.0/12 \
+        -j REDIRECT --to-port 3128
+
+    # FORWARD rules: allow bridge <-> external interface traffic
+    sudo iptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+    sudo iptables -A FORWARD -s 172.16.0.0/12 -j ACCEPT
+    sudo iptables -A FORWARD -d 172.16.0.0/12 -j ACCEPT
+
+    echo "✅ Inner container proxy enforcement applied (172.16.0.0/12 -> :3128)"
+    echo "   DOCKER_HOST=${DOCKER_HOST}"
+    echo ""
+
+    # Start cert injector: watches for new inner containers and injects the
+    # mitmproxy CA cert so they trust the allowlist proxy's TLS interception.
+    if [ -f /etc/proxy-ca.crt ]; then
+        /home/claude/bin/cert-injector >> "${HOME}/logs/cert-injector.log" 2>&1 &
+        echo "✅ Cert injector started (PID $!)"
+        echo ""
+    fi
 fi
 
 # Check if GitHub integration is configured

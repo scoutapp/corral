@@ -75,6 +75,29 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     apt-get update && apt-get install -y --no-install-recommends gh && \
     rm -rf /var/lib/apt/lists/*
 
+# Install Docker Engine (dockerd + CLI) and tini for DinD support
+RUN install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+       -o /etc/apt/keyrings/docker.asc \
+    && chmod a+r /etc/apt/keyrings/docker.asc \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+       https://download.docker.com/linux/ubuntu noble stable" \
+       > /etc/apt/sources.list.d/docker.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+       docker-ce \
+       docker-ce-cli \
+       containerd.io \
+       docker-compose-plugin \
+       docker-buildx-plugin \
+       tini \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create directories for inner dockerd state and socket
+RUN mkdir -p /var/lib/docker-dind /var/run/dind \
+    && groupadd -f docker \
+    && chmod 775 /var/run/dind
+
 # Create a dedicated user for the allowlist proxy (fixed UID 900).
 # iptables --uid-owner rules use this UID to allow only the proxy process
 # to make direct outbound TCP connections; all other traffic must go through it.
@@ -85,6 +108,7 @@ ARG USER_ID=1000
 ARG GROUP_ID=1000
 RUN groupadd -f -g ${GROUP_ID} claude && \
     useradd -m -u ${USER_ID} -g claude -o claude && \
+    usermod -aG docker claude && \
     echo "claude ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/claude && \
     echo "claude ALL=(proxyuser) NOPASSWD: /usr/local/bin/allowlist-proxy" >> /etc/sudoers.d/claude
 
@@ -102,11 +126,13 @@ ENV PATH="/home/claude/.cargo/bin:${PATH}"
 RUN curl -fsSL https://claude.ai/install.sh | bash
 ENV PATH="/home/claude/.claude/bin:/home/claude/.local/bin:${PATH}"
 
-# Copy launcher, entrypoint, proxy addon, and skill
+# Copy launcher, entrypoint, proxy addon, skill, and bin scripts
 COPY --chown=claude:claude launcher.py /home/claude/launcher.py
 COPY --chown=claude:claude entrypoint.sh /home/claude/entrypoint.sh
 COPY --chown=claude:claude proxy-addon.py /usr/local/bin/proxy-addon.py
-COPY --chown=claude:claude skill/SKILL.md /home/claude/.claude/skills/sandclaude.md
-RUN chmod +x /home/claude/launcher.py /home/claude/entrypoint.sh /usr/local/bin/proxy-addon.py
+COPY --chown=claude:claude skills/ /home/claude/.claude/skills/
+COPY --chown=claude:claude bin/ /home/claude/bin/
+RUN chmod +x /home/claude/launcher.py /home/claude/entrypoint.sh /usr/local/bin/proxy-addon.py \
+    /home/claude/bin/cert-injector
 
-ENTRYPOINT ["/home/claude/entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/home/claude/entrypoint.sh"]

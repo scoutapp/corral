@@ -25,14 +25,17 @@ const (
 )
 
 type SandClaude struct {
-	proxyCmd               *exec.Cmd
-	proxyPort              string
-	credentialsFile        string
-	addonScript            string
-	scriptDir              string
-	proxyEnabled           bool
-	disableFirewall        bool
+	proxyCmd                *exec.Cmd
+	proxyPort               string
+	credentialsFile         string
+	addonScript             string
+	scriptDir               string
+	proxyEnabled            bool
+	disableFirewall         bool
 	disableFirewallAndWrite bool
+	disableDind             bool
+	dindEnabled             bool
+	dindPorts               []string
 }
 
 func NewSandClaude() (*SandClaude, error) {
@@ -276,11 +279,13 @@ func readAWSCredentials() (accessKey, secretKey, sessionToken, region string, er
 // ----------------------------------------------------------------------------
 
 type ProjectConfig struct {
-	Workspace    string `json:"workspace"`
-	GitHubRepo   string `json:"github_repo,omitempty"`
-	AWSEnabled   bool   `json:"aws_enabled,omitempty"`
-	ProxyEnabled bool   `json:"proxy_enabled,omitempty"`
-	CreatedAt    string `json:"created_at"`
+	Workspace    string   `json:"workspace"`
+	GitHubRepo   string   `json:"github_repo,omitempty"`
+	AWSEnabled   bool     `json:"aws_enabled,omitempty"`
+	ProxyEnabled bool     `json:"proxy_enabled,omitempty"`
+	DindEnabled  bool     `json:"dind_enabled,omitempty"`
+	DindPorts    []string `json:"dind_ports,omitempty"`
+	CreatedAt    string   `json:"created_at"`
 }
 
 func readConfig(projectDir string) (*ProjectConfig, error) {
@@ -343,9 +348,14 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 
 	// Build docker args
 	containerName := "sandclaude"
-	args := []string{"run", "--rm", "-it", "--name", containerName,
-		"--cap-add=NET_ADMIN",
-		"--cap-add=NET_RAW",
+	args := []string{"run", "--rm", "-it", "--name", containerName}
+
+	// DinD requires --privileged (superset of NET_ADMIN + NET_RAW + SYS_ADMIN).
+	// Without DinD, use minimal capabilities.
+	if sc.dindEnabled {
+		args = append(args, "--privileged")
+	} else {
+		args = append(args, "--cap-add=NET_ADMIN", "--cap-add=NET_RAW")
 	}
 
 	if sc.disableFirewall {
@@ -418,6 +428,20 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 		"-v", fmt.Sprintf("%s:%s", workspace, workspace),
 		"-w", workspace,
 	)
+
+	// Shadow the host's ~/.claude/skills with a tmpfs so the container can't write skills
+	// back to the host. Then mount each skills subdirectory from the repo on top (read-only).
+	args = append(args, "--tmpfs", "/home/claude/.claude/skills:rw,noexec,nosuid,size=64m")
+	repoSkillsDir := filepath.Join(sc.scriptDir, "skills")
+	if entries, err := os.ReadDir(repoSkillsDir); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				hostSkillPath := filepath.Join(repoSkillsDir, entry.Name())
+				containerSkillPath := fmt.Sprintf("/home/claude/.claude/skills/%s", entry.Name())
+				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", hostSkillPath, containerSkillPath))
+			}
+		}
+	}
 
 	// Mount empty tmpfs over .devcontainer to hide it from the container
 	args = append(args, "--tmpfs", fmt.Sprintf("%s/.devcontainer:rw,noexec,nosuid,size=1m", workspace))
@@ -504,6 +528,19 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 		log.Println()
 	}
 
+	// DinD: signal entrypoint to start inner dockerd and expose ports
+	if sc.dindEnabled {
+		args = append(args, "-e", "DIND_ENABLED=1")
+		for _, port := range sc.dindPorts {
+			args = append(args, "-p", port)
+		}
+		log.Printf("🐳 DinD enabled")
+		if len(sc.dindPorts) > 0 {
+			log.Printf("   Ports: %s", strings.Join(sc.dindPorts, ", "))
+		}
+		log.Println()
+	}
+
 	args = append(args, imageName)
 
 	// Start docker
@@ -570,6 +607,12 @@ func (sc *SandClaude) Run() error {
 		return fmt.Errorf("workspace not found: %s", cfg.Workspace)
 	}
 
+	// Check if DinD is enabled (unless --disable-dind was passed)
+	if !sc.disableDind && cfg.DindEnabled {
+		sc.dindEnabled = true
+		sc.dindPorts = cfg.DindPorts
+	}
+
 	if cfg.ProxyEnabled {
 		sc.proxyEnabled = true
 		log.Println("Proxy configured for this project, starting...")
@@ -599,6 +642,122 @@ func (sc *SandClaude) Run() error {
 	}
 
 	return err
+}
+
+// cmdUpdate updates project config fields without touching credentials or the allowlist key.
+func cmdUpdate() error {
+	projectDir := getProjectDir()
+	cfg, err := readConfig(projectDir)
+	if err != nil {
+		return err
+	}
+
+	log.Println("Updating project config (press Enter to keep current value)")
+	log.Println()
+
+	// GitHub monitoring
+	reader := bufio.NewReader(os.Stdin)
+	if cfg.GitHubRepo != "" {
+		fmt.Printf("GitHub repository (current: %s, blank to clear): ", cfg.GitHubRepo)
+	} else {
+		fmt.Print("GitHub repository (e.g. owner/repo, blank to disable): ")
+	}
+	repoInput, _ := reader.ReadString('\n')
+	repoInput = strings.TrimSpace(repoInput)
+	if repoInput == "" && cfg.GitHubRepo != "" {
+		log.Printf("  GitHub repo unchanged: %s\n", cfg.GitHubRepo)
+	} else {
+		cfg.GitHubRepo = repoInput
+		if repoInput != "" {
+			log.Printf("  GitHub repo set to: %s\n", repoInput)
+		} else {
+			log.Println("  GitHub monitoring disabled")
+		}
+	}
+
+	log.Println()
+
+	// AWS
+	awsPrompt := "n"
+	if cfg.AWSEnabled {
+		awsPrompt = "Y"
+	}
+	fmt.Printf("Pass AWS credentials from host ~/.aws? (current: %s) [y/N]: ", awsPrompt)
+	awsInput, _ := reader.ReadString('\n')
+	awsInput = strings.TrimSpace(strings.ToLower(awsInput))
+	if awsInput == "" {
+		log.Printf("  AWS unchanged: %v\n", cfg.AWSEnabled)
+	} else {
+		cfg.AWSEnabled = awsInput == "y" || awsInput == "yes"
+		log.Printf("  AWS enabled: %v\n", cfg.AWSEnabled)
+	}
+
+	log.Println()
+
+	// Docker-in-Docker
+	dindPrompt := "n"
+	if cfg.DindEnabled {
+		dindPrompt = "Y"
+	}
+	fmt.Printf("Enable Docker-in-Docker? (current: %s) [y/N]: ", dindPrompt)
+	dindInput, _ := reader.ReadString('\n')
+	dindInput = strings.TrimSpace(strings.ToLower(dindInput))
+	if dindInput == "" {
+		log.Printf("  DinD unchanged: %v\n", cfg.DindEnabled)
+	} else {
+		cfg.DindEnabled = dindInput == "y" || dindInput == "yes"
+		log.Printf("  DinD enabled: %v\n", cfg.DindEnabled)
+		if !cfg.DindEnabled {
+			cfg.DindPorts = nil
+		}
+	}
+
+	if cfg.DindEnabled {
+		currentPorts := strings.Join(cfg.DindPorts, ",")
+		if currentPorts == "" {
+			currentPorts = "none"
+		}
+		fmt.Printf("  Port mappings to expose to host (current: %s, blank to keep, 'none' to clear): ", currentPorts)
+		portsInput, _ := reader.ReadString('\n')
+		portsInput = strings.TrimSpace(portsInput)
+		if portsInput == "" {
+			log.Printf("  DinD ports unchanged: %s\n", currentPorts)
+		} else if portsInput == "none" {
+			cfg.DindPorts = nil
+			log.Println("  DinD ports cleared — inner containers accessible to Claude only")
+		} else {
+			cfg.DindPorts = strings.FieldsFunc(portsInput, func(r rune) bool {
+				return r == ',' || r == ' '
+			})
+			log.Printf("  DinD ports set to: %s\n", strings.Join(cfg.DindPorts, ", "))
+		}
+	}
+
+	log.Println()
+
+	// Workspace
+	fmt.Printf("Workspace directory (current: %s, blank to keep): ", cfg.Workspace)
+	wsInput, _ := reader.ReadString('\n')
+	wsInput = strings.TrimSpace(wsInput)
+	if wsInput == "" {
+		log.Printf("  Workspace unchanged: %s\n", cfg.Workspace)
+	} else {
+		cfg.Workspace = wsInput
+		log.Printf("  Workspace set to: %s\n", wsInput)
+		if _, err := os.Stat(wsInput); os.IsNotExist(err) {
+			if askYesNo("Workspace doesn't exist. Create it?") {
+				os.MkdirAll(wsInput, 0755)
+				log.Printf("  Created workspace: %s\n", wsInput)
+			}
+		}
+	}
+
+	if err := writeConfig(projectDir, cfg); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+	log.Println()
+	log.Println("✅ Config updated (credentials and allowlist key unchanged)")
+	return nil
 }
 
 // cmdInit initializes the ./project/ structure
@@ -640,6 +799,31 @@ func cmdInit() error {
 	if askYesNo("Pass AWS credentials from host ~/.aws?") {
 		cfg.AWSEnabled = true
 		log.Println("AWS credentials will be read from host ~/.aws/credentials")
+	}
+
+	log.Println()
+
+	// Docker-in-Docker
+	if askYesNo("Enable Docker-in-Docker (inner containers, Claude-accessible)?") {
+		cfg.DindEnabled = true
+		log.Println("Docker-in-Docker enabled — Claude can start inner containers")
+		log.Println("   Inner containers' network egress goes through the allowlist proxy")
+
+		reader2 := bufio.NewReader(os.Stdin)
+		fmt.Print("Port mappings to expose to host (e.g. 3000:3000,8000:8000, blank for none): ")
+		portsInput, _ := reader2.ReadString('\n')
+		portsInput = strings.TrimSpace(portsInput)
+		if portsInput != "" {
+			ports := strings.FieldsFunc(portsInput, func(r rune) bool {
+				return r == ',' || r == ' '
+			})
+			cfg.DindPorts = ports
+			log.Printf("   Port mappings: %s\n", strings.Join(ports, ", "))
+		} else {
+			log.Println("   No host port mappings — inner containers accessible to Claude only")
+		}
+	} else {
+		log.Println("Docker-in-Docker disabled")
 	}
 
 	log.Println()
@@ -763,6 +947,7 @@ func cmdInit() error {
 func cmdStart(args []string) error {
 	disableFirewall := false
 	disableFirewallAndWrite := false
+	disableDind := false
 
 	for _, arg := range args {
 		switch arg {
@@ -770,6 +955,8 @@ func cmdStart(args []string) error {
 			disableFirewall = true
 		case "--disable-firewall-and-write":
 			disableFirewallAndWrite = true
+		case "--disable-dind":
+			disableDind = true
 		}
 	}
 
@@ -780,6 +967,7 @@ func cmdStart(args []string) error {
 
 	sc.disableFirewall = disableFirewall
 	sc.disableFirewallAndWrite = disableFirewallAndWrite
+	sc.disableDind = disableDind
 	return sc.Run()
 }
 
@@ -802,6 +990,13 @@ func cmdList() error {
 	}
 	if cfg.AWSEnabled {
 		log.Println("  AWS:       enabled")
+	}
+	if cfg.DindEnabled {
+		log.Print("  DinD:      enabled")
+		if len(cfg.DindPorts) > 0 {
+			log.Printf(" (ports: %s)", strings.Join(cfg.DindPorts, ", "))
+		}
+		log.Println()
 	}
 	if cfg.ProxyEnabled {
 		log.Println("  Proxy:     enabled")
@@ -879,11 +1074,27 @@ func cmdShell() error {
 	return dockerCmd.Run()
 }
 
-// cmdRebuild rebuilds the Docker image
-func cmdRebuild() error {
+// cmdRebuild rebuilds the Docker image, optionally destroying the existing image and container first
+func cmdRebuild(destroy bool) error {
 	sc, err := NewSandClaude()
 	if err != nil {
 		return err
+	}
+
+	if destroy {
+		log.Println("Destroying existing sandclaude container and image...")
+
+		// Stop and remove any running container
+		stopCmd := exec.Command("docker", "rm", "-f", "sandclaude")
+		stopCmd.Stdout = os.Stdout
+		stopCmd.Stderr = os.Stderr
+		stopCmd.Run() // ignore error — container may not exist
+
+		// Remove the image
+		rmiCmd := exec.Command("docker", "rmi", "-f", "sandclaude")
+		rmiCmd.Stdout = os.Stdout
+		rmiCmd.Stderr = os.Stderr
+		rmiCmd.Run() // ignore error — image may not exist
 	}
 
 	log.Println("Building sandclaude image...")
@@ -903,12 +1114,15 @@ func cmdRebuild() error {
 	}
 	groupID := strings.TrimSpace(string(groupIDBytes))
 
-	buildCmd := exec.Command("docker", "build",
+	buildArgs := []string{"build",
 		"--build-arg", fmt.Sprintf("USER_ID=%s", userID),
 		"--build-arg", fmt.Sprintf("GROUP_ID=%s", groupID),
-		"-t", "sandclaude",
-		sc.scriptDir,
-	)
+	}
+	if destroy {
+		buildArgs = append(buildArgs, "--no-cache")
+	}
+	buildArgs = append(buildArgs, "-t", "sandclaude", sc.scriptDir)
+	buildCmd := exec.Command("docker", buildArgs...)
 	buildCmd.Stdout = os.Stdout
 	buildCmd.Stderr = os.Stderr
 
@@ -1136,16 +1350,18 @@ func usage() {
 	fmt.Println()
 	fmt.Println("Commands:")
 	fmt.Println("  init                     Initialize ./project/ structure in current repo")
+	fmt.Println("  update                   Update project config (preserves credentials and allowlist key)")
 	fmt.Println("  start [flags]            Start Claude Code (uses ./project/ config)")
 	fmt.Println("    --disable-firewall             Skip firewall initialization")
 	fmt.Println("    --disable-firewall-and-write   Keep proxy but allow all domains; write unknown ones to allowed-domains.txt")
+	fmt.Println("    --disable-dind                 Skip inner dockerd startup")
 	fmt.Println("  list                     Show ./project/ configuration")
 	fmt.Println("  remove                   Remove ./project/ directory after confirmation")
 	fmt.Println("  firewall-reload          Encrypt allowed-domains.txt and SIGHUP proxy")
 	fmt.Println("  firewall-monitor         Tail allowlist proxy log in running container")
 	fmt.Println("  shell                    Open bash shell in container")
 	fmt.Println("  copy <target>            Copy sandclaude files to target directory")
-	fmt.Println("  rebuild                  Force rebuild container image")
+	fmt.Println("  rebuild [--destroy]      Force rebuild container image (--destroy removes existing image/container first)")
 	fmt.Println("  help                     Show this help")
 	fmt.Println()
 	fmt.Println("Examples:")
@@ -1177,6 +1393,9 @@ func main() {
 	case "init":
 		err = cmdInit()
 
+	case "update":
+		err = cmdUpdate()
+
 	case "start":
 		err = cmdStart(os.Args[2:])
 
@@ -1196,7 +1415,8 @@ func main() {
 		err = cmdShell()
 
 	case "rebuild":
-		err = cmdRebuild()
+		destroy := len(os.Args) > 2 && os.Args[2] == "--destroy"
+		err = cmdRebuild(destroy)
 
 	case "copy":
 		target := ""
