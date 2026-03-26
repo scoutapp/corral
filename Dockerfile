@@ -130,7 +130,7 @@ ENV PATH="/home/claude/.claude/bin:/home/claude/.local/bin:${PATH}"
 COPY --chown=claude:claude launcher.py /home/claude/launcher.py
 COPY --chown=claude:claude entrypoint.sh /home/claude/entrypoint.sh
 COPY --chown=claude:claude proxy-addon.py /usr/local/bin/proxy-addon.py
-COPY --chown=claude:claude skill/SKILL.md /home/claude/.claude/skills/sandclaude.md
+COPY --chown=claude:claude skills/ /home/claude/.claude/skills/
 COPY --chown=claude:claude bin/ /home/claude/bin/
 RUN chmod +x /home/claude/launcher.py /home/claude/entrypoint.sh /usr/local/bin/proxy-addon.py \
     /home/claude/bin/cert-injector

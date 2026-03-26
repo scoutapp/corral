@@ -152,7 +152,7 @@ When `DIND_ENABLED=1` is set in the environment, an inner Docker daemon is runni
 - Inner containers sit on `172.18.0.0/16` bridge network
 - `~/.docker/config.json` injects `HTTP_PROXY` and `HTTPS_PROXY` into every inner container automatically — **no Dockerfile or compose env changes needed**
 - The allowlist proxy listens on `0.0.0.0:3128`, reachable from inner containers via their bridge gateway (`172.18.0.1` for the default DinD bridge; compose networks get addresses in `172.18.0.0/15`)
-- The allowlist proxy forwards to mitmproxy — inner containers must trust the mitmproxy CA cert. The `~/bin/docker` wrapper automatically injects the CA cert into any image built via `docker build` or `docker compose build`
+- The allowlist proxy forwards to mitmproxy — inner containers must trust the mitmproxy CA cert. The `~/bin/docker` wrapper automatically injects the CA cert into any image built via `docker build` or `docker compose build` via the **cert-injector** sidecar. In most cases this is transparent. However, if an inner container produces SSL errors like `509 Certificate Verify Failed` or similar TLS errors, the mitmproxy CA was likely not injected correctly — check `/usr/local/share/ca-certificates/mitmproxy-ca.crt` inside the container and re-run `update-ca-certificates` if missing
 - iptables allows `172.18.0.0/15` in the OUTPUT chain so the proxy can respond to inner container connections
 - Inner containers are destroyed when sandclaude exits
 
@@ -259,6 +259,8 @@ export ALLOWLIST_KEY=<your-passphrase>
 ```
 
 **Note:** The passthrough log is mounted at `/home/claude/allowed-domains.txt` inside the container. This is the same file as `allowlist-proxy/allowed-domains.txt` on the host — changes are reflected immediately on both sides.
+
+**Important:** The container may also have been started with `--disable-firewall-and-start`, which disables the firewall entirely (no proxy, no iptables enforcement). In this mode, all outbound traffic is allowed unconditionally. If you are unsure whether the firewall is active, **always attempt to reach the URL anyway** — do not assume it is blocked. Check `ps aux | grep allowlist-proxy` to confirm whether the proxy is running.
 
 ### Using with VS Code devcontainer
 ```bash
