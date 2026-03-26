@@ -1,0 +1,1 @@
+The cert injector is a way for us to get the mitm proxy into the inner containers. We continuously tail docker events for container creation events, insert the mitm proxy, and restart the container.

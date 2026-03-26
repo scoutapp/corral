@@ -88,6 +88,8 @@ RUN install -m 0755 -d /etc/apt/keyrings \
        docker-ce \
        docker-ce-cli \
        containerd.io \
+       docker-compose-plugin \
+       docker-buildx-plugin \
        tini \
     && rm -rf /var/lib/apt/lists/*
 
@@ -124,11 +126,13 @@ ENV PATH="/home/claude/.cargo/bin:${PATH}"
 RUN curl -fsSL https://claude.ai/install.sh | bash
 ENV PATH="/home/claude/.claude/bin:/home/claude/.local/bin:${PATH}"
 
-# Copy launcher, entrypoint, proxy addon, and skill
+# Copy launcher, entrypoint, proxy addon, skill, and bin scripts
 COPY --chown=claude:claude launcher.py /home/claude/launcher.py
 COPY --chown=claude:claude entrypoint.sh /home/claude/entrypoint.sh
 COPY --chown=claude:claude proxy-addon.py /usr/local/bin/proxy-addon.py
 COPY --chown=claude:claude skill/SKILL.md /home/claude/.claude/skills/sandclaude.md
-RUN chmod +x /home/claude/launcher.py /home/claude/entrypoint.sh /usr/local/bin/proxy-addon.py
+COPY --chown=claude:claude bin/ /home/claude/bin/
+RUN chmod +x /home/claude/launcher.py /home/claude/entrypoint.sh /usr/local/bin/proxy-addon.py \
+    /home/claude/bin/cert-injector
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/home/claude/entrypoint.sh"]

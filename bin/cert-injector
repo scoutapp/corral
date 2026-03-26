@@ -1,0 +1,75 @@
+#!/bin/bash
+# cert-injector: injects the mitmproxy CA cert into inner containers.
+#
+# Strategy:
+#   1. On 'create': docker cp the CA cert into the stopped container's filesystem.
+#      docker cp works on stopped containers. The cert lands at a temp path.
+#   2. On 'start': append the temp cert to the system bundle and restart the
+#      container once so the app starts fresh with the cert already in the bundle.
+#      The restart re-triggers 'start' but not 'create', so finalize_cert detects
+#      the cert is already appended and skips the restart — no infinite loop.
+#
+# Runs as a background daemon inside the sandbox. Started by entrypoint.sh
+# when DIND_ENABLED=1 and a proxy CA cert is present.
+
+CA_CERT=/etc/proxy-ca.crt
+DOCKER="docker --host unix:///var/run/dind/docker.sock"
+STAGED_PATH=/tmp/proxy-ca-inject.crt
+
+inject_cert() {
+    local container_id="$1"
+    local name
+    name=$($DOCKER inspect --format '{{.Name}}' "$container_id" 2>/dev/null | sed 's|^/||')
+
+    # Copy cert into the stopped container before it starts
+    if $DOCKER cp "$CA_CERT" "${container_id}:${STAGED_PATH}" 2>/dev/null; then
+        echo "[cert-injector] $name: cert staged at $STAGED_PATH"
+    else
+        echo "[cert-injector] $name: docker cp failed, skipping"
+    fi
+}
+
+finalize_cert() {
+    local container_id="$1"
+
+    # Wait for container to be running
+    local status i
+    for i in $(seq 1 10); do
+        status=$($DOCKER inspect --format '{{.State.Status}}' "$container_id" 2>/dev/null)
+        [ "$status" = "running" ] && break
+        sleep 0.1
+    done
+    [ "$status" != "running" ] && return
+
+    local name
+    name=$($DOCKER inspect --format '{{.Name}}' "$container_id" 2>/dev/null | sed 's|^/||')
+
+    # Check if staged cert is present — its absence means either we didn't stage it
+    # or it was already injected+removed in a previous cycle (post-restart start event).
+    $DOCKER exec "$container_id" test -f "$STAGED_PATH" 2>/dev/null || return
+
+    # Append cert to system bundles and remove staged file (use -c, not heredoc, for background jobs)
+    $DOCKER exec "$container_id" sh -c \
+        'cert=/tmp/proxy-ca-inject.crt; [ -f "$cert" ] || exit 1; [ -f /etc/ssl/certs/ca-certificates.crt ] && cat "$cert" >> /etc/ssl/certs/ca-certificates.crt; [ -f /etc/pki/tls/certs/ca-bundle.crt ] && cat "$cert" >> /etc/pki/tls/certs/ca-bundle.crt; rm -f "$cert"; exit 0' \
+        2>/dev/null
+
+    if [ $? -eq 0 ]; then
+        echo "[cert-injector] $name: cert injected, restarting so app starts with trusted bundle"
+        # Restart so the app starts fresh with the cert already in the bundle.
+        # docker restart preserves the container filesystem (no re-create),
+        # so the staged cert file and the appended bundle survive the restart.
+        $DOCKER restart "$container_id" 2>/dev/null
+    else
+        echo "[cert-injector] $name: injection failed (no sh or distroless)"
+    fi
+}
+
+echo "[cert-injector] Starting — watching inner docker for container create/start events"
+echo "[cert-injector] CA cert: $CA_CERT"
+
+$DOCKER events --filter 'event=create' --filter 'event=start' --format '{{.Action}} {{.Actor.ID}}' | while read -r event container_id; do
+    case "$event" in
+        create) inject_cert "$container_id" & ;;
+        start)  finalize_cert "$container_id" & ;;
+    esac
+done

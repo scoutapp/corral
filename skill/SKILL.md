@@ -150,8 +150,10 @@ When `DIND_ENABLED=1` is set in the environment, an inner Docker daemon is runni
 **Key facts:**
 - All `docker` commands you run go to the **inner daemon**, not the host
 - Inner containers sit on `172.18.0.0/16` bridge network
-- All inner container TCP egress is **automatically** intercepted by the allowlist proxy — no manual proxy configuration needed when starting containers
-- `~/.docker/config.json` also injects `HTTP_PROXY`/`HTTPS_PROXY` into inner containers at the application layer
+- `~/.docker/config.json` injects `HTTP_PROXY` and `HTTPS_PROXY` into every inner container automatically — **no Dockerfile or compose env changes needed**
+- The allowlist proxy listens on `0.0.0.0:3128`, reachable from inner containers via their bridge gateway (`172.18.0.1` for the default DinD bridge; compose networks get addresses in `172.18.0.0/15`)
+- The allowlist proxy forwards to mitmproxy — inner containers must trust the mitmproxy CA cert. The `~/bin/docker` wrapper automatically injects the CA cert into any image built via `docker build` or `docker compose build`
+- iptables allows `172.18.0.0/15` in the OUTPUT chain so the proxy can respond to inner container connections
 - Inner containers are destroyed when sandclaude exits
 
 **Running inner containers:**

@@ -1060,11 +1060,27 @@ func cmdShell() error {
 	return dockerCmd.Run()
 }
 
-// cmdRebuild rebuilds the Docker image
-func cmdRebuild() error {
+// cmdRebuild rebuilds the Docker image, optionally destroying the existing image and container first
+func cmdRebuild(destroy bool) error {
 	sc, err := NewSandClaude()
 	if err != nil {
 		return err
+	}
+
+	if destroy {
+		log.Println("Destroying existing sandclaude container and image...")
+
+		// Stop and remove any running container
+		stopCmd := exec.Command("docker", "rm", "-f", "sandclaude")
+		stopCmd.Stdout = os.Stdout
+		stopCmd.Stderr = os.Stderr
+		stopCmd.Run() // ignore error — container may not exist
+
+		// Remove the image
+		rmiCmd := exec.Command("docker", "rmi", "-f", "sandclaude")
+		rmiCmd.Stdout = os.Stdout
+		rmiCmd.Stderr = os.Stderr
+		rmiCmd.Run() // ignore error — image may not exist
 	}
 
 	log.Println("Building sandclaude image...")
@@ -1328,7 +1344,7 @@ func usage() {
 	fmt.Println("  firewall-monitor         Tail allowlist proxy log in running container")
 	fmt.Println("  shell                    Open bash shell in container")
 	fmt.Println("  copy <target>            Copy sandclaude files to target directory")
-	fmt.Println("  rebuild                  Force rebuild container image")
+	fmt.Println("  rebuild [--destroy]      Force rebuild container image (--destroy removes existing image/container first)")
 	fmt.Println("  help                     Show this help")
 	fmt.Println()
 	fmt.Println("Examples:")
@@ -1382,7 +1398,8 @@ func main() {
 		err = cmdShell()
 
 	case "rebuild":
-		err = cmdRebuild()
+		destroy := len(os.Args) > 2 && os.Args[2] == "--destroy"
+		err = cmdRebuild(destroy)
 
 	case "copy":
 		target := ""

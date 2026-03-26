@@ -27,6 +27,7 @@ unpkg.com
 registry.hub.docker.com
 index.docker.io
 auth.docker.io
+registry-1.docker.io
 production.cloudflare.docker.com
 ghcr.io
 quay.io

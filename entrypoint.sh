@@ -33,6 +33,22 @@ if [ -n "$HTTP_PROXY" ]; then
         export NODE_EXTRA_CA_CERTS="$HOME/.mitmproxy/mitmproxy-ca-cert.pem"
         export CURL_CA_BUNDLE="$HOME/.mitmproxy/mitmproxy-ca-cert.pem"
 
+        # Install into system trust store so dockerd (DinD) trusts the proxy CA.
+        # We bypass update-ca-certificates because it uses change-detection that skips
+        # regenerating the bundle if symlinks already exist from a prior image layer.
+        # Direct install is reliable: copy cert, create symlinks, append to bundle.
+        MITM_CRT=/usr/local/share/ca-certificates/mitmproxy-ca.crt
+        sudo cp "$HOME/.mitmproxy/mitmproxy-ca-cert.pem" "$MITM_CRT"
+        MITM_HASH=$(openssl x509 -hash -noout -in "$MITM_CRT")
+        sudo ln -sf "$MITM_CRT" /etc/ssl/certs/mitmproxy-ca.pem
+        sudo ln -sf mitmproxy-ca.pem /etc/ssl/certs/${MITM_HASH}.0
+        # Append to the bundle only if not already present (idempotent)
+        if ! openssl crl2pkcs7 -nocrl -certfile /etc/ssl/certs/ca-certificates.crt 2>/dev/null \
+                | openssl pkcs7 -print_certs -noout 2>/dev/null \
+                | grep -q "mitmproxy"; then
+            sudo sh -c "cat '$MITM_CRT' >> /etc/ssl/certs/ca-certificates.crt"
+        fi
+
         echo "   SSL_CERT_FILE=$SSL_CERT_FILE"
         echo "   REQUESTS_CA_BUNDLE=$REQUESTS_CA_BUNDLE"
         echo "   NODE_EXTRA_CA_CERTS=$NODE_EXTRA_CA_CERTS"
@@ -105,13 +121,15 @@ if [ -z "$DISABLE_FIREWALL" ]; then
     sudo -u proxyuser \
         env -u HTTP_PROXY -u HTTPS_PROXY ALLOWLIST_KEY="$ALLOWLIST_KEY" \
         /usr/local/bin/allowlist-proxy \
-            --listen 127.0.0.1:3128 \
+            --listen 0.0.0.0:3128 \
             --allowlist "$ALLOWLIST_COPY" \
             $UPSTREAM_ARG \
             $PASSTHROUGH_ARG \
         >> "$PROXY_LOG" 2>&1 &
     PROXY_PID=$!
     echo "Allowlist proxy started (PID $PROXY_PID)"
+
+    DIND_PROXY_PORT=3128
 
     # In passthrough mode, sync new domains from the proxyuser-owned tmp file
     # to the bind-mounted file (which claude user can write to).
@@ -155,12 +173,16 @@ if [ -z "$DISABLE_FIREWALL" ]; then
     #   1. Allow loopback (proxy listens here; clients connect here)
     #   2. Allow DNS (UDP 53) so resolution still works for all processes
     #   3. Allow proxyuser to make direct outbound TCP (proxy's own connections)
-    #   4. Reject all other outbound TCP
+    #   4. Allow TCP to DinD bridge networks so the proxy can accept connections
+    #      from inner containers and respond to them (SYN-ACK, data) without
+    #      the REJECT rule blocking the response packets.
+    #   5. Reject all other outbound TCP
     echo "Applying iptables egress enforcement..."
     if sudo iptables -F OUTPUT 2>/dev/null && \
        sudo iptables -A OUTPUT -o lo -j ACCEPT && \
        sudo iptables -A OUTPUT -p udp --dport 53 -j ACCEPT && \
        sudo iptables -A OUTPUT -p tcp -m owner --uid-owner proxyuser -j ACCEPT && \
+       sudo iptables -A OUTPUT -p tcp -d 172.16.0.0/12 -j ACCEPT && \
        sudo iptables -A OUTPUT -p tcp -j REJECT --reject-with tcp-reset; then
         echo "✅ iptables egress rules applied — only proxyuser may make direct TCP connections"
     else
@@ -192,9 +214,31 @@ if [ -n "$DIND_ENABLED" ]; then
   "storage-driver": "${STORAGE_DRIVER}",
   "iptables": true,
   "ip-masq": false,
-  "bip": "172.18.0.1/16"
+  "bip": "172.18.0.1/16",
+  "proxies": {
+    "http-proxy": "http://172.18.0.1:${DIND_PROXY_PORT}",
+    "https-proxy": "http://172.18.0.1:${DIND_PROXY_PORT}",
+    "no-proxy": "172.18.0.0/16,127.0.0.0/8"
+  }
 }
 DAEMONCFG
+
+    # Refresh system CA trust store right before starting dockerd so it picks
+    # up the mitmproxy cert even if it wasn't fully available at container start.
+    # Re-run the same direct install (idempotent) in case the cert wasn't readable
+    # at container start time (VirtioFS bind-mount timing on macOS).
+    if [ -f "$HOME/.mitmproxy/mitmproxy-ca-cert.pem" ]; then
+        MITM_CRT=/usr/local/share/ca-certificates/mitmproxy-ca.crt
+        sudo cp "$HOME/.mitmproxy/mitmproxy-ca-cert.pem" "$MITM_CRT"
+        MITM_HASH=$(openssl x509 -hash -noout -in "$MITM_CRT")
+        sudo ln -sf "$MITM_CRT" /etc/ssl/certs/mitmproxy-ca.pem
+        sudo ln -sf mitmproxy-ca.pem /etc/ssl/certs/${MITM_HASH}.0
+        if ! openssl crl2pkcs7 -nocrl -certfile /etc/ssl/certs/ca-certificates.crt 2>/dev/null \
+                | openssl pkcs7 -print_certs -noout 2>/dev/null \
+                | grep -q "mitmproxy"; then
+            sudo sh -c "cat '$MITM_CRT' >> /etc/ssl/certs/ca-certificates.crt"
+        fi
+    fi
 
     sudo dockerd --config-file /etc/docker-dind/daemon.json \
         > "$HOME/logs/dockerd.log" 2>&1 &
@@ -218,19 +262,29 @@ DAEMONCFG
     # Export DOCKER_HOST so all docker commands use the inner daemon
     export DOCKER_HOST="unix://${DIND_SOCKET}"
 
-    # Configure ~/.docker/config.json to inject proxy into inner containers
+    # Configure ~/.docker/config.json to inject proxy into inner containers at runtime.
+    # Docker daemon's "proxies" block sets HTTP_PROXY/HTTPS_PROXY env vars inside every
+    # container it starts, so apps pick them up automatically with no Dockerfile changes.
     mkdir -p /home/claude/.docker
-    cat > /home/claude/.docker/config.json <<'DOCKERCFG'
+    cat > /home/claude/.docker/config.json <<DOCKERCFG
 {
   "proxies": {
     "default": {
-      "httpProxy": "http://127.0.0.1:3128",
-      "httpsProxy": "http://127.0.0.1:3128",
+      "httpProxy": "http://172.18.0.1:${DIND_PROXY_PORT}",
+      "httpsProxy": "http://172.18.0.1:${DIND_PROXY_PORT}",
       "noProxy": "172.18.0.0/16,127.0.0.0/8"
     }
   }
 }
 DOCKERCFG
+
+    # Make the proxy CA cert available at a well-known path.
+    # The cert-injector daemon will automatically inject it into every new inner container.
+    if [ -f "$HOME/.mitmproxy/mitmproxy-ca-cert.pem" ]; then
+        sudo cp "$HOME/.mitmproxy/mitmproxy-ca-cert.pem" /etc/proxy-ca.crt
+        sudo chmod 644 /etc/proxy-ca.crt
+        echo "✅ Proxy CA cert available at /etc/proxy-ca.crt"
+    fi
 
     # Enable IP forwarding (required for docker bridge networking)
     sudo sysctl -w net.ipv4.ip_forward=1 > /dev/null
@@ -239,20 +293,27 @@ DOCKERCFG
     # Inner containers (172.18.0.0/16) trying to reach external hosts get redirected
     # to the allowlist proxy on 127.0.0.1:3128 before being forwarded.
     sudo iptables -t nat -A PREROUTING \
-        -s 172.18.0.0/16 \
-        ! -d 172.18.0.0/16 \
-        ! -d 127.0.0.0/8 \
+        -s 172.16.0.0/12 \
         -p tcp \
+        ! -d 172.16.0.0/12 \
         -j REDIRECT --to-port 3128
 
     # FORWARD rules: allow bridge <-> external interface traffic
     sudo iptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
-    sudo iptables -A FORWARD -s 172.18.0.0/16 -j ACCEPT
-    sudo iptables -A FORWARD -d 172.18.0.0/16 -j ACCEPT
+    sudo iptables -A FORWARD -s 172.16.0.0/12 -j ACCEPT
+    sudo iptables -A FORWARD -d 172.16.0.0/12 -j ACCEPT
 
-    echo "✅ Inner container proxy enforcement applied (172.18.0.0/16 -> :3128)"
+    echo "✅ Inner container proxy enforcement applied (172.16.0.0/12 -> :3128)"
     echo "   DOCKER_HOST=${DOCKER_HOST}"
     echo ""
+
+    # Start cert injector: watches for new inner containers and injects the
+    # mitmproxy CA cert so they trust the allowlist proxy's TLS interception.
+    if [ -f /etc/proxy-ca.crt ]; then
+        /home/claude/bin/cert-injector >> "${HOME}/logs/cert-injector.log" 2>&1 &
+        echo "✅ Cert injector started (PID $!)"
+        echo ""
+    fi
 fi
 
 # Check if GitHub integration is configured
