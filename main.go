@@ -1100,12 +1100,15 @@ func cmdRebuild(destroy bool) error {
 	}
 	groupID := strings.TrimSpace(string(groupIDBytes))
 
-	buildCmd := exec.Command("docker", "build",
+	buildArgs := []string{"build",
 		"--build-arg", fmt.Sprintf("USER_ID=%s", userID),
 		"--build-arg", fmt.Sprintf("GROUP_ID=%s", groupID),
-		"-t", "sandclaude",
-		sc.scriptDir,
-	)
+	}
+	if destroy {
+		buildArgs = append(buildArgs, "--no-cache")
+	}
+	buildArgs = append(buildArgs, "-t", "sandclaude", sc.scriptDir)
+	buildCmd := exec.Command("docker", buildArgs...)
 	buildCmd.Stdout = os.Stdout
 	buildCmd.Stderr = os.Stderr
 
