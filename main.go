@@ -429,6 +429,20 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 		"-w", workspace,
 	)
 
+	// Shadow the host's ~/.claude/skills with a tmpfs so the container can't write skills
+	// back to the host. Then mount each skills subdirectory from the repo on top (read-only).
+	args = append(args, "--tmpfs", "/home/claude/.claude/skills:rw,noexec,nosuid,size=64m")
+	repoSkillsDir := filepath.Join(sc.scriptDir, "skills")
+	if entries, err := os.ReadDir(repoSkillsDir); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				hostSkillPath := filepath.Join(repoSkillsDir, entry.Name())
+				containerSkillPath := fmt.Sprintf("/home/claude/.claude/skills/%s", entry.Name())
+				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", hostSkillPath, containerSkillPath))
+			}
+		}
+	}
+
 	// Mount empty tmpfs over .devcontainer to hide it from the container
 	args = append(args, "--tmpfs", fmt.Sprintf("%s/.devcontainer:rw,noexec,nosuid,size=1m", workspace))
 
