@@ -12,10 +12,10 @@ import (
 	"log"
 	"net"
 	"os"
-	"strconv"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -89,12 +89,24 @@ func askYesNo(prompt string) bool {
 // findFreePort returns the first available TCP port starting from startPort.
 func findFreePort(startPort int) (int, error) {
 	for port := startPort; port < startPort+100; port++ {
-		addr := fmt.Sprintf("127.0.0.1:%d", port)
-		ln, err := net.Listen("tcp", addr)
-		if err == nil {
-			ln.Close()
-			return port, nil
+		// Check both 0.0.0.0 (what mitmproxy uses for --listen-port) and
+		// 127.0.0.1 (what mitmweb uses for --web-port). A port is only free
+		// if both succeed.
+		addr1 := fmt.Sprintf("0.0.0.0:%d", port)
+		ln1, err1 := net.Listen("tcp", addr1)
+		if err1 != nil {
+			continue
 		}
+		ln1.Close()
+
+		addr2 := fmt.Sprintf("127.0.0.1:%d", port)
+		ln2, err2 := net.Listen("tcp", addr2)
+		if err2 != nil {
+			continue
+		}
+		ln2.Close()
+
+		return port, nil
 	}
 	return 0, fmt.Errorf("no free port found in range %d-%d", startPort, startPort+99)
 }
@@ -114,8 +126,14 @@ func (sc *SandClaude) startProxy() error {
 	}
 	sc.proxyPort = fmt.Sprintf("%d", freePort)
 
+	webPort, err := findFreePort(8081)
+	if err != nil {
+		return fmt.Errorf("failed to find free port for mitmweb UI: %w", err)
+	}
+
 	log.Println("Starting mitmproxy credential injection proxy...")
 	log.Printf("Port: %s", sc.proxyPort)
+	log.Printf("Web UI: http://127.0.0.1:%d", webPort)
 	log.Printf("Credentials file: %s", sc.credentialsFile)
 	log.Println()
 	log.Println("Configure credentials in", sc.credentialsFile, "with format:")
@@ -142,6 +160,7 @@ func (sc *SandClaude) startProxy() error {
 	sc.proxyCmd = exec.Command(
 		"mitmweb",
 		"--listen-port", sc.proxyPort,
+		"--web-port", fmt.Sprintf("%d", webPort),
 		"--set", fmt.Sprintf("credentials_file=%s", sc.credentialsFile),
 		"--ssl-insecure",
 		"-s", sc.addonScript,
