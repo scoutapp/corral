@@ -960,7 +960,7 @@ func cmdInit() error {
   },
   "api.github.com": {
     "header": "Authorization",
-    "value": "Bearer ghp_real_token_here"
+    "value": "token gho_real_token_here"
   }
 }
 `
@@ -1195,6 +1195,105 @@ func cmdRebuild(destroy bool) error {
 	return buildCmd.Run()
 }
 
+// cmdPopulateProxyCredentials populates proxy-credentials.json interactively using claude setup-token and gh auth token
+func cmdPopulateProxyCredentials() error {
+	projectDir := getProjectDir()
+	if _, err := os.Stat(projectDir); os.IsNotExist(err) {
+		return fmt.Errorf("no project found — run: sandclaude init")
+	}
+
+	// Read existing credentials file if present, otherwise start fresh
+	credsPath := filepath.Join(projectDir, "proxy-credentials.json")
+	creds := map[string]map[string]string{}
+	if data, err := os.ReadFile(credsPath); err == nil {
+		if err := json.Unmarshal(data, &creds); err != nil {
+			log.Printf("Warning: could not parse existing proxy-credentials.json, starting fresh: %v", err)
+			creds = map[string]map[string]string{}
+		}
+	}
+
+	anyWritten := false
+
+	// Claude credentials
+	if _, err := exec.LookPath("claude"); err != nil {
+		fmt.Println("'claude' not found in PATH — skipping Anthropic credentials")
+	} else if askYesNo("Populate Claude credentials (api.anthropic.com, platform.claude.com, mcp-proxy.anthropic.com)?") {
+		fmt.Println("Running 'claude setup-token' — follow any browser prompts...")
+		cmd := exec.Command("claude", "setup-token")
+		cmd.Stdin = os.Stdin
+		cmd.Stderr = os.Stderr
+		output, err := cmd.Output()
+		if err != nil {
+			fmt.Printf("Warning: 'claude setup-token' failed: %v\n", err)
+		} else {
+			claudeToken := ""
+			for _, line := range strings.Split(string(output), "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "sk-ant-") {
+					claudeToken = line
+					break
+				}
+			}
+			if claudeToken == "" {
+				fmt.Println("Warning: could not find token in 'claude setup-token' output")
+			} else {
+				bearerValue := "Bearer " + claudeToken
+				for _, domain := range []string{"api.anthropic.com", "platform.claude.com", "mcp-proxy.anthropic.com"} {
+					creds[domain] = map[string]string{
+						"header": "Authorization",
+						"value":  bearerValue,
+					}
+				}
+				fmt.Println("✓ Anthropic credentials set for api.anthropic.com, platform.claude.com, mcp-proxy.anthropic.com")
+				anyWritten = true
+			}
+		}
+	}
+
+	fmt.Println()
+
+	// GitHub credentials
+	if _, err := exec.LookPath("gh"); err != nil {
+		fmt.Println("'gh' not found in PATH — skipping GitHub credentials")
+	} else if askYesNo("Populate GitHub credentials (api.github.com)?") {
+		cmd := exec.Command("gh", "auth", "token")
+		output, err := cmd.Output()
+		if err != nil {
+			fmt.Printf("Warning: 'gh auth token' failed: %v\n", err)
+		} else {
+			ghToken := strings.TrimSpace(string(output))
+			if ghToken == "" {
+				fmt.Println("Warning: 'gh auth token' returned empty output")
+			} else {
+				creds["api.github.com"] = map[string]string{
+					"header": "Authorization",
+					"value":  "token " + ghToken,
+				}
+				fmt.Println("✓ GitHub credentials set for api.github.com")
+				anyWritten = true
+			}
+		}
+	}
+
+	fmt.Println()
+
+	if !anyWritten {
+		fmt.Println("No credentials written.")
+		return nil
+	}
+
+	data, err := json.MarshalIndent(creds, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal credentials: %w", err)
+	}
+	if err := os.WriteFile(credsPath, data, 0600); err != nil {
+		return fmt.Errorf("failed to write %s: %w", credsPath, err)
+	}
+
+	fmt.Printf("Credentials written to %s\n", credsPath)
+	return nil
+}
+
 // cmdRemove removes the ./project/ directory
 func cmdRemove() error {
 	projectDir := getProjectDir()
@@ -1426,6 +1525,7 @@ func usage() {
 	fmt.Println("  firewall-reload          Encrypt allowed-domains.txt and SIGHUP proxy")
 	fmt.Println("  firewall-monitor         Tail allowlist proxy log in running container")
 	fmt.Println("  shell                    Open bash shell in container")
+	fmt.Println("  populate-proxy-credentials       Interactively populate proxy-credentials.json from 'claude setup-token' and 'gh auth token'")
 	fmt.Println("  copy <target>            Copy sandclaude files to target directory")
 	fmt.Println("  rebuild [--destroy]      Force rebuild container image (--destroy removes existing image/container first)")
 	fmt.Println("  help                     Show this help")
@@ -1483,6 +1583,9 @@ func main() {
 	case "rebuild":
 		destroy := len(os.Args) > 2 && os.Args[2] == "--destroy"
 		err = cmdRebuild(destroy)
+
+	case "populate-proxy-credentials":
+		err = cmdPopulateProxyCredentials()
 
 	case "copy":
 		target := ""
