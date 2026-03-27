@@ -443,29 +443,32 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 	)
 
 	// Shadow the host's ~/.claude/skills with a tmpfs so the container can't write skills
-	// back to the host. Then mount each skills subdirectory from the repo on top (read-only).
+	// back to the host. Then layer skills from three sources on top (all read-only):
+	//   1. Host ~/.claude/skills/*  — user's personal skills
+	//   2. Repo .claude/skills/*   — skills shipped with sandclaude
+	//   3. Workspace .sandclaude/skills/* — project-specific skills
+	// Mounting each skill directory individually lets all three coexist without
+	// any of them being writable back to the host.
 	args = append(args, "--tmpfs", "/home/claude/.claude/skills:rw,noexec,nosuid,size=64m")
-	repoSkillsDir := filepath.Join(sc.scriptDir, "skills")
-	if entries, err := os.ReadDir(repoSkillsDir); err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() {
-				hostSkillPath := filepath.Join(repoSkillsDir, entry.Name())
-				containerSkillPath := fmt.Sprintf("/home/claude/.claude/skills/%s", entry.Name())
-				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", hostSkillPath, containerSkillPath))
+
+	mountSkillDirs := func(srcDir string) {
+		if entries, err := os.ReadDir(srcDir); err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() {
+					src := filepath.Join(srcDir, entry.Name())
+					dst := fmt.Sprintf("/home/claude/.claude/skills/%s", entry.Name())
+					args = append(args, "-v", fmt.Sprintf("%s:%s:ro", src, dst))
+				}
 			}
 		}
 	}
-	// Also mount skills from workspace/.sandclaude/skills/*/ if present
-	workspaceSkillsDir := filepath.Join(workspace, ".sandclaude", "skills")
-	if entries, err := os.ReadDir(workspaceSkillsDir); err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() {
-				hostSkillPath := filepath.Join(workspaceSkillsDir, entry.Name())
-				containerSkillPath := fmt.Sprintf("/home/claude/.claude/skills/%s", entry.Name())
-				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", hostSkillPath, containerSkillPath))
-			}
-		}
-	}
+
+	// Layer 1: host personal skills
+	mountSkillDirs(filepath.Join(home, ".claude", "skills"))
+	// Layer 2: repo skills (in .claude/skills/ relative to the binary)
+	mountSkillDirs(filepath.Join(sc.scriptDir, ".claude", "skills"))
+	// Layer 3: workspace project skills
+	mountSkillDirs(filepath.Join(workspace, ".sandclaude", "skills"))
 
 	// If the workspace has a .claude directory, shadow each of its subdirectories with
 	// tmpfs (so nothing writes back to the host), then mount the workspace .claude subdir
@@ -1005,6 +1008,45 @@ func cmdInit() error {
 	log.Println("Next steps:")
 	log.Println("  sandclaude start")
 	log.Println()
+
+	// If the binary lives inside a .devcontainer directory, we're embedded in a
+	// parent project — ensure .devcontainer is listed in that project's .gitignore
+	executable, _ := os.Executable()
+	scriptDir := filepath.Dir(executable)
+	if filepath.Base(scriptDir) == ".devcontainer" {
+		parentDir := filepath.Dir(scriptDir)
+		gitignorePath := filepath.Join(parentDir, ".gitignore")
+		const devcontainerEntry = ".devcontainer"
+
+		existing, err := os.ReadFile(gitignorePath)
+		if os.IsNotExist(err) {
+			// Create new .gitignore with the entry
+			if writeErr := os.WriteFile(gitignorePath, []byte(devcontainerEntry+"\n"), 0644); writeErr == nil {
+				log.Printf("✅ Created .gitignore with %s\n", devcontainerEntry)
+			}
+		} else if err == nil {
+			// Check if entry already present
+			lines := strings.Split(string(existing), "\n")
+			found := false
+			for _, line := range lines {
+				if strings.TrimSpace(line) == devcontainerEntry {
+					found = true
+					break
+				}
+			}
+			if !found {
+				// Append entry, ensuring we start on a new line
+				content := string(existing)
+				if len(content) > 0 && !strings.HasSuffix(content, "\n") {
+					content += "\n"
+				}
+				content += devcontainerEntry + "\n"
+				if writeErr := os.WriteFile(gitignorePath, []byte(content), 0644); writeErr == nil {
+					log.Printf("✅ Added %s to .gitignore\n", devcontainerEntry)
+				}
+			}
+		}
+	}
 
 	return nil
 }

@@ -18,10 +18,6 @@ project/
 
 __pycache__/
 
-# Claude Code configuration - contains user-specific data
-.claude/
-.claude.json
-
 # Docker volumes and state
 .docker/
 
