@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
+	"strconv"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
@@ -20,7 +22,7 @@ import (
 )
 
 const (
-	defaultProxyPort   = "8080"
+	defaultProxyPort   = "9500"
 	mitmwebProcessName = "mitmweb"
 )
 
@@ -84,42 +86,34 @@ func askYesNo(prompt string) bool {
 	return response == "y" || response == "yes"
 }
 
-// killExistingMitmweb finds and kills any existing mitmweb processes
-func (sc *SandClaude) killExistingMitmweb() error {
-	// Use pgrep to find mitmweb processes
-	cmd := exec.Command("pgrep", "-f", mitmwebProcessName)
-	output, err := cmd.Output()
-
-	if err != nil {
-		// Exit code 1 means no processes found, which is fine
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
-			return nil
-		}
-		// Other errors are actual problems
-		return fmt.Errorf("failed to check for existing processes: %w", err)
-	}
-
-	// Parse PIDs and kill them
-	pids := strings.Split(strings.TrimSpace(string(output)), "\n")
-	for _, pid := range pids {
-		if pid == "" {
-			continue
-		}
-		log.Printf("Killing existing mitmweb process (PID: %s)...", pid)
-		killCmd := exec.Command("kill", "-9", pid)
-		if err := killCmd.Run(); err != nil {
-			log.Printf("Warning: failed to kill process %s: %v", pid, err)
+// findFreePort returns the first available TCP port starting from startPort.
+func findFreePort(startPort int) (int, error) {
+	for port := startPort; port < startPort+100; port++ {
+		addr := fmt.Sprintf("127.0.0.1:%d", port)
+		ln, err := net.Listen("tcp", addr)
+		if err == nil {
+			ln.Close()
+			return port, nil
 		}
 	}
-
-	// Give processes time to die
-	time.Sleep(500 * time.Millisecond)
-
-	return nil
+	return 0, fmt.Errorf("no free port found in range %d-%d", startPort, startPort+99)
 }
 
 // startProxy starts the mitmweb proxy process
 func (sc *SandClaude) startProxy() error {
+	// Find a free port, starting from the configured base port
+	basePort := 9500
+	if sc.proxyPort != "" {
+		if p, err := strconv.Atoi(sc.proxyPort); err == nil {
+			basePort = p
+		}
+	}
+	freePort, err := findFreePort(basePort)
+	if err != nil {
+		return fmt.Errorf("failed to find free port for proxy: %w", err)
+	}
+	sc.proxyPort = fmt.Sprintf("%d", freePort)
+
 	log.Println("Starting mitmproxy credential injection proxy...")
 	log.Printf("Port: %s", sc.proxyPort)
 	log.Printf("Credentials file: %s", sc.credentialsFile)
@@ -347,7 +341,7 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 	}
 
 	// Build docker args
-	containerName := "sandclaude"
+	containerName := "sandclaude_" + filepath.Base(workspace)
 	args := []string{"run", "--rm", "-it", "--name", containerName}
 
 	// DinD requires --privileged (superset of NET_ADMIN + NET_RAW + SYS_ADMIN).
@@ -442,15 +436,35 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 			}
 		}
 	}
+	// Also mount skills from workspace/.sandclaude/skills/*/ if present
+	workspaceSkillsDir := filepath.Join(workspace, ".sandclaude", "skills")
+	if entries, err := os.ReadDir(workspaceSkillsDir); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				hostSkillPath := filepath.Join(workspaceSkillsDir, entry.Name())
+				containerSkillPath := fmt.Sprintf("/home/claude/.claude/skills/%s", entry.Name())
+				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", hostSkillPath, containerSkillPath))
+			}
+		}
+	}
 
 	// Mount empty tmpfs over .devcontainer to hide it from the container
 	args = append(args, "--tmpfs", fmt.Sprintf("%s/.devcontainer:rw,noexec,nosuid,size=1m", workspace))
 
-	// Mount the plaintext allowlist to a stable path outside the tmpfs'd .devcontainer dir.
-	// (.devcontainer is hidden under tmpfs so any bind-mount targeting a path inside it
-	// would have Docker auto-create the target as a directory, not a file.)
+	// Determine the allowlist path.
+	// When running as the self repo (scriptDir is named "claude_sandbox" or "sandclaude"),
+	// write to the canonical allowlist-proxy/allowed-domains.txt inside this repo.
+	// Otherwise (running as .devcontainer inside a parent project), write to
+	// workspace/.sandclaude/allowed-domains.txt so the project owns its own allowlist.
 	cwd, _ := os.Getwd()
-	allowlistPath := filepath.Join(cwd, "allowlist-proxy", "allowed-domains.txt")
+	scriptDirName := filepath.Base(sc.scriptDir)
+	isSelfRepo := scriptDirName == "claude_sandbox" || scriptDirName == "sandclaude"
+	var allowlistPath string
+	if isSelfRepo {
+		allowlistPath = filepath.Join(cwd, "allowlist-proxy", "allowed-domains.txt")
+	} else {
+		allowlistPath = filepath.Join(workspace, ".sandclaude", "allowed-domains.txt")
+	}
 	if sc.disableFirewallAndWrite {
 		// Ensure the file exists and is world-writable before the container starts,
 		// so proxyuser (which doesn't own the file) can append to it.
@@ -511,8 +525,8 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 			// to an IPv6-only address, which mitmproxy (bound to 0.0.0.0) won't
 			// answer, causing immediate connection refused before anything hits mitm.
 			"--add-host=host.docker.internal:host-gateway",
-			"-e", "HTTP_PROXY=http://host.docker.internal:8080",
-			"-e", "HTTPS_PROXY=http://host.docker.internal:8080",
+			"-e", fmt.Sprintf("HTTP_PROXY=http://host.docker.internal:%s", sc.proxyPort),
+			"-e", fmt.Sprintf("HTTPS_PROXY=http://host.docker.internal:%s", sc.proxyPort),
 		)
 
 		// Mount just the mitmproxy CA cert (public cert, not a secret)
@@ -618,9 +632,6 @@ func (sc *SandClaude) Run() error {
 		log.Println("Proxy configured for this project, starting...")
 		log.Println()
 
-		if err := sc.killExistingMitmweb(); err != nil {
-			return err
-		}
 		if err := sc.startProxy(); err != nil {
 			return err
 		}
