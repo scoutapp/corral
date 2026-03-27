@@ -430,8 +430,23 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 	)
 
 	// Shadow the host's ~/.claude/skills with a tmpfs so the container can't write skills
-	// back to the host. Then mount each skills subdirectory from the repo on top (read-only).
+	// back to the host. Then mount skill subdirectories on top (read-only).
+	// Host user skills are mounted first, then repo skills override on conflict.
 	args = append(args, "--tmpfs", "/home/claude/.claude/skills:rw,noexec,nosuid,size=64m")
+
+	// Mount the user's host skills (from ~/.claude/skills/) so personal/project skills are available
+	hostSkillsDir := filepath.Join(home, ".claude", "skills")
+	if entries, err := os.ReadDir(hostSkillsDir); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				hostPath := filepath.Join(hostSkillsDir, entry.Name())
+				containerPath := fmt.Sprintf("/home/claude/.claude/skills/%s", entry.Name())
+				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", hostPath, containerPath))
+			}
+		}
+	}
+
+	// Mount repo-provided skills on top (override host skills on name conflict)
 	repoSkillsDir := filepath.Join(sc.scriptDir, "skills")
 	if entries, err := os.ReadDir(repoSkillsDir); err == nil {
 		for _, entry := range entries {
