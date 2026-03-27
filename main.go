@@ -467,6 +467,42 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 		}
 	}
 
+	// If the workspace has a .claude directory, shadow each of its subdirectories with
+	// tmpfs (so nothing writes back to the host), then mount the workspace .claude subdir
+	// on top read-only. For skills/ we do per-skill-dir mounts so repo and .sandclaude
+	// skills layer on top; for all other subdirs (rules, agents, commands, etc.) we mount
+	// the whole subdir directory.
+	workspaceClaudeDir := filepath.Join(workspace, ".claude")
+	if topEntries, err := os.ReadDir(workspaceClaudeDir); err == nil {
+		for _, topEntry := range topEntries {
+			if !topEntry.IsDir() {
+				continue
+			}
+			subName := topEntry.Name()
+			containerSubPath := fmt.Sprintf("/home/claude/.claude/%s", subName)
+			// Shadow with tmpfs so container writes stay in memory, not on the host.
+			args = append(args, "--tmpfs", fmt.Sprintf("%s:rw,noexec,nosuid,size=64m", containerSubPath))
+
+			hostSubPath := filepath.Join(workspaceClaudeDir, subName)
+			if subName == "skills" {
+				// For skills, mount each skill subdirectory individually so that
+				// repo skills and .sandclaude skills mounted above can coexist.
+				if skillEntries, err := os.ReadDir(hostSubPath); err == nil {
+					for _, skillEntry := range skillEntries {
+						if skillEntry.IsDir() {
+							src := filepath.Join(hostSubPath, skillEntry.Name())
+							dst := fmt.Sprintf("%s/%s", containerSubPath, skillEntry.Name())
+							args = append(args, "-v", fmt.Sprintf("%s:%s:ro", src, dst))
+						}
+					}
+				}
+			} else {
+				// For rules, agents, commands, etc., mount the whole subdirectory.
+				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", hostSubPath, containerSubPath))
+			}
+		}
+	}
+
 	// Mount empty tmpfs over .devcontainer to hide it from the container
 	args = append(args, "--tmpfs", fmt.Sprintf("%s/.devcontainer:rw,noexec,nosuid,size=1m", workspace))
 
