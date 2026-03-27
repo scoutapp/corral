@@ -10,17 +10,19 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 )
 
 const (
-	defaultProxyPort   = "8080"
+	defaultProxyPort   = "9500"
 	mitmwebProcessName = "mitmweb"
 )
 
@@ -84,44 +86,54 @@ func askYesNo(prompt string) bool {
 	return response == "y" || response == "yes"
 }
 
-// killExistingMitmweb finds and kills any existing mitmweb processes
-func (sc *SandClaude) killExistingMitmweb() error {
-	// Use pgrep to find mitmweb processes
-	cmd := exec.Command("pgrep", "-f", mitmwebProcessName)
-	output, err := cmd.Output()
-
-	if err != nil {
-		// Exit code 1 means no processes found, which is fine
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
-			return nil
-		}
-		// Other errors are actual problems
-		return fmt.Errorf("failed to check for existing processes: %w", err)
-	}
-
-	// Parse PIDs and kill them
-	pids := strings.Split(strings.TrimSpace(string(output)), "\n")
-	for _, pid := range pids {
-		if pid == "" {
+// findFreePort returns the first available TCP port starting from startPort.
+func findFreePort(startPort int) (int, error) {
+	for port := startPort; port < startPort+100; port++ {
+		// Check both 0.0.0.0 (what mitmproxy uses for --listen-port) and
+		// 127.0.0.1 (what mitmweb uses for --web-port). A port is only free
+		// if both succeed.
+		addr1 := fmt.Sprintf("0.0.0.0:%d", port)
+		ln1, err1 := net.Listen("tcp", addr1)
+		if err1 != nil {
 			continue
 		}
-		log.Printf("Killing existing mitmweb process (PID: %s)...", pid)
-		killCmd := exec.Command("kill", "-9", pid)
-		if err := killCmd.Run(); err != nil {
-			log.Printf("Warning: failed to kill process %s: %v", pid, err)
+		ln1.Close()
+
+		addr2 := fmt.Sprintf("127.0.0.1:%d", port)
+		ln2, err2 := net.Listen("tcp", addr2)
+		if err2 != nil {
+			continue
 		}
+		ln2.Close()
+
+		return port, nil
 	}
-
-	// Give processes time to die
-	time.Sleep(500 * time.Millisecond)
-
-	return nil
+	return 0, fmt.Errorf("no free port found in range %d-%d", startPort, startPort+99)
 }
 
 // startProxy starts the mitmweb proxy process
 func (sc *SandClaude) startProxy() error {
+	// Find a free port, starting from the configured base port
+	basePort := 9500
+	if sc.proxyPort != "" {
+		if p, err := strconv.Atoi(sc.proxyPort); err == nil {
+			basePort = p
+		}
+	}
+	freePort, err := findFreePort(basePort)
+	if err != nil {
+		return fmt.Errorf("failed to find free port for proxy: %w", err)
+	}
+	sc.proxyPort = fmt.Sprintf("%d", freePort)
+
+	webPort, err := findFreePort(8081)
+	if err != nil {
+		return fmt.Errorf("failed to find free port for mitmweb UI: %w", err)
+	}
+
 	log.Println("Starting mitmproxy credential injection proxy...")
 	log.Printf("Port: %s", sc.proxyPort)
+	log.Printf("Web UI: http://127.0.0.1:%d", webPort)
 	log.Printf("Credentials file: %s", sc.credentialsFile)
 	log.Println()
 	log.Println("Configure credentials in", sc.credentialsFile, "with format:")
@@ -148,6 +160,7 @@ func (sc *SandClaude) startProxy() error {
 	sc.proxyCmd = exec.Command(
 		"mitmweb",
 		"--listen-port", sc.proxyPort,
+		"--web-port", fmt.Sprintf("%d", webPort),
 		"--set", fmt.Sprintf("credentials_file=%s", sc.credentialsFile),
 		"--ssl-insecure",
 		"-s", sc.addonScript,
@@ -347,7 +360,7 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 	}
 
 	// Build docker args
-	containerName := "sandclaude"
+	containerName := "sandclaude_" + filepath.Base(workspace)
 	args := []string{"run", "--rm", "-it", "--name", containerName}
 
 	// DinD requires --privileged (superset of NET_ADMIN + NET_RAW + SYS_ADMIN).
@@ -442,15 +455,71 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 			}
 		}
 	}
+	// Also mount skills from workspace/.sandclaude/skills/*/ if present
+	workspaceSkillsDir := filepath.Join(workspace, ".sandclaude", "skills")
+	if entries, err := os.ReadDir(workspaceSkillsDir); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				hostSkillPath := filepath.Join(workspaceSkillsDir, entry.Name())
+				containerSkillPath := fmt.Sprintf("/home/claude/.claude/skills/%s", entry.Name())
+				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", hostSkillPath, containerSkillPath))
+			}
+		}
+	}
+
+	// If the workspace has a .claude directory, shadow each of its subdirectories with
+	// tmpfs (so nothing writes back to the host), then mount the workspace .claude subdir
+	// on top read-only. For skills/ we do per-skill-dir mounts so repo and .sandclaude
+	// skills layer on top; for all other subdirs (rules, agents, commands, etc.) we mount
+	// the whole subdir directory.
+	workspaceClaudeDir := filepath.Join(workspace, ".claude")
+	if topEntries, err := os.ReadDir(workspaceClaudeDir); err == nil {
+		for _, topEntry := range topEntries {
+			if !topEntry.IsDir() {
+				continue
+			}
+			subName := topEntry.Name()
+			containerSubPath := fmt.Sprintf("/home/claude/.claude/%s", subName)
+			// Shadow with tmpfs so container writes stay in memory, not on the host.
+			args = append(args, "--tmpfs", fmt.Sprintf("%s:rw,noexec,nosuid,size=64m", containerSubPath))
+
+			hostSubPath := filepath.Join(workspaceClaudeDir, subName)
+			if subName == "skills" {
+				// For skills, mount each skill subdirectory individually so that
+				// repo skills and .sandclaude skills mounted above can coexist.
+				if skillEntries, err := os.ReadDir(hostSubPath); err == nil {
+					for _, skillEntry := range skillEntries {
+						if skillEntry.IsDir() {
+							src := filepath.Join(hostSubPath, skillEntry.Name())
+							dst := fmt.Sprintf("%s/%s", containerSubPath, skillEntry.Name())
+							args = append(args, "-v", fmt.Sprintf("%s:%s:ro", src, dst))
+						}
+					}
+				}
+			} else {
+				// For rules, agents, commands, etc., mount the whole subdirectory.
+				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", hostSubPath, containerSubPath))
+			}
+		}
+	}
 
 	// Mount empty tmpfs over .devcontainer to hide it from the container
 	args = append(args, "--tmpfs", fmt.Sprintf("%s/.devcontainer:rw,noexec,nosuid,size=1m", workspace))
 
-	// Mount the plaintext allowlist to a stable path outside the tmpfs'd .devcontainer dir.
-	// (.devcontainer is hidden under tmpfs so any bind-mount targeting a path inside it
-	// would have Docker auto-create the target as a directory, not a file.)
+	// Determine the allowlist path.
+	// When running as the self repo (scriptDir is named "claude_sandbox" or "sandclaude"),
+	// write to the canonical allowlist-proxy/allowed-domains.txt inside this repo.
+	// Otherwise (running as .devcontainer inside a parent project), write to
+	// workspace/.sandclaude/allowed-domains.txt so the project owns its own allowlist.
 	cwd, _ := os.Getwd()
-	allowlistPath := filepath.Join(cwd, "allowlist-proxy", "allowed-domains.txt")
+	scriptDirName := filepath.Base(sc.scriptDir)
+	isSelfRepo := scriptDirName == "claude_sandbox" || scriptDirName == "sandclaude"
+	var allowlistPath string
+	if isSelfRepo {
+		allowlistPath = filepath.Join(cwd, "allowlist-proxy", "allowed-domains.txt")
+	} else {
+		allowlistPath = filepath.Join(workspace, ".sandclaude", "allowed-domains.txt")
+	}
 	if sc.disableFirewallAndWrite {
 		// Ensure the file exists and is world-writable before the container starts,
 		// so proxyuser (which doesn't own the file) can append to it.
@@ -511,8 +580,8 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 			// to an IPv6-only address, which mitmproxy (bound to 0.0.0.0) won't
 			// answer, causing immediate connection refused before anything hits mitm.
 			"--add-host=host.docker.internal:host-gateway",
-			"-e", "HTTP_PROXY=http://host.docker.internal:8080",
-			"-e", "HTTPS_PROXY=http://host.docker.internal:8080",
+			"-e", fmt.Sprintf("HTTP_PROXY=http://host.docker.internal:%s", sc.proxyPort),
+			"-e", fmt.Sprintf("HTTPS_PROXY=http://host.docker.internal:%s", sc.proxyPort),
 		)
 
 		// Mount just the mitmproxy CA cert (public cert, not a secret)
@@ -618,9 +687,6 @@ func (sc *SandClaude) Run() error {
 		log.Println("Proxy configured for this project, starting...")
 		log.Println()
 
-		if err := sc.killExistingMitmweb(); err != nil {
-			return err
-		}
 		if err := sc.startProxy(); err != nil {
 			return err
 		}
