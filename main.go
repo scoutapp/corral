@@ -432,73 +432,138 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 		args = append(args, "-e", fmt.Sprintf("GH_TOKEN=%s", ghToken))
 	}
 
-	// Mount .claude directory from host for Claude Code state
-	claudeConfig := filepath.Join(home, ".claude")
+	// Mount .claude.json from host (Claude Code config file)
+	// Note: We don't mount the entire .claude directory here - that's handled below
+	// with granular per-subdirectory mounts to allow merging from multiple sources.
 	args = append(args,
-		"-v", fmt.Sprintf("%s:/home/claude/.claude", claudeConfig),
-		// Very important that we mount this in. This lives at the user's home directory, at least on Mac x86.
 		"-v", fmt.Sprintf("%s:/home/claude/.claude.json", filepath.Join(home, ".claude.json")),
 		"-v", fmt.Sprintf("%s:%s", workspace, workspace),
 		"-w", workspace,
 	)
 
-	// Shadow the host's ~/.claude/skills with a tmpfs so the container can't write skills
-	// back to the host. Then mount each skills subdirectory from the repo on top (read-only).
-	args = append(args, "--tmpfs", "/home/claude/.claude/skills:rw,noexec,nosuid,size=64m")
-	repoSkillsDir := filepath.Join(sc.scriptDir, "skills")
-	if entries, err := os.ReadDir(repoSkillsDir); err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() {
-				hostSkillPath := filepath.Join(repoSkillsDir, entry.Name())
-				containerSkillPath := fmt.Sprintf("/home/claude/.claude/skills/%s", entry.Name())
-				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", hostSkillPath, containerSkillPath))
-			}
-		}
+	// Mount host .gitconfig so commits inside the container are attributed to the host user
+	hostGitconfig := filepath.Join(home, ".gitconfig")
+	if _, err := os.Stat(hostGitconfig); err == nil {
+		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/.gitconfig:ro", hostGitconfig))
 	}
-	// Also mount skills from workspace/.sandclaude/skills/*/ if present
-	workspaceSkillsDir := filepath.Join(workspace, ".sandclaude", "skills")
-	if entries, err := os.ReadDir(workspaceSkillsDir); err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() {
-				hostSkillPath := filepath.Join(workspaceSkillsDir, entry.Name())
-				containerSkillPath := fmt.Sprintf("/home/claude/.claude/skills/%s", entry.Name())
-				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", hostSkillPath, containerSkillPath))
+
+	// Mount .claude subdirectories from three sources, merging their contents:
+	//   1. Host ~/.claude/*          — user's personal configuration
+	//   2. Repo .devcontainer/.claude/* — repo-specific configuration
+	//   3. Workspace .claude/*       — workspace-specific configuration
+	//
+	// Strategy:
+	// - Read-only subdirs (skills, rules, agents, commands): merge from all sources, mount :ro
+	// - Writable subdirs (projects, sessions, file-history, etc.): mount from host :rw for persistence
+	// - Repo and workspace provide read-only configuration
+	// - Host provides writable state/data
+
+	// Helper function to mount individual items from a .claude subdirectory (read-only)
+	mountClaudeSubdirItems := func(sourceLabel, sourceClaudeDir, subName string) {
+		srcSubDir := filepath.Join(sourceClaudeDir, subName)
+		if entries, err := os.ReadDir(srcSubDir); err == nil {
+			log.Printf("[DEBUG] Mounting %s .claude/%s/* (read-only)", sourceLabel, subName)
+			for _, entry := range entries {
+				entrySrc := filepath.Join(srcSubDir, entry.Name())
+				entryDst := fmt.Sprintf("/home/claude/.claude/%s/%s", subName, entry.Name())
+				log.Printf("[DEBUG]   %s -> %s", entrySrc, entryDst)
+				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", entrySrc, entryDst))
 			}
 		}
 	}
 
-	// If the workspace has a .claude directory, shadow each of its subdirectories with
-	// tmpfs (so nothing writes back to the host), then mount the workspace .claude subdir
-	// on top read-only. For skills/ we do per-skill-dir mounts so repo and .sandclaude
-	// skills layer on top; for all other subdirs (rules, agents, commands, etc.) we mount
-	// the whole subdir directory.
+	// Categorize .claude subdirectories by their access patterns
+	readOnlyMergeableSubdirs := map[string]bool{
+		"skills":   true,
+		"rules":    true,
+		"agents":   true,
+		"commands": true,
+	}
+
+	// Subdirectories that need write access for Claude Code to persist data
+	writableSubdirs := map[string]bool{
+		"projects":        true,
+		"sessions":        true,
+		"file-history":    true,
+		"backups":         true,
+		"cache":           true,
+		"shell-snapshots": true,
+		"todos":           true,
+		"tasks":           true,
+		"telemetry":       true,
+		"paste-cache":     true,
+		"session-env":     true,
+		"statsig":         true,
+		"plugins":         true,
+		"ide":             true,
+	}
+
+	// Collect all .claude subdirectories that exist across all sources
+	allSubdirs := make(map[string]bool)
+
+	hostClaudeDir := filepath.Join(home, ".claude")
+	if entries, err := os.ReadDir(hostClaudeDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				allSubdirs[e.Name()] = true
+			}
+		}
+	}
+
+	repoClaudeDir := filepath.Join(sc.scriptDir, ".claude")
+	if entries, err := os.ReadDir(repoClaudeDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				allSubdirs[e.Name()] = true
+			}
+		}
+	}
+
 	workspaceClaudeDir := filepath.Join(workspace, ".claude")
-	if topEntries, err := os.ReadDir(workspaceClaudeDir); err == nil {
-		for _, topEntry := range topEntries {
-			if !topEntry.IsDir() {
-				continue
+	workspaceSandclaudeDir := filepath.Join(workspace, ".sandclaude")
+	if entries, err := os.ReadDir(workspaceClaudeDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				allSubdirs[e.Name()] = true
 			}
-			subName := topEntry.Name()
-			containerSubPath := fmt.Sprintf("/home/claude/.claude/%s", subName)
-			// Shadow with tmpfs so container writes stay in memory, not on the host.
-			args = append(args, "--tmpfs", fmt.Sprintf("%s:rw,noexec,nosuid,size=64m", containerSubPath))
+		}
+	}
 
-			hostSubPath := filepath.Join(workspaceClaudeDir, subName)
+	// Mount each subdirectory based on its category
+	for subName := range allSubdirs {
+		if readOnlyMergeableSubdirs[subName] {
+			// Read-only mergeable subdirectories: mount individual items from all three sources
+			mountClaudeSubdirItems("host", hostClaudeDir, subName)
+			mountClaudeSubdirItems("repo", repoClaudeDir, subName)
+			mountClaudeSubdirItems("workspace", workspaceClaudeDir, subName)
+
+			// Also check .sandclaude for project-specific items (primarily for skills)
 			if subName == "skills" {
-				// For skills, mount each skill subdirectory individually so that
-				// repo skills and .sandclaude skills mounted above can coexist.
-				if skillEntries, err := os.ReadDir(hostSubPath); err == nil {
-					for _, skillEntry := range skillEntries {
-						if skillEntry.IsDir() {
-							src := filepath.Join(hostSubPath, skillEntry.Name())
-							dst := fmt.Sprintf("%s/%s", containerSubPath, skillEntry.Name())
-							args = append(args, "-v", fmt.Sprintf("%s:%s:ro", src, dst))
-						}
-					}
-				}
-			} else {
-				// For rules, agents, commands, etc., mount the whole subdirectory.
-				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", hostSubPath, containerSubPath))
+				mountClaudeSubdirItems("workspace/.sandclaude", workspaceSandclaudeDir, subName)
+			}
+		} else if writableSubdirs[subName] {
+			// Writable subdirectories: mount from host with read-write access for persistence
+			hostSubdir := filepath.Join(hostClaudeDir, subName)
+			if _, err := os.Stat(hostSubdir); err == nil {
+				dst := fmt.Sprintf("/home/claude/.claude/%s", subName)
+				log.Printf("[DEBUG] Mounting host .claude/%s -> %s (read-write for persistence)", subName, dst)
+				args = append(args, "-v", fmt.Sprintf("%s:%s:rw", hostSubdir, dst))
+			}
+		} else {
+			// Other subdirectories: mount read-only from workspace if it exists, otherwise from host
+			workspaceSubdir := filepath.Join(workspaceClaudeDir, subName)
+			hostSubdir := filepath.Join(hostClaudeDir, subName)
+
+			if _, err := os.Stat(workspaceSubdir); err == nil {
+				// Workspace has this subdirectory
+				dst := fmt.Sprintf("/home/claude/.claude/%s", subName)
+				log.Printf("[DEBUG] Mounting workspace .claude/%s -> %s (read-only)", subName, dst)
+				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", workspaceSubdir, dst))
+			} else if _, err := os.Stat(hostSubdir); err == nil {
+				// Host has this subdirectory
+				dst := fmt.Sprintf("/home/claude/.claude/%s", subName)
+				log.Printf("[DEBUG] Mounting host .claude/%s -> %s (read-only)", subName, dst)
+				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", hostSubdir, dst))
 			}
 		}
 	}
@@ -1005,6 +1070,45 @@ func cmdInit() error {
 	log.Println("Next steps:")
 	log.Println("  sandclaude start")
 	log.Println()
+
+	// If the binary lives inside a .devcontainer directory, we're embedded in a
+	// parent project — ensure .devcontainer is listed in that project's .gitignore
+	executable, _ := os.Executable()
+	scriptDir := filepath.Dir(executable)
+	if filepath.Base(scriptDir) == ".devcontainer" {
+		parentDir := filepath.Dir(scriptDir)
+		gitignorePath := filepath.Join(parentDir, ".gitignore")
+		const devcontainerEntry = ".devcontainer"
+
+		existing, err := os.ReadFile(gitignorePath)
+		if os.IsNotExist(err) {
+			// Create new .gitignore with the entry
+			if writeErr := os.WriteFile(gitignorePath, []byte(devcontainerEntry+"\n"), 0644); writeErr == nil {
+				log.Printf("✅ Created .gitignore with %s\n", devcontainerEntry)
+			}
+		} else if err == nil {
+			// Check if entry already present
+			lines := strings.Split(string(existing), "\n")
+			found := false
+			for _, line := range lines {
+				if strings.TrimSpace(line) == devcontainerEntry {
+					found = true
+					break
+				}
+			}
+			if !found {
+				// Append entry, ensuring we start on a new line
+				content := string(existing)
+				if len(content) > 0 && !strings.HasSuffix(content, "\n") {
+					content += "\n"
+				}
+				content += devcontainerEntry + "\n"
+				if writeErr := os.WriteFile(gitignorePath, []byte(content), 0644); writeErr == nil {
+					log.Printf("✅ Added %s to .gitignore\n", devcontainerEntry)
+				}
+			}
+		}
+	}
 
 	return nil
 }

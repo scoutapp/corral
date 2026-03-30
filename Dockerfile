@@ -7,7 +7,7 @@ COPY allowlist-proxy/ .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o allowlist-proxy main.go
 
 # ── Stage 2: runtime image ────────────────────────────────────────────────────
-FROM ubuntu:24.04
+FROM --platform=linux/amd64 ubuntu:24.04
 
 # Copy the static proxy binary from the builder stage
 COPY --from=proxy-builder /build/allowlist-proxy /usr/local/bin/allowlist-proxy
@@ -130,7 +130,7 @@ ENV PATH="/home/claude/.claude/bin:/home/claude/.local/bin:${PATH}"
 COPY --chown=claude:claude launcher.py /home/claude/launcher.py
 COPY --chown=claude:claude entrypoint.sh /home/claude/entrypoint.sh
 COPY --chown=claude:claude proxy-addon.py /usr/local/bin/proxy-addon.py
-COPY --chown=claude:claude skills/ /home/claude/.claude/skills/
+COPY --chown=claude:claude .claude/skills/ /home/claude/.claude/skills/
 COPY --chown=claude:claude bin/ /home/claude/bin/
 RUN chmod +x /home/claude/launcher.py /home/claude/entrypoint.sh /usr/local/bin/proxy-addon.py \
     /home/claude/bin/cert-injector
