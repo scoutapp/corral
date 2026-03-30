@@ -1,10 +1,16 @@
 # ── Stage 1: build allowlist-proxy ───────────────────────────────────────────
 FROM golang:1.22-alpine AS proxy-builder
 
+# Accept the allowlist key as a build argument to embed it in the binary
+ARG ALLOWLIST_KEY_EMBEDDED=""
+
 WORKDIR /build
 COPY allowlist-proxy/ .
 # CGO_ENABLED=0 produces a fully static binary — no libc needed in final image
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o allowlist-proxy main.go
+# Embed the key at build time via -X flag (sets package variable at link time)
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-s -w -X main.embeddedKey=${ALLOWLIST_KEY_EMBEDDED}" \
+    -o allowlist-proxy main.go
 
 # ── Stage 2: runtime image ────────────────────────────────────────────────────
 FROM --platform=linux/amd64 ubuntu:24.04
@@ -34,7 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf chromedriver-linux64.zip chromedriver-linux64 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install base tools
+# Install base tools (including gosu for privilege dropping)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     curl \
@@ -47,7 +53,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssh-client \
     make \
     build-essential \
-    sudo \
+    gosu \
     vim \
     less \
     iptables \
@@ -108,11 +114,9 @@ ARG USER_ID=1000
 ARG GROUP_ID=1000
 RUN groupadd -f -g ${GROUP_ID} claude && \
     useradd -m -u ${USER_ID} -g claude -o claude && \
-    usermod -aG docker claude && \
-    echo "claude ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/claude && \
-    echo "claude ALL=(proxyuser) NOPASSWD: /usr/local/bin/allowlist-proxy" >> /etc/sudoers.d/claude
-
-RUN chmod 0440 /etc/sudoers.d/claude
+    usermod -aG docker claude
+# Note: claude user no longer has sudo access
+# All privileged operations (iptables, dockerd) run as root in entrypoint
 
 USER claude
 ENV HOME=/home/claude
@@ -126,13 +130,17 @@ ENV PATH="/home/claude/.cargo/bin:${PATH}"
 RUN curl -fsSL https://claude.ai/install.sh | bash
 ENV PATH="/home/claude/.claude/bin:/home/claude/.local/bin:${PATH}"
 
-# Copy launcher, entrypoint, proxy addon, skill, and bin scripts
+# Switch back to root to copy root entrypoint and set permissions
+USER root
+
+# Copy launcher, entrypoint scripts, proxy addon, skill, and bin scripts
 COPY --chown=claude:claude launcher.py /home/claude/launcher.py
-COPY --chown=claude:claude entrypoint.sh /home/claude/entrypoint.sh
+COPY --chown=claude:claude entrypoint-user.sh /home/claude/entrypoint-user.sh
+COPY --chown=root:root root-entrypoint.sh /root-entrypoint.sh
 COPY --chown=claude:claude proxy-addon.py /usr/local/bin/proxy-addon.py
 COPY --chown=claude:claude .claude/skills/ /home/claude/.claude/skills/
 COPY --chown=claude:claude bin/ /home/claude/bin/
-RUN chmod +x /home/claude/launcher.py /home/claude/entrypoint.sh /usr/local/bin/proxy-addon.py \
-    /home/claude/bin/cert-injector
+RUN chmod +x /home/claude/launcher.py /home/claude/entrypoint-user.sh /root-entrypoint.sh \
+    /usr/local/bin/proxy-addon.py /home/claude/bin/cert-injector
 
-ENTRYPOINT ["/usr/bin/tini", "--", "/home/claude/entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/root-entrypoint.sh"]

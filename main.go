@@ -27,17 +27,18 @@ const (
 )
 
 type SandClaude struct {
-	proxyCmd                *exec.Cmd
-	proxyPort               string
-	credentialsFile         string
-	addonScript             string
-	scriptDir               string
-	proxyEnabled            bool
-	disableFirewall         bool
+	proxyCmd                    *exec.Cmd
+	proxyPort                   string
+	credentialsFile             string
+	addonScript                 string
+	scriptDir                   string
+	proxyEnabled                bool
+	disableFirewall             bool
 	passthroughFirewallAndWrite bool
-	disableDind             bool
-	dindEnabled             bool
-	dindPorts               []string
+	disableDind                 bool
+	dindEnabled                 bool
+	dindPorts                   []string
+	debug                       bool
 }
 
 func NewSandClaude() (*SandClaude, error) {
@@ -371,18 +372,16 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 		args = append(args, "--cap-add=NET_ADMIN", "--cap-add=NET_RAW")
 	}
 
+	// Pass debug flag to container
+	if sc.debug {
+		args = append(args, "-e", "SANDCLAUDE_DEBUG=1")
+	}
+
 	if sc.disableFirewall {
 		args = append(args, "-e", "DISABLE_FIREWALL=1")
 	} else if sc.passthroughFirewallAndWrite {
 		args = append(args, "-e", "DISABLE_FIREWALL_AND_WRITE=1")
-		// Still need the allowlist key and file for the proxy to start
-		projectDir := getProjectDir()
-		keyPath := filepath.Join(projectDir, ".allowlist-key")
-		keyData, err := os.ReadFile(keyPath)
-		if err != nil {
-			return fmt.Errorf("encryption key not found at %s\nRun 'sandclaude init' to generate it", keyPath)
-		}
-		args = append(args, "-e", fmt.Sprintf("ALLOWLIST_KEY=%s", strings.TrimSpace(string(keyData))))
+		// Note: ALLOWLIST_KEY is now embedded in the binary at build time
 
 		cwd, _ := os.Getwd()
 		encPath := filepath.Join(cwd, "allowlist-proxy", "allowed-domains.txt.enc")
@@ -392,14 +391,7 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 		os.Chmod(encPath, 0644)
 		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/allowed-domains.txt.enc:ro", encPath))
 	} else {
-		// Read encryption key from project
-		projectDir := getProjectDir()
-		keyPath := filepath.Join(projectDir, ".allowlist-key")
-		keyData, err := os.ReadFile(keyPath)
-		if err != nil {
-			return fmt.Errorf("encryption key not found at %s\nRun 'sandclaude init' to generate it", keyPath)
-		}
-		args = append(args, "-e", fmt.Sprintf("ALLOWLIST_KEY=%s", strings.TrimSpace(string(keyData))))
+		// Note: ALLOWLIST_KEY is now embedded in the binary at build time, not passed as env var
 
 		// Mount the encrypted allowlist file
 		cwd, _ := os.Getwd()
@@ -462,11 +454,15 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 	mountClaudeSubdirItems := func(sourceLabel, sourceClaudeDir, subName string) {
 		srcSubDir := filepath.Join(sourceClaudeDir, subName)
 		if entries, err := os.ReadDir(srcSubDir); err == nil {
-			log.Printf("[DEBUG] Mounting %s .claude/%s/* (read-only)", sourceLabel, subName)
+			if sc.debug {
+				log.Printf("[DEBUG] Mounting %s .claude/%s/* (read-only)", sourceLabel, subName)
+			}
 			for _, entry := range entries {
 				entrySrc := filepath.Join(srcSubDir, entry.Name())
 				entryDst := fmt.Sprintf("/home/claude/.claude/%s/%s", subName, entry.Name())
-				log.Printf("[DEBUG]   %s -> %s", entrySrc, entryDst)
+				if sc.debug {
+					log.Printf("[DEBUG]   %s -> %s", entrySrc, entryDst)
+				}
 				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", entrySrc, entryDst))
 			}
 		}
@@ -546,7 +542,9 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 			hostSubdir := filepath.Join(hostClaudeDir, subName)
 			if _, err := os.Stat(hostSubdir); err == nil {
 				dst := fmt.Sprintf("/home/claude/.claude/%s", subName)
-				log.Printf("[DEBUG] Mounting host .claude/%s -> %s (read-write for persistence)", subName, dst)
+				if sc.debug {
+					log.Printf("[DEBUG] Mounting host .claude/%s -> %s (read-write for persistence)", subName, dst)
+				}
 				args = append(args, "-v", fmt.Sprintf("%s:%s:rw", hostSubdir, dst))
 			}
 		} else {
@@ -557,12 +555,16 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 			if _, err := os.Stat(workspaceSubdir); err == nil {
 				// Workspace has this subdirectory
 				dst := fmt.Sprintf("/home/claude/.claude/%s", subName)
-				log.Printf("[DEBUG] Mounting workspace .claude/%s -> %s (read-only)", subName, dst)
+				if sc.debug {
+					log.Printf("[DEBUG] Mounting workspace .claude/%s -> %s (read-only)", subName, dst)
+				}
 				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", workspaceSubdir, dst))
 			} else if _, err := os.Stat(hostSubdir); err == nil {
 				// Host has this subdirectory
 				dst := fmt.Sprintf("/home/claude/.claude/%s", subName)
-				log.Printf("[DEBUG] Mounting host .claude/%s -> %s (read-only)", subName, dst)
+				if sc.debug {
+					log.Printf("[DEBUG] Mounting host .claude/%s -> %s (read-only)", subName, dst)
+				}
 				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", hostSubdir, dst))
 			}
 		}
@@ -712,9 +714,19 @@ func (sc *SandClaude) ensureImage(imageName string) error {
 	}
 	groupID := strings.TrimSpace(string(groupIDBytes))
 
+	// Read encryption key from project to embed it in the binary
+	projectDir := getProjectDir()
+	keyPath := filepath.Join(projectDir, ".allowlist-key")
+	keyData, err := os.ReadFile(keyPath)
+	if err != nil {
+		return fmt.Errorf("encryption key not found at %s\nRun 'sandclaude init' to generate it", keyPath)
+	}
+	allowlistKey := strings.TrimSpace(string(keyData))
+
 	buildCmd := exec.Command("docker", "build",
 		"--build-arg", fmt.Sprintf("USER_ID=%s", userID),
 		"--build-arg", fmt.Sprintf("GROUP_ID=%s", groupID),
+		"--build-arg", fmt.Sprintf("ALLOWLIST_KEY_EMBEDDED=%s", allowlistKey),
 		"-t", imageName,
 		sc.scriptDir,
 	)
@@ -1118,6 +1130,7 @@ func cmdStart(args []string) error {
 	disableFirewall := false
 	passthroughFirewallAndWrite := false
 	disableDind := false
+	debug := false
 
 	for _, arg := range args {
 		switch arg {
@@ -1127,6 +1140,8 @@ func cmdStart(args []string) error {
 			passthroughFirewallAndWrite = true
 		case "--disable-dind":
 			disableDind = true
+		case "--debug":
+			debug = true
 		}
 	}
 
@@ -1138,6 +1153,7 @@ func cmdStart(args []string) error {
 	sc.disableFirewall = disableFirewall
 	sc.passthroughFirewallAndWrite = passthroughFirewallAndWrite
 	sc.disableDind = disableDind
+	sc.debug = debug
 	return sc.Run()
 }
 
@@ -1284,9 +1300,19 @@ func cmdRebuild(destroy bool) error {
 	}
 	groupID := strings.TrimSpace(string(groupIDBytes))
 
+	// Read encryption key from project to embed it in the binary
+	projectDir := getProjectDir()
+	keyPath := filepath.Join(projectDir, ".allowlist-key")
+	keyData, err := os.ReadFile(keyPath)
+	if err != nil {
+		return fmt.Errorf("encryption key not found at %s\nRun 'sandclaude init' to generate it", keyPath)
+	}
+	allowlistKey := strings.TrimSpace(string(keyData))
+
 	buildArgs := []string{"build",
 		"--build-arg", fmt.Sprintf("USER_ID=%s", userID),
 		"--build-arg", fmt.Sprintf("GROUP_ID=%s", groupID),
+		"--build-arg", fmt.Sprintf("ALLOWLIST_KEY_EMBEDDED=%s", allowlistKey),
 	}
 	if destroy {
 		buildArgs = append(buildArgs, "--no-cache")
@@ -1621,6 +1647,7 @@ func usage() {
 	fmt.Println("  init                     Initialize ./project/ structure in current repo")
 	fmt.Println("  update                   Update project config (preserves credentials and allowlist key)")
 	fmt.Println("  start [flags]            Start Claude Code (uses ./project/ config)")
+	fmt.Println("    --debug                        Enable verbose debug output")
 	fmt.Println("    --disable-firewall             Skip firewall initialization")
 	fmt.Println("    --passthrough-firewall-and-write   Keep proxy but allow all domains; write unknown ones to allowed-domains.txt")
 	fmt.Println("    --disable-dind                 Skip inner dockerd startup")

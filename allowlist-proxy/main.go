@@ -34,17 +34,28 @@ import (
 	"syscall"
 )
 
+// embeddedKey is set at build time via -ldflags "-X main.embeddedKey=..."
+// If empty, falls back to ALLOWLIST_KEY environment variable.
+var embeddedKey string
+
 // ----------------------------------------------------------------------------
 // Encryption helpers
 // ----------------------------------------------------------------------------
 
 // deriveKey derives a 32-byte AES-256 key from the given passphrase using
 // SHA-256(passphrase || ":allowlist-proxy-v1"). Simple and stdlib-only.
+// Prefers embeddedKey (set at build time), falls back to ALLOWLIST_KEY env var.
 func deriveKey(passphrase string) ([]byte, error) {
-	if passphrase == "" {
-		return nil, errors.New("ALLOWLIST_KEY environment variable is not set")
+	// Use embedded key if available (set at build time)
+	key := embeddedKey
+	if key == "" {
+		// Fall back to environment variable for backwards compatibility
+		key = passphrase
 	}
-	h := sha256.Sum256([]byte(passphrase + ":allowlist-proxy-v1"))
+	if key == "" {
+		return nil, errors.New("ALLOWLIST_KEY not embedded at build time and environment variable is not set")
+	}
+	h := sha256.Sum256([]byte(key + ":allowlist-proxy-v1"))
 	return h[:], nil
 }
 
