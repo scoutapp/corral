@@ -441,6 +441,12 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 		"-w", workspace,
 	)
 
+	// Mount host .gitconfig so commits inside the container are attributed to the host user
+	hostGitconfig := filepath.Join(home, ".gitconfig")
+	if _, err := os.Stat(hostGitconfig); err == nil {
+		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/.gitconfig:ro", hostGitconfig))
+	}
+
 	// Mount .claude subdirectories from three sources, merging their contents:
 	//   1. Host ~/.claude/*          — user's personal configuration
 	//   2. Repo .devcontainer/.claude/* — repo-specific configuration
