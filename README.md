@@ -1,6 +1,6 @@
 # Sandclaude
 
-Docker sandbox for running Claude Code in dangerous mode with network firewall protection and GitHub issue monitoring.
+Docker sandbox for running Claude Code in dangerous mode with network firewall protection.
 
 ## ⚠️ Warning
 
@@ -21,7 +21,17 @@ go build -o sandclaude main.go
 
 # Initialize (creates ./project/ and encrypts allowlist automatically)
 ./sandclaude init
+```
 
+**We strongly recommend enabling the credential proxy during `init`.** It prevents Claude from seeing or exfiltrating real credentials by intercepting and injecting them at the proxy level. After init, run:
+
+```bash
+./sandclaude populate-proxy-credentials
+```
+
+Currently, this will populate the proxy-credentials.json with your Claude and Github tokens.
+
+```bash
 # Start Claude
 ./sandclaude start
 ```
@@ -32,7 +42,7 @@ When working with a new project that downloads dependencies from various sources
 
 ```bash
 # Start in passthrough mode - allows all traffic and logs unknown domains
-./sandclaude start --disable-firewall-and-write
+./sandclaude start --passthrough-firewall-and-write
 
 # Work on your project normally:
 # - Install dependencies (npm install, go get, pip install, etc.)
@@ -57,9 +67,8 @@ This workflow is ideal for:
 ## Features
 
 - **Network Firewall**: Domain allowlist proxy restricts outbound connections
-- **GitHub Integration**: Auto-monitors and works on issues every 60s (optional)
-- **AWS Support**: Reads `~/.aws` credentials, passes as env vars (never volume-mounted)
-- **No credential mounts**: Claude credentials, gh tokens, and AWS keys are passed as env vars only
+- **Credential Proxy**: Hides real credentials from Claude using mitmproxy
+- **No credential mounts**: Claude credentials and gh tokens are passed as env vars only
 - **Claude Skill**: Teaches Claude the firewall rules automatically
 
 ## Prerequisites
@@ -67,7 +76,7 @@ This workflow is ideal for:
 - Go 1.21+ (to build the binary)
 - Docker
 - Claude Code installed and authenticated on the host (`claude` to sign in first)
-- Optional: `gh` CLI (GitHub monitoring), AWS credentials, mitmproxy (for proxy mode)
+- Optional: `gh` CLI, mitmproxy (for proxy mode — strongly recommended)
 
 **Important**: You must authenticate Claude Code on your host machine before running `sandclaude`. Run `claude` to sign in. This creates `~/.claude.json` with your session state (does NOT contain auth credentials), which is mounted into the container. If you skip this step, Claude will prompt for authentication inside the container.
 
@@ -78,7 +87,7 @@ This workflow is ideal for:
 | `./sandclaude init` | Initialize project (creates `./project/` and encrypts allowlist) |
 | `./sandclaude start` | Start Claude Code |
 | `./sandclaude start --disable-firewall` | Start without firewall (unrestricted network) |
-| `./sandclaude start --disable-firewall-and-write` | Allow all traffic, log unknown domains to `allowed-domains.txt` |
+| `./sandclaude start --passthrough-firewall-and-write` | Allow all traffic, log unknown domains to `allowed-domains.txt` |
 | `./sandclaude list` | Show project configuration |
 | `./sandclaude remove` | Remove project and encrypted allowlist |
 | `./sandclaude firewall-reload` | Re-encrypt allowlist and SIGHUP running proxy |
@@ -86,6 +95,8 @@ This workflow is ideal for:
 | `./sandclaude shell` | Open debug shell in container |
 | `./sandclaude copy <target>` | Copy files to .devcontainer/ |
 | `./sandclaude rebuild` | Force rebuild Docker image |
+| `./sandclaude rebuild --destroy` | Rebuild from scratch (removes existing image/container first) |
+| `./sandclaude populate-proxy-credentials` | Interactively populate proxy-credentials.json |
 | `./sandclaude help` | Show help |
 
 ## Usage
@@ -97,9 +108,7 @@ This workflow is ideal for:
 ```
 
 Creates `./project/` in this directory. Prompts for:
-- **GitHub monitoring?** (optional): Provide `owner/repo`
-- **AWS credentials?** (optional): Reads from `~/.aws`, passes as env vars
-- **Credential proxy?** (optional): Enable mitmproxy to hide real credentials from Claude
+- **Credential proxy?** (optional, strongly recommended): Enable mitmproxy to hide real credentials from Claude
 - **Workspace directory**: Defaults to parent directory (resolved absolute path)
 
 Config stored in `./project/config/`. Add `./project/` to `.gitignore`.
@@ -114,24 +123,6 @@ Starts:
 - Credential proxy (automatically if configured during init)
 - Docker container with firewall
 - Claude Code in dangerous mode
-- GitHub issue monitor (if enabled)
-- AWS credentials (if enabled)
-
-### GitHub Integration
-
-When enabled:
-- Checks every 60s for unassigned issues
-- Auto-assigns to bot
-- Generates prompt with issue details
-- Uses host's `gh` CLI (no tokens stored)
-
-### AWS Integration
-
-When enabled:
-- Reads `~/.aws/credentials` and `~/.aws/config` on the host
-- Passes `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION` as env vars
-- Works with STS temporary credentials
-- The `~/.aws` directory is never volume-mounted into the container
 
 ### Credential Proxy
 
@@ -146,12 +137,11 @@ When enabled during `init`, `sandclaude` runs `mitmweb` on the host and routes a
 
 **Setup:**
 
-Get your Claude OAuth token:
 ```bash
-claude setup-token
+./sandclaude populate-proxy-credentials
 ```
 
-Configure credentials in `./project/proxy-credentials.json`:
+This interactively populates `./project/proxy-credentials.json` using `claude setup-token` and `gh auth token`. You can also configure it manually:
 
 ```json
 {
@@ -169,7 +159,7 @@ Configure credentials in `./project/proxy-credentials.json`:
   },
   "api.github.com": {
     "header": "Authorization",
-    "value": "Bearer ghp_real_token_here"
+    "value": "token gho_real_token_here"
   }
 }
 ```
@@ -245,51 +235,6 @@ echo "5432:5432" >> ~/.config/sandclaude/projects/myapp/config/dind_ports
 # Then restart: ./sandclaude start myapp
 ```
 
-### Rails Workflow
-
-```bash
-# Init with port 3000
-./sandclaude init rails-app
-# Answer: DinD yes, ports: 3000:3000
-
-./sandclaude start rails-app
-
-# Claude can now:
-docker build -t my-rails-app .
-docker run -d -p 3000:3000 --name rails my-rails-app
-docker exec -it rails bash
-docker logs rails -f
-
-# Access from your Mac/host: http://localhost:3000
-```
-
-### Django Workflow
-
-```bash
-# Init with port 8000
-./sandclaude init django-app
-# Answer: DinD yes, ports: 8000:8000
-
-./sandclaude start django-app
-
-# Claude can now:
-docker run -d -p 8000:8000 --name django my-django-image
-# Access from your Mac/host: http://localhost:8000
-```
-
-### Multi-service (Rails + Postgres + Redis)
-
-```bash
-# Init with multiple ports
-./sandclaude init myapp
-# ports: 3000:3000,5432:5432
-
-# Claude can use docker compose or individual containers:
-docker run -d --name postgres -e POSTGRES_PASSWORD=secret postgres:16
-docker run -d --name redis redis:7
-docker run -d -p 3000:3000 --link postgres --link redis --name app my-rails-app
-```
-
 ### How It Works
 
 ```
@@ -327,9 +272,8 @@ cat .firewall/dockerd.log
 **Inner container can't reach a domain:**
 ```bash
 # Add domain to allowlist and reload proxy:
-echo 'rubygems.org' >> /path/to/workspace/.firewall/allowed-domains.txt
-./sandclaude shell myapp
-kill -HUP $(pgrep allowlist-proxy)
+echo 'rubygems.org' >> allowlist-proxy/allowed-domains.txt
+./sandclaude firewall-reload
 ```
 
 **Skip DinD for a single run:**
@@ -343,35 +287,14 @@ kill -HUP $(pgrep allowlist-proxy)
 2. Mounts workspace and credentials
 3. Initializes iptables firewall with domain allowlist
 4. Runs Claude with `--dangerously-skip-permissions`
-5. Monitors GitHub issues in background (if enabled)
-6. Logs blocked connections for approval
+5. Logs blocked connections for approval
 
-**Firewall**: A Go HTTP CONNECT proxy (`allowlist-proxy`) runs inside the container on `127.0.0.1:3128`. Claude's `HTTP_PROXY`/`HTTPS_PROXY` env vars point to it. Connections to domains not in the allowlist are rejected with a `403`. The allowlist is stored encrypted at `allowlist-proxy/allowed-domains.txt.enc` (bind-mounted into the container) and supports hot-reload via `sandclaude reload-firewall`. Logs go to `logs/proxy.log` inside the container.
+**Firewall**: A Go HTTP CONNECT proxy (`allowlist-proxy`) runs inside the container on `127.0.0.1:3128`. Claude's `HTTP_PROXY`/`HTTPS_PROXY` env vars point to it. Connections to domains not in the allowlist are rejected with a `403`. The allowlist is stored encrypted at `allowlist-proxy/allowed-domains.txt.enc` (bind-mounted into the container) and supports hot-reload via `sandclaude firewall-reload`. Logs go to `logs/proxy.log` inside the container.
 
-**Skill System**: `skill/SKILL.md` auto-mounted at `/home/claude/.claude/skills/sandclaude.md` teaches Claude:
+**Skill System**: `.claude/skills/environment/SKILL.md` auto-mounted into the container teaches Claude:
 - Firewall architecture and allowed domains
 - How to request domain access
-- GitHub and AWS workflow
 - Troubleshooting steps
-
-## Adding to Your Project
-
-### Quick Copy
-
-```bash
-./sandclaude copy ~/my-project
-code ~/my-project  # Click "Reopen in Container"
-```
-
-Creates `~/my-project/.devcontainer/` with all files.
-
-
-### Validate Skill Loading
-
-```bash
-ls /home/claude/.claude/skills/sandclaude.md
-claude --prompt "What firewall domains are allowed?"
-```
 
 ## What's Included
 
@@ -384,17 +307,17 @@ claude --prompt "What firewall domains are allowed?"
 **Domain blocked (connection refused / 403):**
 ```bash
 # Check what's being blocked
-./sandclaude firewall-monitor myapp
+./sandclaude firewall-monitor
 
 # Add a domain and hot-reload (no container restart needed)
 echo 'example.com' >> allowlist-proxy/allowed-domains.txt
-./sandclaude reload-firewall  # Uses ALLOWLIST_KEY from project/.allowlist-key
+./sandclaude firewall-reload
 ```
 
 **Proxy not starting:**
 ```bash
 # Check proxy log inside container
-./sandclaude shell myapp
+./sandclaude shell
 cat logs/proxy.log
 ```
 
@@ -409,8 +332,7 @@ cat logs/proxy.log
 - Ephemeral container (`--rm` flag)
 - Workspace mounted read-write, credentials read-only
 - Network firewall blocks unapproved domains
-- GitHub auth via mounted `gh` CLI (no tokens stored)
-- AWS credentials mounted read-only from `~/.aws`
+- Credential proxy prevents Claude from seeing real credentials
 
 ## License
 

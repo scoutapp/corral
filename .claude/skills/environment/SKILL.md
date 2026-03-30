@@ -123,7 +123,7 @@ tail -f ~/logs/proxy.log
 
 **Rule: Credentials NEVER enter the container filesystem in readable form.**
 
-The `dangerous-claude` wrapper mounts:
+The `sandclaude` wrapper mounts:
 - `~/.claude` → `/home/claude/.claude` (Claude credentials)
 - `~/.claude.json` → `/home/claude/.claude.json` (session state)
 - `~/.config/gh` → `/home/claude/.config/gh:ro` (GitHub CLI, read-only)
@@ -220,7 +220,7 @@ If image builds fail with overlay2 errors, the `DIND_STORAGE_DRIVER=vfs` fallbac
 ### Starting a new project
 ```bash
 # From host
-dangerous-claude ~/projects/my-new-app
+./sandclaude start
 
 # Claude can now:
 # - Install npm/yarn packages (allowlist includes registries)
@@ -232,35 +232,33 @@ dangerous-claude ~/projects/my-new-app
 ### Adding a domain on-the-fly (hot-reload)
 ```bash
 # Terminal 1: Run Claude
-sandclaude start myproject
+./sandclaude start
 
 # Terminal 2: When a connection is blocked, add the domain and reload
 echo "api.example.com" >> allowlist-proxy/allowed-domains.txt
-export ALLOWLIST_KEY=<your-passphrase>
-./sandclaude reload-firewall myproject
+./sandclaude firewall-reload
 
 # Claude can now retry — no container restart needed
 ```
 
 ### Passthrough mode (auto-discover domains)
-Use `--disable-firewall-and-write` to allow all outbound traffic while automatically logging unknown domains to `allowlist-proxy/allowed-domains.txt` on the host. Useful for discovering what domains a workflow needs before locking it down.
+Use `--passthrough-firewall-and-write` to allow all outbound traffic while automatically logging unknown domains to `allowlist-proxy/allowed-domains.txt` on the host. Useful for discovering what domains a workflow needs before locking it down.
 
 ```bash
 # Start in passthrough mode
-sandclaude start --disable-firewall-and-write
+sandclaude start --passthrough-firewall-and-write
 
 # Inside the container, unknown domains are allowed and appended to:
 #   /home/claude/allowed-domains.txt  (bind-mounted from host at allowlist-proxy/allowed-domains.txt)
 
 # After your session, the host file allowlist-proxy/allowed-domains.txt
-# will contain all domains that were accessed. Review and encrypt:
-export ALLOWLIST_KEY=<your-passphrase>
-./sandclaude reload-firewall
+# will contain all domains that were accessed. Review and reload:
+./sandclaude firewall-reload
 ```
 
 **Note:** The passthrough log is mounted at `/home/claude/allowed-domains.txt` inside the container. This is the same file as `allowlist-proxy/allowed-domains.txt` on the host — changes are reflected immediately on both sides.
 
-**Important:** The container may also have been started with `--disable-firewall-and-start`, which disables the firewall entirely (no proxy, no iptables enforcement). In this mode, all outbound traffic is allowed unconditionally. If you are unsure whether the firewall is active, **always attempt to reach the URL anyway** — do not assume it is blocked. Check `ps aux | grep allowlist-proxy` to confirm whether the proxy is running.
+**Important:** If you are unsure whether the firewall is active, **always attempt to reach the URL anyway** — do not assume it is blocked. Check `ps aux | grep allowlist-proxy` to confirm whether the proxy is running.
 
 ### Using with VS Code devcontainer
 ```bash
@@ -289,47 +287,27 @@ pkill -HUP -x allowlist-proxy
 
 ## Integration Patterns
 
-### As a git submodule
-```bash
-cd ~/my-project
-git submodule add https://github.com/yourname/dangerous-claude .dangerous-claude
-.dangerous-claude/dangerous-claude
-```
-
-### As a devcontainer base
+### Integrating into an existing project
 Copy files to your project using the built-in command:
 ```bash
 ./sandclaude copy ~/my-project
 # Edit Dockerfile to add project-specific tools
 # Edit allowlist-proxy/allowed-domains.txt to add project-specific domains
-# Run: export ALLOWLIST_KEY=<passphrase> && ./sandclaude reload-firewall
+# Run: ./sandclaude firewall-reload
 ```
-
-### As a skill for other projects
-This SKILL.md can be loaded by any Claude Code session via:
-```bash
-claude --skill /path/to/this/skill/SKILL.md
-```
-
-Claude will then know:
-- How the firewall works
-- What domains are allowed
-- How to add domains
-- Credential handling rules
-- When to ask for domain approval
 
 **Important:** If Claude attempts to access a site blocked by the proxy, Claude should:
 1. Add the domain to `/home/claude/allowed-domains.txt` — this file is always bind-mounted from `allowlist-proxy/allowed-domains.txt` on the host (read-write), so edits are immediately visible to the host
 2. Notify the user to run `sandclaude reload-firewall` from the host to encrypt the updated file and SIGHUP the proxy
 3. Retry the request once the user confirms the reload is done
 
-In passthrough mode (`--disable-firewall-and-write`), unknown domains are appended to `/home/claude/allowed-domains.txt` automatically — no manual editing needed.
+In passthrough mode (`--passthrough-firewall-and-write`), unknown domains are appended to `/home/claude/allowed-domains.txt` automatically — no manual editing needed.
 
 ## Firewall Troubleshooting
 
 **Symptom:** `curl: (7) Failed to connect` or HTTP 403 from proxy
 - **Cause:** Domain not in allowlist
-- **Fix:** Restart with `sandclaude start --disable-firewall-and-write` to auto-log needed domains, then `sandclaude reload-firewall` to lock it back down
+- **Fix:** Restart with `sandclaude start --passthrough-firewall-and-write` to auto-log needed domains, then `sandclaude reload-firewall` to lock it back down
 
 **Symptom:** DNS resolution fails
 - **Cause:** Firewall blocks DNS or Docker DNS broken
@@ -370,8 +348,7 @@ In passthrough mode (`--disable-firewall-and-write`), unknown domains are append
 ```bash
 # On host
 echo "api.stripe.com" >> allowlist-proxy/allowed-domains.txt
-export ALLOWLIST_KEY=<your-passphrase>
-./sandclaude reload-firewall [project]
+./sandclaude firewall-reload
 ```
 
 **Allowing all traffic (disable firewall):**
