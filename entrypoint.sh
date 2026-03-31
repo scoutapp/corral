@@ -316,19 +316,7 @@ DOCKERCFG
     fi
 fi
 
-# Check if GitHub integration is configured
-if [ -n "$GITHUB_REPO" ]; then
-    echo "✅ GitHub integration configured"
-    echo "   Repository: $GITHUB_REPO"
-    echo "   Issue monitoring will start in background"
-    echo ""
-else
-    echo "⚠️  GitHub integration not configured"
-    echo "   Run 'sandclaude init <project>' to set up GitHub monitoring"
-    echo ""
-fi
-
-# Launch Python launcher (which starts Claude Code + GitHub monitoring)
+# Launch Python launcher
 /home/claude/launcher.py "$@"
 
 echo ""

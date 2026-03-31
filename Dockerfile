@@ -66,7 +66,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-selenium \
     mitmproxy \
     && rm -rf /var/lib/apt/lists/*
-
+  
 # Install gh (GitHub CLI)
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     -o /usr/share/keyrings/githubcli-archive-keyring.gpg && \
