@@ -16,7 +16,7 @@ Credentials file format (JSON):
   },
   "api.github.com": {
     "header": "Authorization",
-    "value": "Bearer ghp_real_token_here"
+    "value": "token ghp_real_token_here"
   }
 }
 """

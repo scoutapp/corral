@@ -34,7 +34,7 @@ type SandClaude struct {
 	scriptDir               string
 	proxyEnabled            bool
 	disableFirewall         bool
-	disableFirewallAndWrite bool
+	passthroughFirewallAndWrite bool
 	disableDind             bool
 	dindEnabled             bool
 	dindPorts               []string
@@ -373,7 +373,7 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 
 	if sc.disableFirewall {
 		args = append(args, "-e", "DISABLE_FIREWALL=1")
-	} else if sc.disableFirewallAndWrite {
+	} else if sc.passthroughFirewallAndWrite {
 		args = append(args, "-e", "DISABLE_FIREWALL_AND_WRITE=1")
 		// Still need the allowlist key and file for the proxy to start
 		projectDir := getProjectDir()
@@ -585,7 +585,7 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 	} else {
 		allowlistPath = filepath.Join(workspace, ".sandclaude", "allowed-domains.txt")
 	}
-	if sc.disableFirewallAndWrite {
+	if sc.passthroughFirewallAndWrite {
 		// Ensure the file exists and is world-writable before the container starts,
 		// so proxyuser (which doesn't own the file) can append to it.
 		// Must create parent dirs first — OpenFile won't create them, and if the
@@ -1116,15 +1116,15 @@ func cmdInit() error {
 // cmdStart starts Claude Code
 func cmdStart(args []string) error {
 	disableFirewall := false
-	disableFirewallAndWrite := false
+	passthroughFirewallAndWrite := false
 	disableDind := false
 
 	for _, arg := range args {
 		switch arg {
 		case "--disable-firewall":
 			disableFirewall = true
-		case "--disable-firewall-and-write":
-			disableFirewallAndWrite = true
+		case "--passthrough-firewall-and-write":
+			passthroughFirewallAndWrite = true
 		case "--disable-dind":
 			disableDind = true
 		}
@@ -1136,7 +1136,7 @@ func cmdStart(args []string) error {
 	}
 
 	sc.disableFirewall = disableFirewall
-	sc.disableFirewallAndWrite = disableFirewallAndWrite
+	sc.passthroughFirewallAndWrite = passthroughFirewallAndWrite
 	sc.disableDind = disableDind
 	return sc.Run()
 }
@@ -1622,7 +1622,7 @@ func usage() {
 	fmt.Println("  update                   Update project config (preserves credentials and allowlist key)")
 	fmt.Println("  start [flags]            Start Claude Code (uses ./project/ config)")
 	fmt.Println("    --disable-firewall             Skip firewall initialization")
-	fmt.Println("    --disable-firewall-and-write   Keep proxy but allow all domains; write unknown ones to allowed-domains.txt")
+	fmt.Println("    --passthrough-firewall-and-write   Keep proxy but allow all domains; write unknown ones to allowed-domains.txt")
 	fmt.Println("    --disable-dind                 Skip inner dockerd startup")
 	fmt.Println("  list                     Show ./project/ configuration")
 	fmt.Println("  remove                   Remove ./project/ directory after confirmation")
@@ -1638,7 +1638,7 @@ func usage() {
 	fmt.Println("  sandclaude init                    # Initialize ./project/ in this repo")
 	fmt.Println("  sandclaude start                   # Start Claude Code")
 	fmt.Println("  sandclaude start --disable-firewall              # Start without firewall")
-	fmt.Println("  sandclaude start --disable-firewall-and-write   # Allow all, log unknowns to allowed-domains.txt")
+	fmt.Println("  sandclaude start --passthrough-firewall-and-write   # Allow all, log unknowns to allowed-domains.txt")
 	fmt.Println("  sandclaude copy ~/my-project       # Copy files to integrate into another project")
 	fmt.Println("  sandclaude shell                   # Debug container")
 	fmt.Println()
