@@ -45,6 +45,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     unzip \
     openssh-client \
+    tmux \
     make \
     build-essential \
     sudo \
@@ -127,6 +128,7 @@ RUN curl -fsSL https://claude.ai/install.sh | bash
 ENV PATH="/home/claude/.claude/bin:/home/claude/.local/bin:${PATH}"
 
 # Copy launcher, entrypoint, proxy addon, skill, and bin scripts
+COPY --chown=claude:claude .tmux.conf /home/claude/.tmux.conf
 COPY --chown=claude:claude launcher.py /home/claude/launcher.py
 COPY --chown=claude:claude entrypoint.sh /home/claude/entrypoint.sh
 COPY --chown=claude:claude proxy-addon.py /usr/local/bin/proxy-addon.py

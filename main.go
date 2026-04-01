@@ -219,11 +219,16 @@ func (sc *SandClaude) stopProxy() {
 // ----------------------------------------------------------------------------
 
 type ProjectConfig struct {
-	Workspace    string   `json:"workspace"`
-	ProxyEnabled bool     `json:"proxy_enabled,omitempty"`
-	DindEnabled  bool     `json:"dind_enabled,omitempty"`
-	DindPorts    []string `json:"dind_ports,omitempty"`
-	CreatedAt    string   `json:"created_at"`
+	Workspace                      string   `json:"workspace"`
+	ProxyEnabled                   bool     `json:"proxy_enabled,omitempty"`
+	GithubMonitorEnabled           bool     `json:"github_monitor_enabled,omitempty"`
+	GithubRepo                     string   `json:"github_repo,omitempty"`
+	GithubLabels                   string   `json:"github_labels,omitempty"`
+	GithubSince                    string   `json:"github_since,omitempty"`
+	GithubCloseNonReproducible     bool     `json:"github_close_non_reproducible,omitempty"`
+	DindEnabled                    bool     `json:"dind_enabled,omitempty"`
+	DindPorts                      []string `json:"dind_ports,omitempty"`
+	CreatedAt                      string   `json:"created_at"`
 }
 
 func readConfig(projectDir string) (*ProjectConfig, error) {
@@ -354,6 +359,21 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 		args = append(args, "-e", fmt.Sprintf("GH_TOKEN=%s", ghToken))
 	} else {
 		debugln("No GitHub token found (gh auth token returned empty)")
+	}
+
+	// GitHub issue monitoring env vars
+	if cfg.GithubMonitorEnabled && cfg.GithubRepo != "" {
+		args = append(args, "-e", fmt.Sprintf("GITHUB_REPO=%s", cfg.GithubRepo))
+		if cfg.GithubLabels != "" {
+			args = append(args, "-e", fmt.Sprintf("GITHUB_ISSUE_LABELS=%s", cfg.GithubLabels))
+		}
+		if cfg.GithubSince != "" {
+			args = append(args, "-e", fmt.Sprintf("GITHUB_ISSUE_SINCE=%s", cfg.GithubSince))
+		}
+		if cfg.GithubCloseNonReproducible {
+			args = append(args, "-e", "GITHUB_CLOSE_NON_REPRODUCIBLE=1")
+		}
+		debugf("GitHub issue monitoring: repo=%s labels=%s since=%s close_non_reproducible=%v", cfg.GithubRepo, cfg.GithubLabels, cfg.GithubSince, cfg.GithubCloseNonReproducible)
 	}
 
 	// Mount .claude.json from host (Claude Code config file)
@@ -681,6 +701,94 @@ func cmdUpdate() error {
 
 	reader := bufio.NewReader(os.Stdin)
 
+	// GitHub issue monitoring
+	ghMonitorPrompt := "n"
+	if cfg.GithubMonitorEnabled {
+		ghMonitorPrompt = "Y"
+	}
+	fmt.Printf("Enable GitHub issue monitoring? (current: %s) [y/N]: ", ghMonitorPrompt)
+	ghMonitorInput, _ := reader.ReadString('\n')
+	ghMonitorInput = strings.TrimSpace(strings.ToLower(ghMonitorInput))
+	if ghMonitorInput == "" {
+		log.Printf("  GitHub monitoring unchanged: %v\n", cfg.GithubMonitorEnabled)
+	} else {
+		cfg.GithubMonitorEnabled = ghMonitorInput == "y" || ghMonitorInput == "yes"
+		log.Printf("  GitHub monitoring enabled: %v\n", cfg.GithubMonitorEnabled)
+	}
+
+	if cfg.GithubMonitorEnabled {
+		currentRepo := cfg.GithubRepo
+		if currentRepo == "" {
+			currentRepo = "not set"
+		}
+		fmt.Printf("  GitHub repository (current: %s, blank to keep): ", currentRepo)
+		repoInput, _ := reader.ReadString('\n')
+		repoInput = strings.TrimSpace(repoInput)
+		if repoInput != "" {
+			cfg.GithubRepo = repoInput
+			log.Printf("  Repo set to: %s\n", cfg.GithubRepo)
+		}
+
+		currentLabels := cfg.GithubLabels
+		if currentLabels == "" {
+			currentLabels = "all"
+		}
+		fmt.Printf("  Labels to watch (current: %s, blank to keep, 'none' to clear): ", currentLabels)
+		labelsInput, _ := reader.ReadString('\n')
+		labelsInput = strings.TrimSpace(labelsInput)
+		if labelsInput == "none" {
+			cfg.GithubLabels = ""
+			log.Println("  Labels cleared — watching all labels")
+		} else if labelsInput != "" {
+			cfg.GithubLabels = labelsInput
+			log.Printf("  Labels set to: %s\n", cfg.GithubLabels)
+		}
+
+		currentSince := cfg.GithubSince
+		if currentSince == "" {
+			currentSince = "all time"
+		}
+		for {
+			fmt.Printf("  Since date (current: %s, MM-DD-YYYY or MM/DD/YYYY, blank to keep, 'none' to clear): ", currentSince)
+			sinceInput, _ := reader.ReadString('\n')
+			sinceInput = strings.TrimSpace(sinceInput)
+			if sinceInput == "" {
+				log.Printf("  Since unchanged: %s\n", currentSince)
+				break
+			}
+			if sinceInput == "none" {
+				cfg.GithubSince = ""
+				log.Println("  Since cleared — watching all time")
+				break
+			}
+			normalized := strings.ReplaceAll(sinceInput, "/", "-")
+			if _, err := time.Parse("01-02-2006", normalized); err != nil {
+				log.Println("  Invalid date format. Please use MM-DD-YYYY or MM/DD/YYYY (e.g. 02-05-2025)")
+				continue
+			}
+			cfg.GithubSince = normalized
+			log.Printf("  Since set to: %s\n", cfg.GithubSince)
+			break
+		}
+
+		// Close non-reproducible issues
+		closeNonRepPrompt := "n"
+		if cfg.GithubCloseNonReproducible {
+			closeNonRepPrompt = "Y"
+		}
+		fmt.Printf("  Close issues that can't be reproduced? (current: %s) [y/N]: ", closeNonRepPrompt)
+		closeNonRepInput, _ := reader.ReadString('\n')
+		closeNonRepInput = strings.TrimSpace(strings.ToLower(closeNonRepInput))
+		if closeNonRepInput == "" {
+			log.Printf("  Close non-reproducible unchanged: %v\n", cfg.GithubCloseNonReproducible)
+		} else {
+			cfg.GithubCloseNonReproducible = closeNonRepInput == "y" || closeNonRepInput == "yes"
+			log.Printf("  Close non-reproducible: %v\n", cfg.GithubCloseNonReproducible)
+		}
+	}
+
+	log.Println()
+
 	// Docker-in-Docker
 	dindPrompt := "n"
 	if cfg.DindEnabled {
@@ -776,6 +884,56 @@ func cmdInit() error {
 		log.Println("⚠️  IMPORTANT: You must configure real credentials before starting!")
 		log.Println("   Run: sandclaude populate-proxy-credentials")
 		log.Println("   Otherwise update project/proxy-credentials.json manually")
+	}
+
+	log.Println()
+
+	// GitHub issue monitoring
+	if askYesNo("Enable GitHub issue monitoring (auto-assign and work on issues)?") {
+		cfg.GithubMonitorEnabled = true
+		ghReader := bufio.NewReader(os.Stdin)
+
+		fmt.Print("GitHub repository (e.g. owner/repo): ")
+		repoInput, _ := ghReader.ReadString('\n')
+		cfg.GithubRepo = strings.TrimSpace(repoInput)
+
+		fmt.Print("Labels to watch (comma-separated, blank for all): ")
+		labelsInput, _ := ghReader.ReadString('\n')
+		cfg.GithubLabels = strings.TrimSpace(labelsInput)
+
+		for {
+			fmt.Print("Watch issues since date (MM-DD-YYYY or MM/DD/YYYY, blank for all): ")
+			sinceInput, _ := ghReader.ReadString('\n')
+			sinceInput = strings.TrimSpace(sinceInput)
+			if sinceInput == "" {
+				cfg.GithubSince = ""
+				break
+			}
+			normalized := strings.ReplaceAll(sinceInput, "/", "-")
+			if _, err := time.Parse("01-02-2006", normalized); err != nil {
+				log.Println("  Invalid date format. Please use MM-DD-YYYY or MM/DD/YYYY (e.g. 02-05-2025)")
+				continue
+			}
+			cfg.GithubSince = normalized
+			break
+		}
+
+		// Close non-reproducible issues
+		if askYesNo("Close issues that can't be reproduced (with detailed documentation)?") {
+			cfg.GithubCloseNonReproducible = true
+			log.Println("✅ Will close non-reproducible issues with documentation")
+		}
+
+		log.Printf("✅ GitHub monitoring enabled (repo: %s)\n", cfg.GithubRepo)
+		if cfg.GithubLabels != "" {
+			log.Printf("   Labels: %s\n", cfg.GithubLabels)
+		}
+		if cfg.GithubSince != "" {
+			log.Printf("   Since: %s\n", cfg.GithubSince)
+		}
+		if cfg.GithubCloseNonReproducible {
+			log.Println("   Close non-reproducible: enabled")
+		}
 	}
 
 	log.Println()
