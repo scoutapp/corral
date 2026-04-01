@@ -271,7 +271,7 @@ func getLogsDir() string {
 }
 
 // startDocker starts the Docker container with Claude Code
-func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
+func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 	workspace := cfg.Workspace
 	// Build image if needed
 	imageName := "sandclaude-stable"
@@ -510,8 +510,10 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 		}
 	}
 
-	// Mount empty tmpfs over .devcontainer to hide it from the container
-	args = append(args, "--tmpfs", fmt.Sprintf("%s/.devcontainer:rw,noexec,nosuid,size=1m", workspace))
+	// Mount empty tmpfs over .devcontainer to hide it from the container (unless --keep-devfiles)
+	if !keepDevfiles {
+		args = append(args, "--tmpfs", fmt.Sprintf("%s/.devcontainer:rw,noexec,nosuid,size=1m", workspace))
+	}
 
 	// Determine the allowlist path.
 	// When running as the self repo (scriptDir is named "claude_sandbox" or "sandclaude"),
@@ -640,7 +642,7 @@ func (sc *SandClaude) ensureImage(imageName string) error {
 }
 
 // Run starts the full sandclaude environment
-func (sc *SandClaude) Run() error {
+func (sc *SandClaude) Run(keepDevfiles bool) error {
 	log.Println("SandClaude - Secure Claude Code Environment")
 
 	projectDir := getProjectDir()
@@ -679,7 +681,7 @@ func (sc *SandClaude) Run() error {
 		}()
 	}
 
-	err = sc.startDocker(cfg)
+	err = sc.startDocker(cfg, keepDevfiles)
 
 	if sc.proxyEnabled {
 		sc.stopProxy()
@@ -1118,6 +1120,7 @@ func cmdStart(args []string) error {
 	disableFirewall := false
 	passthroughFirewallAndWrite := false
 	disableDind := false
+	keepDevfiles := false
 
 	for _, arg := range args {
 		switch arg {
@@ -1127,6 +1130,8 @@ func cmdStart(args []string) error {
 			passthroughFirewallAndWrite = true
 		case "--disable-dind":
 			disableDind = true
+		case "--keep-devfiles":
+			keepDevfiles = true
 		case "--debug":
 			// already handled globally in main(), ignore here
 		}
@@ -1140,7 +1145,7 @@ func cmdStart(args []string) error {
 	sc.disableFirewall = disableFirewall
 	sc.passthroughFirewallAndWrite = passthroughFirewallAndWrite
 	sc.disableDind = disableDind
-	return sc.Run()
+	return sc.Run(keepDevfiles)
 }
 
 // cmdList shows the ./project/config.json
@@ -1662,6 +1667,7 @@ func usage() {
 	fmt.Println("    --disable-firewall             Skip firewall initialization")
 	fmt.Println("    --passthrough-firewall-and-write   Keep proxy but allow all domains; write unknown ones to allowed-domains.txt")
 	fmt.Println("    --disable-dind                 Skip inner dockerd startup")
+	fmt.Println("    --keep-devfiles                Do not hide .devcontainer from the container (skip tmpfs overlay)")
 	fmt.Println("  list                     Show ./project/ configuration")
 	fmt.Println("  remove                   Remove ./project/ directory after confirmation")
 	fmt.Println("  firewall-reload          Encrypt allowed-domains.txt and SIGHUP proxy")
