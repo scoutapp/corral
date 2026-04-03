@@ -219,11 +219,12 @@ func (sc *SandClaude) stopProxy() {
 // ----------------------------------------------------------------------------
 
 type ProjectConfig struct {
-	Workspace    string   `json:"workspace"`
-	ProxyEnabled bool     `json:"proxy_enabled,omitempty"`
-	DindEnabled  bool     `json:"dind_enabled,omitempty"`
-	DindPorts    []string `json:"dind_ports,omitempty"`
-	CreatedAt    string   `json:"created_at"`
+	Workspace         string   `json:"workspace"`
+	ProxyEnabled      bool     `json:"proxy_enabled,omitempty"`
+	DindEnabled       bool     `json:"dind_enabled,omitempty"`
+	DindPorts         []string `json:"dind_ports,omitempty"`
+	AgentTeamsEnabled bool     `json:"agent_teams_enabled,omitempty"`
+	CreatedAt         string   `json:"created_at"`
 }
 
 func readConfig(projectDir string) (*ProjectConfig, error) {
@@ -266,7 +267,7 @@ func getLogsDir() string {
 }
 
 // startDocker starts the Docker container with Claude Code
-func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
+func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 	workspace := cfg.Workspace
 	// Build image if needed
 	imageName := "sandclaude-stable"
@@ -490,8 +491,10 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 		}
 	}
 
-	// Mount empty tmpfs over .devcontainer to hide it from the container
-	args = append(args, "--tmpfs", fmt.Sprintf("%s/.devcontainer:rw,noexec,nosuid,size=1m", workspace))
+	// Mount empty tmpfs over .devcontainer to hide it from the container (unless --keep-devfiles)
+	if !keepDevfiles {
+		args = append(args, "--tmpfs", fmt.Sprintf("%s/.devcontainer:rw,noexec,nosuid,size=1m", workspace))
+	}
 
 	// Determine the allowlist path.
 	// When running as the self repo (scriptDir is named "claude_sandbox" or "sandclaude"),
@@ -567,6 +570,12 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig) error {
 		}
 	}
 
+	// Agent teams: signal launcher to start 3 Claude Code sessions in tmux
+	if cfg.AgentTeamsEnabled {
+		args = append(args, "-e", "AGENT_TEAMS_ENABLED=1")
+		log.Println("Agent teams enabled — starting 3 Claude Code sessions in tmux")
+	}
+
 	args = append(args, imageName)
 
 	debugf("Docker command: docker %s", strings.Join(args, " "))
@@ -620,7 +629,7 @@ func (sc *SandClaude) ensureImage(imageName string) error {
 }
 
 // Run starts the full sandclaude environment
-func (sc *SandClaude) Run() error {
+func (sc *SandClaude) Run(keepDevfiles bool) error {
 	log.Println("SandClaude - Secure Claude Code Environment")
 
 	projectDir := getProjectDir()
@@ -659,7 +668,7 @@ func (sc *SandClaude) Run() error {
 		}()
 	}
 
-	err = sc.startDocker(cfg)
+	err = sc.startDocker(cfg, keepDevfiles)
 
 	if sc.proxyEnabled {
 		sc.stopProxy()
@@ -722,6 +731,23 @@ func cmdUpdate() error {
 
 	log.Println()
 
+	// Agent teams
+	agentTeamsPrompt := "n"
+	if cfg.AgentTeamsEnabled {
+		agentTeamsPrompt = "Y"
+	}
+	fmt.Printf("Enable agent teams - 3 Claude sessions in tmux? (current: %s) [y/N]: ", agentTeamsPrompt)
+	agentTeamsInput, _ := reader.ReadString('\n')
+	agentTeamsInput = strings.TrimSpace(strings.ToLower(agentTeamsInput))
+	if agentTeamsInput == "" {
+		log.Printf("  Agent teams unchanged: %v\n", cfg.AgentTeamsEnabled)
+	} else {
+		cfg.AgentTeamsEnabled = agentTeamsInput == "y" || agentTeamsInput == "yes"
+		log.Printf("  Agent teams enabled: %v\n", cfg.AgentTeamsEnabled)
+	}
+
+	log.Println()
+
 	// Workspace
 	fmt.Printf("Workspace directory (current: %s, blank to keep): ", cfg.Workspace)
 	wsInput, _ := reader.ReadString('\n')
@@ -776,6 +802,16 @@ func cmdInit() error {
 		log.Println("⚠️  IMPORTANT: You must configure real credentials before starting!")
 		log.Println("   Run: sandclaude populate-proxy-credentials")
 		log.Println("   Otherwise update project/proxy-credentials.json manually")
+	}
+
+	log.Println()
+
+	// Agent teams
+	if askYesNo("Enable agent teams (start 3 Claude Code sessions in tmux)?") {
+		cfg.AgentTeamsEnabled = true
+		log.Println("✅ Agent teams enabled — 3 Claude Code sessions will start in tmux")
+	} else {
+		log.Println("Agent teams disabled")
 	}
 
 	log.Println()
@@ -960,6 +996,7 @@ func cmdStart(args []string) error {
 	disableFirewall := false
 	passthroughFirewallAndWrite := false
 	disableDind := false
+	keepDevfiles := false
 
 	for _, arg := range args {
 		switch arg {
@@ -969,6 +1006,8 @@ func cmdStart(args []string) error {
 			passthroughFirewallAndWrite = true
 		case "--disable-dind":
 			disableDind = true
+		case "--keep-devfiles":
+			keepDevfiles = true
 		case "--debug":
 			// already handled globally in main(), ignore here
 		}
@@ -982,7 +1021,7 @@ func cmdStart(args []string) error {
 	sc.disableFirewall = disableFirewall
 	sc.passthroughFirewallAndWrite = passthroughFirewallAndWrite
 	sc.disableDind = disableDind
-	return sc.Run()
+	return sc.Run(keepDevfiles)
 }
 
 // cmdList shows the ./project/config.json
@@ -1504,6 +1543,7 @@ func usage() {
 	fmt.Println("    --disable-firewall             Skip firewall initialization")
 	fmt.Println("    --passthrough-firewall-and-write   Keep proxy but allow all domains; write unknown ones to allowed-domains.txt")
 	fmt.Println("    --disable-dind                 Skip inner dockerd startup")
+	fmt.Println("    --keep-devfiles                Do not hide .devcontainer from the container (skip tmpfs overlay)")
 	fmt.Println("  list                     Show ./project/ configuration")
 	fmt.Println("  remove                   Remove ./project/ directory after confirmation")
 	fmt.Println("  firewall-reload          Encrypt allowed-domains.txt and SIGHUP proxy")

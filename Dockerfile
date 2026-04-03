@@ -12,27 +12,7 @@ FROM --platform=linux/amd64 ubuntu:24.04
 # Copy the static proxy binary from the builder stage
 COPY --from=proxy-builder /build/allowlist-proxy /usr/local/bin/allowlist-proxy
 
-# Install Google Chrome and matching ChromeDriver
-# (chromium-browser on Ubuntu 24.04 is a snap stub that doesn't work in Docker)
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget \
-    curl \
-    unzip \
-    gnupg \
-    ca-certificates \
-    && wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends google-chrome-stable \
-    && CHROME_VERSION=$(google-chrome --version | grep -oP '\d+' | head -1) \
-    && CHROMEDRIVER_VERSION=$(curl -s "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROME_VERSION}") \
-    && wget -q "https://storage.googleapis.com/chrome-for-testing-public/${CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip" \
-    && unzip chromedriver-linux64.zip \
-    && mv chromedriver-linux64/chromedriver /usr/local/bin/chromedriver \
-    && chmod +x /usr/local/bin/chromedriver \
-    && rm -rf chromedriver-linux64.zip chromedriver-linux64 \
-    && rm -rf /var/lib/apt/lists/*
 
 # Install base tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -51,6 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     vim \
     less \
     iptables \
+    tmux \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 22
@@ -58,13 +39,20 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 
+# Install Playwright CLI and Chromium with system dependencies
+# Use a world-readable path so the claude user can access browsers without sudo
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV NODE_PATH=/usr/lib/node_modules
+RUN npm install -g playwright && \
+    playwright install --with-deps chromium && \
+    chmod -R o+rx /ms-playwright
+
 # Install Python 3, mitmproxy, and selenium
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-venv \
-    python3-selenium \
-    mitmproxy \
+mitmproxy \
     && rm -rf /var/lib/apt/lists/*
   
 # Install gh (GitHub CLI)
