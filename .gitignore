@@ -7,6 +7,9 @@
 secrets/
 credentials/
 
+# Don't believe we want these in version control
+.claude/worktrees
+
 # Generated files - do not commit
 .devcontainer
 

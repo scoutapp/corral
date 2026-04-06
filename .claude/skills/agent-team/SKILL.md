@@ -1,81 +1,118 @@
 ---
 name: agent-team
-description: Multi-agent development team structure — Planner, Worker, and Tester agents running in parallel tmux panes, each with an Evaluator sub-agent.
+description: Multi-agent development team structure — three separate Claude Code agent teams (Orchestrator, Worker, Tester) running in parallel tmux panes. Teams communicate only through GitHub.
 ---
 
 # Agent Team
 
-This project runs a three-agent development team in parallel tmux panes. Each agent has a distinct role and spawns an Evaluator sub-agent to review its work before acting.
+Three separate Claude Code sessions run in parallel tmux panes. Each session is told to **"Create an agent team to..."** and spawns its own teammates. The three teams have no direct communication — they are completely independent and coordinate only through GitHub issues, PR labels, and PR comments.
 
 ## Team Structure
 
 ```
-┌─────────────────┬─────────────────┬─────────────────┐
-│    Planner      │     Worker      │     Tester      │
-│                 │                 │                 │
-│  User input →   │  /loop issues → │  /loop PRs →    │
-│  GitHub issues  │  implement →    │  test plan →    │
-│                 │  evaluator →    │  evaluator →    │
-│  evaluator →    │  PR             │  sign off       │
-│  gh issue create│                 │                 │
-└─────────────────┴─────────────────┴─────────────────┘
+┌──────────────────────┬──────────────────────┬──────────────────────┐
+│  Orchestrator Team   │    Worker Team       │    Tester Team       │
+│                      │                      │                      │
+│  Create an agent     │  Create an agent     │  Create an agent     │
+│  team to manage the  │  team to implement   │  team to review and  │
+│  project backlog...  │  GitHub issues...    │  test pull requests  │
+│                      │                      │                      │
+│  teammates:          │  teammate:           │  teammate:           │
+│  • evaluator         │  • evaluator         │  • evaluator         │
+│    (reviews issues)  │    (reviews code)    │    (directs testing  │
+│  • foreman           │                      │     + reviews quality│
+│    (loops 2m, checks │  /loop 1m            │                      │
+│     progress,merges) │  git worktree →      │  /loop 1m            │
+│                      │  implement →         │  reads PR desc →     │
+│  asks user sparingly │  evaluate → PR       │  evaluate → test →   │
+│                      │  label: ready for    │  evaluate quality →  │
+│                      │  review              │  label: needs rev /  │
+│                      │                      │  ready for merge     │
+└──────────────────────┴──────────────────────┴──────────────────────┘
+                   ↕ GitHub only ↕              ↕ GitHub only ↕
 ```
 
-## Agents
+## How each team is started
 
-### Planner
-- **Input**: High-level goal from the user
-- **Output**: GitHub issues (`gh issue create`)
-- **Evaluator focus**: Project coherence — are issues well-scoped and complete? (not technical)
-- **Principle**: Keep issues simple. Title + 2-3 bullets. Leave implementation to the Worker.
+Each session receives a `--append-system-prompt` for context/constraints, then is given a **"Create an agent team to..."** prompt that describes the team's purpose and the roles teammates should play. Claude structures the team and spawns teammates based on that description.
 
-### Worker
-- **Input**: Open GitHub issues (via `/loop 5m`)
-- **Output**: Draft PRs on GitHub
-- **Evaluator focus**: Code quality, conventions, refactoring opportunities, PR scope
-- **Principle**: One issue per PR. Keep PRs minimal. Split naturally when needed and link the chain.
+`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set in the environment, and `--teammate-mode in-process` keeps teammates within the same session (no extra tmux panes).
 
-### Tester
-- **Input**: Open PRs (via `/loop 5m`)
-- **Output**: PR comments + approval/change request
-- **Evaluator focus**: Test plan completeness, security gaps, missing edge cases
-- **Principle**: Cover what matters — unit tests, browser flows, security, edge cases. Follow PR chains.
+## Orchestrator Team
 
-## Evaluator Pattern
+**Purpose**: Translate user goals into GitHub issues; maintain the project backlog.
 
-Each agent spawns an Evaluator sub-agent before taking a significant action. The agent uses the
-built-in `Agent` tool to call its evaluator, passing the draft work (issues, code diff, test plan)
-and asking for critique. The agent then incorporates the feedback before proceeding.
+**Start prompt style**: `"Create an agent team to manage the project backlog and translate user goals into GitHub issues. The team should have: one teammate as an evaluator [reviews issue drafts for coherence, one round]... one teammate as a foreman [loops every 2m, checks progress, squash-merges ready-for-merge PRs when they match project goals]..."`
 
-Evaluators are defined via the `--agents` flag at startup and are available as named sub-agents
-during the session.
+**User interaction**: The Orchestrator may ask the user for input, but sparingly — only for overall feature direction, never implementation decisions.
 
-## PR Chains
+**Foreman responsibilities**:
+- Loops every 2 minutes reading open issues, PR labels, merged PRs
+- Squash-merges PRs labeled `ready for merge` if they match the project goal (`gh pr merge <n> --squash`)
+- If `part of larger feature`: waits for all related PRs before merging to feature branch
+- Advises Orchestrator on whether feature flags can isolate incomplete work in main
 
-The Worker may split work into multiple linked PRs when it makes sense (e.g., implementation + tests
-in separate PRs). When this happens:
-- Each PR references the others in its description: "Part 1 of 2 — see #456 for tests"
-- The Tester follows the chain and verifies the full set before signing off
-- The Tester comments on each PR in the chain linking back to the test results
+## Worker Team
 
-## Communication Channel
+**Purpose**: Pick up GitHub issues, implement them in git worktrees, create PRs.
 
-All inter-agent communication goes through GitHub:
-- Planner → Worker: GitHub issues
-- Worker → Tester: GitHub PRs (draft → ready)
-- Tester → Worker: PR comments and review decisions
+**Start prompt style**: `"Create an agent team to implement GitHub issues and deliver pull requests. The team should have one teammate as a code review evaluator [reviews code before PR, checks conventions/DRY/scope, one round]..."`
 
-## Starting the Team
+**Autonomous**: Never asks user for input.
 
-The team is started automatically by `launcher.py` when `AGENT_TEAMS_ENABLED=1`. Each agent
-receives its role via `--append-system-prompt` and its evaluator sub-agent via `--agents`.
+**Key behaviors**:
+- `/loop 1m` — checks for `needs revision` PRs first (priority), then new issues
+- Creates a **true git worktree** per branch: `git worktree add ../worktree-<branch> -b <branch>` — not Claude's built-in worktree
+- PRs: target +300/-300 lines, split by domain (not file type), linked when inseparable
+- Trunk-based development; use feature flags to isolate incomplete features in main
+- After pushing: adds `ready for review` label + brief PR comment (1-3 sentences)
 
-From the host:
+## Tester Team
+
+**Purpose**: Review PRs labeled `ready for review`, test them, update labels.
+
+**Start prompt style**: `"Create an agent team to review and test pull requests. The team should have one teammate as a testing evaluator with a reversed role: it directs the tester before testing begins AND reviews test quality afterward..."`
+
+**Autonomous**: Never asks user for input.
+
+**Key behaviors**:
+- `/loop 1m` — picks up `ready for review` PRs
+- Evaluator directs approach first: what to test, whether Chromium/Playwright is needed, edge cases
+- Evaluator reviews quality after: are tests meaningful or self-asserting?
+- Posts concise PR comment, then updates label to `needs revision` (with specifics) or `ready for merge`
+- For PR chains (linked PRs): reads all linked descriptions before testing
+
+## PR Label Lifecycle
+
+```
+Worker pushes PR → [ready for review]
+                         ↓
+                   Tester reviews
+                    ↙          ↘
+         [needs revision]   [ready for merge]
+               ↓                    ↓
+         Worker fixes         Foreman checks goal
+               ↓                    ↓
+       [ready for review]    squash merge / feature branch
+```
+
+**Labels**:
+- `ready for review` — Worker done, Tester picks up
+- `needs revision` — Tester found issues; Worker prioritizes this over new tickets
+- `ready for merge` — Tester approved; Foreman evaluates goal alignment and merges
+- `part of larger feature` — hold for feature branch; Foreman waits for full set
+
+## Context Efficiency
+
+- PR descriptions: specific and structured — what problem, what approach, linked PRs. Not verbose.
+- PR comments: 1-3 sentences — enough to rebuild context, not a wall of text
+- When resuming `needs revision`: read the tester's comment first, not the full diff
+- When testing: read PR description and Worker comments before fetching diffs
+
+## Starting the Teams
+
 ```bash
 AGENT_TEAMS_ENABLED=1 ./sandclaude start
 ```
 
-## Loop Intervals
-
-Both the Worker and Tester use `/loop 5m` to check for new work every 5 minutes. Adjust the
-interval in the prompt files or via `/loop` in the pane directly if needed.
+Three tmux panes open: Orchestrator | Worker | Tester. Each independently creates its own agent team.

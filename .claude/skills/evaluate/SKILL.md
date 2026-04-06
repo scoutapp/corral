@@ -10,9 +10,9 @@ before you commit to it. The evaluator looks for problems, gaps, and improvement
 
 ## When to use
 
-- **Planner**: After drafting GitHub issues, before calling `gh issue create`
+- **Orchestrator**: After drafting GitHub issues, before calling `gh issue create`
 - **Worker**: After writing code, before calling `gh pr create`
-- **Tester**: After writing a test plan, before executing tests
+- **Tester**: Both before executing (evaluator directs the approach) and after (evaluator reviews test quality)
 
 ## How it works
 
@@ -42,11 +42,11 @@ Are these well-scoped? Any gaps? Anything unclear?"
 
 ## What evaluators look for
 
-| Agent   | Evaluator focus |
-|---------|----------------|
-| Planner | Project coherence: scope, gaps, clarity of issues |
-| Worker  | Code quality: conventions, refactoring, PR scope |
-| Tester  | Test coverage: edge cases, security, missing scenarios |
+| Agent        | Evaluator focus |
+|--------------|----------------|
+| Orchestrator | Project coherence: scope, gaps, clarity of issues |
+| Worker       | Code quality: conventions, DRY, refactoring, PR scope |
+| Tester       | **Before**: direct the testing approach (what to test, how, where logs are). **After**: review whether tests are genuinely meaningful vs self-asserting |
 
 ## Incorporating feedback
 
