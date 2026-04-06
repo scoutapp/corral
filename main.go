@@ -219,12 +219,15 @@ func (sc *SandClaude) stopProxy() {
 // ----------------------------------------------------------------------------
 
 type ProjectConfig struct {
-	Workspace         string   `json:"workspace"`
-	ProxyEnabled      bool     `json:"proxy_enabled,omitempty"`
-	DindEnabled       bool     `json:"dind_enabled,omitempty"`
-	DindPorts         []string `json:"dind_ports,omitempty"`
-	AgentTeamsEnabled bool     `json:"agent_teams_enabled,omitempty"`
-	CreatedAt         string   `json:"created_at"`
+	Workspace                    string   `json:"workspace"`
+	ProxyEnabled                 bool     `json:"proxy_enabled,omitempty"`
+	DindEnabled                  bool     `json:"dind_enabled,omitempty"`
+	DindPorts                    []string `json:"dind_ports,omitempty"`
+	AgentTeamsMode               string   `json:"agent_teams_mode,omitempty"`
+	IssueMonitoringLabel         string   `json:"issue_monitoring_label,omitempty"`
+	IssueMonitoringAfterDate     string   `json:"issue_monitoring_after_date,omitempty"`
+	IssueMonitoringWriteComments bool     `json:"issue_monitoring_write_comments,omitempty"`
+	CreatedAt                    string   `json:"created_at"`
 }
 
 func readConfig(projectDir string) (*ProjectConfig, error) {
@@ -570,10 +573,23 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 		}
 	}
 
-	// Agent teams: signal launcher to start 3 Claude Code sessions in tmux
-	if cfg.AgentTeamsEnabled {
-		args = append(args, "-e", "AGENT_TEAMS_ENABLED=1")
-		log.Println("Agent teams enabled — starting 3 Claude Code sessions in tmux")
+	// Agent teams: signal launcher with mode
+	if cfg.AgentTeamsMode != "" && cfg.AgentTeamsMode != "standard" {
+		args = append(args, "-e", fmt.Sprintf("AGENT_TEAMS_MODE=%s", cfg.AgentTeamsMode))
+		if cfg.AgentTeamsMode == "issue-monitoring" {
+			log.Println("Agent teams mode: issue-monitoring — worker + tester team in tmux")
+			if cfg.IssueMonitoringLabel != "" {
+				args = append(args, "-e", fmt.Sprintf("ISSUE_MONITORING_LABEL=%s", cfg.IssueMonitoringLabel))
+			}
+			if cfg.IssueMonitoringAfterDate != "" {
+				args = append(args, "-e", fmt.Sprintf("ISSUE_MONITORING_AFTER_DATE=%s", cfg.IssueMonitoringAfterDate))
+			}
+			if cfg.IssueMonitoringWriteComments {
+				args = append(args, "-e", "ISSUE_MONITORING_WRITE_COMMENTS=1")
+			}
+		} else if cfg.AgentTeamsMode == "project" {
+			log.Println("Agent teams mode: project — Orchestrator | Worker | Tester in tmux")
+		}
 	}
 
 	args = append(args, imageName)
@@ -732,18 +748,68 @@ func cmdUpdate() error {
 	log.Println()
 
 	// Agent teams
-	agentTeamsPrompt := "n"
-	if cfg.AgentTeamsEnabled {
-		agentTeamsPrompt = "Y"
+	currentMode := cfg.AgentTeamsMode
+	if currentMode == "" {
+		currentMode = "standard"
 	}
-	fmt.Printf("Enable agent teams - 3 Claude sessions in tmux? (current: %s) [y/N]: ", agentTeamsPrompt)
-	agentTeamsInput, _ := reader.ReadString('\n')
-	agentTeamsInput = strings.TrimSpace(strings.ToLower(agentTeamsInput))
-	if agentTeamsInput == "" {
-		log.Printf("  Agent teams unchanged: %v\n", cfg.AgentTeamsEnabled)
+	log.Println("Agent teams mode:")
+	log.Println("  1. Standard        — single Claude Code session")
+	log.Println("  2. Issue Monitoring — worker + tester team monitoring a GitHub issue label")
+	log.Println("  3. Project         — full 3-team system: Orchestrator | Worker | Tester")
+	fmt.Printf("Select mode [1/2/3] (current: %s, blank to keep): ", currentMode)
+	agentModeInput, _ := reader.ReadString('\n')
+	agentModeInput = strings.TrimSpace(agentModeInput)
+	if agentModeInput == "" {
+		log.Printf("  Agent teams mode unchanged: %s\n", currentMode)
 	} else {
-		cfg.AgentTeamsEnabled = agentTeamsInput == "y" || agentTeamsInput == "yes"
-		log.Printf("  Agent teams enabled: %v\n", cfg.AgentTeamsEnabled)
+		switch agentModeInput {
+		case "2":
+			cfg.AgentTeamsMode = "issue-monitoring"
+			log.Println("  Agent teams mode: issue-monitoring")
+			log.Println()
+
+			currentLabel := cfg.IssueMonitoringLabel
+			if currentLabel == "" {
+				currentLabel = "none"
+			}
+			fmt.Printf("  Issue label to monitor (current: %s, blank to keep): ", currentLabel)
+			labelInput, _ := reader.ReadString('\n')
+			labelInput = strings.TrimSpace(labelInput)
+			if labelInput != "" {
+				cfg.IssueMonitoringLabel = labelInput
+			}
+			log.Printf("  Label filter: %s\n", cfg.IssueMonitoringLabel)
+
+			currentDate := cfg.IssueMonitoringAfterDate
+			if currentDate == "" {
+				currentDate = "none"
+			}
+			fmt.Printf("  Only look at issues after date YYYY-MM-DD (current: %s, blank to keep): ", currentDate)
+			dateInput, _ := reader.ReadString('\n')
+			dateInput = strings.TrimSpace(dateInput)
+			if dateInput != "" {
+				cfg.IssueMonitoringAfterDate = dateInput
+			}
+			log.Printf("  After date: %s\n", cfg.IssueMonitoringAfterDate)
+
+			writeCommentsPrompt := "n"
+			if cfg.IssueMonitoringWriteComments {
+				writeCommentsPrompt = "Y"
+			}
+			fmt.Printf("  Write agent comments directly to issues/PRs? (current: %s) [y/N]: ", writeCommentsPrompt)
+			writeInput, _ := reader.ReadString('\n')
+			writeInput = strings.TrimSpace(strings.ToLower(writeInput))
+			if writeInput != "" {
+				cfg.IssueMonitoringWriteComments = writeInput == "y" || writeInput == "yes"
+			}
+			log.Printf("  Write comments: %v\n", cfg.IssueMonitoringWriteComments)
+		case "3":
+			cfg.AgentTeamsMode = "project"
+			log.Println("  Agent teams mode: project — Orchestrator | Worker | Tester")
+		default:
+			cfg.AgentTeamsMode = "standard"
+			log.Println("  Agent teams mode: standard")
+		}
 	}
 
 	log.Println()
@@ -807,11 +873,43 @@ func cmdInit() error {
 	log.Println()
 
 	// Agent teams
-	if askYesNo("Enable agent teams (start 3 Claude Code sessions in tmux)?") {
-		cfg.AgentTeamsEnabled = true
-		log.Println("✅ Agent teams enabled — 3 Claude Code sessions will start in tmux")
-	} else {
-		log.Println("Agent teams disabled")
+	log.Println("Agent teams mode:")
+	log.Println("  1. Standard        — single Claude Code session (default)")
+	log.Println("  2. Issue Monitoring — worker + tester team monitoring a GitHub issue label")
+	log.Println("  3. Project         — full 3-team system: Orchestrator | Worker | Tester")
+	fmt.Print("Select mode [1/2/3] (default: 1): ")
+	agentModeReader := bufio.NewReader(os.Stdin)
+	agentModeInput, _ := agentModeReader.ReadString('\n')
+	agentModeInput = strings.TrimSpace(agentModeInput)
+	switch agentModeInput {
+	case "2":
+		cfg.AgentTeamsMode = "issue-monitoring"
+		log.Println("✅ Agent teams mode: issue-monitoring")
+		log.Println()
+		fmt.Print("Issue label to monitor (blank for none): ")
+		labelInput, _ := agentModeReader.ReadString('\n')
+		cfg.IssueMonitoringLabel = strings.TrimSpace(labelInput)
+		if cfg.IssueMonitoringLabel != "" {
+			log.Printf("  Label filter: %s\n", cfg.IssueMonitoringLabel)
+		}
+		fmt.Print("Only look at issues after date (YYYY-MM-DD, blank for all): ")
+		dateInput, _ := agentModeReader.ReadString('\n')
+		cfg.IssueMonitoringAfterDate = strings.TrimSpace(dateInput)
+		if cfg.IssueMonitoringAfterDate != "" {
+			log.Printf("  After date: %s\n", cfg.IssueMonitoringAfterDate)
+		}
+		cfg.IssueMonitoringWriteComments = askYesNo("Write agent comments directly to issues/PRs?")
+		if cfg.IssueMonitoringWriteComments {
+			log.Println("  Will write comments to issues/PRs")
+		} else {
+			log.Println("  Agents will communicate internally only (labels only on issues/PRs)")
+		}
+	case "3":
+		cfg.AgentTeamsMode = "project"
+		log.Println("✅ Agent teams mode: project — Orchestrator | Worker | Tester")
+	default:
+		cfg.AgentTeamsMode = "standard"
+		log.Println("Agent teams mode: standard")
 	}
 
 	log.Println()

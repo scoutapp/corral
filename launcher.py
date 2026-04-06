@@ -172,6 +172,108 @@ Never ask the user for input. Make all testing decisions autonomously.\
 """
 
 
+# ── Issue Monitoring team prompts ─────────────────────────────────────────────
+# A single Claude Code session with 4 teammates: worker, worker-evaluator,
+# tester, and tester-evaluator. Monitors GitHub issues matching a label and
+# date filter. Communicates internally; optionally writes comments to issues.
+
+def _build_issue_monitoring_start() -> str:
+    label = os.getenv('ISSUE_MONITORING_LABEL', '')
+    after_date = os.getenv('ISSUE_MONITORING_AFTER_DATE', '')
+    write_comments = os.getenv('ISSUE_MONITORING_WRITE_COMMENTS', '') == '1'
+
+    label_clause = f" with label `{label}`" if label else ""
+    date_clause = f" created after {after_date}" if after_date else ""
+    issue_filter = f"GitHub issues{label_clause}{date_clause}"
+
+    comment_rule = (
+        "Post a concise comment on the issue summarising what was done, what was tested, "
+        "and any concerns. Keep it to 3-5 sentences."
+        if write_comments else
+        "Do NOT post comments on issues or PRs. Communicate findings to your teammates "
+        "internally. Only apply labels to signal state to other agents."
+    )
+
+    return f"""\
+Create an agent team to monitor and work on {issue_filter}.
+
+The team should have four teammates:
+
+1. **Worker** — implements fixes or improvements described in issues. Follows the same \
+workflow as a standard worker: assigns itself to an issue, creates a git worktree \
+(`git worktree add ../worktree-<branch> -b <branch>`), implements the change, then \
+creates a PR labeled `ready for review`. Targets +300/-300 lines per PR.
+
+2. **Worker evaluator** — reviews the worker's code before the PR is opened. One round \
+of feedback only: conventions, DRY violations, scope cleanliness. Actionable and concise.
+
+3. **Tester** — picks up PRs labeled `ready for review`, tests them (logs, Playwright/Chromium \
+where relevant, edge cases), and updates labels: `needs revision` if issues found, \
+`ready for merge` if all good.
+
+4. **Tester evaluator** — guides the tester before testing (what to test, where logs are, \
+what failure modes matter) and reviews test quality afterward (are tests self-asserting? \
+did they verify real user-visible behavior?). One round each phase.
+
+## Shared rules
+- Loop every 1 minute checking for work
+- {comment_rule}
+- Apply labels to signal state: `ready for review`, `needs revision`, `ready for merge`
+- All implementation decisions are autonomous — never ask the user for input
+- Only work on {issue_filter}
+
+Once the team is set up, start working:
+1. Check for PRs labeled `needs revision` owned by you: \
+`gh pr list --label "needs revision" --author @me`
+2. Check for open unassigned issues{label_clause}: \
+`gh issue list --state open --no-assignee{f" --label '{label}'" if label else ""}`
+3. Start the continuous work loop with `/loop 1m`\
+"""
+
+
+ISSUE_MONITORING_SYSTEM = """\
+You are running as an issue-monitoring agent team. Your team consists of four teammates: \
+a worker, a worker evaluator, a tester, and a tester evaluator. \
+All communication between teammates happens internally within this session. \
+The only external signals you use are GitHub issue/PR labels and (if configured) comments. \
+Do not attempt to contact any external agent sessions.\
+"""
+
+
+def start_issue_monitoring_teams():
+    """Start a single Claude Code session with a 4-person issue-monitoring team."""
+    session = "sandclaude-issue-monitoring"
+
+    system_path = "/tmp/sandclaude_issue_monitoring_system.txt"
+    start_path = "/tmp/sandclaude_issue_monitoring_start.txt"
+    script_path = "/tmp/sandclaude_issue_monitoring.sh"
+
+    with open(system_path, "w") as f:
+        f.write(ISSUE_MONITORING_SYSTEM)
+    with open(start_path, "w") as f:
+        f.write(_build_issue_monitoring_start())
+
+    script_content = (
+        "#!/bin/bash\n"
+        "# Sandclaude agent team: Issue Monitoring\n"
+        "export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1\n"
+        "exec claude --dangerously-skip-permissions \\\n"
+        f'  --teammate-mode in-process \\\n'
+        f'  --append-system-prompt "$(cat {system_path})" \\\n'
+        f'  "$(cat {start_path})"\n'
+    )
+    with open(script_path, "w") as f:
+        f.write(script_content)
+    os.chmod(script_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP)
+    logger.info(f"  Wrote issue-monitoring agent script: {script_path}")
+
+    logger.info("Starting issue-monitoring team in tmux...")
+    subprocess.run(["tmux", "new-session", "-d", "-s", session], check=True)
+    subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.0", script_path, "Enter"])
+    subprocess.run(["tmux", "select-pane", "-t", f"{session}:0.0", "-T", "Issue Monitoring"])
+    subprocess.run(["tmux", "attach-session", "-t", session])
+
+
 # ── Agent team configuration ──────────────────────────────────────────────────
 
 AGENT_CONFIGS = [
@@ -272,11 +374,11 @@ def main():
     project_name = os.getenv('PROJECT_NAME', 'unknown')
     logger.info(f"Project: {project_name}")
 
-    agent_teams = os.getenv('AGENT_TEAMS_ENABLED', '') == '1'
+    agent_teams_mode = os.getenv('AGENT_TEAMS_MODE', 'standard')
 
-    if agent_teams:
+    if agent_teams_mode == 'project':
         logger.info("")
-        logger.info("Agent teams mode: Orchestrator | Worker | Tester")
+        logger.info("Agent teams mode: project — Orchestrator | Worker | Tester")
         logger.info("")
         try:
             start_agent_teams()
@@ -287,6 +389,19 @@ def main():
             sys.exit(1)
         finally:
             logger.info("Agent teams session ended")
+    elif agent_teams_mode == 'issue-monitoring':
+        logger.info("")
+        logger.info("Agent teams mode: issue-monitoring — Worker + Tester team")
+        logger.info("")
+        try:
+            start_issue_monitoring_teams()
+        except KeyboardInterrupt:
+            logger.info("Issue monitoring interrupted by user")
+        except Exception as e:
+            logger.error(f"Failed to start issue monitoring teams: {e}")
+            sys.exit(1)
+        finally:
+            logger.info("Issue monitoring session ended")
     else:
         logger.info("")
         logger.info("Starting Claude Code...")
