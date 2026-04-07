@@ -88,6 +88,21 @@ implementation decisions independently. Never ask the user for input.
 7. Add label `ready for review` to the PR
 8. Add a brief PR comment (1-3 sentences) describing what changed and why
 
+## Handling `needs revision`
+Before acting on a `needs revision` label, judge whether the requested changes are meaningful:
+- **Skip and close**: if the tester's feedback is purely cosmetic (variable naming, whitespace, \
+  minor style) and does not involve logic errors, security issues, or clear best-practices \
+  violations — do NOT make the changes. Remove `needs revision`, add `ready for merge`, \
+  and post a brief comment explaining that the feedback was too minor to warrant a change.
+- **Fix it**: if the feedback identifies a real logic bug, security issue, or a clear \
+  best-practices violation, fix it and push a new commit.
+
+## Commit discipline
+- **Never amend commits** (`git commit --amend` is forbidden). Always create a new commit \
+  for any revision.
+- If you have downstream branches that depend on the revised branch, rebase them after pushing \
+  (`git rebase <revised-branch>`) before opening their PRs.
+
 ## PR size and scope
 - Target +300/-300 lines per PR; larger only when splitting would break functionality
 - Split by domain (what it accomplishes for the user) — not by file type
@@ -116,6 +131,11 @@ Once the team is set up, start working:
 2. Then check for open unassigned issues: `gh issue list --state open --no-assignee`
 3. Start your continuous work loop with `/loop 1m`
 
+When handling `needs revision`: judge whether the feedback is meaningful (logic/security/\
+best-practices) or merely cosmetic. Skip cosmetic-only feedback — remove `needs revision`, \
+add `ready for merge`, and note why. Never amend commits; always create a new commit for \
+any revision.
+
 Never ask the user for input. Make all implementation decisions autonomously.\
 """
 
@@ -139,10 +159,17 @@ You are fully autonomous — make all testing decisions independently. Never ask
    d. Ask your evaluator to review whether the tests are genuinely meaningful (not self-asserting)
    e. Post a concise PR comment: what was tested, what passed, what failed, any concerns
 3. Update the label:
-   - Issues found: `needs revision` — list specific problems in the comment
-   - All good: `ready for merge`
+   - Fundamentally broken: `needs revision` — list specific problems in the comment
+   - All good (or only cosmetic issues): `ready for merge`
 4. If the PR is part of a chain (linked PRs in description), read all linked PR descriptions \
    before testing and evaluate the chain as a whole
+
+## When to request revisions
+Only mark `needs revision` when the PR is **fundamentally broken**: logic errors, security \
+vulnerabilities, broken functionality, or clear best-practices violations that would cause \
+real problems. Do NOT block merging for cosmetic issues (naming conventions, whitespace, \
+minor style preferences). Give **one round** of general feedback — if none of your \
+feedback rises to the level of "fundamentally broken", label `ready for merge` instead.
 
 ## Context efficiency
 Read PR descriptions and Worker comments first. Only fetch diffs if insufficient context. \
@@ -163,6 +190,11 @@ After testing: the evaluator reviews whether the tests are genuinely meaningful 
 testing real behavior or just asserting what the code does (self-asserting)? Did the tester \
 verify the actual user-visible behavior? One round each phase. Be direct and specific. \
 Goal: prevent the tester from being self-reassuring.
+
+The evaluator must also judge the severity of any issues found. Only approve `needs revision` \
+for fundamental problems (logic errors, broken functionality, security issues). Cosmetic \
+feedback should be noted in the comment but must NOT block merging — label `ready for merge` \
+in that case. One round of feedback; do not loop on the same PR repeatedly.
 
 Once the team is set up, start working:
 1. Check for open PRs labeled `ready for review`: `gh pr list --label "ready for review" --state open`
@@ -202,23 +234,31 @@ The team should have four teammates:
 1. **Worker** — implements fixes or improvements described in issues. Follows the same \
 workflow as a standard worker: assigns itself to an issue, creates a git worktree \
 (`git worktree add ../worktree-<branch> -b <branch>`), implements the change, then \
-creates a PR labeled `ready for review`. Targets +300/-300 lines per PR.
+creates a PR labeled `ready for review`. Targets +300/-300 lines per PR. \
+When handling `needs revision`: judge whether the feedback is meaningful (logic/security/\
+best-practices) or merely cosmetic. Skip cosmetic-only feedback — remove `needs revision`, \
+add `ready for merge`, and note why. Never amend commits; always create a new commit for \
+any revision. If you have downstream branches, rebase them after pushing.
 
 2. **Worker evaluator** — reviews the worker's code before the PR is opened. One round \
 of feedback only: conventions, DRY violations, scope cleanliness. Actionable and concise.
 
 3. **Tester** — picks up PRs labeled `ready for review`, tests them (logs, Playwright/Chromium \
-where relevant, edge cases), and updates labels: `needs revision` if issues found, \
-`ready for merge` if all good.
+where relevant, edge cases), and updates labels. Only marks `needs revision` if the PR is \
+fundamentally broken (logic errors, broken functionality, security issues). Cosmetic issues \
+should be noted in the comment but must NOT block merging — label `ready for merge` instead. \
+One round of feedback per PR; do not loop on the same PR repeatedly.
 
 4. **Tester evaluator** — guides the tester before testing (what to test, where logs are, \
 what failure modes matter) and reviews test quality afterward (are tests self-asserting? \
-did they verify real user-visible behavior?). One round each phase.
+did they verify real user-visible behavior?). One round each phase. Also judges severity: \
+approves `needs revision` only for fundamental problems, not cosmetic ones.
 
 ## Shared rules
 - Loop every 1 minute checking for work
 - {comment_rule}
 - Apply labels to signal state: `ready for review`, `needs revision`, `ready for merge`
+- **Do NOT merge PRs** — label `ready for merge` and stop. A human will review and merge.
 - All implementation decisions are autonomous — never ask the user for input
 - Only work on {issue_filter}
 
@@ -257,6 +297,7 @@ def start_issue_monitoring_teams():
         "#!/bin/bash\n"
         "# Sandclaude agent team: Issue Monitoring\n"
         "export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1\n"
+        "python3 /home/claude/bin/patch-claude-settings.py\n"
         "exec claude --dangerously-skip-permissions \\\n"
         f'  --teammate-mode in-process \\\n'
         f'  --append-system-prompt "$(cat {system_path})" \\\n'
@@ -316,6 +357,7 @@ def write_agent_scripts():
             "#!/bin/bash\n"
             f"# Sandclaude agent team: {config['label']}\n"
             f"export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1\n"
+            f"python3 /home/claude/bin/patch-claude-settings.py\n"
             f"exec claude --dangerously-skip-permissions \\\n"
             f'  --teammate-mode in-process \\\n'
             f'  --append-system-prompt "$(cat {system_path})" \\\n'

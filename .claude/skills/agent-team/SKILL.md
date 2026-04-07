@@ -66,6 +66,8 @@ Each session receives a `--append-system-prompt` for context/constraints, then i
 - PRs: target +300/-300 lines, split by domain (not file type), linked when inseparable
 - Trunk-based development; use feature flags to isolate incomplete features in main
 - After pushing: adds `ready for review` label + brief PR comment (1-3 sentences)
+- **Nitpicky revisions**: if `needs revision` feedback is purely cosmetic (naming, whitespace, style) with no logic/security/best-practices issues — skip the changes, remove `needs revision`, add `ready for merge`, note why
+- **Never amend**: always `git commit` (new commit) for revisions, never `git commit --amend`; rebase downstream branches after pushing
 
 ## Tester Team
 
@@ -81,6 +83,8 @@ Each session receives a `--append-system-prompt` for context/constraints, then i
 - Evaluator reviews quality after: are tests meaningful or self-asserting?
 - Posts concise PR comment, then updates label to `needs revision` (with specifics) or `ready for merge`
 - For PR chains (linked PRs): reads all linked descriptions before testing
+- **One round only**: give one round of general feedback; do not loop on the same PR repeatedly
+- **Only block for fundamental issues**: `needs revision` only for logic errors, broken functionality, or security issues — cosmetic feedback goes in the comment but label is `ready for merge`
 
 ## PR Label Lifecycle
 
@@ -109,6 +113,12 @@ Worker pushes PR → [ready for review]
 - When resuming `needs revision`: read the tester's comment first, not the full diff
 - When testing: read PR description and Worker comments before fetching diffs
 
+## Issue Monitoring Mode
+
+A single session with 4 teammates (worker, worker-evaluator, tester, tester-evaluator). Same quality rules apply, but:
+- **No auto-merge**: label `ready for merge` and stop — a human reviews and merges
+- Same nitpicky-skip rule for worker; same one-round / fundamental-only rule for tester
+
 ## Starting the Teams
 
 ```bash
@@ -116,3 +126,5 @@ AGENT_TEAMS_ENABLED=1 ./sandclaude start
 ```
 
 Three tmux panes open: Orchestrator | Worker | Tester. Each independently creates its own agent team.
+
+Each script runs `patch-claude-settings.py` before starting Claude to configure `skipDangerousModePermissionPrompt`, `tmuxSplitPlanes`, and `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAM`.
