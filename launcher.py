@@ -112,6 +112,14 @@ Before acting on a `needs revision` label, judge whether the requested changes a
 - If PRs are inseparably linked, note it: "Part 1 of 2 — see #456"
 - PR descriptions: what problem, what approach, any linked PRs — specific but not verbose
 
+## Context management
+After completing a unit of work (PR labeled `ready for review`, or `needs revision` resolved \
+to `ready for merge`):
+1. Tell your evaluator to run `/clear` to reset its context
+2. Run `/clear` yourself
+
+This keeps each issue isolated and prevents context from accumulating across unrelated work.\
+
 ## Context efficiency
 Read PR comments and descriptions when resuming work, not full diffs. \
 Keep your own comments concise but specific enough to rebuild context later.\
@@ -135,6 +143,9 @@ When handling `needs revision`: judge whether the feedback is meaningful (logic/
 best-practices) or merely cosmetic. Skip cosmetic-only feedback — remove `needs revision`, \
 add `ready for merge`, and note why. Never amend commits; always create a new commit for \
 any revision.
+
+After labeling a PR `ready for review` or resolving `needs revision` to `ready for merge`: \
+tell your evaluator to run `/clear`, then run `/clear` yourself before picking up the next issue.
 
 Never ask the user for input. Make all implementation decisions autonomously.\
 """
@@ -171,6 +182,14 @@ real problems. Do NOT block merging for cosmetic issues (naming conventions, whi
 minor style preferences). Give **one round** of general feedback — if none of your \
 feedback rises to the level of "fundamentally broken", label `ready for merge` instead.
 
+## Context management
+After completing review of a PR:
+- **If labeling `ready for merge`**: tell your evaluator to run `/clear`, then run `/clear` yourself
+- **If labeling `needs revision`**: post a detailed PR comment summarising exactly what needs \
+  fixing and why. Then directly notify the Worker team via a PR comment addressed to them and \
+  wait for them to acknowledge (reply on the PR or update the label) before clearing. \
+  Once the handoff is confirmed, tell your evaluator to run `/clear`, then run `/clear` yourself
+
 ## Context efficiency
 Read PR descriptions and Worker comments first. Only fetch diffs if insufficient context. \
 Keep your comments specific: what you tested, the result, and what (if anything) needs fixing.\
@@ -199,6 +218,12 @@ in that case. One round of feedback; do not loop on the same PR repeatedly.
 Once the team is set up, start working:
 1. Check for open PRs labeled `ready for review`: `gh pr list --label "ready for review" --state open`
 2. Start your continuous loop with `/loop 1m`
+
+After finishing each PR review:
+- **`ready for merge`**: tell your evaluator to `/clear`, then `/clear` yourself
+- **`needs revision`**: post a detailed PR comment with exact problems. Then wait for the Worker \
+  to acknowledge (they will update the label or reply). Once confirmed, tell your evaluator to \
+  `/clear`, then `/clear` yourself
 
 Never ask the user for input. Make all testing decisions autonomously.\
 """
@@ -238,7 +263,9 @@ creates a PR labeled `ready for review`. Targets +300/-300 lines per PR. \
 When handling `needs revision`: judge whether the feedback is meaningful (logic/security/\
 best-practices) or merely cosmetic. Skip cosmetic-only feedback — remove `needs revision`, \
 add `ready for merge`, and note why. Never amend commits; always create a new commit for \
-any revision. If you have downstream branches, rebase them after pushing.
+any revision. If you have downstream branches, rebase them after pushing. \
+After labeling a PR `ready for review` or resolving `needs revision` to `ready for merge`: \
+tell your evaluator to run `/clear`, then run `/clear` yourself before picking up the next issue.
 
 2. **Worker evaluator** — reviews the worker's code before the PR is opened. One round \
 of feedback only: conventions, DRY violations, scope cleanliness. Actionable and concise.
@@ -247,7 +274,11 @@ of feedback only: conventions, DRY violations, scope cleanliness. Actionable and
 where relevant, edge cases), and updates labels. Only marks `needs revision` if the PR is \
 fundamentally broken (logic errors, broken functionality, security issues). Cosmetic issues \
 should be noted in the comment but must NOT block merging — label `ready for merge` instead. \
-One round of feedback per PR; do not loop on the same PR repeatedly.
+One round of feedback per PR; do not loop on the same PR repeatedly. \
+After labeling `ready for merge`: tell your evaluator to `/clear`, then `/clear` yourself. \
+After labeling `needs revision`: post a detailed comment with exact problems, then directly \
+notify the Worker teammate and confirm they have received the findings before clearing. \
+Once the Worker acknowledges, tell your evaluator to `/clear`, then `/clear` yourself.
 
 4. **Tester evaluator** — guides the tester before testing (what to test, where logs are, \
 what failure modes matter) and reviews test quality afterward (are tests self-asserting? \
@@ -449,6 +480,7 @@ def main():
         logger.info("Starting Claude Code...")
         logger.info("")
         try:
+            subprocess.run(['python3', '/home/claude/bin/patch-claude-settings.py'], check=True)
             claude_cmd = ['claude', '--dangerously-skip-permissions']
             subprocess.run(claude_cmd)
         except KeyboardInterrupt:
