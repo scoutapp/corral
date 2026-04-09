@@ -227,6 +227,7 @@ type ProjectConfig struct {
 	IssueMonitoringLabel         string   `json:"issue_monitoring_label,omitempty"`
 	IssueMonitoringAfterDate     string   `json:"issue_monitoring_after_date,omitempty"`
 	IssueMonitoringWriteComments bool     `json:"issue_monitoring_write_comments,omitempty"`
+	LaunchTmux                   bool     `json:"launch_tmux,omitempty"`
 	CreatedAt                    string   `json:"created_at"`
 }
 
@@ -592,6 +593,12 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 		}
 	}
 
+	// Standard mode with tmux: pass flag to launcher
+	if cfg.LaunchTmux && (cfg.AgentTeamsMode == "standard" || cfg.AgentTeamsMode == "") {
+		args = append(args, "-e", "LAUNCH_TMUX=1")
+		log.Println("tmux launch enabled")
+	}
+
 	args = append(args, imageName)
 
 	debugf("Docker command: docker %s", strings.Join(args, " "))
@@ -812,6 +819,23 @@ func cmdUpdate() error {
 		}
 	}
 
+	// For standard mode, optionally enable tmux
+	if cfg.AgentTeamsMode == "standard" || cfg.AgentTeamsMode == "" {
+		tmuxPrompt := "n"
+		if cfg.LaunchTmux {
+			tmuxPrompt = "Y"
+		}
+		fmt.Printf("Launch with tmux (split panes for teammates)? (current: %s) [y/N]: ", tmuxPrompt)
+		tmuxInput, _ := reader.ReadString('\n')
+		tmuxInput = strings.TrimSpace(strings.ToLower(tmuxInput))
+		if tmuxInput != "" {
+			cfg.LaunchTmux = tmuxInput == "y" || tmuxInput == "yes"
+			log.Printf("  Launch with tmux: %v\n", cfg.LaunchTmux)
+		} else {
+			log.Printf("  Launch with tmux unchanged: %v\n", cfg.LaunchTmux)
+		}
+	}
+
 	log.Println()
 
 	// Workspace
@@ -910,6 +934,10 @@ func cmdInit() error {
 	default:
 		cfg.AgentTeamsMode = "standard"
 		log.Println("Agent teams mode: standard")
+		if askYesNo("Launch with tmux (split panes for teammates)?") {
+			cfg.LaunchTmux = true
+			log.Println("✅ tmux launch enabled")
+		}
 	}
 
 	log.Println()

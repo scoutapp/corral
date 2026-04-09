@@ -47,6 +47,8 @@ without reading everything again — not a wall of text.\
 """
 
 ORCHESTRATOR_START = """\
+IMPORTANT: Launch these in split panes in this tmux window.
+
 Create an agent team to manage the project backlog and translate user goals into GitHub issues.
 
 The team should have:
@@ -126,6 +128,8 @@ Keep your own comments concise but specific enough to rebuild context later.\
 """
 
 WORKER_START = """\
+IMPORTANT: Launch these in split panes in this tmux window.
+
 Create an agent team to implement GitHub issues and deliver pull requests.
 
 The team should have one teammate that acts as a code review evaluator: reviews code \
@@ -196,6 +200,8 @@ Keep your comments specific: what you tested, the result, and what (if anything)
 """
 
 TESTER_START = """\
+IMPORTANT: Launch these in split panes in this tmux window.
+
 Create an agent team to review and test pull requests.
 
 The team should have one teammate that acts as a testing evaluator with a reversed role: \
@@ -252,6 +258,8 @@ def _build_issue_monitoring_start() -> str:
     )
 
     return f"""\
+IMPORTANT: Launch these in split panes in this tmux window.
+
 Create an agent team to monitor and work on {issue_filter}.
 
 The team should have four teammates:
@@ -330,7 +338,7 @@ def start_issue_monitoring_teams():
         "export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1\n"
         "python3 /home/claude/bin/patch-claude-settings.py\n"
         "exec claude --dangerously-skip-permissions \\\n"
-        f'  --teammate-mode in-process \\\n'
+        f'  --teammate-mode tmux \\\n'
         f'  --append-system-prompt "$(cat {system_path})" \\\n'
         f'  "$(cat {start_path})"\n'
     )
@@ -390,7 +398,7 @@ def write_agent_scripts():
             f"export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1\n"
             f"python3 /home/claude/bin/patch-claude-settings.py\n"
             f"exec claude --dangerously-skip-permissions \\\n"
-            f'  --teammate-mode in-process \\\n'
+            f'  --teammate-mode tmux \\\n'
             f'  --append-system-prompt "$(cat {system_path})" \\\n'
             f'  "$(cat {start_path})"\n'
         )
@@ -481,8 +489,16 @@ def main():
         logger.info("")
         try:
             subprocess.run(['python3', '/home/claude/bin/patch-claude-settings.py'], check=True)
-            claude_cmd = ['claude', '--dangerously-skip-permissions']
-            subprocess.run(claude_cmd)
+            if os.getenv('LAUNCH_TMUX') == '1':
+                logger.info("tmux launch enabled — starting claude in tmux session")
+                session = "sandclaude"
+                claude_cmd = "exec claude --dangerously-skip-permissions --teammate-mode tmux"
+                subprocess.run(["tmux", "new-session", "-d", "-s", session], check=True)
+                subprocess.run(["tmux", "send-keys", "-t", f"{session}:0", claude_cmd, "Enter"])
+                subprocess.run(["tmux", "select-pane", "-t", f"{session}:0", "-T", "Claude"])
+                subprocess.run(["tmux", "attach-session", "-t", session])
+            else:
+                subprocess.run(['claude', '--dangerously-skip-permissions'])
         except KeyboardInterrupt:
             logger.info("Claude Code interrupted by user")
         except Exception as e:

@@ -36,7 +36,7 @@ Three separate Claude Code sessions run in parallel tmux panes. Each session is 
 
 Each session receives a `--append-system-prompt` for context/constraints, then is given a **"Create an agent team to..."** prompt that describes the team's purpose and the roles teammates should play. Claude structures the team and spawns teammates based on that description.
 
-`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set in the environment, and `--teammate-mode in-process` keeps teammates within the same session (no extra tmux panes).
+`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set in the environment, and `--teammate-mode tmux` opens each teammate in a split pane within the current tmux window.
 
 ## Orchestrator Team
 
@@ -127,4 +127,4 @@ AGENT_TEAMS_ENABLED=1 ./sandclaude start
 
 Three tmux panes open: Orchestrator | Worker | Tester. Each independently creates its own agent team.
 
-Each script runs `patch-claude-settings.py` before starting Claude to configure `skipDangerousModePermissionPrompt`, `tmuxSplitPlanes`, and `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAM`.
+Each script runs `patch-claude-settings.py` before starting Claude to configure `skipDangerousModePermissionPrompt`, `tmuxSplitPlanes`, and `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`.
