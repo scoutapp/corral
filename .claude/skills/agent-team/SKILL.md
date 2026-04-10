@@ -21,8 +21,9 @@ Three separate Claude Code sessions run in parallel tmux panes. Each session is 
 │  • evaluator         │  • evaluator         │  • evaluator         │
 │    (reviews issues)  │    (reviews code)    │    (directs testing  │
 │  • foreman           │                      │     + reviews quality│
-│    (loops 2m, checks │  /loop 1m            │                      │
-│     progress,merges) │  git worktree →      │  /loop 1m            │
+│    (Monitor 2m,      │  Monitor watcher →   │                      │
+│     checks progress, │  git worktree →      │  Monitor watcher →   │
+│     merges)          │  implement →         │  reads PR desc →     │
 │                      │  implement →         │  reads PR desc →     │
 │  asks user sparingly │  evaluate → PR       │  evaluate → test →   │
 │                      │  label: ready for    │  evaluate quality →  │
@@ -47,7 +48,7 @@ Each session receives a `--append-system-prompt` for context/constraints, then i
 **User interaction**: The Orchestrator may ask the user for input, but sparingly — only for overall feature direction, never implementation decisions.
 
 **Foreman responsibilities**:
-- Loops every 2 minutes reading open issues, PR labels, merged PRs
+- Uses Monitor to stream events from a background watcher (60s poll) reading open issues, PR labels, merged PRs
 - Squash-merges PRs labeled `ready for merge` if they match the project goal (`gh pr merge <n> --squash`)
 - If `part of larger feature`: waits for all related PRs before merging to feature branch
 - Advises Orchestrator on whether feature flags can isolate incomplete work in main
@@ -61,7 +62,7 @@ Each session receives a `--append-system-prompt` for context/constraints, then i
 **Autonomous**: Never asks user for input.
 
 **Key behaviors**:
-- `/loop 1m` — checks for `needs revision` PRs first (priority), then new issues
+- Monitor tool on a background watcher script (60s poll) — checks for `needs revision` PRs first (priority), then new issues
 - Creates a **true git worktree** per branch: `git worktree add ../worktree-<branch> -b <branch>` — not Claude's built-in worktree
 - PRs: target +300/-300 lines, split by domain (not file type), linked when inseparable
 - Trunk-based development; use feature flags to isolate incomplete features in main
@@ -78,7 +79,7 @@ Each session receives a `--append-system-prompt` for context/constraints, then i
 **Autonomous**: Never asks user for input.
 
 **Key behaviors**:
-- `/loop 1m` — picks up `ready for review` PRs
+- Monitor tool on a background watcher script (60s poll) — picks up `ready for review` PRs
 - Evaluator directs approach first: what to test, whether Chromium/Playwright is needed, edge cases
 - Evaluator reviews quality after: are tests meaningful or self-asserting?
 - Posts concise PR comment, then updates label to `needs revision` (with specifics) or `ready for merge`

@@ -141,7 +141,22 @@ keep it actionable. Flag bloated PRs and suggest domain-based splits.
 Once the team is set up, start working:
 1. Check for PRs you own labeled `needs revision` first: `gh pr list --label "needs revision" --author @me`
 2. Then check for open unassigned issues: `gh issue list --state open --no-assignee`
-3. Start your continuous work loop with `/loop 1m`
+3. Start a background watcher and use the Monitor tool to stream work events from it.
+
+   Write this script to `/tmp/worker-watch.sh` and run it with Bash (run_in_background=true):
+   ```bash
+   #!/bin/bash
+   seen=""
+   while true; do
+     gh pr list --label "needs revision" --author @me --json number,title \
+       --jq '.[] | "NEEDS_REVISION #\(.number): \(.title)"' 2>/dev/null
+     gh issue list --state open --no-assignee --json number,title \
+       --jq '.[] | "NEW_ISSUE #\(.number): \(.title)"' 2>/dev/null
+     sleep 60
+   done
+   ```
+   Then call the Monitor tool on that background process. Each output line is a work event — \
+   act on it immediately. `NEEDS_REVISION` takes priority over `NEW_ISSUE`.
 
 When handling `needs revision`: judge whether the feedback is meaningful (logic/security/\
 best-practices) or merely cosmetic. Skip cosmetic-only feedback — remove `needs revision`, \
@@ -223,7 +238,19 @@ in that case. One round of feedback; do not loop on the same PR repeatedly.
 
 Once the team is set up, start working:
 1. Check for open PRs labeled `ready for review`: `gh pr list --label "ready for review" --state open`
-2. Start your continuous loop with `/loop 1m`
+2. Start a background watcher and use the Monitor tool to stream PR events from it.
+
+   Write this script to `/tmp/tester-watch.sh` and run it with Bash (run_in_background=true):
+   ```bash
+   #!/bin/bash
+   while true; do
+     gh pr list --label "ready for review" --state open --json number,title \
+       --jq '.[] | "READY_FOR_REVIEW #\(.number): \(.title)"' 2>/dev/null
+     sleep 60
+   done
+   ```
+   Then call the Monitor tool on that background process. Each output line is a PR ready for \
+   your review — act on it immediately.
 
 After finishing each PR review:
 - **`ready for merge`**: tell your evaluator to `/clear`, then `/clear` yourself
@@ -306,7 +333,24 @@ Once the team is set up, start working:
 `gh pr list --label "needs revision" --author @me`
 2. Check for open unassigned issues{label_clause}: \
 `gh issue list --state open --no-assignee{f" --label '{label}'" if label else ""}`
-3. Start the continuous work loop with `/loop 1m`\
+3. Start a background watcher and use the Monitor tool to stream work events from it.
+
+   Write this script to `/tmp/issue-monitor-watch.sh` and run it with Bash (run_in_background=true):
+   ```bash
+   #!/bin/bash
+   while true; do
+     gh pr list --label "needs revision" --author @me --json number,title \\
+       --jq '.[] | "NEEDS_REVISION #\\(.number): \\(.title)"' 2>/dev/null
+     gh pr list --label "ready for review" --state open --json number,title \\
+       --jq '.[] | "READY_FOR_REVIEW #\\(.number): \\(.title)"' 2>/dev/null
+     gh issue list --state open --no-assignee{f" --label '{label}'" if label else ""} --json number,title \\
+       --jq '.[] | "NEW_ISSUE #\\(.number): \\(.title)"' 2>/dev/null
+     sleep 60
+   done
+   ```
+   Then call the Monitor tool on that background process. Each output line is a work event — \
+   route it to the right teammate: `NEEDS_REVISION` → Worker (top priority), \
+   `READY_FOR_REVIEW` → Tester, `NEW_ISSUE` → Worker.\
 """
 
 
