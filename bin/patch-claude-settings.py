@@ -15,7 +15,15 @@ REQUIRED_FIELDS = {
     "preferences": {
         "tmuxSplitPlanes": True
     },
-    "skipDangerousModePermissionPrompt": True
+    "skipDangerousModePermissionPrompt": True,
+}
+
+# Fields where the required value always wins (not merged with existing)
+FORCE_FIELDS = {
+    "statusLine": {
+        "type": "command",
+        "command": "~/bin/statusline.sh",
+    },
 }
 
 
@@ -49,6 +57,9 @@ def patch_settings():
             merged[key] = {**value, **merged.get(key, {})}
         else:
             merged.setdefault(key, value)
+
+    # Force fields always win regardless of existing values
+    merged.update(FORCE_FIELDS)
 
     # Write atomically via temp file
     dir_ = os.path.dirname(SETTINGS_PATH)

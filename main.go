@@ -537,6 +537,12 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 	os.MkdirAll(logsDir, 0755)
 	args = append(args, "-v", fmt.Sprintf("%s:/home/claude/logs", logsDir))
 
+	// Mount bin/ from the repo so scripts can be edited without rebuilding
+	binDir := filepath.Join(sc.scriptDir, "bin")
+	if _, err := os.Stat(binDir); err == nil {
+		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/bin", binDir))
+	}
+
 	// Enable proxy if it was started
 	if sc.proxyEnabled {
 		args = append(args,
