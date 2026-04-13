@@ -197,6 +197,9 @@ else
     echo ""
 fi
 
+# Ensure bin/ scripts are executable (needed when bin/ is volume-mounted from host)
+chmod +x /home/claude/bin/* 2>/dev/null || true
+
 # ── DinD: start inner dockerd ─────────────────────────────────────────────
 if [ -n "$DIND_ENABLED" ]; then
     echo "Starting inner dockerd..."
