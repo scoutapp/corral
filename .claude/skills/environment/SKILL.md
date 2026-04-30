@@ -154,7 +154,35 @@ When `DIND_ENABLED=1` is set in the environment, an inner Docker daemon is runni
 - The allowlist proxy listens on `0.0.0.0:3128`, reachable from inner containers via their bridge gateway (`172.18.0.1` for the default DinD bridge; compose networks get addresses in `172.18.0.0/15`)
 - The allowlist proxy forwards to mitmproxy — inner containers must trust the mitmproxy CA cert. The `~/bin/docker` wrapper automatically injects the CA cert into any image built via `docker build` or `docker compose build` via the **cert-injector** sidecar. In most cases this is transparent. However, if an inner container produces SSL errors like `509 Certificate Verify Failed` or similar TLS errors, the mitmproxy CA was likely not injected correctly — check `/usr/local/share/ca-certificates/mitmproxy-ca.crt` inside the container and re-run `update-ca-certificates` if missing
 - iptables allows `172.18.0.0/15` in the OUTPUT chain so the proxy can respond to inner container connections
-- Inner containers are destroyed when sandclaude exits
+- Inner containers are destroyed when sandclaude exits, but their **named volumes and pulled images persist**
+
+## DinD Volume Persistence
+
+The inner docker data root (`/var/lib/docker-dind`) is bind-mounted from `./project/dind-data/` on the host. This means:
+
+- **Named volumes** (e.g. postgres data, redis data) survive outer container restarts — the data is on your Mac, not inside the ephemeral container
+- **Pulled images** are cached — `docker pull` only runs on first use; subsequent starts reuse the cached layers
+- **Inner containers themselves** are destroyed on exit and must be restarted by Claude — but their volumes are intact, so databases come back with existing data
+
+**Which data belongs to which project?** The data dir is keyed to `./project/dind-data/` in the sandclaude repo directory. Each project has exactly one data dir — deterministic and isolated from other projects.
+
+**To restart services after an outer container restart:**
+```bash
+# Volumes are intact; just re-run the containers that use them
+docker run -d --name postgres -v pgdata:/var/lib/postgresql/data postgres:16
+docker run -d --name redis -v redisdata:/data redis:7
+```
+
+**To reset inner docker state** (wipe all inner images and volumes):
+```bash
+# From host, outside the container
+rm -rf ./project/dind-data/
+```
+
+**To inspect persisted volumes from the host:**
+```bash
+ls ./project/dind-data/volumes/
+```
 
 **Running inner containers:**
 ```bash

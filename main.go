@@ -570,13 +570,24 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 	// DinD: signal entrypoint to start inner dockerd and expose ports
 	if sc.dindEnabled {
 		args = append(args, "-e", "DIND_ENABLED=1")
+
+		// Bind-mount a persistent directory for the inner docker data root so that
+		// named volumes (e.g. postgres data) and cached images survive outer container
+		// restarts. The directory is keyed to the project dir, making it deterministic:
+		// the same project always uses the same data, regardless of which session started it.
+		dindDataDir := filepath.Join(getProjectDir(), "dind-data")
+		if err := os.MkdirAll(dindDataDir, 0755); err != nil {
+			return fmt.Errorf("failed to create DinD data dir: %w", err)
+		}
+		args = append(args, "-v", fmt.Sprintf("%s:/var/lib/docker-dind:rw", dindDataDir))
+
 		for _, port := range sc.dindPorts {
 			args = append(args, "-p", port)
 		}
 		if len(sc.dindPorts) > 0 {
-			log.Printf("DinD enabled (ports: %s)", strings.Join(sc.dindPorts, ", "))
+			log.Printf("DinD enabled (ports: %s, data: %s)", strings.Join(sc.dindPorts, ", "), dindDataDir)
 		} else {
-			log.Println("DinD enabled")
+			log.Printf("DinD enabled (data: %s)", dindDataDir)
 		}
 	}
 
@@ -1176,6 +1187,7 @@ func cmdList() error {
 			log.Printf(" (ports: %s)", strings.Join(cfg.DindPorts, ", "))
 		}
 		log.Println()
+		log.Printf("  DinD data: %s/dind-data\n", projectDir)
 	}
 	if cfg.ProxyEnabled {
 		log.Println("  Proxy:     enabled")
@@ -1253,11 +1265,24 @@ func cmdShell() error {
 	return dockerCmd.Run()
 }
 
-// cmdRebuild rebuilds the Docker image, optionally destroying the existing image and container first
-func cmdRebuild(destroy bool) error {
+// cmdRebuild rebuilds the Docker image, optionally destroying the existing image/container and/or inner docker data first
+func cmdRebuild(destroy bool, destroyInner bool) error {
 	sc, err := NewSandClaude()
 	if err != nil {
 		return err
+	}
+
+	if destroyInner {
+		dindDataDir := filepath.Join(getProjectDir(), "dind-data")
+		if _, err := os.Stat(dindDataDir); err == nil {
+			log.Printf("Destroying inner docker data at %s...", dindDataDir)
+			if err := os.RemoveAll(dindDataDir); err != nil {
+				return fmt.Errorf("failed to remove DinD data dir: %w", err)
+			}
+			log.Println("✅ Inner docker data removed (images and volumes wiped)")
+		} else {
+			log.Println("No inner docker data found (nothing to destroy)")
+		}
 	}
 
 	if destroy {
@@ -1683,7 +1708,9 @@ func usage() {
 	fmt.Println("  shell                    Open bash shell in container")
 	fmt.Println("  populate-proxy-credentials       Interactively populate proxy-credentials.json from 'claude setup-token'")
 	fmt.Println("  copy <target>            Copy sandclaude files to target directory")
-	fmt.Println("  rebuild [--destroy]      Force rebuild container image (--destroy removes existing image/container first)")
+	fmt.Println("  rebuild [--destroy] [--destroy-inner]   Force rebuild container image")
+	fmt.Println("    --destroy        Remove existing outer image/container first (full rebuild from scratch, implies --no-cache)")
+	fmt.Println("    --destroy-inner  Wipe inner docker data (project/dind-data/): all inner images and volumes")
 	fmt.Println("  help                     Show this help")
 	fmt.Println()
 	fmt.Println("Examples:")
@@ -1755,8 +1782,17 @@ func main() {
 		err = cmdShell()
 
 	case "rebuild":
-		destroy := len(os.Args) > 2 && os.Args[2] == "--destroy"
-		err = cmdRebuild(destroy)
+		destroy := false
+		destroyInner := false
+		for _, arg := range os.Args[2:] {
+			switch arg {
+			case "--destroy":
+				destroy = true
+			case "--destroy-inner":
+				destroyInner = true
+			}
+		}
+		err = cmdRebuild(destroy, destroyInner)
 
 	case "populate-proxy-credentials":
 		err = cmdPopulateProxyCredentials()
