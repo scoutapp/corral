@@ -44,17 +44,18 @@ func debugln(args ...any) {
 }
 
 type SandClaude struct {
-	proxyCmd                *exec.Cmd
-	proxyPort               string
-	credentialsFile         string
-	addonScript             string
-	scriptDir               string
-	proxyEnabled            bool
-	disableFirewall         bool
+	proxyCmd                    *exec.Cmd
+	proxyPort                   string
+	credentialsFile             string
+	addonScript                 string
+	scriptDir                   string
+	proxyEnabled                bool
+	disableFirewall             bool
 	passthroughFirewallAndWrite bool
-	disableDind             bool
-	dindEnabled             bool
-	dindPorts               []string
+	disableDind                 bool
+	dindEnabled                 bool
+	dindPorts                   []string
+	tmuxEnabled                 bool
 }
 
 func NewSandClaude() (*SandClaude, error) {
@@ -219,16 +220,12 @@ func (sc *SandClaude) stopProxy() {
 // ----------------------------------------------------------------------------
 
 type ProjectConfig struct {
-	Workspace                    string   `json:"workspace"`
-	ProxyEnabled                 bool     `json:"proxy_enabled,omitempty"`
-	DindEnabled                  bool     `json:"dind_enabled,omitempty"`
-	DindPorts                    []string `json:"dind_ports,omitempty"`
-	AgentTeamsMode               string   `json:"agent_teams_mode,omitempty"`
-	IssueMonitoringLabel         string   `json:"issue_monitoring_label,omitempty"`
-	IssueMonitoringAfterDate     string   `json:"issue_monitoring_after_date,omitempty"`
-	IssueMonitoringWriteComments bool     `json:"issue_monitoring_write_comments,omitempty"`
-	LaunchTmux                   bool     `json:"launch_tmux,omitempty"`
-	CreatedAt                    string   `json:"created_at"`
+	Workspace    string   `json:"workspace"`
+	ProxyEnabled bool     `json:"proxy_enabled,omitempty"`
+	DindEnabled  bool     `json:"dind_enabled,omitempty"`
+	DindPorts    []string `json:"dind_ports,omitempty"`
+	LaunchTmux   bool     `json:"launch_tmux,omitempty"`
+	CreatedAt    string   `json:"created_at"`
 }
 
 func readConfig(projectDir string) (*ProjectConfig, error) {
@@ -591,27 +588,8 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 		}
 	}
 
-	// Agent teams: signal launcher with mode
-	if cfg.AgentTeamsMode != "" && cfg.AgentTeamsMode != "standard" {
-		args = append(args, "-e", fmt.Sprintf("AGENT_TEAMS_MODE=%s", cfg.AgentTeamsMode))
-		if cfg.AgentTeamsMode == "issue-monitoring" {
-			log.Println("Agent teams mode: issue-monitoring — worker + tester team in tmux")
-			if cfg.IssueMonitoringLabel != "" {
-				args = append(args, "-e", fmt.Sprintf("ISSUE_MONITORING_LABEL=%s", cfg.IssueMonitoringLabel))
-			}
-			if cfg.IssueMonitoringAfterDate != "" {
-				args = append(args, "-e", fmt.Sprintf("ISSUE_MONITORING_AFTER_DATE=%s", cfg.IssueMonitoringAfterDate))
-			}
-			if cfg.IssueMonitoringWriteComments {
-				args = append(args, "-e", "ISSUE_MONITORING_WRITE_COMMENTS=1")
-			}
-		} else if cfg.AgentTeamsMode == "project" {
-			log.Println("Agent teams mode: project — Orchestrator | Worker | Tester in tmux")
-		}
-	}
-
-	// Standard mode with tmux: pass flag to launcher
-	if cfg.LaunchTmux && (cfg.AgentTeamsMode == "standard" || cfg.AgentTeamsMode == "") {
+	// tmux: enabled via config or --tmux flag on start
+	if cfg.LaunchTmux || sc.tmuxEnabled {
 		args = append(args, "-e", "LAUNCH_TMUX=1")
 		log.Println("tmux launch enabled")
 	}
@@ -771,86 +749,19 @@ func cmdUpdate() error {
 
 	log.Println()
 
-	// Agent teams
-	currentMode := cfg.AgentTeamsMode
-	if currentMode == "" {
-		currentMode = "standard"
+	// tmux
+	tmuxPrompt := "n"
+	if cfg.LaunchTmux {
+		tmuxPrompt = "Y"
 	}
-	log.Println("Agent teams mode:")
-	log.Println("  1. Standard        — single Claude Code session")
-	log.Println("  2. Issue Monitoring — worker + tester team monitoring a GitHub issue label")
-	log.Println("  3. Project         — full 3-team system: Orchestrator | Worker | Tester")
-	fmt.Printf("Select mode [1/2/3] (current: %s, blank to keep): ", currentMode)
-	agentModeInput, _ := reader.ReadString('\n')
-	agentModeInput = strings.TrimSpace(agentModeInput)
-	if agentModeInput == "" {
-		log.Printf("  Agent teams mode unchanged: %s\n", currentMode)
+	fmt.Printf("Launch with tmux? (current: %s) [y/N]: ", tmuxPrompt)
+	tmuxInput, _ := reader.ReadString('\n')
+	tmuxInput = strings.TrimSpace(strings.ToLower(tmuxInput))
+	if tmuxInput != "" {
+		cfg.LaunchTmux = tmuxInput == "y" || tmuxInput == "yes"
+		log.Printf("  Launch with tmux: %v\n", cfg.LaunchTmux)
 	} else {
-		switch agentModeInput {
-		case "2":
-			cfg.AgentTeamsMode = "issue-monitoring"
-			log.Println("  Agent teams mode: issue-monitoring")
-			log.Println()
-
-			currentLabel := cfg.IssueMonitoringLabel
-			if currentLabel == "" {
-				currentLabel = "none"
-			}
-			fmt.Printf("  Issue label to monitor (current: %s, blank to keep): ", currentLabel)
-			labelInput, _ := reader.ReadString('\n')
-			labelInput = strings.TrimSpace(labelInput)
-			if labelInput != "" {
-				cfg.IssueMonitoringLabel = labelInput
-			}
-			log.Printf("  Label filter: %s\n", cfg.IssueMonitoringLabel)
-
-			currentDate := cfg.IssueMonitoringAfterDate
-			if currentDate == "" {
-				currentDate = "none"
-			}
-			fmt.Printf("  Only look at issues after date YYYY-MM-DD (current: %s, blank to keep): ", currentDate)
-			dateInput, _ := reader.ReadString('\n')
-			dateInput = strings.TrimSpace(dateInput)
-			if dateInput != "" {
-				cfg.IssueMonitoringAfterDate = dateInput
-			}
-			log.Printf("  After date: %s\n", cfg.IssueMonitoringAfterDate)
-
-			writeCommentsPrompt := "n"
-			if cfg.IssueMonitoringWriteComments {
-				writeCommentsPrompt = "Y"
-			}
-			fmt.Printf("  Write agent comments directly to issues/PRs? (current: %s) [y/N]: ", writeCommentsPrompt)
-			writeInput, _ := reader.ReadString('\n')
-			writeInput = strings.TrimSpace(strings.ToLower(writeInput))
-			if writeInput != "" {
-				cfg.IssueMonitoringWriteComments = writeInput == "y" || writeInput == "yes"
-			}
-			log.Printf("  Write comments: %v\n", cfg.IssueMonitoringWriteComments)
-		case "3":
-			cfg.AgentTeamsMode = "project"
-			log.Println("  Agent teams mode: project — Orchestrator | Worker | Tester")
-		default:
-			cfg.AgentTeamsMode = "standard"
-			log.Println("  Agent teams mode: standard")
-		}
-	}
-
-	// For standard mode, optionally enable tmux
-	if cfg.AgentTeamsMode == "standard" || cfg.AgentTeamsMode == "" {
-		tmuxPrompt := "n"
-		if cfg.LaunchTmux {
-			tmuxPrompt = "Y"
-		}
-		fmt.Printf("Launch with tmux (split panes for teammates)? (current: %s) [y/N]: ", tmuxPrompt)
-		tmuxInput, _ := reader.ReadString('\n')
-		tmuxInput = strings.TrimSpace(strings.ToLower(tmuxInput))
-		if tmuxInput != "" {
-			cfg.LaunchTmux = tmuxInput == "y" || tmuxInput == "yes"
-			log.Printf("  Launch with tmux: %v\n", cfg.LaunchTmux)
-		} else {
-			log.Printf("  Launch with tmux unchanged: %v\n", cfg.LaunchTmux)
-		}
+		log.Printf("  Launch with tmux unchanged: %v\n", cfg.LaunchTmux)
 	}
 
 	log.Println()
@@ -913,48 +824,10 @@ func cmdInit() error {
 
 	log.Println()
 
-	// Agent teams
-	log.Println("Agent teams mode:")
-	log.Println("  1. Standard        — single Claude Code session (default)")
-	log.Println("  2. Issue Monitoring — worker + tester team monitoring a GitHub issue label")
-	log.Println("  3. Project         — full 3-team system: Orchestrator | Worker | Tester")
-	fmt.Print("Select mode [1/2/3] (default: 1): ")
-	agentModeReader := bufio.NewReader(os.Stdin)
-	agentModeInput, _ := agentModeReader.ReadString('\n')
-	agentModeInput = strings.TrimSpace(agentModeInput)
-	switch agentModeInput {
-	case "2":
-		cfg.AgentTeamsMode = "issue-monitoring"
-		log.Println("✅ Agent teams mode: issue-monitoring")
-		log.Println()
-		fmt.Print("Issue label to monitor (blank for none): ")
-		labelInput, _ := agentModeReader.ReadString('\n')
-		cfg.IssueMonitoringLabel = strings.TrimSpace(labelInput)
-		if cfg.IssueMonitoringLabel != "" {
-			log.Printf("  Label filter: %s\n", cfg.IssueMonitoringLabel)
-		}
-		fmt.Print("Only look at issues after date (YYYY-MM-DD, blank for all): ")
-		dateInput, _ := agentModeReader.ReadString('\n')
-		cfg.IssueMonitoringAfterDate = strings.TrimSpace(dateInput)
-		if cfg.IssueMonitoringAfterDate != "" {
-			log.Printf("  After date: %s\n", cfg.IssueMonitoringAfterDate)
-		}
-		cfg.IssueMonitoringWriteComments = askYesNo("Write agent comments directly to issues/PRs?")
-		if cfg.IssueMonitoringWriteComments {
-			log.Println("  Will write comments to issues/PRs")
-		} else {
-			log.Println("  Agents will communicate internally only (labels only on issues/PRs)")
-		}
-	case "3":
-		cfg.AgentTeamsMode = "project"
-		log.Println("✅ Agent teams mode: project — Orchestrator | Worker | Tester")
-	default:
-		cfg.AgentTeamsMode = "standard"
-		log.Println("Agent teams mode: standard")
-		if askYesNo("Launch with tmux (split panes for teammates)?") {
-			cfg.LaunchTmux = true
-			log.Println("✅ tmux launch enabled")
-		}
+	// tmux
+	if askYesNo("Launch with tmux?") {
+		cfg.LaunchTmux = true
+		log.Println("✅ tmux launch enabled")
 	}
 
 	log.Println()
@@ -1140,6 +1013,7 @@ func cmdStart(args []string) error {
 	passthroughFirewallAndWrite := false
 	disableDind := false
 	keepDevfiles := false
+	tmux := false
 
 	for _, arg := range args {
 		switch arg {
@@ -1151,6 +1025,8 @@ func cmdStart(args []string) error {
 			disableDind = true
 		case "--keep-devfiles":
 			keepDevfiles = true
+		case "--tmux":
+			tmux = true
 		case "--debug":
 			// already handled globally in main(), ignore here
 		}
@@ -1164,6 +1040,7 @@ func cmdStart(args []string) error {
 	sc.disableFirewall = disableFirewall
 	sc.passthroughFirewallAndWrite = passthroughFirewallAndWrite
 	sc.disableDind = disableDind
+	sc.tmuxEnabled = tmux
 	return sc.Run(keepDevfiles)
 }
 
@@ -1701,6 +1578,7 @@ func usage() {
 	fmt.Println("    --passthrough-firewall-and-write   Keep proxy but allow all domains; write unknown ones to allowed-domains.txt")
 	fmt.Println("    --disable-dind                 Skip inner dockerd startup")
 	fmt.Println("    --keep-devfiles                Do not hide .devcontainer from the container (skip tmpfs overlay)")
+	fmt.Println("    --tmux                         Launch with tmux (overrides config)")
 	fmt.Println("  list                     Show ./project/ configuration")
 	fmt.Println("  remove                   Remove ./project/ directory after confirmation")
 	fmt.Println("  firewall-reload          Encrypt allowed-domains.txt and SIGHUP proxy")
