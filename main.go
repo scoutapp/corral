@@ -55,7 +55,6 @@ type SandClaude struct {
 	disableDind                 bool
 	dindEnabled                 bool
 	dindPorts                   []string
-	tmuxEnabled                 bool
 }
 
 func NewSandClaude() (*SandClaude, error) {
@@ -588,8 +587,7 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 		}
 	}
 
-	// tmux: enabled via config or --tmux flag on start
-	if cfg.LaunchTmux || sc.tmuxEnabled {
+	if cfg.LaunchTmux {
 		args = append(args, "-e", "LAUNCH_TMUX=1")
 		log.Println("tmux launch enabled")
 	}
@@ -1013,7 +1011,6 @@ func cmdStart(args []string) error {
 	passthroughFirewallAndWrite := false
 	disableDind := false
 	keepDevfiles := false
-	tmux := false
 
 	for _, arg := range args {
 		switch arg {
@@ -1025,8 +1022,6 @@ func cmdStart(args []string) error {
 			disableDind = true
 		case "--keep-devfiles":
 			keepDevfiles = true
-		case "--tmux":
-			tmux = true
 		case "--debug":
 			// already handled globally in main(), ignore here
 		}
@@ -1040,7 +1035,6 @@ func cmdStart(args []string) error {
 	sc.disableFirewall = disableFirewall
 	sc.passthroughFirewallAndWrite = passthroughFirewallAndWrite
 	sc.disableDind = disableDind
-	sc.tmuxEnabled = tmux
 	return sc.Run(keepDevfiles)
 }
 
@@ -1578,7 +1572,6 @@ func usage() {
 	fmt.Println("    --passthrough-firewall-and-write   Keep proxy but allow all domains; write unknown ones to allowed-domains.txt")
 	fmt.Println("    --disable-dind                 Skip inner dockerd startup")
 	fmt.Println("    --keep-devfiles                Do not hide .devcontainer from the container (skip tmpfs overlay)")
-	fmt.Println("    --tmux                         Launch with tmux (overrides config)")
 	fmt.Println("  list                     Show ./project/ configuration")
 	fmt.Println("  remove                   Remove ./project/ directory after confirmation")
 	fmt.Println("  firewall-reload          Encrypt allowed-domains.txt and SIGHUP proxy")
