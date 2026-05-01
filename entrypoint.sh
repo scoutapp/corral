@@ -171,15 +171,20 @@ if [ -z "$DISABLE_FIREWALL" ]; then
     #
     # Rules (evaluated top-to-bottom in OUTPUT chain):
     #   1. Allow loopback (proxy listens here; clients connect here)
-    #   2. Allow DNS (UDP 53) so resolution still works for all processes
-    #   3. Allow proxyuser to make direct outbound TCP (proxy's own connections)
-    #   4. Allow TCP to DinD bridge networks so the proxy can accept connections
+    #   2. Allow ESTABLISHED/RELATED — response packets for inbound connections
+    #      (e.g. Docker Desktop port-forwarding to a bound service). Without this
+    #      the app's reply hits the REJECT rule because the destination IP is
+    #      outside 172.16.0.0/12.
+    #   3. Allow DNS (UDP 53) so resolution still works for all processes
+    #   4. Allow proxyuser to make direct outbound TCP (proxy's own connections)
+    #   5. Allow TCP to DinD bridge networks so the proxy can accept connections
     #      from inner containers and respond to them (SYN-ACK, data) without
     #      the REJECT rule blocking the response packets.
-    #   5. Reject all other outbound TCP
+    #   6. Reject all other outbound TCP
     echo "Applying iptables egress enforcement..."
     if sudo iptables -F OUTPUT 2>/dev/null && \
        sudo iptables -A OUTPUT -o lo -j ACCEPT && \
+       sudo iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT && \
        sudo iptables -A OUTPUT -p udp --dport 53 -j ACCEPT && \
        sudo iptables -A OUTPUT -p tcp -m owner --uid-owner proxyuser -j ACCEPT && \
        sudo iptables -A OUTPUT -p tcp -d 172.16.0.0/12 -j ACCEPT && \
