@@ -324,6 +324,32 @@ DOCKERCFG
     fi
 fi
 
+# ── Plaudit: configure Claude Code hooks to stream tool calls to the host sidecar ──
+if [ -n "$PLAUDIT_ENABLED" ]; then
+    if command -v plaudit &>/dev/null; then
+        PLAUDIT_ENDPOINT="${PLAUDIT_ENDPOINT:-http://host.docker.internal:4318}"
+        echo "Configuring plaudit hooks (endpoint: $PLAUDIT_ENDPOINT)..."
+
+        # Extract the hostname so we can exempt it from the allowlist proxy.
+        # host.docker.internal resolves to the Docker bridge gateway (172.17.0.1),
+        # which is already in the iptables ACCEPT range (172.16.0.0/12), so the
+        # network path is open. We just need to bypass HTTP_PROXY so the plaudit
+        # binary connects directly instead of routing through the allowlist proxy.
+        PLAUDIT_HOST=$(echo "$PLAUDIT_ENDPOINT" | sed 's|https\?://||' | cut -d: -f1 | cut -d/ -f1)
+        export NO_PROXY="$PLAUDIT_HOST"
+        export no_proxy="$PLAUDIT_HOST"
+
+        plaudit enable --otlp-endpoint "$PLAUDIT_ENDPOINT"
+        echo "✅ Plaudit hooks enabled → $PLAUDIT_ENDPOINT"
+        echo "   Web UI: http://localhost:8181"
+        echo ""
+    else
+        echo "⚠️  PLAUDIT_ENABLED=1 but plaudit binary not found at /usr/local/bin/plaudit"
+        echo "   Check plaudit_binary path in project/config.json"
+        echo ""
+    fi
+fi
+
 # Launch Python launcher
 /home/claude/launcher.py "$@"
 

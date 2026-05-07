@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -227,12 +228,15 @@ func (sc *SandClaude) stopProxy() {
 // ----------------------------------------------------------------------------
 
 type ProjectConfig struct {
-	Workspace    string   `json:"workspace"`
-	ProxyEnabled bool     `json:"proxy_enabled,omitempty"`
-	DindEnabled  bool     `json:"dind_enabled,omitempty"`
-	DindPorts    []string `json:"dind_ports,omitempty"`
-	LaunchTmux   bool     `json:"launch_tmux,omitempty"`
-	CreatedAt    string   `json:"created_at"`
+	Workspace       string   `json:"workspace"`
+	ProxyEnabled    bool     `json:"proxy_enabled,omitempty"`
+	DindEnabled     bool     `json:"dind_enabled,omitempty"`
+	DindPorts       []string `json:"dind_ports,omitempty"`
+	LaunchTmux      bool     `json:"launch_tmux,omitempty"`
+	PlauditEnabled  bool     `json:"plaudit_enabled,omitempty"`
+	PlauditBinary   string   `json:"plaudit_binary,omitempty"`
+	PlauditEndpoint string   `json:"plaudit_endpoint,omitempty"`
+	CreatedAt       string   `json:"created_at"`
 }
 
 func readConfig(projectDir string) (*ProjectConfig, error) {
@@ -272,6 +276,175 @@ func getLogsDir() string {
 	}
 	binDir := filepath.Dir(exePath)
 	return filepath.Join(binDir, "logs")
+}
+
+// expandHome expands a leading ~/ to the user's home directory.
+func expandHome(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, path[2:])
+		}
+	}
+	return path
+}
+
+// plauditPIDFile returns the path used to track the plaudit serve PID.
+func plauditPIDFile() string {
+	return filepath.Join(os.TempDir(), "sandclaude-plaudit.pid")
+}
+
+// isPlauditRunning probes the OTLP HTTP port derived from the endpoint URL.
+func isPlauditRunning(endpoint string) bool {
+	port := "4318"
+	if u, err := url.Parse(endpoint); err == nil && u.Port() != "" {
+		port = u.Port()
+	}
+	conn, err := net.DialTimeout("tcp", "127.0.0.1:"+port, time.Second)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
+// plauditStart starts plaudit serve as a background daemon on the host.
+// It is a no-op if plaudit is already listening on the configured port.
+func plauditStart(cfg *ProjectConfig) error {
+	endpoint := cfg.PlauditEndpoint
+	if endpoint == "" {
+		endpoint = "http://host.docker.internal:4318"
+	}
+
+	if isPlauditRunning(endpoint) {
+		log.Println("Plaudit already running")
+		log.Println("  Web UI: http://localhost:8181")
+		return nil
+	}
+
+	binaryPath := expandHome(cfg.PlauditBinary)
+	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
+		return fmt.Errorf("plaudit binary not found: %s", binaryPath)
+	}
+
+	logsDir := getLogsDir()
+	if err := os.MkdirAll(logsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create logs dir: %w", err)
+	}
+	logFile, err := os.OpenFile(filepath.Join(logsDir, "plaudit.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open plaudit log: %w", err)
+	}
+
+	cmd := exec.Command(binaryPath, "serve")
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		logFile.Close()
+		return fmt.Errorf("failed to start plaudit: %w", err)
+	}
+	logFile.Close()
+
+	os.WriteFile(plauditPIDFile(), []byte(strconv.Itoa(cmd.Process.Pid)), 0600)
+	cmd.Process.Release()
+
+	// Brief wait to confirm it bound successfully
+	time.Sleep(500 * time.Millisecond)
+	if !isPlauditRunning(endpoint) {
+		return fmt.Errorf("plaudit started but not listening on port — check %s/plaudit.log", logsDir)
+	}
+
+	log.Printf("✅ Plaudit started (PID %d)", cmd.Process.Pid)
+	log.Println("  Web UI:    http://localhost:8181")
+	log.Printf("  OTLP HTTP: %s", endpoint)
+	log.Printf("  Logs:      %s/plaudit.log", logsDir)
+	return nil
+}
+
+// plauditStop sends SIGTERM to the plaudit serve process found via PID file.
+func plauditStop() error {
+	data, err := os.ReadFile(plauditPIDFile())
+	if err != nil {
+		log.Println("Plaudit is not running (no PID file found)")
+		return nil
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid == 0 {
+		os.Remove(plauditPIDFile())
+		return fmt.Errorf("invalid PID file")
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		os.Remove(plauditPIDFile())
+		log.Println("Plaudit process not found (already exited?)")
+		return nil
+	}
+	if err := proc.Signal(syscall.SIGTERM); err != nil {
+		os.Remove(plauditPIDFile())
+		log.Println("Plaudit is not running (process already exited)")
+		return nil
+	}
+	os.Remove(plauditPIDFile())
+	log.Printf("✅ Plaudit stopped (PID %d)", pid)
+	return nil
+}
+
+// plauditStatus reports whether plaudit serve is running.
+func plauditStatus(cfg *ProjectConfig) error {
+	endpoint := cfg.PlauditEndpoint
+	if endpoint == "" {
+		endpoint = "http://host.docker.internal:4318"
+	}
+	if isPlauditRunning(endpoint) {
+		log.Println("Plaudit: ✅ running")
+		log.Println("  Web UI:    http://localhost:8181")
+		log.Printf("  OTLP HTTP: %s", endpoint)
+	} else {
+		log.Println("Plaudit: ❌ not running")
+		log.Println("  Run: sandclaude plaudit start")
+	}
+	return nil
+}
+
+// ensurePlauditRunning starts plaudit serve if it is not already listening.
+func ensurePlauditRunning(cfg *ProjectConfig) error {
+	endpoint := cfg.PlauditEndpoint
+	if endpoint == "" {
+		endpoint = "http://host.docker.internal:4318"
+	}
+	if isPlauditRunning(endpoint) {
+		debugln("Plaudit already running, skipping start")
+		return nil
+	}
+	log.Println("Starting plaudit serve...")
+	return plauditStart(cfg)
+}
+
+// cmdPlaudit handles the `sandclaude plaudit <start|stop|status>` commands.
+func cmdPlaudit(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: sandclaude plaudit <start|stop|status>")
+	}
+
+	projectDir := getProjectDir()
+	cfg, err := readConfig(projectDir)
+	if err != nil {
+		return err
+	}
+	if !cfg.PlauditEnabled {
+		return fmt.Errorf("plaudit not enabled in this project — run: sandclaude update")
+	}
+
+	switch args[0] {
+	case "start":
+		return plauditStart(cfg)
+	case "stop":
+		return plauditStop()
+	case "status":
+		return plauditStatus(cfg)
+	default:
+		return fmt.Errorf("unknown plaudit subcommand '%s' — use start, stop, or status", args[0])
+	}
 }
 
 // startDocker starts the Docker container with Claude Code
@@ -597,6 +770,27 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 		log.Println("tmux launch enabled")
 	}
 
+	// Plaudit: ensure the singleton sidecar is running on the host, then mount
+	// the binary and pass the endpoint so entrypoint.sh can wire up hooks.
+	if cfg.PlauditEnabled {
+		if err := ensurePlauditRunning(cfg); err != nil {
+			log.Printf("Warning: could not start plaudit: %v", err)
+		}
+		binaryPath := expandHome(cfg.PlauditBinary)
+		if _, err := os.Stat(binaryPath); err == nil {
+			args = append(args, "-v", fmt.Sprintf("%s:/usr/local/bin/plaudit:ro", binaryPath))
+		} else {
+			log.Printf("Warning: plaudit binary not found at %s — hooks will not be configured", binaryPath)
+		}
+		endpoint := cfg.PlauditEndpoint
+		if endpoint == "" {
+			endpoint = "http://host.docker.internal:4318"
+		}
+		args = append(args, "-e", "PLAUDIT_ENABLED=1")
+		args = append(args, "-e", fmt.Sprintf("PLAUDIT_ENDPOINT=%s", endpoint))
+		log.Printf("Plaudit enabled (endpoint: %s, web UI: http://localhost:8181)", endpoint)
+	}
+
 	args = append(args, imageName)
 
 	debugf("Docker command: docker %s", strings.Join(args, " "))
@@ -769,6 +963,49 @@ func cmdUpdate() error {
 
 	log.Println()
 
+	// Plaudit observability
+	plauditPrompt := "n"
+	if cfg.PlauditEnabled {
+		plauditPrompt = "Y"
+	}
+	fmt.Printf("Enable Plaudit observability? (current: %s) [y/N]: ", plauditPrompt)
+	plauditInput, _ := reader.ReadString('\n')
+	plauditInput = strings.TrimSpace(strings.ToLower(plauditInput))
+	if plauditInput != "" {
+		cfg.PlauditEnabled = plauditInput == "y" || plauditInput == "yes"
+		log.Printf("  Plaudit enabled: %v\n", cfg.PlauditEnabled)
+	} else {
+		log.Printf("  Plaudit unchanged: %v\n", cfg.PlauditEnabled)
+	}
+	if cfg.PlauditEnabled {
+		currentBinary := cfg.PlauditBinary
+		if currentBinary == "" {
+			currentBinary = "none"
+		}
+		fmt.Printf("  Path to plaudit binary (current: %s, blank to keep): ", currentBinary)
+		binaryInput, _ := reader.ReadString('\n')
+		binaryInput = strings.TrimSpace(binaryInput)
+		if binaryInput != "" {
+			cfg.PlauditBinary = binaryInput
+		}
+
+		currentEndpoint := cfg.PlauditEndpoint
+		if currentEndpoint == "" {
+			currentEndpoint = "http://host.docker.internal:4318"
+		}
+		fmt.Printf("  OTLP endpoint (current: %s, blank to keep): ", currentEndpoint)
+		endpointInput, _ := reader.ReadString('\n')
+		endpointInput = strings.TrimSpace(endpointInput)
+		if endpointInput != "" {
+			cfg.PlauditEndpoint = endpointInput
+		} else if cfg.PlauditEndpoint == "" {
+			cfg.PlauditEndpoint = "http://host.docker.internal:4318"
+		}
+		log.Printf("  Plaudit endpoint: %s\n", cfg.PlauditEndpoint)
+	}
+
+	log.Println()
+
 	// Workspace
 	fmt.Printf("Workspace directory (current: %s, blank to keep): ", cfg.Workspace)
 	wsInput, _ := reader.ReadString('\n')
@@ -831,6 +1068,27 @@ func cmdInit() error {
 	if askYesNo("Launch with tmux?") {
 		cfg.LaunchTmux = true
 		log.Println("✅ tmux launch enabled")
+	}
+
+	log.Println()
+
+	// Plaudit observability
+	if askYesNo("Enable Plaudit tool call observability (https://github.com/scoutapp/wooden-bear)?") {
+		cfg.PlauditEnabled = true
+		plauditReader := bufio.NewReader(os.Stdin)
+		fmt.Print("Path to plaudit binary (e.g. ~/wooden-bear/plaudit): ")
+		binaryInput, _ := plauditReader.ReadString('\n')
+		cfg.PlauditBinary = strings.TrimSpace(binaryInput)
+
+		fmt.Print("OTLP endpoint (default: http://host.docker.internal:4318): ")
+		endpointInput, _ := plauditReader.ReadString('\n')
+		endpointInput = strings.TrimSpace(endpointInput)
+		if endpointInput == "" {
+			endpointInput = "http://host.docker.internal:4318"
+		}
+		cfg.PlauditEndpoint = endpointInput
+		log.Printf("✅ Plaudit enabled → %s\n", cfg.PlauditEndpoint)
+		log.Println("   Run: sandclaude plaudit start")
 	}
 
 	log.Println()
@@ -1067,6 +1325,18 @@ func cmdList() error {
 	}
 	if cfg.ProxyEnabled {
 		log.Println("  Proxy:     enabled")
+	}
+	if cfg.PlauditEnabled {
+		endpoint := cfg.PlauditEndpoint
+		if endpoint == "" {
+			endpoint = "http://host.docker.internal:4318"
+		}
+		status := "not running"
+		if isPlauditRunning(endpoint) {
+			status = "running"
+		}
+		log.Printf("  Plaudit:   enabled (%s) [%s]\n", endpoint, status)
+		log.Println("  Web UI:    http://localhost:8181")
 	}
 	log.Println()
 
@@ -1595,6 +1865,7 @@ func usage() {
 	fmt.Println("  firewall-monitor         Tail allowlist proxy log in running container")
 	fmt.Println("  shell                    Open bash shell in container")
 	fmt.Println("  populate-proxy-credentials       Interactively populate proxy-credentials.json from 'claude setup-token'")
+	fmt.Println("  plaudit <start|stop|status>      Manage the shared Plaudit observability sidecar")
 	fmt.Println("  copy <target>            Copy sandclaude files to target directory")
 	fmt.Println("  rebuild [--destroy] [--destroy-inner]   Force rebuild container image")
 	fmt.Println("    --destroy        Remove existing outer image/container first (full rebuild from scratch, implies --no-cache)")
@@ -1684,6 +1955,9 @@ func main() {
 
 	case "populate-proxy-credentials":
 		err = cmdPopulateProxyCredentials()
+
+	case "plaudit":
+		err = cmdPlaudit(os.Args[2:])
 
 	case "copy":
 		target := ""
