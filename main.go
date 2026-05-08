@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -11,11 +12,13 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -302,8 +305,14 @@ func plauditDefaultRepoDir() string {
 	return filepath.Join(home, ".sandclaude", "wooden-bear")
 }
 
-// plauditBuildBinary clones (or pulls) the wooden-bear repo and compiles the
-// plaudit binary, returning the path to the resulting executable.
+// plauditLinuxBinaryPath returns the expected path of the linux container binary.
+func plauditLinuxBinaryPath() string {
+	return filepath.Join(plauditDefaultRepoDir(), "plaudit-linux-"+runtime.GOARCH)
+}
+
+// plauditBuildBinary clones (or pulls) wooden-bear and compiles:
+//   - a host binary (native OS) for `plaudit serve`, returned as the result
+//   - a linux binary for the container mount, stored at plauditLinuxBinaryPath()
 func plauditBuildBinary() (string, error) {
 	repoDir := plauditDefaultRepoDir()
 
@@ -325,18 +334,64 @@ func plauditBuildBinary() (string, error) {
 		}
 	}
 
-	binaryPath := filepath.Join(repoDir, "plaudit")
-	log.Println("Building plaudit binary (go build)...")
-	cmd := exec.Command("go", "build", "-o", binaryPath, ".")
-	cmd.Dir = repoDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("go build failed: %w", err)
+	// Build host binary for `plaudit serve` on the local OS.
+	// The sqlite_fts5 build tag enables FTS5 in go-sqlite3 (matches wooden-bear's Makefile).
+	hostBinaryPath := filepath.Join(repoDir, "plaudit")
+	log.Printf("Building plaudit host binary (%s/%s)...", runtime.GOOS, runtime.GOARCH)
+	var hostStderr bytes.Buffer
+	hostCmd := exec.Command("go", "build", "-tags=sqlite_fts5", "-o", hostBinaryPath, "./cmd/plaudit")
+	hostCmd.Dir = repoDir
+	hostCmd.Stdout = os.Stdout
+	hostCmd.Stderr = io.MultiWriter(os.Stderr, &hostStderr)
+	if err := hostCmd.Run(); err != nil {
+		return "", fmt.Errorf("go build (%s) failed: %w\n%s", runtime.GOOS, err, strings.TrimSpace(hostStderr.String()))
+	}
+	log.Printf("Plaudit host binary built: %s", hostBinaryPath)
+
+	// Build the linux binary for the container mount (best-effort, warn on failure).
+	if err := plauditBuildLinuxBinary(repoDir); err != nil {
+		log.Printf("Warning: could not build linux container binary: %v", err)
 	}
 
-	log.Printf("Plaudit binary built: %s", binaryPath)
-	return binaryPath, nil
+	return hostBinaryPath, nil
+}
+
+// plauditBuildLinuxBinary builds the linux binary used for the container mount.
+// It tries a Docker-based build first (handles CGO cross-compilation correctly),
+// then falls back to a CGO_ENABLED=0 cross-compile.
+func plauditBuildLinuxBinary(repoDir string) error {
+	arch := runtime.GOARCH
+	outPath := filepath.Join(repoDir, "plaudit-linux-"+arch)
+	log.Printf("Building plaudit linux/%s binary via Docker...", arch)
+
+	var dockerStderr bytes.Buffer
+	dockerCmd := exec.Command("docker", "run", "--rm",
+		"--platform", "linux/"+arch,
+		"-v", repoDir+":/src",
+		"-w", "/src",
+		"golang:1.22-bookworm",
+		"sh", "-c", "apt-get update -qq && apt-get install -y --no-install-recommends gcc libc6-dev libsqlite3-dev && go build -tags=sqlite_fts5 -o /src/plaudit-linux-"+arch+" ./cmd/plaudit",
+	)
+	dockerCmd.Stdout = os.Stdout
+	dockerCmd.Stderr = io.MultiWriter(os.Stderr, &dockerStderr)
+	if err := dockerCmd.Run(); err == nil {
+		log.Printf("Plaudit linux/%s binary built via Docker: %s", arch, outPath)
+		return nil
+	}
+
+	// Fallback: CGO_ENABLED=0 cross-compile (works if the project supports pure-Go sqlite).
+	log.Printf("Docker build failed — falling back to CGO_ENABLED=0 cross-compile...")
+	var crossStderr bytes.Buffer
+	crossCmd := exec.Command("go", "build", "-o", outPath, "./cmd/plaudit")
+	crossCmd.Dir = repoDir
+	crossCmd.Env = append(os.Environ(), "GOOS=linux", "GOARCH="+arch, "CGO_ENABLED=0")
+	crossCmd.Stdout = os.Stdout
+	crossCmd.Stderr = io.MultiWriter(os.Stderr, &crossStderr)
+	if err := crossCmd.Run(); err != nil {
+		return fmt.Errorf("linux binary build failed: %w\n%s", err, strings.TrimSpace(crossStderr.String()))
+	}
+	log.Printf("Plaudit linux/%s binary built (CGO_ENABLED=0): %s", arch, outPath)
+	return nil
 }
 
 // expandHome expands a leading ~/ to the user's home directory.
@@ -368,6 +423,18 @@ func isPlauditRunning(endpoint string) bool {
 	return true
 }
 
+// isPlauditAPIHealthy hits the plaudit API /healthz to confirm port 8181 is
+// owned by a plaudit instance (vs. an unrelated process squatting on the port).
+func isPlauditAPIHealthy() bool {
+	client := http.Client{Timeout: time.Second}
+	resp, err := client.Get("http://127.0.0.1:8181/healthz")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == 200
+}
+
 // plauditStart starts plaudit serve as a background daemon on the host.
 // It is a no-op if plaudit is already listening on the configured port.
 // If the binary is missing it attempts to clone and build wooden-bear first.
@@ -378,7 +445,9 @@ func plauditStart(cfg *ProjectConfig) error {
 		endpoint = "http://host.docker.internal:4318"
 	}
 
-	if isPlauditRunning(endpoint) {
+	// Treat either the OTLP listener or a healthy API as "already running" so
+	// repeat invocations are a no-op.
+	if isPlauditRunning(endpoint) || isPlauditAPIHealthy() {
 		log.Println("Plaudit already running")
 		log.Println("  Web UI: http://localhost:8181")
 		return nil
@@ -430,12 +499,15 @@ func plauditStart(cfg *ProjectConfig) error {
 	os.WriteFile(plauditPIDFile(), []byte(strconv.Itoa(cmd.Process.Pid)), 0600)
 	cmd.Process.Release()
 
-	// Brief wait to confirm it bound successfully
-	time.Sleep(500 * time.Millisecond)
-	if !isPlauditRunning(endpoint) {
-		reason := fmt.Sprintf("plaudit process started but is not listening on the expected port.\nEndpoint: %s\nCheck logs: %s/plaudit.log", endpoint, logsDir)
-		plauditLogError(reason)
-		return fmt.Errorf("plaudit not listening after start — check %s/plaudit.log", logsDir)
+	// Poll for the OTLP listener — startup can take a couple seconds on first run.
+	deadline := time.Now().Add(5 * time.Second)
+	for !isPlauditRunning(endpoint) {
+		if time.Now().After(deadline) {
+			reason := fmt.Sprintf("plaudit process started but is not listening on the expected port.\nEndpoint: %s\nCheck logs: %s/plaudit.log", endpoint, logsDir)
+			plauditLogError(reason)
+			return fmt.Errorf("plaudit not listening after start — check %s/plaudit.log", logsDir)
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
 
 	log.Printf("✅ Plaudit started (PID %d)", cmd.Process.Pid)
@@ -860,22 +932,36 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 	}
 
 	// Plaudit: ensure the singleton sidecar is running on the host, then mount
-	// the binary and pass the endpoint so entrypoint.sh can wire up hooks.
+	// the linux binary and pass the endpoint so entrypoint.sh can wire up hooks.
 	if cfg.PlauditEnabled {
 		ensurePlauditRunning(cfg)
-		binaryPath := expandHome(cfg.PlauditBinary)
-		if _, err := os.Stat(binaryPath); err == nil {
-			args = append(args, "-v", fmt.Sprintf("%s:/usr/local/bin/plaudit:ro", binaryPath))
+
+		// The container needs a linux binary, not the host (darwin) binary.
+		// plauditBuildBinary already built this alongside the host binary.
+		containerBinary := plauditLinuxBinaryPath()
+		if _, err := os.Stat(containerBinary); os.IsNotExist(err) {
+			log.Println("Linux container binary not found — attempting to build...")
+			if buildErr := plauditBuildLinuxBinary(plauditDefaultRepoDir()); buildErr != nil {
+				log.Printf("Warning: %v", buildErr)
+			}
+		}
+		// Last-resort fallback: use whatever binary is configured (may fail in container).
+		if _, err := os.Stat(containerBinary); os.IsNotExist(err) {
+			containerBinary = expandHome(cfg.PlauditBinary)
+		}
+
+		if _, err := os.Stat(containerBinary); err == nil {
+			args = append(args, "-v", fmt.Sprintf("%s:/usr/local/bin/plaudit:ro", containerBinary))
+			endpoint := cfg.PlauditEndpoint
+			if endpoint == "" {
+				endpoint = "http://host.docker.internal:4318"
+			}
+			args = append(args, "-e", "PLAUDIT_ENABLED=1")
+			args = append(args, "-e", fmt.Sprintf("PLAUDIT_ENDPOINT=%s", endpoint))
+			log.Printf("Plaudit enabled (endpoint: %s, web UI: http://localhost:8181)", endpoint)
 		} else {
-			log.Printf("Warning: plaudit binary not found at %s — hooks will not be configured", binaryPath)
+			log.Printf("Warning: plaudit binary not found at %s — hooks will not be configured", containerBinary)
 		}
-		endpoint := cfg.PlauditEndpoint
-		if endpoint == "" {
-			endpoint = "http://host.docker.internal:4318"
-		}
-		args = append(args, "-e", "PLAUDIT_ENABLED=1")
-		args = append(args, "-e", fmt.Sprintf("PLAUDIT_ENDPOINT=%s", endpoint))
-		log.Printf("Plaudit enabled (endpoint: %s, web UI: http://localhost:8181)", endpoint)
 	}
 
 	args = append(args, imageName)

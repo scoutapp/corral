@@ -6,6 +6,7 @@
 .env.*
 secrets/
 credentials/
+plaudit.db*
 
 # Don't believe we want these in version control
 .claude/worktrees
