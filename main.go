@@ -278,6 +278,67 @@ func getLogsDir() string {
 	return filepath.Join(binDir, "logs")
 }
 
+const plauditRepoURL = "https://github.com/scoutapp/wooden-bear"
+
+// plauditLogError prints a highly visible banner to stderr so failures are
+// never silently swallowed when plaudit is optional.
+func plauditLogError(reason string) {
+	border := strings.Repeat("!", 70)
+	log.Println(border)
+	log.Println("!! PLAUDIT ERROR — observability will NOT be active this session")
+	log.Println("!!")
+	for _, line := range strings.Split(reason, "\n") {
+		log.Printf("!!  %s", line)
+	}
+	log.Println("!!")
+	log.Println("!!  To disable plaudit entirely: sandclaude update")
+	log.Println("!!  To retry manually:           sandclaude plaudit start")
+	log.Println(border)
+}
+
+// plauditDefaultRepoDir is where wooden-bear is cloned when no binary is configured.
+func plauditDefaultRepoDir() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".sandclaude", "wooden-bear")
+}
+
+// plauditBuildBinary clones (or pulls) the wooden-bear repo and compiles the
+// plaudit binary, returning the path to the resulting executable.
+func plauditBuildBinary() (string, error) {
+	repoDir := plauditDefaultRepoDir()
+
+	if _, err := os.Stat(filepath.Join(repoDir, ".git")); os.IsNotExist(err) {
+		log.Printf("Cloning plaudit source from %s ...", plauditRepoURL)
+		cmd := exec.Command("git", "clone", plauditRepoURL, repoDir)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return "", fmt.Errorf("git clone failed: %w", err)
+		}
+	} else {
+		log.Println("Pulling latest plaudit source from GitHub...")
+		cmd := exec.Command("git", "-C", repoDir, "pull", "--ff-only")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if pullErr := cmd.Run(); pullErr != nil {
+			log.Printf("git pull failed (continuing with existing source): %v", pullErr)
+		}
+	}
+
+	binaryPath := filepath.Join(repoDir, "plaudit")
+	log.Println("Building plaudit binary (go build)...")
+	cmd := exec.Command("go", "build", "-o", binaryPath, ".")
+	cmd.Dir = repoDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("go build failed: %w", err)
+	}
+
+	log.Printf("Plaudit binary built: %s", binaryPath)
+	return binaryPath, nil
+}
+
 // expandHome expands a leading ~/ to the user's home directory.
 func expandHome(path string) string {
 	if strings.HasPrefix(path, "~/") {
@@ -309,6 +370,8 @@ func isPlauditRunning(endpoint string) bool {
 
 // plauditStart starts plaudit serve as a background daemon on the host.
 // It is a no-op if plaudit is already listening on the configured port.
+// If the binary is missing it attempts to clone and build wooden-bear first.
+// All failures emit a visible banner but do not abort the caller.
 func plauditStart(cfg *ProjectConfig) error {
 	endpoint := cfg.PlauditEndpoint
 	if endpoint == "" {
@@ -322,17 +385,35 @@ func plauditStart(cfg *ProjectConfig) error {
 	}
 
 	binaryPath := expandHome(cfg.PlauditBinary)
-	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
-		return fmt.Errorf("plaudit binary not found: %s", binaryPath)
+	if _, err := os.Stat(binaryPath); binaryPath == "" || os.IsNotExist(err) {
+		if binaryPath == "" {
+			log.Println("Plaudit binary not configured — attempting to build from source...")
+		} else {
+			log.Printf("Plaudit binary not found at %s — attempting to build from source...", binaryPath)
+		}
+		built, buildErr := plauditBuildBinary()
+		if buildErr != nil {
+			plauditLogError(fmt.Sprintf("Could not build plaudit binary: %v", buildErr))
+			return buildErr
+		}
+		binaryPath = built
+		cfg.PlauditBinary = binaryPath
+		if projectDir := getProjectDir(); projectDir != "" {
+			if saveErr := writeConfig(projectDir, cfg); saveErr != nil {
+				log.Printf("Warning: could not save plaudit binary path to config: %v", saveErr)
+			}
+		}
 	}
 
 	logsDir := getLogsDir()
 	if err := os.MkdirAll(logsDir, 0755); err != nil {
-		return fmt.Errorf("failed to create logs dir: %w", err)
+		plauditLogError(fmt.Sprintf("Failed to create logs directory: %v", err))
+		return err
 	}
 	logFile, err := os.OpenFile(filepath.Join(logsDir, "plaudit.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		return fmt.Errorf("failed to open plaudit log: %w", err)
+		plauditLogError(fmt.Sprintf("Failed to open plaudit log file: %v", err))
+		return err
 	}
 
 	cmd := exec.Command(binaryPath, "serve")
@@ -341,7 +422,8 @@ func plauditStart(cfg *ProjectConfig) error {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		logFile.Close()
-		return fmt.Errorf("failed to start plaudit: %w", err)
+		plauditLogError(fmt.Sprintf("Failed to start plaudit process: %v\n(binary: %s)", err, binaryPath))
+		return err
 	}
 	logFile.Close()
 
@@ -351,7 +433,9 @@ func plauditStart(cfg *ProjectConfig) error {
 	// Brief wait to confirm it bound successfully
 	time.Sleep(500 * time.Millisecond)
 	if !isPlauditRunning(endpoint) {
-		return fmt.Errorf("plaudit started but not listening on port — check %s/plaudit.log", logsDir)
+		reason := fmt.Sprintf("plaudit process started but is not listening on the expected port.\nEndpoint: %s\nCheck logs: %s/plaudit.log", endpoint, logsDir)
+		plauditLogError(reason)
+		return fmt.Errorf("plaudit not listening after start — check %s/plaudit.log", logsDir)
 	}
 
 	log.Printf("✅ Plaudit started (PID %d)", cmd.Process.Pid)
@@ -407,17 +491,22 @@ func plauditStatus(cfg *ProjectConfig) error {
 }
 
 // ensurePlauditRunning starts plaudit serve if it is not already listening.
-func ensurePlauditRunning(cfg *ProjectConfig) error {
+// Errors are handled internally: a visible banner is printed and the function
+// returns so the container launch can continue without observability.
+func ensurePlauditRunning(cfg *ProjectConfig) {
 	endpoint := cfg.PlauditEndpoint
 	if endpoint == "" {
 		endpoint = "http://host.docker.internal:4318"
 	}
 	if isPlauditRunning(endpoint) {
 		debugln("Plaudit already running, skipping start")
-		return nil
+		return
 	}
 	log.Println("Starting plaudit serve...")
-	return plauditStart(cfg)
+	if err := plauditStart(cfg); err != nil {
+		// plauditStart already printed the banner; nothing more to do here.
+		_ = err
+	}
 }
 
 // cmdPlaudit handles the `sandclaude plaudit <start|stop|status>` commands.
@@ -773,9 +862,7 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 	// Plaudit: ensure the singleton sidecar is running on the host, then mount
 	// the binary and pass the endpoint so entrypoint.sh can wire up hooks.
 	if cfg.PlauditEnabled {
-		if err := ensurePlauditRunning(cfg); err != nil {
-			log.Printf("Warning: could not start plaudit: %v", err)
-		}
+		ensurePlauditRunning(cfg)
 		binaryPath := expandHome(cfg.PlauditBinary)
 		if _, err := os.Stat(binaryPath); err == nil {
 			args = append(args, "-v", fmt.Sprintf("%s:/usr/local/bin/plaudit:ro", binaryPath))
