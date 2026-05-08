@@ -65,7 +65,9 @@ The firewall comes with these domains pre-configured:
 - DNS (port 53)
 - SSH (port 22)
 - Localhost
-- Host Docker network
+
+**Always allowed (in default allowlist):**
+- `host.docker.internal` — the host machine; required for Plaudit and any other host-side service
 
 ## Firewall Management
 

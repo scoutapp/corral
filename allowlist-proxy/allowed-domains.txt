@@ -1,4 +1,7 @@
 # Default allowed domains
+
+# Host machine — always reachable (Docker bridge gateway, plaudit sidecar, etc.)
+host.docker.internal
 registry.npmjs.org
 api.anthropic.com
 platform.claude.com
