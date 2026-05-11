@@ -43,6 +43,14 @@ func debugln(args ...any) {
 	}
 }
 
+// dindVolumeName returns a deterministic Docker named volume for a workspace's
+// inner Docker data root. Named volumes sidestep the "lchown /proc: permission
+// denied" error that bind mounts hit when Docker extracts layers containing /proc.
+func dindVolumeName(workspace string) string {
+	h := sha256.Sum256([]byte(workspace))
+	return fmt.Sprintf("sandclaude-dind-%x", h[:6])
+}
+
 type SandClaude struct {
 	proxyCmd                    *exec.Cmd
 	proxyPort                   string
@@ -567,23 +575,20 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 	if sc.dindEnabled {
 		args = append(args, "-e", "DIND_ENABLED=1")
 
-		// Bind-mount a persistent directory for the inner docker data root so that
-		// named volumes (e.g. postgres data) and cached images survive outer container
-		// restarts. The directory is keyed to the project dir, making it deterministic:
-		// the same project always uses the same data, regardless of which session started it.
-		dindDataDir := filepath.Join(getProjectDir(), "dind-data")
-		if err := os.MkdirAll(dindDataDir, 0755); err != nil {
-			return fmt.Errorf("failed to create DinD data dir: %w", err)
-		}
-		args = append(args, "-v", fmt.Sprintf("%s:/var/lib/docker-dind:rw", dindDataDir))
+		// Use a named volume for the inner Docker data root.
+		// Bind mounts fail with "lchown /proc: permission denied" when Docker
+		// tries to extract image layers that contain /proc entries — named
+		// volumes avoid this because Docker manages ownership internally.
+		dindVol := dindVolumeName(cfg.Workspace)
+		args = append(args, "-v", fmt.Sprintf("%s:/var/lib/docker-dind:rw", dindVol))
 
 		for _, port := range sc.dindPorts {
 			args = append(args, "-p", port)
 		}
 		if len(sc.dindPorts) > 0 {
-			log.Printf("DinD enabled (ports: %s, data: %s)", strings.Join(sc.dindPorts, ", "), dindDataDir)
+			log.Printf("DinD enabled (ports: %s, volume: %s)", strings.Join(sc.dindPorts, ", "), dindVol)
 		} else {
-			log.Printf("DinD enabled (data: %s)", dindDataDir)
+			log.Printf("DinD enabled (volume: %s)", dindVol)
 		}
 	}
 
@@ -1058,7 +1063,7 @@ func cmdList() error {
 			log.Printf(" (ports: %s)", strings.Join(cfg.DindPorts, ", "))
 		}
 		log.Println()
-		log.Printf("  DinD data: %s/dind-data\n", projectDir)
+		log.Printf("  DinD data: docker volume %s\n", dindVolumeName(cfg.Workspace))
 	}
 	if cfg.ProxyEnabled {
 		log.Println("  Proxy:     enabled")
@@ -1144,15 +1149,27 @@ func cmdRebuild(destroy bool, destroyInner bool) error {
 	}
 
 	if destroyInner {
-		dindDataDir := filepath.Join(getProjectDir(), "dind-data")
-		if _, err := os.Stat(dindDataDir); err == nil {
-			log.Printf("Destroying inner docker data at %s...", dindDataDir)
-			if err := os.RemoveAll(dindDataDir); err != nil {
-				return fmt.Errorf("failed to remove DinD data dir: %w", err)
-			}
-			log.Println("✅ Inner docker data removed (images and volumes wiped)")
+		projectDir := getProjectDir()
+		cfg, cfgErr := readConfig(projectDir)
+		if cfgErr != nil {
+			log.Printf("Warning: could not read config to derive DinD volume name: %v", cfgErr)
 		} else {
-			log.Println("No inner docker data found (nothing to destroy)")
+			volName := dindVolumeName(cfg.Workspace)
+			log.Printf("Removing inner docker volume %s...", volName)
+			rmCmd := exec.Command("docker", "volume", "rm", volName)
+			rmCmd.Stdout = os.Stdout
+			rmCmd.Stderr = os.Stderr
+			if err := rmCmd.Run(); err != nil {
+				log.Printf("Warning: could not remove volume %s (may not exist yet): %v", volName, err)
+			} else {
+				log.Println("✅ Inner docker volume removed (images and volumes wiped)")
+			}
+		}
+		// Remove legacy bind-mount directory if it survived from an older install.
+		legacyDir := filepath.Join(getProjectDir(), "dind-data")
+		if _, err := os.Stat(legacyDir); err == nil {
+			log.Printf("Removing legacy DinD data directory %s...", legacyDir)
+			os.RemoveAll(legacyDir)
 		}
 	}
 
