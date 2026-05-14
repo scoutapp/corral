@@ -164,6 +164,24 @@ This interactively populates `./project/proxy-credentials.json` using `claude se
 }
 ```
 
+Each entry supports two injection modes:
+
+| Key | Description |
+|-----|-------------|
+| `header` | Injects the value as an HTTP request header (e.g. `Authorization`) |
+| `url_param` | Injects the value as a URL query parameter (e.g. `?api_key=...`) |
+
+Example using `url_param`:
+
+```json
+{
+  "api.example.com": {
+    "url_param": "api_key",
+    "value": "secret123"
+  }
+}
+```
+
 **mitmproxy certificate trust** (required on first run):
 
 The mitmproxy CA cert is generated at `~/.mitmproxy/mitmproxy-ca-cert.pem` on first launch. It is mounted read-only into the container automatically. If you see TLS errors, run mitmweb once standalone to generate the cert, then rebuild:
