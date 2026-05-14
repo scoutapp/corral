@@ -17,6 +17,10 @@ Credentials file format (JSON):
   "api.github.com": {
     "header": "Authorization",
     "value": "token ghp_real_token_here"
+  },
+  "api.example.com": {
+    "url_param": "api_key",
+    "value": "secret123"
   }
 }
 """
@@ -74,16 +78,16 @@ class CredentialInjector:
 
         if host in self.credentials:
             cred = self.credentials[host]
+            value = cred.get("value")
             header_name = cred.get("header")
-            header_value = cred.get("value")
+            url_param = cred.get("url_param")
 
-            if header_name and header_value:
-                # Replace the header value
-                flow.request.headers[header_name] = header_value
-                self.logger.debug(f"Injected credential for {host}")
-
-                # Optional: log what was replaced (for debugging)
-                # self.logger.debug(f"Replaced header {header_name} for {host}")
+            if header_name and value:
+                flow.request.headers[header_name] = value
+                self.logger.debug(f"Injected header credential for {host}")
+            elif url_param and value:
+                flow.request.query[url_param] = value
+                self.logger.debug(f"Injected url_param credential for {host}")
 
 
 addons = [CredentialInjector()]
