@@ -12,6 +12,9 @@ FROM --platform=linux/amd64 ubuntu:24.04
 # Copy the static proxy binary from the builder stage
 COPY --from=proxy-builder /build/allowlist-proxy /usr/local/bin/allowlist-proxy
 
+# Copy Go toolchain so sandclaude can be rebuilt inside the container
+COPY --from=proxy-builder /usr/local/go /usr/local/go
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install base tools
@@ -34,6 +37,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tmux \
     && rm -rf /var/lib/apt/lists/*
 
+# Install proxy CA cert so subsequent curl/apt/npm HTTPS steps trust the MITM proxy.
+# PROXY_CA_CERT is base64-encoded PEM, injected at build time by sandclaude.
+ARG PROXY_CA_CERT=""
+RUN if [ -n "$PROXY_CA_CERT" ]; then \
+        printf "%s" "$PROXY_CA_CERT" | base64 -d \
+            > /usr/local/share/ca-certificates/proxy-ca.crt \
+        && update-ca-certificates; \
+    fi
+# npm uses its own CA bundle; point it at the system bundle which includes the proxy CA.
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+
 # Install Node.js 22
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
@@ -43,9 +57,14 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
 # Use a world-readable path so the claude user can access browsers without sudo
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 ENV NODE_PATH=/usr/lib/node_modules
+# PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 skips the ~200MB Chromium download (useful when
+# the build proxy cannot stream large responses). Set to empty string to download.
+ARG PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=
 RUN npm install -g playwright && \
-    playwright install --with-deps chromium && \
-    chmod -R o+rx /ms-playwright
+    if [ -z "$PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD" ]; then \
+        playwright install --with-deps chromium && \
+        chmod -R o+rx /ms-playwright; \
+    fi
 
 # Install Python 3, mitmproxy, and selenium
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -112,7 +131,12 @@ ENV PATH="/home/claude/.cargo/bin:${PATH}"
 
 # Install Claude Code
 RUN curl -fsSL https://claude.ai/install.sh | bash
-ENV PATH="/home/claude/.claude/bin:/home/claude/.local/bin:${PATH}"
+ENV PATH="/home/claude/.claude/bin:/home/claude/.local/bin:/usr/local/go/bin:${PATH}"
+
+# Pre-create .mitmproxy owned by claude so mitmweb can write its CA keypair.
+# Without this, Docker creates the directory as root:root when bind-mounting
+# the host's mitmproxy-ca-cert.pem file, and mitmweb fails on startup.
+RUN mkdir -p /home/claude/.mitmproxy && chown claude:claude /home/claude/.mitmproxy
 
 # Copy launcher, entrypoint, proxy addon, skill, and bin scripts
 COPY --chown=claude:claude launcher.py /home/claude/launcher.py

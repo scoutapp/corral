@@ -6,6 +6,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -67,12 +68,15 @@ type SandClaude struct {
 }
 
 // stdinIsTTY reports whether os.Stdin is an interactive terminal.
+// Uses TIOCGWINSZ ioctl to distinguish real terminals from character devices
+// like /dev/null that would otherwise fool a simple mode-bit check.
 func stdinIsTTY() bool {
-	fi, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return (fi.Mode() & os.ModeCharDevice) != 0
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL,
+		os.Stdin.Fd(),
+		uintptr(syscall.TIOCGWINSZ),
+		uintptr(0),
+	)
+	return errno == 0
 }
 
 // shellQuote returns a single-quoted, shell-safe version of s (equivalent to Python's shlex.quote).
@@ -164,6 +168,17 @@ func findFreePort(startPort int) (int, error) {
 	return 0, fmt.Errorf("no free port found in range %d-%d", startPort, startPort+99)
 }
 
+// isDirWritable reports whether the current process can create files in dir.
+func isDirWritable(dir string) bool {
+	f, err := os.CreateTemp(dir, ".write-test-*")
+	if err != nil {
+		return false
+	}
+	f.Close()
+	os.Remove(f.Name())
+	return true
+}
+
 // startProxy starts the mitmweb proxy process
 func (sc *SandClaude) startProxy() error {
 	// Find a free port, starting from the configured base port
@@ -203,12 +218,28 @@ func (sc *SandClaude) startProxy() error {
 		return fmt.Errorf("failed to open %s: %w", mitmLog, err)
 	}
 
+	// Ensure the mitmproxy conf dir exists and is writable by the current user.
+	// Docker bind-mounts create parent directories as root, so ~/.mitmproxy may be
+	// root-owned even though the current user can't write there. Test writability
+	// directly (mode bits lie when the owner differs from the current user).
+	userHome, _ := os.UserHomeDir()
+	confDir := filepath.Join(userHome, ".mitmproxy")
+	if err := os.MkdirAll(confDir, 0700); err != nil || !isDirWritable(confDir) {
+		confDir = filepath.Join(os.TempDir(), "sandclaude-mitmproxy")
+		if err := os.MkdirAll(confDir, 0700); err != nil {
+			return fmt.Errorf("failed to create mitmproxy conf dir: %w", err)
+		}
+		log.Printf("~/.mitmproxy not writable, using confdir: %s", confDir)
+	}
+
 	// Start mitmweb
 	sc.proxyCmd = exec.Command(
 		"mitmweb",
 		"--listen-port", sc.proxyPort,
 		"--web-port", fmt.Sprintf("%d", webPort),
+		"--set", fmt.Sprintf("confdir=%s", confDir),
 		"--set", fmt.Sprintf("credentials_file=%s", sc.credentialsFile),
+		"--set", "stream_large_bodies=50m", // stream responses >50MB instead of buffering
 		"--ssl-insecure",
 		"-s", sc.addonScript,
 	)
@@ -415,7 +446,11 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 	// - Repo and workspace provide read-only configuration
 	// - Host provides writable state/data
 
-	// Helper function to mount individual items from a .claude subdirectory (read-only)
+	// Track mounted container destinations to avoid duplicate mounts (docker rejects them).
+	mountedDsts := make(map[string]bool)
+
+	// Helper function to mount individual items from a .claude subdirectory (read-only).
+	// Skips any destination already mounted by a higher-priority source.
 	mountClaudeSubdirItems := func(sourceLabel, sourceClaudeDir, subName string) {
 		srcSubDir := filepath.Join(sourceClaudeDir, subName)
 		if entries, err := os.ReadDir(srcSubDir); err == nil {
@@ -423,6 +458,11 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 			for _, entry := range entries {
 				entrySrc := filepath.Join(srcSubDir, entry.Name())
 				entryDst := fmt.Sprintf("/home/claude/.claude/%s/%s", subName, entry.Name())
+				if mountedDsts[entryDst] {
+					debugf("  skip (already mounted): %s", entryDst)
+					continue
+				}
+				mountedDsts[entryDst] = true
 				debugf("  volume: %s -> %s:ro", entrySrc, entryDst)
 				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", entrySrc, entryDst))
 			}
@@ -595,6 +635,10 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 		}
 	}
 
+	// Mark the container as a sandclaude environment so nested `sandclaude start`
+	// calls can detect they're already inside and skip the docker layer entirely.
+	args = append(args, "-e", "SANDCLAUDE_CONTAINER=1")
+
 	// DinD: signal entrypoint to start inner dockerd and expose ports
 	if sc.dindEnabled {
 		args = append(args, "-e", "DIND_ENABLED=1")
@@ -632,13 +676,24 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 		dockerCmd.Stderr = os.Stderr
 		return dockerCmd.Run()
 	}
-	return sc.startDetached(containerName, args)
+
+	// Detached path: drop -t (PTY allocation fails inside DinD when launched from a
+	// detached tmux pane). -i stays so the container can read from tmux's stdin.
+	// LAUNCH_TMUX=1 inside the container creates its own PTY via an inner tmux session.
+	detachedArgs := make([]string, 0, len(args))
+	for _, a := range args {
+		if a == "-it" {
+			detachedArgs = append(detachedArgs, "-i")
+		} else {
+			detachedArgs = append(detachedArgs, a)
+		}
+	}
+	return sc.startDetached(containerName, detachedArgs)
 }
 
 // startDetached launches the container in a detached host-level tmux session when stdin
-// is not a TTY. tmux provides the PTY that docker -it requires, so the container and
-// anything inside it (including inner tmux + Claude) behaves identically to the
-// interactive path. Returns immediately once the tmux session is created.
+// is not a TTY. The container runs with -i (stdin open) but without -t; LAUNCH_TMUX=1
+// inside the container starts an inner tmux session that provides the PTY for Claude.
 func (sc *SandClaude) startDetached(containerName string, args []string) error {
 	sessionName := strings.ReplaceAll(containerName, "_", "-")
 
@@ -694,16 +749,95 @@ func (sc *SandClaude) ensureImage(imageName string) error {
 	}
 	groupID := strings.TrimSpace(string(groupIDBytes))
 
-	buildCmd := exec.Command("docker", "build",
+	// Build arg list: always set proxy and user IDs.
+	buildArgs := []string{
+		"build",
 		"--build-arg", fmt.Sprintf("USER_ID=%s", userID),
 		"--build-arg", fmt.Sprintf("GROUP_ID=%s", groupID),
-		"-t", imageName,
-		sc.scriptDir,
-	)
+		// Override proxy for build containers: the shell's HTTPS_PROXY points to
+		// 127.0.0.1:3128 (allowlist proxy), but inside a DinD build container that
+		// address is unreachable. 172.18.0.1:3128 is the gateway IP that build
+		// containers can actually reach.
+		"--build-arg", "HTTP_PROXY=http://172.18.0.1:3128",
+		"--build-arg", "HTTPS_PROXY=http://172.18.0.1:3128",
+		"--build-arg", "NO_PROXY=172.18.0.0/16,127.0.0.0/8",
+		// Skip the ~200MB Chromium binary download when the upstream proxy cannot
+		// stream large response bodies (mitmproxy buffers the whole file, which OOMs
+		// or times out). The browser can be installed separately after the image is
+		// running if needed.
+		"--build-arg", "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1",
+	}
+
+	// The allowlist proxy does TLS interception (MITM), so build containers must
+	// trust its CA cert for HTTPS to work. Read the cert and pass it base64-encoded.
+	if certBytes, err := os.ReadFile("/etc/proxy-ca.crt"); err == nil {
+		buildArgs = append(buildArgs,
+			"--build-arg", fmt.Sprintf("PROXY_CA_CERT=%s", base64.StdEncoding.EncodeToString(certBytes)),
+		)
+	}
+
+	buildArgs = append(buildArgs, "-t", imageName, sc.scriptDir)
+	buildCmd := exec.Command("docker", buildArgs...)
 	buildCmd.Stdout = os.Stdout
 	buildCmd.Stderr = os.Stderr
 
 	return buildCmd.Run()
+}
+
+// startDirect launches Claude directly inside the current sandclaude container.
+// Used when sandclaude start is called from within a running sandclaude container
+// (detected via SANDCLAUDE_CONTAINER=1). The proxy, firewall, and workspace are
+// already set up by the outer entrypoint.
+//
+// We run claude directly rather than via launcher.py to avoid launcher.py trying to
+// create a tmux session named "sandclaude" which already exists (it's the outer session).
+func (sc *SandClaude) startDirect(cfg *ProjectConfig) error {
+	log.Println("Running inside sandclaude container — starting Claude directly (no nested Docker)")
+
+	// patch-claude-settings.py must run before Claude starts.
+	patch := exec.Command("python3", "/home/claude/bin/patch-claude-settings.py")
+	patch.Stdout = os.Stdout
+	patch.Stderr = os.Stderr
+	if err := patch.Run(); err != nil {
+		log.Printf("Warning: patch-claude-settings.py failed: %v", err)
+	}
+
+	if stdinIsTTY() {
+		cmd := exec.Command("claude", "--dangerously-skip-permissions")
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if cfg.Workspace != "" {
+			cmd.Dir = cfg.Workspace
+		}
+		return cmd.Run()
+	}
+
+	// No TTY: create a new detached tmux session and run claude directly inside it.
+	// We avoid launcher.py because it would try to create a session named "sandclaude"
+	// which already exists (the outer session we're running in).
+	containerName := "sandclaude_" + filepath.Base(cfg.Workspace)
+	sessionName := strings.ReplaceAll(containerName, "_", "-")
+
+	if exec.Command("tmux", "has-session", "-t", sessionName).Run() == nil {
+		log.Printf("Killing existing tmux session '%s'", sessionName)
+		if err := exec.Command("tmux", "kill-session", "-t", sessionName).Run(); err != nil {
+			return fmt.Errorf("failed to kill existing tmux session '%s': %w", sessionName, err)
+		}
+	}
+
+	claudeCmd := "cd " + shellQuote(cfg.Workspace) + " && claude --dangerously-skip-permissions; exec bash"
+	if err := exec.Command("tmux", "new-session", "-d", "-s", sessionName, claudeCmd).Run(); err != nil {
+		return fmt.Errorf("failed to create tmux session '%s': %w", sessionName, err)
+	}
+
+	sc.detachedSession = sessionName
+
+	fmt.Printf("\nClaude started in tmux session: %s\n\n", sessionName)
+	fmt.Printf("  sandclaude capture          # read inner Claude output\n")
+	fmt.Printf("  sandclaude send '<prompt>'  # send a prompt to inner Claude\n")
+	fmt.Printf("  sandclaude attach           # attach interactively\n\n")
+	return nil
 }
 
 // Run starts the full sandclaude environment
@@ -722,10 +856,22 @@ func (sc *SandClaude) Run(keepDevfiles bool) error {
 		return fmt.Errorf("workspace not found: %s", cfg.Workspace)
 	}
 
+	// If we're already inside a sandclaude container, skip docker entirely.
+	// The proxy, firewall, and workspace are set up by the outer entrypoint.
+	if os.Getenv("SANDCLAUDE_CONTAINER") == "1" {
+		return sc.startDirect(cfg)
+	}
+
 	// Check if DinD is enabled (unless --disable-dind was passed)
 	if !sc.disableDind && cfg.DindEnabled {
 		sc.dindEnabled = true
 		sc.dindPorts = cfg.DindPorts
+	}
+
+	// Build the image before starting the proxy — the proxy intercepts HTTPS during
+	// docker build and presents its own cert, which the build's curl won't trust yet.
+	if err := sc.ensureImage("sandclaude-stable"); err != nil {
+		return err
 	}
 
 	if cfg.ProxyEnabled {
