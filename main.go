@@ -63,6 +63,30 @@ type SandClaude struct {
 	disableDind                 bool
 	dindEnabled                 bool
 	dindPorts                   []string
+	detachedSession             string // non-empty when container launched in background tmux session
+}
+
+// stdinIsTTY reports whether os.Stdin is an interactive terminal.
+func stdinIsTTY() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}
+
+// shellQuote returns a single-quoted, shell-safe version of s (equivalent to Python's shlex.quote).
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// buildShellCommand returns a single shell command string with all parts properly quoted.
+func buildShellCommand(parts []string) string {
+	quoted := make([]string, len(parts))
+	for i, p := range parts {
+		quoted[i] = shellQuote(p)
+	}
+	return strings.Join(quoted, " ")
 }
 
 func NewSandClaude() (*SandClaude, error) {
@@ -601,13 +625,46 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 
 	debugf("Docker command: docker %s", strings.Join(args, " "))
 
-	// Start docker
-	dockerCmd := exec.Command("docker", args...)
-	dockerCmd.Stdin = os.Stdin
-	dockerCmd.Stdout = os.Stdout
-	dockerCmd.Stderr = os.Stderr
+	if stdinIsTTY() {
+		dockerCmd := exec.Command("docker", args...)
+		dockerCmd.Stdin = os.Stdin
+		dockerCmd.Stdout = os.Stdout
+		dockerCmd.Stderr = os.Stderr
+		return dockerCmd.Run()
+	}
+	return sc.startDetached(containerName, args)
+}
 
-	return dockerCmd.Run()
+// startDetached launches the container in a detached host-level tmux session when stdin
+// is not a TTY. tmux provides the PTY that docker -it requires, so the container and
+// anything inside it (including inner tmux + Claude) behaves identically to the
+// interactive path. Returns immediately once the tmux session is created.
+func (sc *SandClaude) startDetached(containerName string, args []string) error {
+	sessionName := strings.ReplaceAll(containerName, "_", "-")
+
+	if exec.Command("tmux", "has-session", "-t", sessionName).Run() == nil {
+		log.Printf("Killing existing tmux session '%s'", sessionName)
+		if err := exec.Command("tmux", "kill-session", "-t", sessionName).Run(); err != nil {
+			return fmt.Errorf("failed to kill existing tmux session '%s': %w", sessionName, err)
+		}
+	}
+
+	parts := append([]string{"docker"}, args...)
+	dockerCmdStr := buildShellCommand(parts)
+	debugf("Detached tmux command: tmux new-session -d -s %s %q", sessionName, dockerCmdStr)
+
+	if err := exec.Command("tmux", "new-session", "-d", "-s", sessionName, dockerCmdStr).Run(); err != nil {
+		return fmt.Errorf("failed to create tmux session '%s': %w\n\nIs tmux installed?", sessionName, err)
+	}
+
+	sc.detachedSession = sessionName
+
+	fmt.Printf("\nsandclaude started in tmux session: %s\n\n", sessionName)
+	fmt.Printf("  sandclaude capture          # read inner Claude output\n")
+	fmt.Printf("  sandclaude send '<prompt>'  # send a prompt to inner Claude\n")
+	fmt.Printf("  sandclaude attach           # attach interactively\n")
+	fmt.Printf("  docker ps --filter name=%s\n\n", containerName)
+	return nil
 }
 
 // ensureImage builds the Docker image if it doesn't exist
@@ -692,7 +749,11 @@ func (sc *SandClaude) Run(keepDevfiles bool) error {
 	err = sc.startDocker(cfg, keepDevfiles)
 
 	if sc.proxyEnabled {
-		sc.stopProxy()
+		if sc.detachedSession == "" {
+			sc.stopProxy()
+		} else {
+			log.Printf("Note: mitmproxy is still running alongside the detached container. Stop it manually when done.")
+		}
 	}
 
 	return err
@@ -1572,6 +1633,65 @@ func cmdCopy(target string) error {
 	return nil
 }
 
+// detachedSessionName derives the tmux session name for the current project's container.
+func detachedSessionName() (session string, container string, err error) {
+	cfg, err := readConfig(getProjectDir())
+	if err != nil {
+		return "", "", fmt.Errorf("no project configured — run sandclaude init first")
+	}
+	container = "sandclaude_" + filepath.Base(cfg.Workspace)
+	session = strings.ReplaceAll(container, "_", "-")
+	return session, container, nil
+}
+
+// cmdCapture prints the last 100 lines of the detached session's terminal output.
+func cmdCapture() error {
+	session, _, err := detachedSessionName()
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("tmux", "capture-pane", "-t", session, "-p", "-S", "-100")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to capture pane from session '%s': %w\n\nIs the session running? Check: tmux list-sessions", session, err)
+	}
+	return nil
+}
+
+// cmdSend sends a prompt to the inner Claude running in the detached session.
+func cmdSend(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: sandclaude send <prompt>")
+	}
+	session, _, err := detachedSessionName()
+	if err != nil {
+		return err
+	}
+	prompt := strings.Join(args, " ")
+	cmd := exec.Command("tmux", "send-keys", "-t", session, prompt, "Enter")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to send keys to session '%s': %w", session, err)
+	}
+	log.Printf("Sent to %s: %s", session, prompt)
+	return nil
+}
+
+// cmdAttach attaches the current terminal to the detached session for interactive viewing.
+func cmdAttach() error {
+	session, _, err := detachedSessionName()
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("tmux", "attach-session", "-t", session)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
 // usage prints help information
 func usage() {
 	fmt.Println("sandclaude - Sandboxed Claude Code with network firewall")
@@ -1599,6 +1719,9 @@ func usage() {
 	fmt.Println("  rebuild [--destroy] [--destroy-inner]   Force rebuild container image")
 	fmt.Println("    --destroy        Remove existing outer image/container first (full rebuild from scratch, implies --no-cache)")
 	fmt.Println("    --destroy-inner  Wipe inner docker data (project/dind-data/): all inner images and volumes")
+	fmt.Println("  capture                  Print inner Claude output (when started without a TTY)")
+	fmt.Println("  send <prompt>            Send a prompt to inner Claude in the detached session")
+	fmt.Println("  attach                   Attach interactively to the detached session")
 	fmt.Println("  help                     Show this help")
 	fmt.Println()
 	fmt.Println("Examples:")
@@ -1610,6 +1733,9 @@ func usage() {
 	fmt.Println("  sandclaude start --passthrough-firewall-and-write   # Allow all, log unknowns to allowed-domains.txt")
 	fmt.Println("  sandclaude copy ~/my-project       # Copy files to integrate into another project")
 	fmt.Println("  sandclaude shell                   # Debug container")
+	fmt.Println("  sandclaude capture                 # Read inner Claude output (non-interactive start)")
+	fmt.Println("  sandclaude send 'fix the bug'      # Send a prompt to inner Claude")
+	fmt.Println("  sandclaude attach                  # Attach interactively to the running session")
 	fmt.Println()
 	fmt.Println("Project config lives in ./project/ (relative to current working directory)")
 	fmt.Println("  ./project/config.json          — workspace, proxy, dind settings")
@@ -1691,6 +1817,15 @@ func main() {
 			target = os.Args[2]
 		}
 		err = cmdCopy(target)
+
+	case "capture":
+		err = cmdCapture()
+
+	case "send":
+		err = cmdSend(os.Args[2:])
+
+	case "attach":
+		err = cmdAttach()
 
 	case "help", "--help", "-h":
 		usage()
