@@ -64,19 +64,8 @@ type SandClaude struct {
 	disableDind                 bool
 	dindEnabled                 bool
 	dindPorts                   []string
+	devMode                     bool   // set by `dev`: launch detached in tmux for closed-loop development
 	detachedSession             string // non-empty when container launched in background tmux session
-}
-
-// stdinIsTTY reports whether os.Stdin is an interactive terminal.
-// Uses TIOCGWINSZ ioctl to distinguish real terminals from character devices
-// like /dev/null that would otherwise fool a simple mode-bit check.
-func stdinIsTTY() bool {
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL,
-		os.Stdin.Fd(),
-		uintptr(syscall.TIOCGWINSZ),
-		uintptr(0),
-	)
-	return errno == 0
 }
 
 // shellQuote returns a single-quoted, shell-safe version of s (equivalent to Python's shlex.quote).
@@ -669,31 +658,28 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 
 	debugf("Docker command: docker %s", strings.Join(args, " "))
 
-	if stdinIsTTY() {
-		dockerCmd := exec.Command("docker", args...)
-		dockerCmd.Stdin = os.Stdin
-		dockerCmd.Stdout = os.Stdout
-		dockerCmd.Stderr = os.Stderr
-		return dockerCmd.Run()
+	// `dev` launches the container in a detached host-level tmux session for closed-loop
+	// development (observe/drive via capture/send/attach). Plain `start` always runs
+	// interactively, attached to the current terminal.
+	if sc.devMode {
+		// Keep -it: the host tmux session provides a real PTY (the container sees
+		// /dev/pts/0), so the interactive container — including LAUNCH_TMUX=1's inner
+		// tmux attach — works exactly as in the attached path. capture/send/attach then
+		// drive it via the host session.
+		return sc.startDetached(containerName, args)
 	}
 
-	// Detached path: drop -t (PTY allocation fails inside DinD when launched from a
-	// detached tmux pane). -i stays so the container can read from tmux's stdin.
-	// LAUNCH_TMUX=1 inside the container creates its own PTY via an inner tmux session.
-	detachedArgs := make([]string, 0, len(args))
-	for _, a := range args {
-		if a == "-it" {
-			detachedArgs = append(detachedArgs, "-i")
-		} else {
-			detachedArgs = append(detachedArgs, a)
-		}
-	}
-	return sc.startDetached(containerName, detachedArgs)
+	dockerCmd := exec.Command("docker", args...)
+	dockerCmd.Stdin = os.Stdin
+	dockerCmd.Stdout = os.Stdout
+	dockerCmd.Stderr = os.Stderr
+	return dockerCmd.Run()
 }
 
-// startDetached launches the container in a detached host-level tmux session when stdin
-// is not a TTY. The container runs with -i (stdin open) but without -t; LAUNCH_TMUX=1
-// inside the container starts an inner tmux session that provides the PTY for Claude.
+// startDetached launches the container (with -it) in a detached host-level tmux session
+// for closed-loop development (the `dev` command). The host tmux owns the PTY, so the
+// interactive container behaves identically to the attached path; capture/send/attach
+// then observe and drive the inner Claude.
 func (sc *SandClaude) startDetached(containerName string, args []string) error {
 	sessionName := strings.ReplaceAll(containerName, "_", "-")
 
@@ -802,7 +788,7 @@ func (sc *SandClaude) startDirect(cfg *ProjectConfig) error {
 		log.Printf("Warning: patch-claude-settings.py failed: %v", err)
 	}
 
-	if stdinIsTTY() {
+	if !sc.devMode {
 		cmd := exec.Command("claude", "--dangerously-skip-permissions")
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
@@ -813,7 +799,7 @@ func (sc *SandClaude) startDirect(cfg *ProjectConfig) error {
 		return cmd.Run()
 	}
 
-	// No TTY: create a new detached tmux session and run claude directly inside it.
+	// dev: create a new detached tmux session and run claude directly inside it.
 	// We avoid launcher.py because it would try to create a session named "sandclaude"
 	// which already exists (the outer session we're running in).
 	containerName := "sandclaude_" + filepath.Base(cfg.Workspace)
@@ -1217,8 +1203,18 @@ func cmdInit() error {
 	return nil
 }
 
-// cmdStart starts Claude Code
+// cmdStart starts Claude Code interactively, attached to the current terminal.
 func cmdStart(args []string) error {
+	return runStart(args, false)
+}
+
+// cmdDev starts Claude Code in a detached host tmux session for closed-loop development:
+// the container runs in the background and is observed/driven via capture/send/attach.
+func cmdDev(args []string) error {
+	return runStart(args, true)
+}
+
+func runStart(args []string, devMode bool) error {
 	disableFirewall := false
 	passthroughFirewallAndWrite := false
 	disableDind := false
@@ -1247,6 +1243,7 @@ func cmdStart(args []string) error {
 	sc.disableFirewall = disableFirewall
 	sc.passthroughFirewallAndWrite = passthroughFirewallAndWrite
 	sc.disableDind = disableDind
+	sc.devMode = devMode
 	return sc.Run(keepDevfiles)
 }
 
@@ -1815,12 +1812,27 @@ func cmdSend(args []string) error {
 		return err
 	}
 	prompt := strings.Join(args, " ")
-	cmd := exec.Command("tmux", "send-keys", "-t", session, prompt, "Enter")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to send keys to session '%s': %w", session, err)
+
+	// Send the prompt text and the Enter key as two separate send-keys calls. Claude's
+	// TUI treats a trailing Enter in the same call as a literal newline in the input box
+	// (the prompt is typed but never submitted); a separate Enter event submits it.
+	typeCmd := exec.Command("tmux", "send-keys", "-t", session, "--", prompt)
+	typeCmd.Stdout = os.Stdout
+	typeCmd.Stderr = os.Stderr
+	if err := typeCmd.Run(); err != nil {
+		return fmt.Errorf("failed to type prompt into session '%s': %w", session, err)
 	}
+
+	// Brief pause so the TUI registers the typed text before the submit key.
+	time.Sleep(300 * time.Millisecond)
+
+	enterCmd := exec.Command("tmux", "send-keys", "-t", session, "Enter")
+	enterCmd.Stdout = os.Stdout
+	enterCmd.Stderr = os.Stderr
+	if err := enterCmd.Run(); err != nil {
+		return fmt.Errorf("failed to submit prompt to session '%s': %w", session, err)
+	}
+
 	log.Printf("Sent to %s: %s", session, prompt)
 	return nil
 }
@@ -1855,6 +1867,8 @@ func usage() {
 	fmt.Println("    --passthrough-firewall-and-write   Keep proxy but allow all domains; write unknown ones to allowed-domains.txt")
 	fmt.Println("    --disable-dind                 Skip inner dockerd startup")
 	fmt.Println("    --keep-devfiles                Do not hide .devcontainer from the container (skip tmpfs overlay)")
+	fmt.Println("  dev [flags]              Start detached in a tmux session for closed-loop development")
+	fmt.Println("                           (same flags as start; observe/drive with capture/send/attach)")
 	fmt.Println("  list                     Show ./project/ configuration")
 	fmt.Println("  remove                   Remove ./project/ directory after confirmation")
 	fmt.Println("  firewall-reload          Encrypt allowed-domains.txt and SIGHUP proxy")
@@ -1872,7 +1886,8 @@ func usage() {
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  sandclaude init                    # Initialize ./project/ in this repo")
-	fmt.Println("  sandclaude start                   # Start Claude Code")
+	fmt.Println("  sandclaude start                   # Start Claude Code (interactive)")
+	fmt.Println("  sandclaude dev                     # Start detached in tmux for closed-loop development")
 	fmt.Println("  sandclaude start --debug           # Start with verbose debug logging")
 	fmt.Println("  sandclaude --debug start           # Same (--debug works in any position)")
 	fmt.Println("  sandclaude start --disable-firewall              # Start without firewall")
@@ -1925,6 +1940,9 @@ func main() {
 
 	case "start":
 		err = cmdStart(os.Args[2:])
+
+	case "dev":
+		err = cmdDev(os.Args[2:])
 
 	case "list":
 		err = cmdList()
