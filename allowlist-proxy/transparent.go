@@ -197,17 +197,16 @@ func (p *ProxyHandler) handleTransparent(client net.Conn) {
 	<-done
 }
 
-// peekLen bounds a peek request to the reader's buffer size.
-func peekLen(br *bufio.Reader, want int) int {
-	if want < br.Size() {
-		return want
-	}
-	return br.Size()
-}
 
 // sniffHost peeks the buffered reader and returns a hostname from either the TLS
 // ClientHello SNI (port 443 / TLS handshake) or the HTTP Host header. Returns ""
 // if neither is found. Never consumes bytes from br.
+//
+// IMPORTANT: bufio.Peek(n) blocks until it has read exactly n bytes (or EOF). We
+// must therefore never peek more bytes than the client will actually send, or the
+// connection stalls until it times out. For TLS we read the record length from the
+// 5-byte header and peek exactly that record; for HTTP we peek incrementally until
+// the end of the header block.
 func sniffHost(br *bufio.Reader, port string) string {
 	// A TLS handshake record starts with 0x16 (handshake content type).
 	first, err := br.Peek(1)
@@ -215,17 +214,43 @@ func sniffHost(br *bufio.Reader, port string) string {
 		return ""
 	}
 	if first[0] == 0x16 {
-		// Peek enough for a typical ClientHello; SNI lives early in the record.
-		buf, _ := br.Peek(peekLen(br, 4096))
-		if sni := parseSNI(buf); sni != "" {
-			return sni
+		// TLS record header is 5 bytes: type(1) version(2) length(2).
+		hdr, err := br.Peek(5)
+		if err != nil || len(hdr) < 5 {
+			return ""
 		}
-		return ""
+		recLen := int(hdr[3])<<8 | int(hdr[4])
+		want := 5 + recLen
+		if want > br.Size() {
+			want = br.Size() // ClientHello SNI lives early; cap at buffer size
+		}
+		buf, _ := br.Peek(want) // exactly the record's bytes — does not over-block
+		return parseSNI(buf)
 	}
 
-	// Plain HTTP: read the Host header from the request line region.
-	buf, _ := br.Peek(min(br.Size(), 4096))
+	// Plain HTTP: peek incrementally until the end of the request headers (\r\n\r\n)
+	// or the buffer fills, so we never block waiting for bytes that won't arrive.
+	for n := 64; n <= br.Size(); n += 64 {
+		buf, err := br.Peek(n)
+		if i := indexCRLFCRLF(buf); i >= 0 {
+			return parseHTTPHost(buf[:i])
+		}
+		if err != nil { // hit EOF / can't get more — parse what we have
+			return parseHTTPHost(buf)
+		}
+	}
+	buf, _ := br.Peek(br.Size())
 	return parseHTTPHost(buf)
+}
+
+// indexCRLFCRLF returns the index of the end of an HTTP header block, or -1.
+func indexCRLFCRLF(b []byte) int {
+	for i := 0; i+3 < len(b); i++ {
+		if b[i] == '\r' && b[i+1] == '\n' && b[i+2] == '\r' && b[i+3] == '\n' {
+			return i
+		}
+	}
+	return -1
 }
 
 // parseSNI extracts the SNI server name from a TLS ClientHello record.

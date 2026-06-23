@@ -334,6 +334,15 @@ DOCKERCFG
     sudo iptables -A FORWARD -s 172.16.0.0/12 -j ACCEPT
     sudo iptables -A FORWARD -d 172.16.0.0/12 -j ACCEPT
 
+    # MASQUERADE inner-container egress that is NOT redirected to the proxy —
+    # specifically DNS (UDP 53) to the external resolver. Inner containers now do
+    # their own DNS resolution (no proxy env injected), so their UDP queries must be
+    # SNAT'd to the outer container's IP to reach the resolver and have replies
+    # routed back. (TCP to external hosts is handled by the PREROUTING REDIRECT
+    # above and never leaves via this path.) daemon.json sets ip-masq=false, so we
+    # add it here, scoped to the inner subnet and non-inner destinations.
+    sudo iptables -t nat -A POSTROUTING -s 172.18.0.0/16 ! -d 172.16.0.0/12 -j MASQUERADE
+
     echo "✅ Inner container proxy enforcement applied (172.16.0.0/12 -> :$DIND_TRANSPARENT_PORT)"
     echo "   DOCKER_HOST=${DOCKER_HOST}"
     echo ""

@@ -35,6 +35,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     vim \
     less \
     iptables \
+    iproute2 \
+    libcap2-bin \
+    tcpdump \
     tmux \
     && rm -rf /var/lib/apt/lists/*
 
