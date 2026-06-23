@@ -340,8 +340,14 @@ DOCKERCFG
     # SNAT'd to the outer container's IP to reach the resolver and have replies
     # routed back. (TCP to external hosts is handled by the PREROUTING REDIRECT
     # above and never leaves via this path.) daemon.json sets ip-masq=false, so we
-    # add it here, scoped to the inner subnet and non-inner destinations.
-    sudo iptables -t nat -A POSTROUTING -s 172.18.0.0/16 ! -d 172.16.0.0/12 -j MASQUERADE
+    # add it here.
+    #
+    # IMPORTANT: scope this to the SAME range as the REDIRECT (172.16.0.0/12), not
+    # just the default bridge (172.18.0.0/16). docker-compose apps create their own
+    # networks (172.19.x, 172.20.x, …); a container on one of those still gets its
+    # TCP redirected, but without masquerade its DNS replies can't route back, so it
+    # fails with "can't reach the network" — which looks like the proxy is broken.
+    sudo iptables -t nat -A POSTROUTING -s 172.16.0.0/12 ! -d 172.16.0.0/12 -j MASQUERADE
 
     echo "✅ Inner container proxy enforcement applied (172.16.0.0/12 -> :$DIND_TRANSPARENT_PORT)"
     echo "   DOCKER_HOST=${DOCKER_HOST}"
