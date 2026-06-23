@@ -7,6 +7,9 @@
 secrets/
 credentials/
 
+# test apps used in dev
+test-apps/
+
 # Don't believe we want these in version control
 .claude/worktrees
 
