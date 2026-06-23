@@ -163,9 +163,10 @@ func (al *Allowlist) Allowed(host string) bool {
 // ----------------------------------------------------------------------------
 
 type ProxyHandler struct {
-	allowlist      *Allowlist
-	upstream       *url.URL // nil = direct
-	passthroughLog string   // if set, allow unknown domains and append them here
+	allowlist       *Allowlist
+	upstream        *url.URL // nil = direct
+	passthroughLog  string   // if set, allow unknown domains and append them here
+	transparentPort string   // listen port of the transparent listener (for REDIRECT vs TPROXY detection)
 }
 
 // appendDomain appends a domain to the passthrough log file if not already present.
@@ -318,24 +319,55 @@ func (p *ProxyHandler) dialTarget(host string) (net.Conn, error) {
 	// IPv4 and an IPv6 address in /etc/hosts, but mitmproxy on the host listens on
 	// IPv4 only; without this, Go's dual-stack dialer may pick the IPv6 address and
 	// the connection fails, which surfaces as the client getting refused.
-	log.Printf("dialTarget: dialing upstream %s for %s", p.upstream.Host, host)
 	conn, err := net.Dial("tcp4", p.upstream.Host)
 	if err != nil {
 		return nil, fmt.Errorf("upstream dial failed: %v", err)
 	}
-	log.Printf("dialTarget: upstream connected, sending CONNECT %s", host)
 	fmt.Fprintf(conn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", host, host)
-	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
-	log.Printf("dialTarget: CONNECT response read (err=%v)", err)
-	if err != nil || resp.StatusCode != http.StatusOK {
+	// Read the CONNECT response byte-by-byte up to the end of headers (\r\n\r\n).
+	// We must NOT use a buffered reader here: it would consume bytes belonging to
+	// the tunneled stream that follows the response, and those bytes are then lost
+	// when we splice the raw conn — which stalls the tunneled TLS handshake.
+	status, err := readHTTPStatusLine(conn)
+	if err != nil {
 		conn.Close()
-		msg := "upstream CONNECT failed"
-		if resp != nil {
-			msg = resp.Status
-		}
-		return nil, errors.New(msg)
+		return nil, fmt.Errorf("upstream CONNECT response: %v", err)
+	}
+	if !strings.Contains(status, " 200 ") {
+		conn.Close()
+		return nil, fmt.Errorf("upstream CONNECT failed: %s", strings.TrimSpace(status))
 	}
 	return conn, nil
+}
+
+// readHTTPStatusLine reads an HTTP response from conn one byte at a time until the
+// end of the header block (\r\n\r\n), returning the status line. Reading byte by
+// byte guarantees we do not consume any bytes of the tunneled stream that follows.
+func readHTTPStatusLine(conn net.Conn) (string, error) {
+	var buf []byte
+	one := make([]byte, 1)
+	for {
+		n, err := conn.Read(one)
+		if n > 0 {
+			buf = append(buf, one[0])
+			if len(buf) >= 4 && buf[len(buf)-4] == '\r' && buf[len(buf)-3] == '\n' &&
+				buf[len(buf)-2] == '\r' && buf[len(buf)-1] == '\n' {
+				break
+			}
+			// Guard against an unbounded/garbage response.
+			if len(buf) > 8192 {
+				return "", errors.New("response headers too large")
+			}
+		}
+		if err != nil {
+			return "", err
+		}
+	}
+	// Status line is the first CRLF-terminated line.
+	if i := strings.Index(string(buf), "\r\n"); i >= 0 {
+		return string(buf[:i]), nil
+	}
+	return string(buf), nil
 }
 
 // ----------------------------------------------------------------------------

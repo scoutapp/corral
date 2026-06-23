@@ -11,6 +11,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -66,15 +67,37 @@ func originalDst(conn *net.TCPConn) (string, error) {
 }
 
 // serveTransparent runs the transparent-listener accept loop.
+//
+// The socket is bound IPv4-only with IP_TRANSPARENT set. IP_TRANSPARENT lets the
+// socket accept connections whose original destination is a non-local address
+// (required for TPROXY) and makes the accepted conn's LocalAddr() report that
+// original destination directly. It is also harmless for plain REDIRECT, where we
+// fall back to SO_ORIGINAL_DST.
 func (p *ProxyHandler) serveTransparent(listen string) error {
-	// Bind IPv4 explicitly. iptables REDIRECT delivers IPv4 packets to
-	// 127.0.0.1:<port>; a dual-stack (IPv6 "::") socket may not receive them,
-	// so the connection silently never reaches Accept.
-	ln, err := net.Listen("tcp4", listen)
+	lc := net.ListenConfig{
+		Control: func(network, address string, c syscall.RawConn) error {
+			// IP_TRANSPARENT (=19) is required only for TPROXY-style capture and
+			// needs CAP_NET_ADMIN. It is harmless for plain iptables REDIRECT, where
+			// we recover the destination via SO_ORIGINAL_DST instead. Best-effort:
+			// if the capability is absent, log and continue (REDIRECT still works).
+			return c.Control(func(fd uintptr) {
+				if err := syscall.SetsockoptInt(int(fd), syscall.SOL_IP, syscall.IP_TRANSPARENT, 1); err != nil {
+					log.Printf("transparent: IP_TRANSPARENT not set (%v) — REDIRECT capture still works, TPROXY will not", err)
+				}
+			})
+		},
+	}
+	ln, err := lc.Listen(context.Background(), "tcp4", listen)
 	if err != nil {
 		return err
 	}
-	log.Printf("allowlist-proxy transparent listener on %s", listen)
+	// Remember our own listen port so the handler can tell a REDIRECTed connection
+	// (LocalAddr port == our port → use SO_ORIGINAL_DST) from a TPROXY one
+	// (LocalAddr is the real destination, any port).
+	if _, portStr, perr := net.SplitHostPort(ln.Addr().String()); perr == nil {
+		p.transparentPort = portStr
+	}
+	log.Printf("allowlist-proxy transparent listener on %s (IP_TRANSPARENT)", listen)
 	for {
 		c, err := ln.Accept()
 		if err != nil {
@@ -94,10 +117,22 @@ func (p *ProxyHandler) handleTransparent(client net.Conn) {
 		return
 	}
 
-	origDst, err := originalDst(tcp)
-	if err != nil {
-		log.Printf("transparent: original-dst failed: %v", err)
-		return
+	// With TPROXY + IP_TRANSPARENT, the accepted conn's LocalAddr() IS the original
+	// destination (the kernel did not rewrite it). With plain REDIRECT, the kernel
+	// rewrote LocalAddr to our own listener (IP:transparentPort), so we must recover
+	// the original via SO_ORIGINAL_DST. Distinguish by the LocalAddr port: if it
+	// equals our listen port, it was REDIRECTed.
+	var origDst string
+	la, _ := client.LocalAddr().(*net.TCPAddr)
+	if la != nil && fmt.Sprintf("%d", la.Port) != p.transparentPort {
+		origDst = la.String() // TPROXY: real destination
+	} else {
+		d, err := originalDst(tcp) // REDIRECT: recover pre-NAT destination
+		if err != nil {
+			log.Printf("transparent: original-dst failed: %v", err)
+			return
+		}
+		origDst = d
 	}
 	origIP, origPort, _ := net.SplitHostPort(origDst)
 
@@ -127,7 +162,6 @@ func (p *ProxyHandler) handleTransparent(client net.Conn) {
 		log.Printf("ALLOWED  %s (transparent)", checkHost)
 	}
 
-	log.Printf("transparent: origDst=%s sni=%q → dialHost=%s", origDst, host, dialHost)
 	target, err := p.dialTarget(dialHost)
 	if err != nil {
 		log.Printf("transparent: dial %s failed: %v", dialHost, err)
@@ -135,12 +169,31 @@ func (p *ProxyHandler) handleTransparent(client net.Conn) {
 	}
 	defer target.Close()
 
-	// Splice. br holds the bytes already peeked by sniffHost (Peek does not
-	// consume), so copying from br forwards the ClientHello/request and everything
-	// after it — no manual replay needed (that would double-send the peeked bytes).
+	// Splice both directions and wait for BOTH to finish. br holds the bytes
+	// already peeked by sniffHost (Peek does not consume), so copying from br
+	// forwards the ClientHello/request and everything after it.
+	//
+	// Critical: wait for both directions, not just one. When a direction ends we
+	// half-close the peer's write side (CloseWrite) so the peer sees EOF and can
+	// finish, but the other direction keeps flowing. Waiting on only one copy and
+	// then closing both (the naive pattern) tears down the still-active reverse
+	// direction mid-handshake — which stalls the tunneled TLS.
 	done := make(chan struct{}, 2)
-	go func() { io.Copy(target, br); done <- struct{}{} }()
-	go func() { io.Copy(client, target); done <- struct{}{} }()
+	go func() {
+		io.Copy(target, br)
+		if c, ok := target.(*net.TCPConn); ok {
+			c.CloseWrite()
+		}
+		done <- struct{}{}
+	}()
+	go func() {
+		io.Copy(client, target)
+		if c, ok := client.(*net.TCPConn); ok {
+			c.CloseWrite()
+		}
+		done <- struct{}{}
+	}()
+	<-done
 	<-done
 }
 

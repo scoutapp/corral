@@ -160,12 +160,18 @@ if [ -z "$DISABLE_FIREWALL" ]; then
         exit 1
     fi
 
-    # NOTE: HTTP_PROXY/HTTPS_PROXY are intentionally NOT exported. Outer-container
-    # egress is captured transparently by the nat OUTPUT REDIRECT below, so no
-    # client needs to know about the proxy. We still clear NO_PROXY/no_proxy in
-    # case the host environment set them — they must not cause a tool to think it
-    # should bypass anything (capture happens at the kernel regardless).
-    unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy
+    # Route the outer container's own processes (Claude, curl, etc.) through the
+    # allowlist proxy via explicit env vars. Transparent capture of *outer*
+    # (locally-generated) traffic via nat OUTPUT REDIRECT / TPROXY does not work
+    # reliably inside Docker Desktop's LinuxKit VM (REDIRECT-to-loopback is not
+    # delivered; the OUTPUT→lo TPROXY reroute does not complete), so we keep the
+    # explicit env here. This is ONE place set once — not per-app config. Inner
+    # DinD containers ARE captured transparently (PREROUTING, see below) and need
+    # no env vars. Export both cases; clear NO_PROXY so nothing bypasses.
+    export HTTP_PROXY=http://127.0.0.1:3128
+    export HTTPS_PROXY=http://127.0.0.1:3128
+    export http_proxy=http://127.0.0.1:3128
+    export https_proxy=http://127.0.0.1:3128
     export NO_PROXY=""
     export no_proxy=""
 
@@ -199,33 +205,13 @@ if [ -z "$DISABLE_FIREWALL" ]; then
         echo "⚠️  WARNING: iptables not available — no_proxy bypass is possible"
     fi
 
-    # Transparent capture for the outer container's own processes (Site A).
-    # REDIRECT all non-proxy TCP egress to the transparent listener so no client
-    # needs HTTP_PROXY env vars. Evaluated in nat OUTPUT (before filter OUTPUT):
-    #   - proxyuser's own egress is exempt (RETURN) so its upstream connection to
-    #     mitmproxy is NOT redirected back into the listener (would loop).
-    #   - loopback is exempt so connections to the proxy itself pass through.
-    #   - DinD bridge traffic is exempt (inner-container capture is handled by the
-    #     separate PREROUTING rule below).
-    # Redirected packets become loopback-destined and are accepted by the filter
-    # OUTPUT "-o lo ACCEPT" rule above; the REJECT default-deny still applies to
-    # anything that somehow dodges the redirect, so the lockdown is intact.
-    # REDIRECT in nat OUTPUT rewrites the destination to 127.0.0.1:<port>. The
-    # kernel refuses to route locally-destined packets that arrive via a non-loopback
-    # path unless route_localnet is enabled on the interface. Without this, captured
-    # connections get "connection refused". (PREROUTING REDIRECT does not need it.)
-    sudo sysctl -w net.ipv4.conf.all.route_localnet=1 > /dev/null 2>&1 || true
-
-    echo "Applying transparent egress capture (nat OUTPUT → :$TRANSPARENT_PORT)..."
-    if sudo iptables -t nat -F OUTPUT 2>/dev/null && \
-       sudo iptables -t nat -A OUTPUT -m owner --uid-owner proxyuser -j RETURN && \
-       sudo iptables -t nat -A OUTPUT -o lo -j RETURN && \
-       sudo iptables -t nat -A OUTPUT -p tcp -d 172.16.0.0/12 -j RETURN && \
-       sudo iptables -t nat -A OUTPUT -p tcp -j REDIRECT --to-port "$TRANSPARENT_PORT"; then
-        echo "✅ transparent capture applied — outer processes need no proxy env vars"
-    else
-        echo "⚠️  WARNING: nat OUTPUT redirect not applied — falling back to HTTP_PROXY env vars"
-    fi
+    # NOTE: there is intentionally NO nat OUTPUT REDIRECT for the outer container's
+    # own traffic. Transparent capture of locally-generated packets does not work
+    # reliably in Docker Desktop's LinuxKit VM (REDIRECT to 127.0.0.1 from OUTPUT is
+    # not delivered to the listener even with route_localnet; the OUTPUT→lo TPROXY
+    # reroute marks/routes packets but never completes). Outer processes therefore
+    # use the explicit HTTP_PROXY env vars set above, enforced by the filter OUTPUT
+    # REJECT. Inner DinD containers are captured transparently via PREROUTING below.
 
     echo ""
     echo "Proxy log: $PROXY_LOG"
@@ -248,9 +234,11 @@ if [ -n "$DIND_ENABLED" ]; then
 
     # Write daemon config
     sudo mkdir -p /etc/docker-dind
-    # No "proxies" block: inner-container egress is captured transparently by the
-    # PREROUTING REDIRECT (172.16.0.0/12 → transparent listener), so containers
-    # need no HTTP_PROXY env vars injected by the daemon.
+    # NO "proxies" block here on purpose: a daemon.json "proxies" block would inject
+    # HTTP_PROXY env into every inner CONTAINER (defeating transparent capture). The
+    # daemon's OWN pulls are instead proxied via dockerd's process environment
+    # (HTTP_PROXY set when we launch dockerd below) — that affects only the daemon,
+    # not the containers it starts.
     sudo tee /etc/docker-dind/daemon.json > /dev/null <<DAEMONCFG
 {
   "data-root": "${DIND_DATA}",
@@ -279,7 +267,17 @@ DAEMONCFG
         fi
     fi
 
-    sudo dockerd --config-file /etc/docker-dind/daemon.json \
+    # Launch dockerd with HTTP(S)_PROXY in ITS environment so the daemon's own
+    # registry pulls go through the allowlist proxy (the daemon runs in the outer
+    # container, so it reaches the proxy at 127.0.0.1:3128). This proxies only the
+    # daemon, not the containers it starts (those are captured transparently via
+    # PREROUTING). NO_PROXY covers the inner bridge + loopback so intra-DinD and
+    # local API traffic is not proxied.
+    sudo env \
+        HTTP_PROXY=http://127.0.0.1:3128 \
+        HTTPS_PROXY=http://127.0.0.1:3128 \
+        NO_PROXY=172.16.0.0/12,127.0.0.0/8,localhost \
+        dockerd --config-file /etc/docker-dind/daemon.json \
         > "$HOME/logs/dockerd.log" 2>&1 &
     DOCKERD_PID=$!
 
