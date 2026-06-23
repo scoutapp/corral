@@ -149,6 +149,10 @@ COPY --chown=claude:claude proxy-addon.py /usr/local/bin/proxy-addon.py
 COPY --chown=claude:claude .claude/skills/ /home/claude/.claude/skills/
 COPY --chown=claude:claude bin/ /home/claude/bin/
 RUN chmod +x /home/claude/launcher.py /home/claude/entrypoint.sh /usr/local/bin/proxy-addon.py \
-    /home/claude/bin/cert-injector
+    /home/claude/bin/cert-injector /home/claude/bin/docker
+
+# Put ~/bin first in PATH so the `docker` wrapper (CA injection for builds)
+# shadows /usr/bin/docker. The wrapper calls the real binary at /usr/bin/docker.
+ENV PATH="/home/claude/bin:${PATH}"
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/home/claude/entrypoint.sh"]

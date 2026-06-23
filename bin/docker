@@ -1,0 +1,133 @@
+#!/bin/bash
+# docker wrapper: transparently make `docker build` trust the mitmproxy CA so
+# in-build network steps (npm/pip/gem/go/mix/apt installs over HTTPS through the
+# MITM proxy) succeed WITHOUT editing the app's Dockerfile.
+#
+# Why a wrapper: BuildKit has no supported way to inject a CA into build RUN
+# steps via builder config (buildkitd.toml CA is registry-only). And the OS
+# trust store alone is not enough — Node (BoringSSL), Python (certifi), etc. ship
+# their own CA bundles and ignore /etc/ssl/certs. So for each `FROM` stage we
+# both install the CA into the OS store AND point every major tool's CA override
+# env var at it.
+#
+# The original Dockerfile on disk is never modified. We rewrite a COPY in memory,
+# build from a temp file, and clean up. All non-build docker subcommands pass
+# straight through to the real docker binary.
+
+set -euo pipefail
+
+REAL_DOCKER=/usr/bin/docker
+CA_SRC=/etc/proxy-ca.crt   # mitmproxy CA, placed here by entrypoint.sh
+
+# Only intercept `build` and `buildx build`. Everything else → real docker.
+is_build=0
+case "${1:-}" in
+    build) is_build=1 ;;
+    buildx)
+        [ "${2:-}" = "build" ] && is_build=1
+        ;;
+esac
+
+if [ "$is_build" -ne 1 ] || [ ! -f "$CA_SRC" ]; then
+    exec "$REAL_DOCKER" "$@"
+fi
+
+# ---- Parse out -f/--file and the build context (last positional arg) ----------
+args=("$@")
+dockerfile=""
+context="."
+i=0
+n=${#args[@]}
+while [ $i -lt $n ]; do
+    a="${args[$i]}"
+    case "$a" in
+        -f|--file)
+            i=$((i+1)); dockerfile="${args[$i]}" ;;
+        --file=*) dockerfile="${a#--file=}" ;;
+        -*) : ;;  # other flag; ignore for parsing (value-flags handled by docker)
+        build) : ;;
+        buildx) : ;;
+        *) context="$a" ;;  # last non-flag wins as context
+    esac
+    i=$((i+1))
+done
+
+# Default Dockerfile location if -f not given.
+if [ -z "$dockerfile" ]; then
+    dockerfile="$context/Dockerfile"
+fi
+
+# If we can't find the Dockerfile, don't try to be clever — pass through.
+if [ ! -f "$dockerfile" ]; then
+    exec "$REAL_DOCKER" "$@"
+fi
+
+# ---- Build the injection snippet ----------------------------------------------
+# Inserted immediately after every `FROM` line. Best-effort and non-fatal: a
+# stage with no shell (scratch/distroless) silently skips via the `|| true`s, and
+# Alpine gets ca-certificates installed first. The CA is provided as a named
+# build context `sandclaude-ca` (a directory containing proxy-ca.crt).
+read -r -d '' INJECT <<'SNIPPET' || true
+COPY --from=sandclaude-ca proxy-ca.crt /usr/local/share/ca-certificates/mitmproxy-ca.crt
+RUN (command -v update-ca-certificates >/dev/null 2>&1 && update-ca-certificates) \
+ || (command -v apk >/dev/null 2>&1 && apk add --no-cache ca-certificates >/dev/null 2>&1 && update-ca-certificates) \
+ || (command -v update-ca-trust >/dev/null 2>&1 && cp /usr/local/share/ca-certificates/mitmproxy-ca.crt /etc/pki/ca-trust/source/anchors/ 2>/dev/null && update-ca-trust) \
+ || true
+ENV NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/mitmproxy-ca.crt \
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    PIP_CERT=/etc/ssl/certs/ca-certificates.crt \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt \
+    CARGO_HTTP_CAINFO=/etc/ssl/certs/ca-certificates.crt
+SNIPPET
+
+# ---- Rewrite the Dockerfile in memory (temp file) -----------------------------
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+newdf="$tmpdir/Dockerfile"
+cadir="$tmpdir/ca"
+mkdir -p "$cadir"
+cp "$CA_SRC" "$cadir/proxy-ca.crt"
+
+# Insert the snippet after each FROM line. A line is a FROM if its first token
+# (after optional leading whitespace) is FROM (case-insensitive).
+awk -v inject="$INJECT" '
+{
+    print $0
+    line=$0
+    sub(/^[ \t]+/, "", line)
+    if (toupper(substr(line,1,5)) == "FROM ") {
+        print inject
+    }
+}' "$dockerfile" > "$newdf"
+
+# ---- Rebuild the arg list: swap -f → temp, add the CA build-context -----------
+newargs=()
+i=0
+skip_next=0
+ctx_seen=0
+while [ $i -lt $n ]; do
+    a="${args[$i]}"
+    if [ "$skip_next" -eq 1 ]; then skip_next=0; i=$((i+1)); continue; fi
+    case "$a" in
+        -f|--file) skip_next=1 ;;                  # drop original -f <file>
+        --file=*) ;;                               # drop --file=...
+        *) newargs+=("$a") ;;
+    esac
+    i=$((i+1))
+done
+
+# Insert our -f and --build-context right after the build subcommand token(s).
+final=()
+inserted=0
+for a in "${newargs[@]}"; do
+    final+=("$a")
+    if [ "$inserted" -eq 0 ] && { [ "$a" = "build" ]; }; then
+        final+=("-f" "$newdf" "--build-context" "sandclaude-ca=$cadir")
+        inserted=1
+    fi
+done
+# buildx case: "buildx" then "build" — the loop above catches the "build" token.
+
+exec "$REAL_DOCKER" "${final[@]}"
