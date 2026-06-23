@@ -3,8 +3,9 @@ FROM golang:1.22-alpine AS proxy-builder
 
 WORKDIR /build
 COPY allowlist-proxy/ .
-# CGO_ENABLED=0 produces a fully static binary — no libc needed in final image
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o allowlist-proxy main.go
+# CGO_ENABLED=0 produces a fully static binary — no libc needed in final image.
+# Build the whole package (main.go + transparent.go), not a single file.
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o allowlist-proxy .
 
 # ── Stage 2: runtime image ────────────────────────────────────────────────────
 FROM --platform=linux/amd64 ubuntu:24.04

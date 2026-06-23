@@ -115,21 +115,25 @@ if [ -z "$DISABLE_FIREWALL" ]; then
     touch "$PROXY_LOG"
     chmod 666 "$PROXY_LOG"
 
-    echo "Starting allowlist proxy (listen :3128, upstream: ${HTTP_PROXY:-direct})..."
+    # Transparent (intercepting) listener port. iptables REDIRECT sends captured
+    # connections here; the proxy recovers the original destination via
+    # SO_ORIGINAL_DST and the SNI/Host, so clients need no proxy env vars.
+    TRANSPARENT_PORT=3129
+
+    echo "Starting allowlist proxy (explicit :3128, transparent :$TRANSPARENT_PORT, upstream: ${HTTP_PROXY:-direct})..."
     # Run as proxyuser so iptables --uid-owner rules can allow only the proxy
     # process to make direct outbound TCP connections.
     sudo -u proxyuser \
         env -u HTTP_PROXY -u HTTPS_PROXY ALLOWLIST_KEY="$ALLOWLIST_KEY" \
         /usr/local/bin/allowlist-proxy \
             --listen 0.0.0.0:3128 \
+            --transparent-listen 0.0.0.0:$TRANSPARENT_PORT \
             --allowlist "$ALLOWLIST_COPY" \
             $UPSTREAM_ARG \
             $PASSTHROUGH_ARG \
         >> "$PROXY_LOG" 2>&1 &
     PROXY_PID=$!
     echo "Allowlist proxy started (PID $PROXY_PID)"
-
-    DIND_PROXY_PORT=3128
 
     # In passthrough mode, sync new domains from the proxyuser-owned tmp file
     # to the bind-mounted file (which claude user can write to).
@@ -156,19 +160,12 @@ if [ -z "$DISABLE_FIREWALL" ]; then
         exit 1
     fi
 
-    # Route Claude's traffic through the allowlist proxy.
-    # Explicitly clear NO_PROXY/no_proxy so nothing can bypass the allowlist
-    # by setting no_proxy=some.domain (curl, Python requests, etc. all honour it).
-    # Export BOTH upper- and lower-case variants. curl deliberately ignores the
-    # upper-case HTTP_PROXY for plain HTTP (the "httpoxy" CGI mitigation) and only
-    # honours lower-case http_proxy — so without these, plain-HTTP requests bypass
-    # the proxy, attempt a direct connection, and get rejected by the iptables
-    # OUTPUT REJECT rule. This is why HTTPS (which honours HTTPS_PROXY) worked but
-    # plain HTTP to the host (e.g. http://host.docker.internal:PORT) failed.
-    export HTTP_PROXY=http://127.0.0.1:3128
-    export HTTPS_PROXY=http://127.0.0.1:3128
-    export http_proxy=http://127.0.0.1:3128
-    export https_proxy=http://127.0.0.1:3128
+    # NOTE: HTTP_PROXY/HTTPS_PROXY are intentionally NOT exported. Outer-container
+    # egress is captured transparently by the nat OUTPUT REDIRECT below, so no
+    # client needs to know about the proxy. We still clear NO_PROXY/no_proxy in
+    # case the host environment set them — they must not cause a tool to think it
+    # should bypass anything (capture happens at the kernel regardless).
+    unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy
     export NO_PROXY=""
     export no_proxy=""
 
@@ -202,6 +199,34 @@ if [ -z "$DISABLE_FIREWALL" ]; then
         echo "⚠️  WARNING: iptables not available — no_proxy bypass is possible"
     fi
 
+    # Transparent capture for the outer container's own processes (Site A).
+    # REDIRECT all non-proxy TCP egress to the transparent listener so no client
+    # needs HTTP_PROXY env vars. Evaluated in nat OUTPUT (before filter OUTPUT):
+    #   - proxyuser's own egress is exempt (RETURN) so its upstream connection to
+    #     mitmproxy is NOT redirected back into the listener (would loop).
+    #   - loopback is exempt so connections to the proxy itself pass through.
+    #   - DinD bridge traffic is exempt (inner-container capture is handled by the
+    #     separate PREROUTING rule below).
+    # Redirected packets become loopback-destined and are accepted by the filter
+    # OUTPUT "-o lo ACCEPT" rule above; the REJECT default-deny still applies to
+    # anything that somehow dodges the redirect, so the lockdown is intact.
+    # REDIRECT in nat OUTPUT rewrites the destination to 127.0.0.1:<port>. The
+    # kernel refuses to route locally-destined packets that arrive via a non-loopback
+    # path unless route_localnet is enabled on the interface. Without this, captured
+    # connections get "connection refused". (PREROUTING REDIRECT does not need it.)
+    sudo sysctl -w net.ipv4.conf.all.route_localnet=1 > /dev/null 2>&1 || true
+
+    echo "Applying transparent egress capture (nat OUTPUT → :$TRANSPARENT_PORT)..."
+    if sudo iptables -t nat -F OUTPUT 2>/dev/null && \
+       sudo iptables -t nat -A OUTPUT -m owner --uid-owner proxyuser -j RETURN && \
+       sudo iptables -t nat -A OUTPUT -o lo -j RETURN && \
+       sudo iptables -t nat -A OUTPUT -p tcp -d 172.16.0.0/12 -j RETURN && \
+       sudo iptables -t nat -A OUTPUT -p tcp -j REDIRECT --to-port "$TRANSPARENT_PORT"; then
+        echo "✅ transparent capture applied — outer processes need no proxy env vars"
+    else
+        echo "⚠️  WARNING: nat OUTPUT redirect not applied — falling back to HTTP_PROXY env vars"
+    fi
+
     echo ""
     echo "Proxy log: $PROXY_LOG"
     echo ""
@@ -223,6 +248,9 @@ if [ -n "$DIND_ENABLED" ]; then
 
     # Write daemon config
     sudo mkdir -p /etc/docker-dind
+    # No "proxies" block: inner-container egress is captured transparently by the
+    # PREROUTING REDIRECT (172.16.0.0/12 → transparent listener), so containers
+    # need no HTTP_PROXY env vars injected by the daemon.
     sudo tee /etc/docker-dind/daemon.json > /dev/null <<DAEMONCFG
 {
   "data-root": "${DIND_DATA}",
@@ -230,12 +258,7 @@ if [ -n "$DIND_ENABLED" ]; then
   "storage-driver": "${STORAGE_DRIVER}",
   "iptables": true,
   "ip-masq": false,
-  "bip": "172.18.0.1/16",
-  "proxies": {
-    "http-proxy": "http://172.18.0.1:${DIND_PROXY_PORT}",
-    "https-proxy": "http://172.18.0.1:${DIND_PROXY_PORT}",
-    "no-proxy": "172.18.0.0/16,127.0.0.0/8"
-  }
+  "bip": "172.18.0.1/16"
 }
 DAEMONCFG
 
@@ -278,20 +301,12 @@ DAEMONCFG
     # Export DOCKER_HOST so all docker commands use the inner daemon
     export DOCKER_HOST="unix://${DIND_SOCKET}"
 
-    # Configure ~/.docker/config.json to inject proxy into inner containers at runtime.
-    # Docker daemon's "proxies" block sets HTTP_PROXY/HTTPS_PROXY env vars inside every
-    # container it starts, so apps pick them up automatically with no Dockerfile changes.
+    # ~/.docker/config.json no longer injects proxy env vars into inner containers
+    # — transparent PREROUTING capture handles their egress. Keep an empty config
+    # so docker CLI has a valid file to read.
     mkdir -p /home/claude/.docker
     cat > /home/claude/.docker/config.json <<DOCKERCFG
-{
-  "proxies": {
-    "default": {
-      "httpProxy": "http://172.18.0.1:${DIND_PROXY_PORT}",
-      "httpsProxy": "http://172.18.0.1:${DIND_PROXY_PORT}",
-      "noProxy": "172.18.0.0/16,127.0.0.0/8"
-    }
-  }
-}
+{}
 DOCKERCFG
 
     # Make the proxy CA cert available at a well-known path.
@@ -305,21 +320,23 @@ DOCKERCFG
     # Enable IP forwarding (required for docker bridge networking)
     sudo sysctl -w net.ipv4.ip_forward=1 > /dev/null
 
-    # PREROUTING REDIRECT: intercept inner container TCP egress -> allowlist proxy
-    # Inner containers (172.18.0.0/16) trying to reach external hosts get redirected
-    # to the allowlist proxy on 127.0.0.1:3128 before being forwarded.
+    # PREROUTING REDIRECT: intercept inner container TCP egress -> allowlist proxy.
+    # Inner containers (172.16.0.0/12) reaching external hosts are redirected to the
+    # transparent listener, which recovers the original destination via
+    # SO_ORIGINAL_DST and the SNI/Host — so inner containers need NO proxy env vars.
+    DIND_TRANSPARENT_PORT="${TRANSPARENT_PORT:-3129}"
     sudo iptables -t nat -A PREROUTING \
         -s 172.16.0.0/12 \
         -p tcp \
         ! -d 172.16.0.0/12 \
-        -j REDIRECT --to-port 3128
+        -j REDIRECT --to-port "$DIND_TRANSPARENT_PORT"
 
     # FORWARD rules: allow bridge <-> external interface traffic
     sudo iptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
     sudo iptables -A FORWARD -s 172.16.0.0/12 -j ACCEPT
     sudo iptables -A FORWARD -d 172.16.0.0/12 -j ACCEPT
 
-    echo "✅ Inner container proxy enforcement applied (172.16.0.0/12 -> :3128)"
+    echo "✅ Inner container proxy enforcement applied (172.16.0.0/12 -> :$DIND_TRANSPARENT_PORT)"
     echo "   DOCKER_HOST=${DOCKER_HOST}"
     echo ""
 
