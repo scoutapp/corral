@@ -149,9 +149,9 @@ Once the team is set up, start working:
    seen=""
    while true; do
      gh pr list --label "needs revision" --author @me --json number,title \
-       --jq '.[] | "NEEDS_REVISION #\(.number): \(.title)"' 2>/dev/null
+       --jq '.[] | "NEEDS_REVISION #\\(.number): \\(.title)"' 2>/dev/null
      gh issue list --state open --no-assignee --json number,title \
-       --jq '.[] | "NEW_ISSUE #\(.number): \(.title)"' 2>/dev/null
+       --jq '.[] | "NEW_ISSUE #\\(.number): \\(.title)"' 2>/dev/null
      sleep 60
    done
    ```
@@ -245,7 +245,7 @@ Once the team is set up, start working:
    #!/bin/bash
    while true; do
      gh pr list --label "ready for review" --state open --json number,title \
-       --jq '.[] | "READY_FOR_REVIEW #\(.number): \(.title)"' 2>/dev/null
+       --jq '.[] | "READY_FOR_REVIEW #\\(.number): \\(.title)"' 2>/dev/null
      sleep 60
    done
    ```

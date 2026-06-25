@@ -48,3 +48,7 @@ build/
 node_modules/
 
 sandclaude
+# SQLite database files
+*.db
+*.db-shm
+*.db-wal

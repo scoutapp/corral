@@ -51,4 +51,12 @@ github.com
 # Docker host gateway (local machine, not external)
 host.docker.internal
 
-# Unapproved domains:
+production.cloudfront.docker.com
+archive.ubuntu.com
+security.ubuntu.com
+deb.nodesource.com
+cdn.playwright.dev
+download.docker.com
+astral.sh
+releases.astral.sh
+claude.ai
