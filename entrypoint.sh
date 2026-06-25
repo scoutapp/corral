@@ -159,8 +159,16 @@ if [ -z "$DISABLE_FIREWALL" ]; then
     # Route Claude's traffic through the allowlist proxy.
     # Explicitly clear NO_PROXY/no_proxy so nothing can bypass the allowlist
     # by setting no_proxy=some.domain (curl, Python requests, etc. all honour it).
+    # Export BOTH upper- and lower-case variants. curl deliberately ignores the
+    # upper-case HTTP_PROXY for plain HTTP (the "httpoxy" CGI mitigation) and only
+    # honours lower-case http_proxy — so without these, plain-HTTP requests bypass
+    # the proxy, attempt a direct connection, and get rejected by the iptables
+    # OUTPUT REJECT rule. This is why HTTPS (which honours HTTPS_PROXY) worked but
+    # plain HTTP to the host (e.g. http://host.docker.internal:PORT) failed.
     export HTTP_PROXY=http://127.0.0.1:3128
     export HTTPS_PROXY=http://127.0.0.1:3128
+    export http_proxy=http://127.0.0.1:3128
+    export https_proxy=http://127.0.0.1:3128
     export NO_PROXY=""
     export no_proxy=""
 

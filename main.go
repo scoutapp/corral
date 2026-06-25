@@ -854,6 +854,16 @@ func (sc *SandClaude) Run(keepDevfiles bool) error {
 		sc.dindPorts = cfg.DindPorts
 	}
 
+	// Re-encrypt the allowlist from plaintext so the mounted .enc always reflects
+	// the current allowed-domains.txt. Without this, editing the plaintext and then
+	// running start/dev silently launches with a stale .enc (the proxy reads the
+	// encrypted file, not the plaintext), so newly-added domains stay blocked.
+	if cfg.ProxyEnabled {
+		if err := syncEncryptedAllowlist(); err != nil {
+			log.Printf("Warning: could not re-encrypt allowlist, using existing .enc: %v", err)
+		}
+	}
+
 	// Build the image before starting the proxy — the proxy intercepts HTTPS during
 	// docker build and presents its own cert, which the build's curl won't trust yet.
 	if err := sc.ensureImage("sandclaude-stable"); err != nil {
@@ -1279,7 +1289,7 @@ func cmdList() error {
 
 // cmdFirewallMonitor tails the allowlist proxy log inside the running container
 func cmdFirewallMonitor() error {
-	containerName := "sandclaude"
+	containerName := runningContainerName()
 
 	// Verify container is running.
 	if out, err := exec.Command("docker", "inspect", "--format={{.Id}}", containerName).Output(); err != nil || len(strings.TrimSpace(string(out))) == 0 {
@@ -1631,9 +1641,11 @@ func allowlistEncrypt(key [32]byte, plaintext []byte) ([]byte, error) {
 	return gcm.Seal(nonce, nonce, plaintext, nil), nil
 }
 
-// cmdFirewallReload encrypts allowed-domains.txt → allowed-domains.txt.enc
-// using the key from project/.allowlist-key, and sends SIGHUP to the proxy.
-func cmdFirewallReload() error {
+// syncEncryptedAllowlist encrypts allowlist-proxy/allowed-domains.txt →
+// allowed-domains.txt.enc using the key from project/.allowlist-key. It is the
+// single source of truth for keeping the encrypted file in step with the plaintext,
+// shared by startup (Run) and the firewall-reload command.
+func syncEncryptedAllowlist() error {
 	projectDir := getProjectDir()
 
 	keyPath := filepath.Join(projectDir, ".allowlist-key")
@@ -1669,24 +1681,55 @@ func cmdFirewallReload() error {
 		return fmt.Errorf("write %s: %w", encPath, err)
 	}
 	log.Printf("Encrypted allowlist written to %s", encPath)
+	return nil
+}
 
-	// If a container is running, SIGHUP the proxy so it re-reads the .enc file.
-	// The file is bind-mounted, so the container already sees the new content.
-	containerName := "sandclaude"
+// cmdFirewallReload encrypts allowed-domains.txt → allowed-domains.txt.enc
+// using the key from project/.allowlist-key, and reloads the running proxy.
+func cmdFirewallReload() error {
+	if err := syncEncryptedAllowlist(); err != nil {
+		return err
+	}
+
+	// If a container is running, reload the proxy so it picks up the new allowlist.
+	containerName := runningContainerName()
 	checkCmd := exec.Command("docker", "inspect", "--format={{.State.Running}}", containerName)
 	if out, err := checkCmd.Output(); err == nil && strings.TrimSpace(string(out)) == "true" {
-		sighupCmd := exec.Command("docker", "exec", containerName,
-			"bash", "-c", "pkill -HUP -x allowlist-proxy")
-		if err := sighupCmd.Run(); err != nil {
-			log.Printf("Warning: SIGHUP failed (proxy may not be running yet): %v", err)
+		if err := reloadProxyInContainer(containerName); err != nil {
+			log.Printf("Warning: proxy reload failed (proxy may not be running yet): %v", err)
 		} else {
-			log.Printf("✅ SIGHUP sent to allowlist-proxy in container '%s'", containerName)
+			log.Printf("✅ Reloaded allowlist-proxy in container '%s'", containerName)
 		}
 	} else {
 		log.Printf("✅ No running container found — encrypted file ready for next start")
 	}
 
 	return nil
+}
+
+// runningContainerName returns the running container name for the current project
+// (sandclaude_<workspace-basename>), matching the name used by start/dev. Falls back
+// to the legacy bare "sandclaude" if no project config is readable.
+func runningContainerName() string {
+	if cfg, err := readConfig(getProjectDir()); err == nil && cfg.Workspace != "" {
+		return "sandclaude_" + filepath.Base(cfg.Workspace)
+	}
+	return "sandclaude"
+}
+
+// reloadProxyInContainer makes the running allowlist-proxy pick up the freshly
+// re-encrypted allowlist. The proxy reads its allowlist from /tmp/allowed-domains.txt.enc
+// (a startup copy proxyuser can read), while the host's edits land on the bind-mounted
+// /home/claude/allowed-domains.txt.enc — so we must re-copy that into /tmp before the
+// SIGHUP, otherwise the proxy reloads stale content. Both steps run as root: the proxy
+// runs as proxyuser, which the default exec user (claude) cannot signal.
+func reloadProxyInContainer(containerName string) error {
+	cmd := exec.Command("docker", "exec", "-u", "root", containerName, "bash", "-c",
+		"cp /home/claude/allowed-domains.txt.enc /tmp/allowed-domains.txt.enc && "+
+			"chmod 644 /tmp/allowed-domains.txt.enc && "+
+			"pkill -HUP -x allowlist-proxy")
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 // cmdCopy copies sandclaude files to a target directory
