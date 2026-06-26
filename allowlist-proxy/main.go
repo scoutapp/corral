@@ -163,9 +163,10 @@ func (al *Allowlist) Allowed(host string) bool {
 // ----------------------------------------------------------------------------
 
 type ProxyHandler struct {
-	allowlist      *Allowlist
-	upstream       *url.URL // nil = direct
-	passthroughLog string   // if set, allow unknown domains and append them here
+	allowlist       *Allowlist
+	upstream        *url.URL // nil = direct
+	passthroughLog  string   // if set, allow unknown domains and append them here
+	transparentPort string   // listen port of the transparent listener (for REDIRECT vs TPROXY detection)
 }
 
 // appendDomain appends a domain to the passthrough log file if not already present.
@@ -268,34 +269,10 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("ALLOWED  %s", host)
 	}
 
-	var targetConn net.Conn
-	var err error
-
-	if p.upstream != nil {
-		targetConn, err = net.Dial("tcp", p.upstream.Host)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("upstream dial failed: %v", err), http.StatusBadGateway)
-			return
-		}
-		fmt.Fprintf(targetConn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", host, host)
-		resp, err := http.ReadResponse(bufio.NewReader(targetConn), r)
-		if err != nil || resp.StatusCode != http.StatusOK {
-			targetConn.Close()
-			code := http.StatusBadGateway
-			msg := "upstream CONNECT failed"
-			if resp != nil {
-				code = resp.StatusCode
-				msg = resp.Status
-			}
-			http.Error(w, msg, code)
-			return
-		}
-	} else {
-		targetConn, err = net.Dial("tcp", host)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("dial failed: %v", err), http.StatusBadGateway)
-			return
-		}
+	targetConn, err := p.dialTarget(host)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
 	}
 	defer targetConn.Close()
 
@@ -325,12 +302,81 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	<-done
 }
 
+// dialTarget opens a connection to host ("hostname:port"). If an upstream proxy
+// is configured it issues an HTTP CONNECT to it and returns the tunneled conn;
+// otherwise it dials host directly. Shared by the explicit CONNECT handler and
+// the transparent listener.
+func (p *ProxyHandler) dialTarget(host string) (net.Conn, error) {
+	if p.upstream == nil {
+		conn, err := net.Dial("tcp", host)
+		if err != nil {
+			return nil, fmt.Errorf("dial failed: %v", err)
+		}
+		return conn, nil
+	}
+
+	// Force IPv4 for the upstream dial. host.docker.internal resolves to BOTH an
+	// IPv4 and an IPv6 address in /etc/hosts, but mitmproxy on the host listens on
+	// IPv4 only; without this, Go's dual-stack dialer may pick the IPv6 address and
+	// the connection fails, which surfaces as the client getting refused.
+	conn, err := net.Dial("tcp4", p.upstream.Host)
+	if err != nil {
+		return nil, fmt.Errorf("upstream dial failed: %v", err)
+	}
+	fmt.Fprintf(conn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", host, host)
+	// Read the CONNECT response byte-by-byte up to the end of headers (\r\n\r\n).
+	// We must NOT use a buffered reader here: it would consume bytes belonging to
+	// the tunneled stream that follows the response, and those bytes are then lost
+	// when we splice the raw conn — which stalls the tunneled TLS handshake.
+	status, err := readHTTPStatusLine(conn)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("upstream CONNECT response: %v", err)
+	}
+	if !strings.Contains(status, " 200 ") {
+		conn.Close()
+		return nil, fmt.Errorf("upstream CONNECT failed: %s", strings.TrimSpace(status))
+	}
+	return conn, nil
+}
+
+// readHTTPStatusLine reads an HTTP response from conn one byte at a time until the
+// end of the header block (\r\n\r\n), returning the status line. Reading byte by
+// byte guarantees we do not consume any bytes of the tunneled stream that follows.
+func readHTTPStatusLine(conn net.Conn) (string, error) {
+	var buf []byte
+	one := make([]byte, 1)
+	for {
+		n, err := conn.Read(one)
+		if n > 0 {
+			buf = append(buf, one[0])
+			if len(buf) >= 4 && buf[len(buf)-4] == '\r' && buf[len(buf)-3] == '\n' &&
+				buf[len(buf)-2] == '\r' && buf[len(buf)-1] == '\n' {
+				break
+			}
+			// Guard against an unbounded/garbage response.
+			if len(buf) > 8192 {
+				return "", errors.New("response headers too large")
+			}
+		}
+		if err != nil {
+			return "", err
+		}
+	}
+	// Status line is the first CRLF-terminated line.
+	if i := strings.Index(string(buf), "\r\n"); i >= 0 {
+		return string(buf[:i]), nil
+	}
+	return string(buf), nil
+}
+
 // ----------------------------------------------------------------------------
 // Main
 // ----------------------------------------------------------------------------
 
 func main() {
 	listen         := flag.String("listen", "127.0.0.1:3128", "address to listen on")
+	transparent    := flag.String("transparent-listen", "", "if set, also run a transparent (intercepting) listener on this address for iptables-REDIRECTed connections")
 	upstreamStr    := flag.String("upstream", "", "upstream proxy URL (e.g. http://host.docker.internal:8080); empty = direct")
 	allowlistPath  := flag.String("allowlist", "", "path to encrypted allowlist file (allowed-domains.txt.enc)")
 	passthroughLog := flag.String("passthrough-log", "", "if set, allow unknown domains and append them to this file instead of blocking")
@@ -412,13 +458,31 @@ func main() {
 	}
 
 	handler := &ProxyHandler{allowlist: al, upstream: upstream, passthroughLog: *passthroughLog}
+
+	// Transparent (intercepting) listener for iptables-REDIRECTed connections.
+	// Runs alongside the explicit proxy so clients need no proxy env vars.
+	if *transparent != "" {
+		go func() {
+			if err := handler.serveTransparent(*transparent); err != nil {
+				log.Fatalf("transparent listener error: %v", err)
+			}
+		}()
+	}
+
 	server := &http.Server{
 		Addr:    *listen,
 		Handler: handler,
 	}
 
+	// Bind IPv4 explicitly (same reason as the transparent listener): clients
+	// reach the explicit proxy via 127.0.0.1 / 172.x, all IPv4.
+	ln, err := net.Listen("tcp4", *listen)
+	if err != nil {
+		log.Fatalf("listen %s: %v", *listen, err)
+	}
+
 	log.Printf("allowlist-proxy listening on %s", *listen)
-	if err := server.ListenAndServe(); err != nil {
+	if err := server.Serve(ln); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }

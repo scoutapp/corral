@@ -3,8 +3,9 @@ FROM golang:1.22-alpine AS proxy-builder
 
 WORKDIR /build
 COPY allowlist-proxy/ .
-# CGO_ENABLED=0 produces a fully static binary — no libc needed in final image
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o allowlist-proxy main.go
+# CGO_ENABLED=0 produces a fully static binary — no libc needed in final image.
+# Build the whole package (main.go + transparent.go), not a single file.
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o allowlist-proxy .
 
 # ── Stage 2: runtime image ────────────────────────────────────────────────────
 FROM --platform=linux/amd64 ubuntu:24.04
@@ -34,6 +35,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     vim \
     less \
     iptables \
+    iproute2 \
+    libcap2-bin \
+    tcpdump \
     tmux \
     && rm -rf /var/lib/apt/lists/*
 
@@ -145,6 +149,10 @@ COPY --chown=claude:claude proxy-addon.py /usr/local/bin/proxy-addon.py
 COPY --chown=claude:claude .claude/skills/ /home/claude/.claude/skills/
 COPY --chown=claude:claude bin/ /home/claude/bin/
 RUN chmod +x /home/claude/launcher.py /home/claude/entrypoint.sh /usr/local/bin/proxy-addon.py \
-    /home/claude/bin/cert-injector
+    /home/claude/bin/cert-injector /home/claude/bin/docker
+
+# Put ~/bin first in PATH so the `docker` wrapper (CA injection for builds)
+# shadows /usr/bin/docker. The wrapper calls the real binary at /usr/bin/docker.
+ENV PATH="/home/claude/bin:${PATH}"
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/home/claude/entrypoint.sh"]

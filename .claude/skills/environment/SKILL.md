@@ -105,9 +105,9 @@ tail -f ~/logs/proxy.log
 
 **Architecture:**
 1. Encrypted `allowed-domains.txt.enc` (bind-mounted from host) → decrypted in-memory by allowlist-proxy
-2. allowlist-proxy listens on `127.0.0.1:3128` — validates each CONNECT/HTTP request by domain
-3. iptables OUTPUT chain → allow only `proxyuser` (the proxy's UID) for direct TCP; all others REJECT
-4. All traffic must flow through the proxy; ALLOWED/BLOCKED logged to `~/logs/proxy.log`
+2. allowlist-proxy runs two listeners: an **explicit** HTTP CONNECT proxy on `0.0.0.0:3128` (outer processes reach it via `HTTP_PROXY`) and a **transparent** listener on `0.0.0.0:3129` (for iptables-REDIRECTed DinD inner-container traffic). Both validate each request by domain (CONNECT/Host for explicit, `SO_ORIGINAL_DST` + SNI for transparent).
+3. iptables OUTPUT chain → allow only `proxyuser` (the proxy's UID) for direct TCP; all others REJECT. Inner containers are forced through the transparent listener by a `nat PREROUTING REDIRECT` to `:3129`.
+4. All traffic must flow through the proxy; ALLOWED/BLOCKED logged to `~/logs/proxy.log` (transparent entries are tagged `(transparent)`)
 
 **Hot-reload:**
 - Write new `.enc` file to host (via `sandclaude reload-firewall`)
@@ -150,11 +150,16 @@ When `DIND_ENABLED=1` is set in the environment, an inner Docker daemon is runni
 **Key facts:**
 - All `docker` commands you run go to the **inner daemon**, not the host
 - Inner containers sit on `172.18.0.0/16` bridge network
-- `~/.docker/config.json` injects `HTTP_PROXY` and `HTTPS_PROXY` into every inner container automatically — **no Dockerfile or compose env changes needed**
-- The allowlist proxy listens on `0.0.0.0:3128`, reachable from inner containers via their bridge gateway (`172.18.0.1` for the default DinD bridge; compose networks get addresses in `172.18.0.0/15`)
-- The allowlist proxy forwards to mitmproxy — inner containers must trust the mitmproxy CA cert. The `~/bin/docker` wrapper automatically injects the CA cert into any image built via `docker build` or `docker compose build` via the **cert-injector** sidecar. In most cases this is transparent. However, if an inner container produces SSL errors like `509 Certificate Verify Failed` or similar TLS errors, the mitmproxy CA was likely not injected correctly — check `/usr/local/share/ca-certificates/mitmproxy-ca.crt` inside the container and re-run `update-ca-certificates` if missing
-- iptables allows `172.18.0.0/15` in the OUTPUT chain so the proxy can respond to inner container connections
+- **Inner-container egress is captured transparently** — no `HTTP_PROXY` env var is injected into containers and none is needed. An iptables `nat PREROUTING REDIRECT` rule sends all inner-container TCP egress (`172.16.0.0/12`, external destinations) to the allowlist proxy's **transparent listener on `:3129`**, which recovers the original destination (`SO_ORIGINAL_DST`) and the SNI/Host, enforces the allowlist, and tunnels to mitmproxy. Containers need zero proxy configuration.
+- Inner containers do their **own DNS resolution**. A `nat POSTROUTING MASQUERADE` rule (for `172.18.0.0/16 → non-inner`) SNATs their UDP/53 queries so DNS works without proxy env vars.
+- The allowlist proxy runs two listeners: the **explicit** HTTP CONNECT proxy on `0.0.0.0:3128` (used by the outer container's own processes via `HTTP_PROXY`, and as the `--upstream` chain target) and the **transparent** listener on `0.0.0.0:3129` (for REDIRECTed inner-container traffic).
+- The proxy forwards to mitmproxy, so inner containers must trust the mitmproxy CA cert for TLS interception. CA trust is handled at two points:
+  - **Build time** — the `~/bin/docker` wrapper (shadows `/usr/bin/docker`) intercepts `docker build` / `docker buildx build` and rewrites the Dockerfile **in memory** (the original on disk is never touched/committed): after every `FROM` it installs the mitm CA into the OS trust store (Debian/Alpine/RHEL-aware) and sets every toolchain's CA-override env (`NODE_EXTRA_CA_CERTS`, `REQUESTS_CA_BUNDLE`/`PIP_CERT`, `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `GIT_SSL_CAINFO`, `CARGO_HTTP_CAINFO`). This is why `RUN npm install` / `pip install` / `bundle` / `go mod` / `mix deps.get` work through the MITM proxy with no Dockerfile changes. The CA is passed in via a `--build-context` named `sandclaude-ca`. (This is needed because BuildKit has no supported way to inject a CA into build RUN steps, and Node/Python/Rust ship their own CA bundles that ignore the OS store.)
+  - **Run time** — the **cert-injector** sidecar watches docker events and injects the CA into new inner containers. **Caveat:** its create→start→restart model is racy for very short-lived `--rm` one-shot containers (they may exit before injection completes). Long-running service containers, and any container built via the wrapper (the CA is already baked into the image), are fine. For an ephemeral container that hits `SSL certificate problem` / `509 Certificate Verify Failed`, either mount the CA read-only (`-v /etc/proxy-ca.crt:/tmp/ca.crt:ro` and point the tool at it) or use the tool's insecure flag.
+- iptables allows `172.16.0.0/12` in the OUTPUT chain so the proxy can respond to inner container connections; a matching `nat POSTROUTING MASQUERADE` (also `172.16.0.0/12`) lets inner containers' own DNS reach the resolver. **Both must cover the full `/12`, not just the default bridge `172.18.0.0/16`** — docker-compose apps get networks like `172.19.x`/`172.20.x`, and scoping to `/16` silently breaks their DNS.
 - Inner containers are destroyed when sandclaude exits, but their **named volumes and pulled images persist**
+
+**Note on the outer container's own processes (Claude, curl, etc.):** these are NOT captured transparently — they use an explicit `HTTP_PROXY=127.0.0.1:3128` env var (set once in `entrypoint.sh`), enforced by the OUTPUT-chain REJECT. Transparent capture of locally-generated traffic does not work reliably inside Docker Desktop's LinuxKit VM, so only DinD inner containers are env-free. The dockerd daemon's own image pulls go through the proxy via `HTTP_PROXY` in its process environment (not injected into the containers it starts).
 
 ## DinD Volume Persistence
 
@@ -201,12 +206,14 @@ docker logs rails -f
 ```
 
 **Inner container network access:**
-- Inner containers go through the same allowlist proxy as everything else
-- If an inner container needs a domain not in the allowlist, add it:
+- Inner containers go through the same allowlist proxy as everything else (transparently — see DinD section above)
+- If an inner container needs a domain not in the allowlist, add it to the plaintext allowlist **on the host** and reload:
   ```bash
-  echo 'rubygems.org' >> .firewall/allowed-domains.txt
-  kill -HUP $(pgrep allowlist-proxy)
+  # On the host, in the sandclaude repo:
+  echo 'rubygems.org' >> allowlist-proxy/allowed-domains.txt
+  ./sandclaude firewall-reload   # re-encrypts and SIGHUPs the proxy
   ```
+  (From inside the container you can append to `/home/claude/allowed-domains.txt`, which is bind-mounted to that same host file; the user still runs `sandclaude firewall-reload` to re-encrypt and reload.)
 - Common domains to add for Rails: `rubygems.org`, `index.rubygems.org`
 - Common domains to add for Django/Python: `pypi.org`, `files.pythonhosted.org`
 
