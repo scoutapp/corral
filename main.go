@@ -681,7 +681,9 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 // interactive container behaves identically to the attached path; capture/send/attach
 // then observe and drive the inner Claude.
 func (sc *SandClaude) startDetached(containerName string, args []string) error {
-	sessionName := strings.ReplaceAll(containerName, "_", "-")
+	// Session name matches the container name verbatim (underscores) to stay
+	// consistent with the container naming convention.
+	sessionName := containerName
 
 	if exec.Command("tmux", "has-session", "-t", sessionName).Run() == nil {
 		log.Printf("Killing existing tmux session '%s'", sessionName)
@@ -803,7 +805,9 @@ func (sc *SandClaude) startDirect(cfg *ProjectConfig) error {
 	// We avoid launcher.py because it would try to create a session named "sandclaude"
 	// which already exists (the outer session we're running in).
 	containerName := "sandclaude_" + filepath.Base(cfg.Workspace)
-	sessionName := strings.ReplaceAll(containerName, "_", "-")
+	// Session name matches the container name verbatim (underscores) for
+	// consistency with the container naming convention.
+	sessionName := containerName
 
 	if exec.Command("tmux", "has-session", "-t", sessionName).Run() == nil {
 		log.Printf("Killing existing tmux session '%s'", sessionName)
@@ -1826,7 +1830,9 @@ func detachedSessionName() (session string, container string, err error) {
 		return "", "", fmt.Errorf("no project configured — run sandclaude init first")
 	}
 	container = "sandclaude_" + filepath.Base(cfg.Workspace)
-	session = strings.ReplaceAll(container, "_", "-")
+	// The tmux session name matches the container name verbatim (underscores),
+	// to stay consistent with the container naming convention.
+	session = container
 	return session, container, nil
 }
 
