@@ -8,6 +8,8 @@ import tempfile
 
 SETTINGS_PATH = os.path.expanduser("~/.claude/settings.json")
 
+ENFORCE_SMALL_COMMITS_CMD = "/home/claude/bin/enforce-small-commits.sh"
+
 REQUIRED_FIELDS = {
     "env": {
         "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
@@ -25,6 +27,17 @@ FORCE_FIELDS = {
         "command": "~/bin/statusline.sh",
     },
 }
+
+
+def ensure_stop_hook(settings: dict, command: str) -> None:
+    """Add a Stop hook command if not already present (idempotent)."""
+    hooks = settings.setdefault("hooks", {})
+    stop_hooks = hooks.setdefault("Stop", [])
+    for group in stop_hooks:
+        for hook in group.get("hooks", []):
+            if hook.get("command") == command:
+                return
+    stop_hooks.append({"hooks": [{"type": "command", "command": command}]})
 
 
 def deep_merge(base: dict, override: dict) -> dict:
@@ -60,6 +73,9 @@ def patch_settings():
 
     # Force fields always win regardless of existing values
     merged.update(FORCE_FIELDS)
+
+    # Ensure Stop hook for small-commit enforcement is present
+    ensure_stop_hook(merged, ENFORCE_SMALL_COMMITS_CMD)
 
     # Write atomically via temp file
     dir_ = os.path.dirname(SETTINGS_PATH)
