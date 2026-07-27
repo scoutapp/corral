@@ -19,6 +19,9 @@ allowlist-proxy/allowed-domains.txt.enc
 # Project directory — never commit (contains credentials and local config)
 project/
 
+# Per-project sandclaude state (config, allowlist, key, logs) — never commit
+.sandclaude/
+
 __pycache__/
 
 # Docker volumes and state

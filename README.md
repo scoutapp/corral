@@ -10,31 +10,56 @@ Credential proxy requires `mitmproxy` — install via `brew install mitmproxy` o
 
 ## Quick Start
 
+Install once, then use `sandclaude` in any project — no per-project clone, no `.devcontainer`.
+
 ```bash
-# Clone into your project's .devcontainer directory
+# Clone the repo somewhere permanent and install
+git clone https://github.com/scoutapp/sandclaude.git
+cd sandclaude
+./install.sh          # builds the binary -> /usr/local/bin, assets -> ~/.sandclaude/assets
+```
+
+`install.sh` puts the `sandclaude` binary on your `$PATH` and copies the Docker build
+context (Dockerfile, entrypoint, launcher, allowlist proxy, etc.) into `~/.sandclaude/assets`.
+
+```bash
+# In any project you want to work on
 cd ~/my-project
-git clone https://github.com/scoutapp/sandclaude.git .devcontainer
-cd .devcontainer
-
-# Build the sandclaude binary
-go build -o sandclaude main.go
-
-# Initialize (creates ./project/ and encrypts allowlist automatically)
-./sandclaude init
+sandclaude init       # creates ./.sandclaude/ (config, allowlist, key) in this directory
 ```
 
-**We strongly recommend enabling the credential proxy during `init`.** It prevents Claude from seeing or exfiltrating real credentials by intercepting and injecting them at the proxy level. After init, run:
+**We strongly recommend enabling the credential proxy during `init`.** It prevents Claude
+from seeing or exfiltrating real credentials by intercepting and injecting them at the proxy
+level. Credentials are stored **globally** and reused across all projects:
 
 ```bash
-./sandclaude populate-proxy-credentials
+sandclaude populate-proxy-credentials   # writes ~/.sandclaude/proxy-credentials.json
 ```
 
-Currently, this will populate the proxy-credentials.json with your Claude and Github tokens.
+This populates the global credentials file with your Claude and GitHub tokens. To add a
+project-specific override (takes precedence per-domain over the global file), run:
+
+```bash
+sandclaude populate-proxy-credentials --project   # writes ./.sandclaude/project/proxy-credentials.json
+```
 
 ```bash
 # Start Claude
-./sandclaude start
+sandclaude start
 ```
+
+### Install locations & overrides
+
+| Path | Contents |
+|------|----------|
+| `/usr/local/bin/sandclaude` | The CLI binary (override dir with `SANDCLAUDE_PREFIX`) |
+| `~/.sandclaude/assets/` | Docker build context + support files (override with `SANDCLAUDE_HOME`) |
+| `~/.sandclaude/proxy-credentials.json` | Global credentials (shared across projects) |
+| `./.sandclaude/project/` | Per-project config, `.allowlist-key`, optional creds override |
+| `./.sandclaude/allowed-domains.txt[.enc]` | Per-project firewall allowlist |
+
+To reinstall after editing sources: re-run `./install.sh` (idempotent). See
+[Developing sandclaude](#developing-sandclaude) for the local dev loop.
 
 ### New Projects: Auto-Discover Required Domains
 
@@ -42,20 +67,20 @@ When working with a new project that downloads dependencies from various sources
 
 ```bash
 # Start in passthrough mode - allows all traffic and logs unknown domains
-./sandclaude start --passthrough-firewall-and-write
+sandclaude start --passthrough-firewall-and-write
 
 # Work on your project normally:
 # - Install dependencies (npm install, go get, pip install, etc.)
 # - Download assets from CDNs
 # - Clone git repos
 # - Run build tools
-# All accessed domains are automatically written to allowlist-proxy/allowed-domains.txt
+# All accessed domains are automatically written to ./.sandclaude/allowed-domains.txt
 
 # When done, lock down the firewall with the discovered domains:
-./sandclaude firewall-reload
+sandclaude firewall-reload
 
 # Restart with firewall enforced:
-./sandclaude start
+sandclaude start
 ```
 
 This workflow is ideal for:
@@ -73,10 +98,11 @@ This workflow is ideal for:
 
 ## Prerequisites
 
-- Go 1.21+ (to build the binary)
+- Go 1.21+ (to build the binary via `install.sh`)
 - Docker
 - Claude Code installed and authenticated on the host (`claude` to sign in first)
 - Optional: `gh` CLI, mitmproxy (for proxy mode — strongly recommended)
+- Optional: `rsync` (used by `install.sh`; falls back to `cp` if absent)
 
 **Important**: You must authenticate Claude Code on your host machine before running `sandclaude`. Run `claude` to sign in. This creates `~/.claude.json` with your session state (does NOT contain auth credentials), which is mounted into the container. If you skip this step, Claude will prompt for authentication inside the container.
 
@@ -84,39 +110,41 @@ This workflow is ideal for:
 
 | Command | Description |
 |---------|-------------|
-| `./sandclaude init` | Initialize project (creates `./project/` and encrypts allowlist) |
-| `./sandclaude start` | Start Claude Code |
-| `./sandclaude start --disable-firewall` | Start without firewall (unrestricted network) |
-| `./sandclaude start --passthrough-firewall-and-write` | Allow all traffic, log unknown domains to `allowed-domains.txt` |
-| `./sandclaude list` | Show project configuration |
-| `./sandclaude remove` | Remove project and encrypted allowlist |
-| `./sandclaude firewall-reload` | Re-encrypt allowlist and SIGHUP running proxy |
-| `./sandclaude firewall-monitor` | Tail the allowlist proxy log |
-| `./sandclaude shell` | Open debug shell in container |
-| `./sandclaude copy <target>` | Copy files to .devcontainer/ |
-| `./sandclaude rebuild` | Force rebuild Docker image |
-| `./sandclaude rebuild --destroy` | Rebuild from scratch (removes existing image/container first) |
-| `./sandclaude populate-proxy-credentials` | Interactively populate proxy-credentials.json |
-| `./sandclaude help` | Show help |
+| `sandclaude init` | Initialize project (creates `./.sandclaude/` and encrypts allowlist) |
+| `sandclaude start` | Start Claude Code |
+| `sandclaude start --disable-firewall` | Start without firewall (unrestricted network) |
+| `sandclaude start --passthrough-firewall-and-write` | Allow all traffic, log unknown domains to `.sandclaude/allowed-domains.txt` |
+| `sandclaude list` | Show project configuration |
+| `sandclaude remove` | Remove `./.sandclaude/` (config, allowlist, key, logs) |
+| `sandclaude firewall-reload` | Re-encrypt allowlist and SIGHUP running proxy |
+| `sandclaude firewall-monitor` | Tail the allowlist proxy log |
+| `sandclaude shell` | Open debug shell in container |
+| `sandclaude rebuild` | Force rebuild Docker image (from `~/.sandclaude/assets`) |
+| `sandclaude rebuild --destroy` | Rebuild from scratch (removes existing image/container first) |
+| `sandclaude populate-proxy-credentials [--project]` | Populate global (or per-project) credentials |
+| `sandclaude help` | Show help |
 
 ## Usage
 
 ### Initialize Project
 
 ```bash
-./sandclaude init
+sandclaude init
 ```
 
-Creates `./project/` in this directory. Prompts for:
+Creates `./.sandclaude/` in the current directory. Prompts for:
 - **Credential proxy?** (optional, strongly recommended): Enable mitmproxy to hide real credentials from Claude
-- **Workspace directory**: Defaults to parent directory (resolved absolute path)
+- **Workspace directory**: Defaults to the current directory (resolved absolute path)
 
-Config stored in `./project/config/`. Add `./project/` to `.gitignore`.
+Config is stored in `./.sandclaude/project/config.json`, the allowlist in
+`./.sandclaude/allowed-domains.txt`, and the encryption key in
+`./.sandclaude/project/.allowlist-key`. `init` adds `.sandclaude/` to the project's
+`.gitignore` automatically.
 
 ### Start Working
 
 ```bash
-./sandclaude start
+sandclaude start
 ```
 
 Starts:
@@ -129,19 +157,32 @@ Starts:
 When enabled during `init`, `sandclaude` runs `mitmweb` on the host and routes all container traffic through it. This prevents Claude from seeing or exfiltrating real credentials.
 
 **How it works:**
-1. `sandclaude start` launches `mitmweb` on `0.0.0.0:8080` (host)
-2. Container is started with `HTTP_PROXY`/`HTTPS_PROXY` pointing to `host.docker.internal:8080`
+1. `sandclaude start` launches `mitmweb` on the host
+2. Container is started with `HTTP_PROXY`/`HTTPS_PROXY` pointing to `host.docker.internal:<port>`
 3. Claude receives a dummy OAuth token inside the container
-4. `mitmweb` intercepts outbound requests and injects the real credentials from `proxy-credentials.json`
+4. `mitmweb` intercepts outbound requests and injects the real credentials from the resolved credentials file
 5. Proxy stops automatically when the container exits
+
+**Credential resolution (global + per-project):**
+
+Credentials are shared across projects by default and can be overridden per-project:
+
+- **Global** — `~/.sandclaude/proxy-credentials.json` (written by `sandclaude populate-proxy-credentials`)
+- **Per-project override** — `./.sandclaude/project/proxy-credentials.json` (written by `sandclaude populate-proxy-credentials --project`)
+
+When both exist, they are merged **per-domain, project wins**: the project file
+overrides or adds entries, and the global file fills in the rest. The merged result
+is written to a temporary file and passed to `mitmweb`. An explicit
+`SANDCLAUDE_PROXY_CREDS=/path` env var overrides all of this.
 
 **Setup:**
 
 ```bash
-./sandclaude populate-proxy-credentials
+sandclaude populate-proxy-credentials             # global (recommended default)
+sandclaude populate-proxy-credentials --project   # per-project override
 ```
 
-This interactively populates `./project/proxy-credentials.json` using `claude setup-token` and `gh auth token`. You can also configure it manually:
+This interactively populates the credentials file using `claude setup-token` and `gh auth token`. You can also configure it manually:
 
 ```json
 {
@@ -188,10 +229,10 @@ The mitmproxy CA cert is generated at `~/.mitmproxy/mitmproxy-ca-cert.pem` on fi
 ```bash
 mitmweb --listen-port 8080
 # Ctrl+C once cert is generated (~/.mitmproxy/ created)
-./sandclaude rebuild
+sandclaude rebuild
 ```
 
-**Proxy logs** are written to `logs/mitm.log` in the directory where you run `sandclaude start`. View the mitmweb UI at `http://127.0.0.1:8081` while the session is running.
+**Proxy logs** are written to `.sandclaude/logs/mitm.log` in the directory where you run `sandclaude start`. View the mitmweb UI at `http://127.0.0.1:8081` while the session is running.
 
 ## Firewall Management
 
@@ -199,24 +240,24 @@ The firewall is implemented as a Go HTTP CONNECT proxy (`allowlist-proxy`) runni
 
 ### Allowed Domains File
 
-The allowlist lives at `allowlist-proxy/allowed-domains.txt` (plaintext). When you modify it, run `firewall-reload` to re-encrypt and reload:
+The allowlist lives at `.sandclaude/allowed-domains.txt` (plaintext). When you modify it, run `firewall-reload` to re-encrypt and reload:
 
 ```bash
-echo 'example.com' >> allowlist-proxy/allowed-domains.txt
-./sandclaude firewall-reload
+echo 'example.com' >> .sandclaude/allowed-domains.txt
+sandclaude firewall-reload
 ```
 
 This command:
-1. Reads the encryption key from `project/.allowlist-key`
+1. Reads the encryption key from `.sandclaude/project/.allowlist-key`
 2. Re-encrypts `allowed-domains.txt` → `allowed-domains.txt.enc`
 3. If a container is running, sends SIGHUP to reload the allowlist without restart
 
-**Encryption Key**: The encryption key is auto-generated during `init` and stored in `project/.allowlist-key` (never committed). It is automatically read from this file by `sandclaude start` and `firewall-reload` - you don't need to set anything manually.
+**Encryption Key**: The encryption key is auto-generated during `init` and stored in `.sandclaude/project/.allowlist-key` (never committed). It is automatically read from this file by `sandclaude start` and `firewall-reload` - you don't need to set anything manually.
 
 ### Monitor Proxy Log
 
 ```bash
-./sandclaude firewall-monitor
+sandclaude firewall-monitor
 ```
 
 Tails the allowlist proxy log inside the running container. Blocked connections appear as `BLOCKED` lines with the destination host.
@@ -240,18 +281,14 @@ When enabled, sandclaude runs a private Docker daemon (`dockerd`) inside the con
 During `sandclaude init`, answer yes to the DinD prompt and enter any ports you want accessible from your host:
 
 ```bash
-./sandclaude init myapp
+sandclaude init
 # ...
 # Enable Docker-in-Docker (Claude can start inner containers)? [y/N]: y
 # Port mappings to expose to host (e.g. 3000:3000,8000:8000, blank for none): 3000:3000
 ```
 
-Port mappings can also be edited later:
-
-```bash
-echo "5432:5432" >> ~/.config/sandclaude/projects/myapp/config/dind_ports
-# Then restart: ./sandclaude start myapp
-```
+Port mappings can be changed later with `sandclaude update` (it re-prompts for DinD
+ports), or by editing `.sandclaude/project/config.json` directly.
 
 ### How It Works
 
@@ -276,27 +313,27 @@ Inner containers sit on a `172.18.0.0/16` bridge. Any outbound TCP they attempt 
 **overlay2 fails ("operation not permitted"):**
 ```bash
 # Set storage driver to vfs (slower but always works):
-./sandclaude start myapp --dind-storage-driver=vfs
+sandclaude start --dind-storage-driver=vfs
 # Or set env var before starting:
-DIND_STORAGE_DRIVER=vfs ./sandclaude start myapp
+DIND_STORAGE_DRIVER=vfs sandclaude start
 ```
 
 **Check inner dockerd logs:**
 ```bash
-./sandclaude shell myapp
+sandclaude shell
 cat .firewall/dockerd.log
 ```
 
 **Inner container can't reach a domain:**
 ```bash
 # Add domain to allowlist and reload proxy:
-echo 'rubygems.org' >> allowlist-proxy/allowed-domains.txt
-./sandclaude firewall-reload
+echo 'rubygems.org' >> .sandclaude/allowed-domains.txt
+sandclaude firewall-reload
 ```
 
 **Skip DinD for a single run:**
 ```bash
-./sandclaude start myapp --disable-dind
+sandclaude start --disable-dind
 ```
 
 ## How It Works
@@ -307,7 +344,7 @@ echo 'rubygems.org' >> allowlist-proxy/allowed-domains.txt
 4. Runs Claude with `--dangerously-skip-permissions`
 5. Logs blocked connections for approval
 
-**Firewall**: A Go HTTP CONNECT proxy (`allowlist-proxy`) runs inside the container on `127.0.0.1:3128`. Claude's `HTTP_PROXY`/`HTTPS_PROXY` env vars point to it. Connections to domains not in the allowlist are rejected with a `403`. The allowlist is stored encrypted at `allowlist-proxy/allowed-domains.txt.enc` (bind-mounted into the container) and supports hot-reload via `sandclaude firewall-reload`. Logs go to `logs/proxy.log` inside the container.
+**Firewall**: A Go HTTP CONNECT proxy (`allowlist-proxy`) runs inside the container on `127.0.0.1:3128`. Claude's `HTTP_PROXY`/`HTTPS_PROXY` env vars point to it. Connections to domains not in the allowlist are rejected with a `403`. The allowlist is stored encrypted at `.sandclaude/allowed-domains.txt.enc` (bind-mounted into the container) and supports hot-reload via `sandclaude firewall-reload`. Logs go to `logs/proxy.log` inside the container.
 
 **Skill System**: `.claude/skills/environment/SKILL.md` auto-mounted into the container teaches Claude:
 - Firewall architecture and allowed domains
@@ -325,24 +362,45 @@ echo 'rubygems.org' >> allowlist-proxy/allowed-domains.txt
 **Domain blocked (connection refused / 403):**
 ```bash
 # Check what's being blocked
-./sandclaude firewall-monitor
+sandclaude firewall-monitor
 
 # Add a domain and hot-reload (no container restart needed)
-echo 'example.com' >> allowlist-proxy/allowed-domains.txt
-./sandclaude firewall-reload
+echo 'example.com' >> .sandclaude/allowed-domains.txt
+sandclaude firewall-reload
 ```
 
 **Proxy not starting:**
 ```bash
 # Check proxy log inside container
-./sandclaude shell
+sandclaude shell
 cat logs/proxy.log
 ```
 
 **Disable firewall for debugging:**
 ```bash
-./sandclaude start --disable-firewall
+sandclaude start --disable-firewall
 ```
+
+## Developing sandclaude
+
+The local development loop for sandclaude itself does **not** require installing.
+When you run `./sandclaude` directly from the git checkout, the binary detects that
+its Docker build context (`Dockerfile`, `allowlist-proxy/`, `.claude/`, …) sits right
+beside it and uses the checkout as the asset root. So the iterate loop is:
+
+```bash
+# edit main.go / Dockerfile / launcher.py …
+go build -o sandclaude main.go
+./sandclaude list          # runs against the checkout's assets, no install needed
+```
+
+Asset resolution order (see `assetsDir()` in `main.go`):
+1. `$SANDCLAUDE_HOME/assets` — explicit override / installed layout
+2. `<binary dir>/assets` — installed next to the binary
+3. `<binary dir>` — **dev mode**: the git checkout beside `./sandclaude`
+
+When you're ready to "ship" your changes to the globally-installed CLI, re-run
+`./install.sh` — it rebuilds the binary and re-syncs `~/.sandclaude/assets`.
 
 ## Security
 
