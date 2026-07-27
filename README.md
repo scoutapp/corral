@@ -247,6 +247,8 @@ sandclaude dashboard        # start it (or print the URL if already running)
 sandclaude dashboard stop   # stop it
 ```
 
+`sandclaude start`/`dev` also start the dashboard daemon automatically (if it isn't already running) and open your default browser straight to that project's tab, so you don't need to run `sandclaude dashboard` yourself in the common case.
+
 **Loopback-only, token-gated.** The dashboard binds to `127.0.0.1` only — never reachable from another machine — matching mitmweb's existing posture. On top of that, every route requires a random per-launch token, passed once as `?token=...` in the printed URL and then remembered as an `HttpOnly` cookie so reloading or reopening the page doesn't need it re-pasted. Loopback-only alone isn't enough here: the terminal tab grants a real shell, and a malicious page open in another browser tab could otherwise target `127.0.0.1` directly (a DNS-rebinding-style attack) — the token defends against that too. Treat the printed URL/token like a credential, not a bookmark.
 
 **Reopening the page resumes exactly where you left off**, with no special app-level "session" logic — the dashboard is a thin, stateless viewer over backends that are already persistent on their own: the terminal tab reattaches to the same tmux dev session (full scrollback intact), the mitm tab reverse-proxies to the same long-running mitmweb process (its flow list is unaffected), and the firewall tab tails the log file directly off disk.

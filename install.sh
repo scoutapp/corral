@@ -27,7 +27,7 @@ if ! command -v go >/dev/null 2>&1; then
   echo "Error: 'go' is not installed. Install Go 1.21+ and re-run." >&2
   exit 1
 fi
-go build -o "$REPO_DIR/sandclaude" "$REPO_DIR/main.go"
+go build -o "$REPO_DIR/sandclaude" "$REPO_DIR"
 
 echo "==> Installing binary to $PREFIX/sandclaude"
 if [ -w "$PREFIX" ]; then

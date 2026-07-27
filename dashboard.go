@@ -786,33 +786,46 @@ func cmdDashboard(args []string) error {
 // (main.go Run(), sc.detachedSession != ""), which this daemon is deliberately
 // not modeled after since it's long-lived by design rather than incidentally.
 func cmdDashboardStart() error {
+	state, err := ensureDashboardRunning()
+	if err != nil {
+		return err
+	}
+	printDashboardURL(state)
+	return nil
+}
+
+// ensureDashboardRunning returns the state of the already-running dashboard,
+// or spawns it as a detached daemon (same re-exec approach as cmdDashboardStart
+// used to do directly) if it isn't running yet. Shared by `sandclaude dashboard`
+// and `sandclaude start`/`dev`, which both want the singleton daemon up without
+// caring which of them happened to be the one that launched it.
+func ensureDashboardRunning() (*dashboardState, error) {
 	if state, err := readDashboardState(); err == nil && state != nil && pidAlive(state.Pid) && dashboardHealthy(state.Port) {
-		printDashboardURL(state)
-		return nil
+		return state, nil
 	}
 
 	token, err := randomToken()
 	if err != nil {
-		return fmt.Errorf("failed to generate dashboard token: %w", err)
+		return nil, fmt.Errorf("failed to generate dashboard token: %w", err)
 	}
 
 	port, err := findFreePort(7777)
 	if err != nil {
-		return fmt.Errorf("failed to find free port for dashboard: %w", err)
+		return nil, fmt.Errorf("failed to find free port for dashboard: %w", err)
 	}
 
 	exePath, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("failed to resolve sandclaude binary path: %w", err)
+		return nil, fmt.Errorf("failed to resolve sandclaude binary path: %w", err)
 	}
 
 	if err := os.MkdirAll(sandclaudeHome(), 0700); err != nil {
-		return err
+		return nil, err
 	}
 	logPath := filepath.Join(sandclaudeHome(), "dashboard.log")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		return fmt.Errorf("failed to open %s: %w", logPath, err)
+		return nil, fmt.Errorf("failed to open %s: %w", logPath, err)
 	}
 	defer logFile.Close()
 
@@ -821,7 +834,7 @@ func cmdDashboardStart() error {
 	cmd.Stderr = logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start dashboard server: %w", err)
+		return nil, fmt.Errorf("failed to start dashboard server: %w", err)
 	}
 
 	state := &dashboardState{
@@ -831,12 +844,11 @@ func cmdDashboardStart() error {
 		StartedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := writeDashboardState(state); err != nil {
-		return err
+		return nil, err
 	}
 
-	time.Sleep(500 * time.Millisecond) // give it a moment to bind before printing the URL
-	printDashboardURL(state)
-	return nil
+	time.Sleep(500 * time.Millisecond) // give it a moment to bind before use
+	return state, nil
 }
 
 func cmdDashboardStop() error {

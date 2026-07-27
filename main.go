@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -160,8 +161,24 @@ func isDirWritable(dir string) bool {
 	return true
 }
 
+// openBrowser best-effort opens url in the user's default browser. Launching
+// is a convenience on top of the printed URL, never a requirement, so callers
+// should treat a returned error as non-fatal (e.g. log at debug level).
+func openBrowser(url string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	default:
+		return fmt.Errorf("don't know how to open a browser on %s", runtime.GOOS)
+	}
+	return cmd.Start()
+}
+
 // startProxy starts the mitmweb proxy process
-func (sc *SandClaude) startProxy() error {
+func (sc *SandClaude) startProxy(workspace string) error {
 	// Re-resolve credentials with lifecycle tracking so any merged temp file gets
 	// cleaned up on stopProxy. An explicit SANDCLAUDE_PROXY_CREDS override is honored
 	// as-is (no merge, no temp file). Skip when merging isn't applicable.
@@ -189,7 +206,17 @@ func (sc *SandClaude) startProxy() error {
 		return fmt.Errorf("failed to find free port for mitmweb UI: %w", err)
 	}
 
-	log.Printf("Starting proxy on port %s (web UI: http://127.0.0.1:%d)", sc.proxyPort, webPort)
+	log.Printf("Starting proxy on port %s", sc.proxyPort)
+	if state, err := ensureDashboardRunning(); err != nil {
+		log.Printf("Warning: could not start dashboard: %v", err)
+		log.Printf("Proxy web UI: http://127.0.0.1:%d", webPort)
+	} else {
+		dashboardURL := fmt.Sprintf("http://127.0.0.1:%d/p/%s?token=%s", state.Port, projectID(workspace), state.Token)
+		log.Printf("Dashboard: %s", dashboardURL)
+		if err := openBrowser(dashboardURL); err != nil {
+			debugf("failed to open browser: %v", err)
+		}
+	}
 	debugf("Credentials file: %s", sc.credentialsFile)
 
 	// Check if addon script exists
@@ -945,7 +972,7 @@ func (sc *SandClaude) Run(keepDevfiles bool) error {
 		sc.proxyEnabled = true
 		log.Println("Proxy enabled, starting...")
 
-		if err := sc.startProxy(); err != nil {
+		if err := sc.startProxy(cfg.Workspace); err != nil {
 			return err
 		}
 
