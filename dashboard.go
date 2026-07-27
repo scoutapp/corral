@@ -373,6 +373,8 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleTerminalWS(w, r, id)
 	case sub == "terminal" || sub == "terminal/":
 		d.handleTerminalPage(w, r, id)
+	case sub == "mitm/flows":
+		d.handleMitmFlows(w, r, id)
 	case sub == "firewall/stream":
 		d.handleFirewallStream(w, r, id)
 	default:
@@ -427,6 +429,57 @@ func (d *dashboardServer) handleProject(w http.ResponseWriter, r *http.Request, 
 // independent of the dashboard, by design; closing a terminal only detaches.
 func (d *dashboardServer) shutdown() {
 	d.shutdownTerminals()
+}
+
+// handleMitmFlows returns mitmweb's flow list as JSON so the Mitm tab can render
+// a native flow table (see webui/static/mitm.js) instead of embedding mitmweb's
+// SPA — which can't be reverse-proxied under a subpath (absolute asset paths, no
+// base-path option, DNS-rebinding Host guard).
+//
+// The single /flows endpoint sidesteps all of that: we fetch it server-side with
+// the Host header set to the loopback IP mitmweb demands, so the browser never
+// talks to mitmweb directly and never trips its rebinding check. Only the flow
+// list is exposed — none of mitmweb's mutating endpoints (/clear, /flows/kill,
+// /flows/resume) are proxied.
+func (d *dashboardServer) handleMitmFlows(w http.ResponseWriter, r *http.Request, id string) {
+	workspace, err := lookupWorkspaceByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	state, err := readProxyRuntimeStateFor(workspace)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if state == nil || !pidAlive(state.Pid) {
+		http.Error(w, "credential proxy is not running for this project", http.StatusBadGateway)
+		return
+	}
+
+	upstream := fmt.Sprintf("http://127.0.0.1:%d/flows", state.WebPort)
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, upstream, nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// mitmweb rejects any Host header that isn't a bare loopback IP (its
+	// DNS-rebinding guard). Setting it here is the whole reason this must be a
+	// server-side fetch rather than a browser-side reverse proxy.
+	req.Host = fmt.Sprintf("127.0.0.1:%d", state.WebPort)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		http.Error(w, "failed to reach mitmweb: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
 }
 
 const (

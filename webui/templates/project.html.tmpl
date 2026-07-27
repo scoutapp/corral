@@ -27,14 +27,13 @@
 
 <div class="tab-panel" id="tab-mitm" style="display:none">
   {{if .MitmUp}}
-    {{/* mitmweb is a single-page app rooted at "/" with absolute asset paths and
-         no base-path option, and it refuses non-IP Host headers (DNS-rebinding
-         guard), so it can't be reverse-proxied under a subpath. Link straight to
-         its own origin instead — the robust option. */}}
-    <p class="mitm-link">
-      Credential proxy is running.
-      <a href="http://127.0.0.1:{{.MitmWebPort}}/" target="_blank" rel="noopener">Open mitmweb &#8599;</a>
-    </p>
+    {{/* mitmweb's SPA can't be embedded (absolute asset paths, no base-path, IP-only
+         Host guard). Instead we render its /flows JSON as a native table, fetched
+         server-side through /p/<id>/mitm/flows. */}}
+    <div class="mitm-toolbar">
+      <span id="mitm-status" class="muted">loading flows…</span>
+    </div>
+    <div id="mitm-flows"></div>
   {{else}}
     <p class="empty">Credential proxy isn't running for this project.</p>
   {{end}}
@@ -44,6 +43,7 @@
   <pre id="firewall-log"></pre>
 </div>
 
+<script src="/static/mitm.js"></script>
 <script src="/static/dashboard.js"></script>
 </body>
 </html>

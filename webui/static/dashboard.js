@@ -9,6 +9,7 @@
     firewall: document.getElementById("tab-firewall"),
   };
   var firewallStarted = false;
+  var mitmStarted = false;
 
   function activate(tab) {
     buttons.forEach(function (b) {
@@ -28,6 +29,12 @@
     if (tab === "firewall" && !firewallStarted) {
       firewallStarted = true;
       startFirewallStream();
+    }
+
+    // startMitmFlows is defined in mitm.js (only loaded on the project page).
+    if (tab === "mitm" && !mitmStarted && typeof startMitmFlows === "function") {
+      mitmStarted = true;
+      startMitmFlows(projectId);
     }
   }
 

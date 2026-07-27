@@ -95,9 +95,49 @@ table.projects th, table.projects td {
 
 .tab-panel { min-height: 70vh; }
 
-.mitm-link { color: var(--muted); }
-.mitm-link a { color: var(--accent); text-decoration: none; margin-left: 0.4rem; }
-.mitm-link a:hover { text-decoration: underline; }
+.muted { color: var(--muted); }
+
+.mitm-toolbar { margin-bottom: 0.5rem; font-size: 12px; }
+
+#mitm-flows {
+  height: 72vh;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.mitm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.mitm-table th, .mitm-table td {
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.mitm-table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  color: var(--muted);
+  font-weight: 600;
+  z-index: 1;
+}
+.mitm-table .m-method { color: var(--accent); }
+.mitm-table .m-path {
+  max-width: 40ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mitm-table .m-size, .mitm-table .m-dur { color: var(--muted); text-align: right; }
+.mitm-table .m-status { font-variant-numeric: tabular-nums; }
+.mitm-table .s-2xx { color: var(--up); }
+.mitm-table .s-3xx { color: var(--accent); }
+.mitm-table .s-4xx { color: #d1242f; }
+.mitm-table .s-5xx { color: #cf222e; font-weight: 600; }
+.mitm-table .s-pending { color: var(--muted); }
 
 .tab-iframe {
   width: 100%;
