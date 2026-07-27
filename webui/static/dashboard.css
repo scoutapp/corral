@@ -1,0 +1,116 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --muted: #666666;
+  --border: #dddddd;
+  --up: #1a7f37;
+  --down: #999999;
+  --accent: #0969da;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --fg: #e6edf3;
+    --muted: #9198a1;
+    --border: #30363d;
+    --up: #3fb950;
+    --down: #6e7681;
+    --accent: #58a6ff;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 1.5rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+h1 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0;
+  word-break: break-all;
+}
+
+a { color: var(--accent); }
+a.back { text-decoration: none; white-space: nowrap; }
+
+.empty { color: var(--muted); }
+
+code {
+  background: rgba(127, 127, 127, 0.15);
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+}
+
+table.projects {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+table.projects th, table.projects td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.badge { font-size: 0.85em; }
+.badge.up { color: var(--up); }
+.badge.down { color: var(--down); }
+
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1rem;
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font: inherit;
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+}
+
+.tab-btn.active {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+
+.tab-panel { min-height: 70vh; }
+
+.tab-iframe {
+  width: 100%;
+  height: 75vh;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #000;
+}
+
+#firewall-log {
+  width: 100%;
+  height: 75vh;
+  overflow: auto;
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
