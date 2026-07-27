@@ -268,20 +268,14 @@ func lookupWorkspaceByID(id string) (string, error) {
 	return "", fmt.Errorf("unknown project id: %s", id)
 }
 
-type ttydInstance struct {
-	cmd   *exec.Cmd
-	port  int
-	proxy http.Handler
-}
-
 type dashboardServer struct {
 	mu    sync.Mutex
-	ttyd  map[string]*ttydInstance
+	terms map[*termSession]struct{} // live browser-terminal PTYs (see terminal.go)
 	token string
 }
 
 func newDashboardServer(token string) *dashboardServer {
-	return &dashboardServer{ttyd: make(map[string]*ttydInstance), token: token}
+	return &dashboardServer{terms: make(map[*termSession]struct{}), token: token}
 }
 
 // requireAuth gates every route but /healthz behind a random per-launch token.
@@ -377,8 +371,10 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case sub == "":
 		d.handleProject(w, r, id)
-	case sub == "terminal" || strings.HasPrefix(sub, "terminal/"):
-		d.handleTerminal(w, r, id, sub)
+	case sub == "terminal/ws":
+		d.handleTerminalWS(w, r, id)
+	case sub == "terminal" || sub == "terminal/":
+		d.handleTerminalPage(w, r, id)
 	case sub == "mitm" || strings.HasPrefix(sub, "mitm/"):
 		d.handleMitm(w, r, id, sub)
 	case sub == "firewall/stream":
@@ -430,88 +426,11 @@ func (d *dashboardServer) handleProject(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
-// getOrSpawnTtyd returns a running ttyd instance bridging a browser terminal to
-// this project's tmux dev session, spawning one on first use and reusing it on
-// every later visit. Killing/respawning ttyd never touches the tmux session
-// itself — tmux redraws its current screen (and keeps full scrollback) on any
-// new attach, which is the entire mechanism behind "reopen at the same spot";
-// no state needs to be tracked here beyond "is a bridge process alive."
-func (d *dashboardServer) getOrSpawnTtyd(id, workspace string) (*ttydInstance, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	if inst, ok := d.ttyd[id]; ok {
-		if inst.cmd.ProcessState == nil && pidAlive(inst.cmd.Process.Pid) {
-			return inst, nil
-		}
-		delete(d.ttyd, id) // dead entry, respawn below
-	}
-
-	session := tmuxSessionNameForWorkspace(workspace)
-	if !tmuxSessionExists(session) {
-		return nil, fmt.Errorf("no tmux dev session for this project — was it started with `sandclaude dev`?")
-	}
-
-	port, err := findFreePort(7681)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find free port for ttyd: %w", err)
-	}
-
-	basePath := fmt.Sprintf("/p/%s/terminal", id)
-	cmd := exec.Command("ttyd",
-		"--interface", "127.0.0.1",
-		"--port", fmt.Sprintf("%d", port),
-		"--writable",
-		"--base-path", basePath,
-		"tmux", "attach-session", "-t", session,
-	)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("failed to start ttyd (is it installed? brew install ttyd — https://github.com/tsl0422/ttyd): %w", err)
-	}
-
-	time.Sleep(300 * time.Millisecond) // give ttyd a moment to bind before proxying to it
-
-	target, err := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", port))
-	if err != nil {
-		cmd.Process.Kill()
-		return nil, err
-	}
-
-	inst := &ttydInstance{cmd: cmd, port: port, proxy: httputil.NewSingleHostReverseProxy(target)}
-	d.ttyd[id] = inst
-	return inst, nil
-}
-
-func (d *dashboardServer) handleTerminal(w http.ResponseWriter, r *http.Request, id, sub string) {
-	workspace, err := lookupWorkspaceByID(id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	inst, err := d.getOrSpawnTtyd(id, workspace)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-
-	inst.proxy.ServeHTTP(w, r)
-}
-
-// shutdown terminates every spawned ttyd bridge process. It never touches the
-// underlying tmux sessions or Docker containers — those keep running
-// independent of the dashboard, by design.
+// shutdown closes every live browser-terminal PTY (see terminal.go). It never
+// touches the underlying tmux sessions or Docker containers — those keep running
+// independent of the dashboard, by design; closing a terminal only detaches.
 func (d *dashboardServer) shutdown() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	for id, inst := range d.ttyd {
-		if inst.cmd.Process != nil {
-			inst.cmd.Process.Signal(syscall.SIGTERM)
-		}
-		delete(d.ttyd, id)
-	}
+	d.shutdownTerminals()
 }
 
 // handleMitm reverse-proxies to that project's currently-running mitmweb UI.
