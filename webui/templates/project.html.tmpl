@@ -27,7 +27,14 @@
 
 <div class="tab-panel" id="tab-mitm" style="display:none">
   {{if .MitmUp}}
-    <iframe class="tab-iframe" data-src="/p/{{.ID}}/mitm/"></iframe>
+    {{/* mitmweb is a single-page app rooted at "/" with absolute asset paths and
+         no base-path option, and it refuses non-IP Host headers (DNS-rebinding
+         guard), so it can't be reverse-proxied under a subpath. Link straight to
+         its own origin instead — the robust option. */}}
+    <p class="mitm-link">
+      Credential proxy is running.
+      <a href="http://127.0.0.1:{{.MitmWebPort}}/" target="_blank" rel="noopener">Open mitmweb &#8599;</a>
+    </p>
   {{else}}
     <p class="empty">Credential proxy isn't running for this project.</p>
   {{end}}

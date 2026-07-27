@@ -95,6 +95,10 @@ table.projects th, table.projects td {
 
 .tab-panel { min-height: 70vh; }
 
+.mitm-link { color: var(--muted); }
+.mitm-link a { color: var(--accent); text-decoration: none; margin-left: 0.4rem; }
+.mitm-link a:hover { text-decoration: underline; }
+
 .tab-iframe {
   width: 100%;
   height: 75vh;

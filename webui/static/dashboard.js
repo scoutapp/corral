@@ -48,4 +48,10 @@
       activate(b.dataset.tab);
     });
   });
+
+  // Activate the initially-selected tab on load so its iframe gets a src
+  // immediately — otherwise the default (Terminal) tab renders blank/black until
+  // the user clicks a tab to trigger the lazy src assignment in activate().
+  var initial = document.querySelector(".tab-btn.active") || buttons[0];
+  if (initial) activate(initial.dataset.tab);
 })();

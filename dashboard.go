@@ -15,8 +15,6 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -375,8 +373,6 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleTerminalWS(w, r, id)
 	case sub == "terminal" || sub == "terminal/":
 		d.handleTerminalPage(w, r, id)
-	case sub == "mitm" || strings.HasPrefix(sub, "mitm/"):
-		d.handleMitm(w, r, id, sub)
 	case sub == "firewall/stream":
 		d.handleFirewallStream(w, r, id)
 	default:
@@ -431,36 +427,6 @@ func (d *dashboardServer) handleProject(w http.ResponseWriter, r *http.Request, 
 // independent of the dashboard, by design; closing a terminal only detaches.
 func (d *dashboardServer) shutdown() {
 	d.shutdownTerminals()
-}
-
-// handleMitm reverse-proxies to that project's currently-running mitmweb UI.
-// Rebuilds the proxy target on every request (cheap — just a struct, no dial)
-// rather than caching one, since the webPort can change across restarts of the
-// same project and there's no lifecycle event here to invalidate a cache on.
-func (d *dashboardServer) handleMitm(w http.ResponseWriter, r *http.Request, id, sub string) {
-	workspace, err := lookupWorkspaceByID(id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	state, err := readProxyRuntimeStateFor(workspace)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if state == nil || !pidAlive(state.Pid) {
-		http.Error(w, "credential proxy is not running for this project", http.StatusBadGateway)
-		return
-	}
-
-	target, err := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", state.WebPort))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	httputil.NewSingleHostReverseProxy(target).ServeHTTP(w, r)
 }
 
 const (
