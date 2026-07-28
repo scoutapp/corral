@@ -97,18 +97,8 @@ web dashboard              enforces allowed-domains.txt              ▲
 
 `sandclaude start`/`dev` auto-start a long-lived, host-wide web dashboard and open
 your browser to the project's tab (live terminal, mitm flow table, firewall log,
-config). Run it manually with `sandclaude dashboard` / `dashboard stop`.
-
-**Loopback-only, token-gated.** Binds `127.0.0.1` only; every route needs a random
-per-launch token (passed once in the URL, then an `HttpOnly` cookie). This matters
-because the terminal tab grants a real shell — and for DinD projects that's a
-near-direct path to host root — so the token also defends against DNS-rebinding
-from another browser tab. Treat the printed URL like a credential.
-
-Reopening resumes exactly where you left off: the dashboard is a thin stateless
-viewer over already-persistent backends (tmux session, the mitmweb process, the
-on-disk log). The terminal is a built-in PTY-over-WebSocket bridge (no `ttyd`) and
-needs a `dev`-started tmux session to attach to.
+config). Run it manually with `sandclaude dashboard` / `dashboard stop`. It binds
+`127.0.0.1` only and is token-gated — treat the printed URL like a credential.
 
 ## Docker-in-Docker
 
