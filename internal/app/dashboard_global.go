@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/jackrothrock/sandclaude/internal/config"
 	"net/http"
 	"os"
 	"os/exec"
@@ -31,7 +32,7 @@ type globalDefaults struct {
 }
 
 func globalDefaultsPath() string {
-	return filepath.Join(sandclaudeHome(), "defaults.json")
+	return filepath.Join(config.SandclaudeHome(), "defaults.json")
 }
 
 func readGlobalDefaults() globalDefaults {
@@ -45,7 +46,7 @@ func readGlobalDefaults() globalDefaults {
 }
 
 func writeGlobalDefaults(d globalDefaults) error {
-	if err := os.MkdirAll(sandclaudeHome(), 0700); err != nil {
+	if err := os.MkdirAll(config.SandclaudeHome(), 0700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(d, "", "  ")

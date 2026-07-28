@@ -9,14 +9,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/jackrothrock/sandclaude/internal/config"
 	"io"
 	"log"
-	"net"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -27,31 +26,6 @@ const (
 	defaultProxyPort   = "9500"
 	mitmwebProcessName = "mitmweb"
 )
-
-// debugMode enables verbose debug logging when set to true via --debug flag.
-var debugMode bool
-
-// debugf logs a formatted message only when debug mode is enabled.
-func debugf(format string, args ...any) {
-	if debugMode {
-		log.Printf("[DEBUG] "+format, args...)
-	}
-}
-
-// debugln logs a message only when debug mode is enabled.
-func debugln(args ...any) {
-	if debugMode {
-		log.Println(append([]any{"[DEBUG]"}, args...)...)
-	}
-}
-
-// dindVolumeName returns a deterministic Docker named volume for a workspace's
-// inner Docker data root. Named volumes sidestep the "lchown /proc: permission
-// denied" error that bind mounts hit when Docker extracts layers containing /proc.
-func dindVolumeName(workspace string) string {
-	h := sha256.Sum256([]byte(workspace))
-	return fmt.Sprintf("sandclaude-dind-%x", h[:6])
-}
 
 type SandClaude struct {
 	proxyCmd                    *exec.Cmd
@@ -67,20 +41,6 @@ type SandClaude struct {
 	devMode                     bool   // set by `dev`: launch detached in tmux for closed-loop development
 	detachedSession             string // non-empty when container launched in background tmux session
 	mergedCredsFile             string // non-empty when a merged temp creds file was written (cleaned up on stop)
-}
-
-// shellQuote returns a single-quoted, shell-safe version of s (equivalent to Python's shlex.quote).
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
-// buildShellCommand returns a single shell command string with all parts properly quoted.
-func buildShellCommand(parts []string) string {
-	quoted := make([]string, len(parts))
-	for i, p := range parts {
-		quoted[i] = shellQuote(p)
-	}
-	return strings.Join(quoted, " ")
 }
 
 func NewSandClaude() (*SandClaude, error) {
@@ -100,81 +60,13 @@ func NewSandClaude() (*SandClaude, error) {
 		credentialsFile = resolveCredentialsFile()
 	}
 
-	addonScript := filepath.Join(assetsDir(), "proxy-addon.py")
+	addonScript := filepath.Join(config.AssetsDir(), "proxy-addon.py")
 
 	return &SandClaude{
 		proxyPort:       proxyPort,
 		credentialsFile: credentialsFile,
 		addonScript:     addonScript,
 	}, nil
-}
-
-// askYesNo prompts the user with a yes/no question
-func askYesNo(prompt string) bool {
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("%s [y/N]: ", prompt)
-	response, err := reader.ReadString('\n')
-	if err != nil {
-		return false
-	}
-	response = strings.TrimSpace(strings.ToLower(response))
-	return response == "y" || response == "yes"
-}
-
-// findFreePort returns the first available TCP port starting from startPort.
-func findFreePort(startPort int) (int, error) {
-	debugf("Scanning for free port starting at %d", startPort)
-	for port := startPort; port < startPort+100; port++ {
-		// Check both 0.0.0.0 (what mitmproxy uses for --listen-port) and
-		// 127.0.0.1 (what mitmweb uses for --web-port). A port is only free
-		// if both succeed.
-		addr1 := fmt.Sprintf("0.0.0.0:%d", port)
-		ln1, err1 := net.Listen("tcp", addr1)
-		if err1 != nil {
-			debugf("Port %d unavailable on 0.0.0.0: %v", port, err1)
-			continue
-		}
-		ln1.Close()
-
-		addr2 := fmt.Sprintf("127.0.0.1:%d", port)
-		ln2, err2 := net.Listen("tcp", addr2)
-		if err2 != nil {
-			debugf("Port %d unavailable on 127.0.0.1: %v", port, err2)
-			continue
-		}
-		ln2.Close()
-
-		debugf("Found free port: %d", port)
-		return port, nil
-	}
-	return 0, fmt.Errorf("no free port found in range %d-%d", startPort, startPort+99)
-}
-
-// isDirWritable reports whether the current process can create files in dir.
-func isDirWritable(dir string) bool {
-	f, err := os.CreateTemp(dir, ".write-test-*")
-	if err != nil {
-		return false
-	}
-	f.Close()
-	os.Remove(f.Name())
-	return true
-}
-
-// openBrowser best-effort opens url in the user's default browser. Launching
-// is a convenience on top of the printed URL, never a requirement, so callers
-// should treat a returned error as non-fatal (e.g. log at debug level).
-func openBrowser(url string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", url)
-	case "linux":
-		cmd = exec.Command("xdg-open", url)
-	default:
-		return fmt.Errorf("don't know how to open a browser on %s", runtime.GOOS)
-	}
-	return cmd.Start()
 }
 
 // startProxy starts the mitmweb proxy process
@@ -195,13 +87,13 @@ func (sc *SandClaude) startProxy(workspace string) error {
 			basePort = p
 		}
 	}
-	freePort, err := findFreePort(basePort)
+	freePort, err := config.FindFreePort(basePort)
 	if err != nil {
 		return fmt.Errorf("failed to find free port for proxy: %w", err)
 	}
 	sc.proxyPort = fmt.Sprintf("%d", freePort)
 
-	webPort, err := findFreePort(8081)
+	webPort, err := config.FindFreePort(8081)
 	if err != nil {
 		return fmt.Errorf("failed to find free port for mitmweb UI: %w", err)
 	}
@@ -219,12 +111,12 @@ func (sc *SandClaude) startProxy(workspace string) error {
 		// opens the project's terminal itself after launch — see Run() — so it owns
 		// the open and this would just be a duplicate.
 		if spawned && !sc.devMode {
-			if err := openBrowser(dashboardURL); err != nil {
-				debugf("failed to open browser: %v", err)
+			if err := config.OpenBrowser(dashboardURL); err != nil {
+				config.Debugf("failed to open browser: %v", err)
 			}
 		}
 	}
-	debugf("Credentials file: %s", sc.credentialsFile)
+	config.Debugf("Credentials file: %s", sc.credentialsFile)
 
 	// Check if addon script exists
 	if _, err := os.Stat(sc.addonScript); os.IsNotExist(err) {
@@ -232,7 +124,7 @@ func (sc *SandClaude) startProxy(workspace string) error {
 	}
 
 	// Open log file for mitmweb output
-	logsDir := getLogsDir()
+	logsDir := config.GetLogsDir()
 	if err := os.MkdirAll(logsDir, 0755); err != nil {
 		return fmt.Errorf("failed to create logs dir: %w", err)
 	}
@@ -248,7 +140,7 @@ func (sc *SandClaude) startProxy(workspace string) error {
 	// directly (mode bits lie when the owner differs from the current user).
 	userHome, _ := os.UserHomeDir()
 	confDir := filepath.Join(userHome, ".mitmproxy")
-	if err := os.MkdirAll(confDir, 0700); err != nil || !isDirWritable(confDir) {
+	if err := os.MkdirAll(confDir, 0700); err != nil || !config.IsDirWritable(confDir) {
 		confDir = filepath.Join(os.TempDir(), "sandclaude-mitmproxy")
 		if err := os.MkdirAll(confDir, 0700); err != nil {
 			return fmt.Errorf("failed to create mitmproxy conf dir: %w", err)
@@ -280,7 +172,7 @@ func (sc *SandClaude) startProxy(workspace string) error {
 	log.Printf("Proxy started (PID %d), logs: %s", sc.proxyCmd.Process.Pid, mitmLog)
 
 	if err := writeProxyRuntimeState(webPort, sc.proxyCmd.Process.Pid); err != nil {
-		debugf("Warning: failed to write proxy runtime state: %v", err)
+		config.Debugf("Warning: failed to write proxy runtime state: %v", err)
 	}
 
 	// Give proxy time to start
@@ -292,7 +184,7 @@ func (sc *SandClaude) startProxy(workspace string) error {
 // stopProxy stops the mitmweb proxy process
 func (sc *SandClaude) stopProxy() {
 	if sc.proxyCmd != nil && sc.proxyCmd.Process != nil {
-		debugf("Stopping proxy (PID %d)...", sc.proxyCmd.Process.Pid)
+		config.Debugf("Stopping proxy (PID %d)...", sc.proxyCmd.Process.Pid)
 
 		// Try graceful shutdown first
 		if err := sc.proxyCmd.Process.Signal(syscall.SIGTERM); err != nil {
@@ -307,13 +199,13 @@ func (sc *SandClaude) stopProxy() {
 	// Remove any merged credentials temp file we created.
 	if sc.mergedCredsFile != "" {
 		if err := os.Remove(sc.mergedCredsFile); err != nil && !os.IsNotExist(err) {
-			debugf("Failed to remove merged credentials temp file %s: %v", sc.mergedCredsFile, err)
+			config.Debugf("Failed to remove merged credentials temp file %s: %v", sc.mergedCredsFile, err)
 		}
 		sc.mergedCredsFile = ""
 	}
 
 	if err := os.Remove(proxyRuntimeStatePath()); err != nil && !os.IsNotExist(err) {
-		debugf("Failed to remove proxy runtime state: %v", err)
+		config.Debugf("Failed to remove proxy runtime state: %v", err)
 	}
 }
 
@@ -321,148 +213,8 @@ func (sc *SandClaude) stopProxy() {
 // Project config (project/config.json)
 // ----------------------------------------------------------------------------
 
-type ProjectConfig struct {
-	Workspace    string   `json:"workspace"`
-	ProxyEnabled bool     `json:"proxy_enabled,omitempty"`
-	DindEnabled  bool     `json:"dind_enabled,omitempty"`
-	DindPorts    []string `json:"dind_ports,omitempty"`
-	LaunchTmux   bool     `json:"launch_tmux,omitempty"`
-
-	// Selective mitm (see allowlist-proxy). MonitorHosts, when non-empty, is the
-	// set of hosts routed through mitmweb for full interception + credential
-	// injection; every other allowed host is direct-dialed (still logged, not
-	// decrypted). Empty = monitor all allowed hosts (default).
-	MonitorHosts []string `json:"monitor_hosts,omitempty"`
-	// MitmPorts are the destination ports eligible for mitm; CONNECT to any other
-	// port (ssh, SOCKS, …) is direct-dialed. Empty = default 80,443.
-	MitmPorts []string `json:"mitm_ports,omitempty"`
-
-	CreatedAt string `json:"created_at"`
-}
-
-// mitmPortsOrDefault returns the configured mitm ports, or the 80,443 default
-// when unset — centralizing the default so start, apply, and the dashboard agree.
-func (c *ProjectConfig) mitmPortsOrDefault() []string {
-	if len(c.MitmPorts) == 0 {
-		return []string{"80", "443"}
-	}
-	return c.MitmPorts
-}
-
-func readConfig(projectDir string) (*ProjectConfig, error) {
-	data, err := os.ReadFile(filepath.Join(projectDir, "config.json"))
-	if err != nil {
-		return nil, fmt.Errorf("config not found — run: sandclaude init")
-	}
-	var cfg ProjectConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("invalid config.json: %w", err)
-	}
-	return &cfg, nil
-}
-
-func writeConfig(projectDir string, cfg *ProjectConfig) error {
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(projectDir, "config.json"), data, 0600)
-}
-
-// writeMonitorHostsFile materializes the monitor-list to a newline-separated
-// plaintext file (0644 so proxyuser in the container can read the bind-mount).
-// The file is the on-disk form the allowlist-proxy's --monitorlist reads.
-func writeMonitorHostsFile(path string, hosts []string) error {
-	content := strings.Join(hosts, "\n")
-	if content != "" {
-		content += "\n"
-	}
-	return os.WriteFile(path, []byte(content), 0644)
-}
-
-// sandclaudeHome returns the per-user data directory (~/.sandclaude), overridable
-// via $SANDCLAUDE_HOME. It holds the installed asset bundle (assets/) and the
-// global proxy-credentials.json.
-func sandclaudeHome() string {
-	if h := os.Getenv("SANDCLAUDE_HOME"); h != "" {
-		return h
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("Failed to get home directory: %v", err)
-	}
-	return filepath.Join(home, ".sandclaude")
-}
-
-// assetsDir returns the Docker build-context asset bundle (Dockerfile,
-// entrypoint.sh, launcher.py, proxy-addon.py, allowlist-proxy/, bin/, .claude/).
-// Resolution order:
-//  1. $SANDCLAUDE_HOME/assets       — only when SANDCLAUDE_HOME is set explicitly
-//  2. <bindir>/assets               — installed next to the binary
-//  3. <bindir>                      — DEV MODE: running ./sandclaude from the git
-//     checkout, where Dockerfile/allowlist-proxy/ sit beside the binary
-//  4. ~/.sandclaude/assets          — default installed location
-//
-// The binary-adjacent cases (2 & 3) intentionally take precedence over the default
-// installed location (4) so that running ./sandclaude from a checkout keeps using the
-// live checkout assets even after an install created ~/.sandclaude/assets. An explicit
-// SANDCLAUDE_HOME (1) always wins for deliberate overrides.
-func assetsDir() string {
-	looksLikeAssets := func(dir string) bool {
-		if _, err := os.Stat(filepath.Join(dir, "Dockerfile")); err != nil {
-			return false
-		}
-		if _, err := os.Stat(filepath.Join(dir, "allowlist-proxy")); err != nil {
-			return false
-		}
-		return true
-	}
-
-	// 1. Explicit override via SANDCLAUDE_HOME.
-	if os.Getenv("SANDCLAUDE_HOME") != "" {
-		if cand := filepath.Join(sandclaudeHome(), "assets"); looksLikeAssets(cand) {
-			return cand
-		}
-	}
-
-	// 2 & 3. Relative to the binary (installed-beside, then dev-mode checkout).
-	if exePath, err := os.Executable(); err == nil {
-		binDir := filepath.Dir(exePath)
-		if cand := filepath.Join(binDir, "assets"); looksLikeAssets(cand) {
-			return cand
-		}
-		if looksLikeAssets(binDir) {
-			return binDir // dev mode: checkout beside the binary
-		}
-	}
-
-	// 4. Default installed location. Returned even if it doesn't exist yet, so callers
-	// produce a clear "run install.sh" style error rather than an empty path.
-	return filepath.Join(sandclaudeHome(), "assets")
-}
-
-// sandclaudeDir returns <cwd>/.sandclaude — the per-project directory holding the
-// allowlist (allowed-domains.txt[.enc]), logs/, and project/ config.
-func sandclaudeDir() string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		log.Fatalf("Failed to get working directory: %v", err)
-	}
-	return filepath.Join(cwd, ".sandclaude")
-}
-
-// getProjectDir returns <cwd>/.sandclaude/project/ — per-project config and state.
-func getProjectDir() string {
-	return filepath.Join(sandclaudeDir(), "project")
-}
-
-// getLogsDir returns <cwd>/.sandclaude/logs/ — host-side proxy/mitm logs for this project.
-func getLogsDir() string {
-	return filepath.Join(sandclaudeDir(), "logs")
-}
-
 // startDocker starts the Docker container with Claude Code
-func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
+func (sc *SandClaude) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) error {
 	workspace := cfg.Workspace
 	// Build image if needed
 	imageName := "sandclaude-stable"
@@ -495,7 +247,7 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 	} else if sc.passthroughFirewallAndWrite {
 		args = append(args, "-e", "DISABLE_FIREWALL_AND_WRITE=1")
 		// Still need the allowlist key and file for the proxy to start
-		projectDir := getProjectDir()
+		projectDir := config.GetProjectDir()
 		keyPath := filepath.Join(projectDir, ".allowlist-key")
 		keyData, err := os.ReadFile(keyPath)
 		if err != nil {
@@ -503,7 +255,7 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 		}
 		args = append(args, "-e", fmt.Sprintf("ALLOWLIST_KEY=%s", strings.TrimSpace(string(keyData))))
 
-		encPath := filepath.Join(sandclaudeDir(), "allowed-domains.txt.enc")
+		encPath := filepath.Join(config.SandclaudeDir(), "allowed-domains.txt.enc")
 		if _, err := os.Stat(encPath); os.IsNotExist(err) {
 			return fmt.Errorf("encrypted allowlist not found at %s\nRun 'sandclaude firewall-reload' to create it", encPath)
 		}
@@ -511,7 +263,7 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/allowed-domains.txt.enc:ro", encPath))
 	} else {
 		// Read encryption key from project
-		projectDir := getProjectDir()
+		projectDir := config.GetProjectDir()
 		keyPath := filepath.Join(projectDir, ".allowlist-key")
 		keyData, err := os.ReadFile(keyPath)
 		if err != nil {
@@ -520,7 +272,7 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 		args = append(args, "-e", fmt.Sprintf("ALLOWLIST_KEY=%s", strings.TrimSpace(string(keyData))))
 
 		// Mount the encrypted allowlist file
-		encPath := filepath.Join(sandclaudeDir(), "allowed-domains.txt.enc")
+		encPath := filepath.Join(config.SandclaudeDir(), "allowed-domains.txt.enc")
 		if _, err := os.Stat(encPath); os.IsNotExist(err) {
 			return fmt.Errorf("encrypted allowlist not found at %s\nRun 'sandclaude firewall-reload' to create it", encPath)
 		}
@@ -531,7 +283,7 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 
 	// Claude auth: in proxy mode, generate dummy token; otherwise let Claude handle auth
 	if sc.proxyEnabled {
-		debugln("Generating dummy auth token for proxy mode (proxy will inject real credentials)")
+		config.Debugln("Generating dummy auth token for proxy mode (proxy will inject real credentials)")
 		dummyToken := "sk-ant-oat01-" + strings.Repeat("0", 86) + "-" + strings.Repeat("0", 8)
 		args = append(args, "-e", fmt.Sprintf("CLAUDE_CODE_OAUTH_TOKEN=%s", dummyToken))
 	}
@@ -544,10 +296,10 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 		ghToken = strings.TrimSpace(string(output))
 	}
 	if ghToken != "" {
-		debugln("GitHub token found, passing GH_TOKEN to container")
+		config.Debugln("GitHub token found, passing GH_TOKEN to container")
 		args = append(args, "-e", fmt.Sprintf("GH_TOKEN=%s", ghToken))
 	} else {
-		debugln("No GitHub token found (gh auth token returned empty)")
+		config.Debugln("No GitHub token found (gh auth token returned empty)")
 	}
 
 	// Mount .claude.json from host (Claude Code config file)
@@ -584,16 +336,16 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 	mountClaudeSubdirItems := func(sourceLabel, sourceClaudeDir, subName string) {
 		srcSubDir := filepath.Join(sourceClaudeDir, subName)
 		if entries, err := os.ReadDir(srcSubDir); err == nil {
-			debugf("Mounting %s .claude/%s/* (%d items, read-only)", sourceLabel, subName, len(entries))
+			config.Debugf("Mounting %s .claude/%s/* (%d items, read-only)", sourceLabel, subName, len(entries))
 			for _, entry := range entries {
 				entrySrc := filepath.Join(srcSubDir, entry.Name())
 				entryDst := fmt.Sprintf("/home/claude/.claude/%s/%s", subName, entry.Name())
 				if mountedDsts[entryDst] {
-					debugf("  skip (already mounted): %s", entryDst)
+					config.Debugf("  skip (already mounted): %s", entryDst)
 					continue
 				}
 				mountedDsts[entryDst] = true
-				debugf("  volume: %s -> %s:ro", entrySrc, entryDst)
+				config.Debugf("  volume: %s -> %s:ro", entrySrc, entryDst)
 				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", entrySrc, entryDst))
 			}
 		}
@@ -637,7 +389,7 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 		}
 	}
 
-	repoClaudeDir := filepath.Join(assetsDir(), ".claude")
+	repoClaudeDir := filepath.Join(config.AssetsDir(), ".claude")
 	if entries, err := os.ReadDir(repoClaudeDir); err == nil {
 		for _, e := range entries {
 			if e.IsDir() {
@@ -673,7 +425,7 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 			hostSubdir := filepath.Join(hostClaudeDir, subName)
 			if _, err := os.Stat(hostSubdir); err == nil {
 				dst := fmt.Sprintf("/home/claude/.claude/%s", subName)
-				debugf("volume: host .claude/%s -> %s:rw", subName, dst)
+				config.Debugf("volume: host .claude/%s -> %s:rw", subName, dst)
 				args = append(args, "-v", fmt.Sprintf("%s:%s:rw", hostSubdir, dst))
 			}
 		} else {
@@ -683,11 +435,11 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 
 			if _, err := os.Stat(workspaceSubdir); err == nil {
 				dst := fmt.Sprintf("/home/claude/.claude/%s", subName)
-				debugf("volume: workspace .claude/%s -> %s:ro", subName, dst)
+				config.Debugf("volume: workspace .claude/%s -> %s:ro", subName, dst)
 				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", workspaceSubdir, dst))
 			} else if _, err := os.Stat(hostSubdir); err == nil {
 				dst := fmt.Sprintf("/home/claude/.claude/%s", subName)
-				debugf("volume: host .claude/%s -> %s:ro", subName, dst)
+				config.Debugf("volume: host .claude/%s -> %s:ro", subName, dst)
 				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", hostSubdir, dst))
 			}
 		}
@@ -701,7 +453,7 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 	// The plaintext allowlist always lives at <cwd>/.sandclaude/allowed-domains.txt,
 	// owned by the project. The container appends newly-seen domains here in
 	// passthrough-and-write mode.
-	allowlistPath := filepath.Join(sandclaudeDir(), "allowed-domains.txt")
+	allowlistPath := filepath.Join(config.SandclaudeDir(), "allowed-domains.txt")
 	if sc.passthroughFirewallAndWrite {
 		// Ensure the file exists and is world-writable before the container starts,
 		// so proxyuser (which doesn't own the file) can append to it.
@@ -726,23 +478,23 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 	//    allowlist) mounted in; entrypoint passes it to --monitorlist. Absent/empty
 	//    config => no file mounted => proxy monitors all allowed hosts (default).
 	//  - mitm-ports: passed as an env var the entrypoint forwards to --mitm-ports.
-	if cfg, err := readConfig(getProjectDir()); err == nil {
+	if cfg, err := config.ReadConfig(config.GetProjectDir()); err == nil {
 		if len(cfg.MonitorHosts) > 0 {
 			monitorPath := monitorHostsPath()
-			if err := writeMonitorHostsFile(monitorPath, cfg.MonitorHosts); err != nil {
+			if err := config.WriteMonitorHostsFile(monitorPath, cfg.MonitorHosts); err != nil {
 				return fmt.Errorf("failed to write monitor-hosts file: %w", err)
 			}
 			args = append(args, "-v", fmt.Sprintf("%s:/home/claude/monitor-hosts.txt:rw", monitorPath))
 		}
-		args = append(args, "-e", "SANDCLAUDE_MITM_PORTS="+strings.Join(cfg.mitmPortsOrDefault(), ","))
+		args = append(args, "-e", "SANDCLAUDE_MITM_PORTS="+strings.Join(cfg.MitmPortsOrDefault(), ","))
 	}
 
-	logsDir := getLogsDir()
+	logsDir := config.GetLogsDir()
 	os.MkdirAll(logsDir, 0755)
 	args = append(args, "-v", fmt.Sprintf("%s:/home/claude/logs", logsDir))
 
 	// Mount bin/ from the asset bundle so scripts can be edited without rebuilding
-	binDir := filepath.Join(assetsDir(), "bin")
+	binDir := filepath.Join(config.AssetsDir(), "bin")
 	if _, err := os.Stat(binDir); err == nil {
 		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/bin", binDir))
 	}
@@ -765,9 +517,9 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 		certPath := filepath.Join(mitmDir, "mitmproxy-ca-cert.pem")
 		if _, err := os.Stat(certPath); err == nil {
 			args = append(args, "-v", fmt.Sprintf("%s:/home/claude/.mitmproxy/mitmproxy-ca-cert.pem:ro", certPath))
-			debugln("Proxy CA cert found on host, mounting into container")
+			config.Debugln("Proxy CA cert found on host, mounting into container")
 		} else {
-			debugln("Proxy CA cert not on host — will be generated when proxy starts")
+			config.Debugln("Proxy CA cert not on host — will be generated when proxy starts")
 		}
 	}
 
@@ -783,7 +535,7 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 		// Bind mounts fail with "lchown /proc: permission denied" when Docker
 		// tries to extract image layers that contain /proc entries — named
 		// volumes avoid this because Docker manages ownership internally.
-		dindVol := dindVolumeName(cfg.Workspace)
+		dindVol := config.DindVolumeName(cfg.Workspace)
 		args = append(args, "-v", fmt.Sprintf("%s:/var/lib/docker-dind:rw", dindVol))
 
 		for _, port := range sc.dindPorts {
@@ -803,7 +555,7 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 
 	args = append(args, imageName)
 
-	debugf("Docker command: docker %s", strings.Join(args, " "))
+	config.Debugf("Docker command: docker %s", strings.Join(args, " "))
 
 	// `dev` launches the container in a detached host-level tmux session for closed-loop
 	// development (observe/drive via capture/send/attach). Plain `start` always runs
@@ -838,8 +590,8 @@ func (sc *SandClaude) startDetached(containerName string, args []string) error {
 	}
 
 	parts := append([]string{"docker"}, args...)
-	dockerCmdStr := buildShellCommand(parts)
-	debugf("Detached tmux command: tmux new-session -d -s %s %q", sessionName, dockerCmdStr)
+	dockerCmdStr := config.BuildShellCommand(parts)
+	config.Debugf("Detached tmux command: tmux new-session -d -s %s %q", sessionName, dockerCmdStr)
 
 	if err := exec.Command("tmux", "new-session", "-d", "-s", sessionName, dockerCmdStr).Run(); err != nil {
 		return fmt.Errorf("failed to create tmux session '%s': %w\n\nIs tmux installed?", sessionName, err)
@@ -860,7 +612,7 @@ func (sc *SandClaude) ensureImage(imageName string) error {
 	// Check if image exists
 	cmd := exec.Command("docker", "image", "inspect", imageName)
 	if err := cmd.Run(); err == nil {
-		debugf("Image '%s' already exists, skipping build", imageName)
+		config.Debugf("Image '%s' already exists, skipping build", imageName)
 		return nil // Image exists
 	}
 
@@ -909,7 +661,7 @@ func (sc *SandClaude) ensureImage(imageName string) error {
 		)
 	}
 
-	buildArgs = append(buildArgs, "-t", imageName, assetsDir())
+	buildArgs = append(buildArgs, "-t", imageName, config.AssetsDir())
 	buildCmd := exec.Command("docker", buildArgs...)
 	buildCmd.Stdout = os.Stdout
 	buildCmd.Stderr = os.Stderr
@@ -924,7 +676,7 @@ func (sc *SandClaude) ensureImage(imageName string) error {
 //
 // We run claude directly rather than via launcher.py to avoid launcher.py trying to
 // create a tmux session named "sandclaude" which already exists (it's the outer session).
-func (sc *SandClaude) startDirect(cfg *ProjectConfig) error {
+func (sc *SandClaude) startDirect(cfg *config.ProjectConfig) error {
 	log.Println("Running inside sandclaude container — starting Claude directly (no nested Docker)")
 
 	// patch-claude-settings.py must run before Claude starts.
@@ -959,7 +711,7 @@ func (sc *SandClaude) startDirect(cfg *ProjectConfig) error {
 		}
 	}
 
-	claudeCmd := "cd " + shellQuote(cfg.Workspace) + " && claude --dangerously-skip-permissions; exec bash"
+	claudeCmd := "cd " + config.ShellQuote(cfg.Workspace) + " && claude --dangerously-skip-permissions; exec bash"
 	if err := exec.Command("tmux", "new-session", "-d", "-s", sessionName, claudeCmd).Run(); err != nil {
 		return fmt.Errorf("failed to create tmux session '%s': %w", sessionName, err)
 	}
@@ -977,20 +729,20 @@ func (sc *SandClaude) startDirect(cfg *ProjectConfig) error {
 func (sc *SandClaude) Run(keepDevfiles bool) error {
 	log.Println("SandClaude - Secure Claude Code Environment")
 
-	projectDir := getProjectDir()
-	cfg, err := readConfig(projectDir)
+	projectDir := config.GetProjectDir()
+	cfg, err := config.ReadConfig(projectDir)
 	if err != nil {
 		return err
 	}
 
-	debugf("Config: workspace=%s proxy=%v dind=%v", cfg.Workspace, cfg.ProxyEnabled, cfg.DindEnabled)
+	config.Debugf("Config: workspace=%s proxy=%v dind=%v", cfg.Workspace, cfg.ProxyEnabled, cfg.DindEnabled)
 
 	if _, err := os.Stat(cfg.Workspace); os.IsNotExist(err) {
 		return fmt.Errorf("workspace not found: %s", cfg.Workspace)
 	}
 
 	if err := registerProject(cfg.Workspace); err != nil {
-		debugf("Warning: failed to update project registry: %v", err)
+		config.Debugf("Warning: failed to update project registry: %v", err)
 	}
 
 	// If we're already inside a sandclaude container, skip docker entirely.
@@ -1057,8 +809,8 @@ func (sc *SandClaude) Run(keepDevfiles bool) error {
 		if state, derr := readDashboardState(); derr == nil && state != nil {
 			url := fmt.Sprintf("http://127.0.0.1:%d/p/%s?token=%s", state.Port, projectID(cfg.Workspace), state.Token)
 			log.Printf("Open in dashboard: %s", url)
-			if oerr := openBrowser(url); oerr != nil {
-				debugf("failed to open browser: %v", oerr)
+			if oerr := config.OpenBrowser(url); oerr != nil {
+				config.Debugf("failed to open browser: %v", oerr)
 			}
 		}
 	}
@@ -1068,8 +820,8 @@ func (sc *SandClaude) Run(keepDevfiles bool) error {
 
 // cmdUpdate updates project config fields without touching credentials or the allowlist key.
 func cmdUpdate() error {
-	projectDir := getProjectDir()
-	cfg, err := readConfig(projectDir)
+	projectDir := config.GetProjectDir()
+	cfg, err := config.ReadConfig(projectDir)
 	if err != nil {
 		return err
 	}
@@ -1147,7 +899,7 @@ func cmdUpdate() error {
 		cfg.Workspace = wsInput
 		log.Printf("  Workspace set to: %s\n", wsInput)
 		if _, err := os.Stat(wsInput); os.IsNotExist(err) {
-			if askYesNo("Workspace doesn't exist. Create it?") {
+			if config.AskYesNo("Workspace doesn't exist. Create it?") {
 				os.MkdirAll(wsInput, 0755)
 				log.Printf("  Created workspace: %s\n", wsInput)
 			}
@@ -1169,7 +921,7 @@ func cmdUpdate() error {
 		}
 	}
 
-	if err := writeConfig(projectDir, cfg); err != nil {
+	if err := config.WriteConfig(projectDir, cfg); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 	log.Println()
@@ -1179,7 +931,7 @@ func cmdUpdate() error {
 
 // cmdInit initializes the ./project/ structure
 func cmdInit() error {
-	projectDir := getProjectDir()
+	projectDir := config.GetProjectDir()
 
 	if _, err := os.Stat(projectDir); err == nil {
 		return fmt.Errorf("project already initialized at %s\n   To update config run: sandclaude update\n   To remove it run:     sandclaude remove", projectDir)
@@ -1192,14 +944,14 @@ func cmdInit() error {
 	log.Printf("Initializing project at: %s\n", projectDir)
 	log.Println()
 
-	cfg := &ProjectConfig{
+	cfg := &config.ProjectConfig{
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 
 	log.Println()
 
 	// Credential proxy
-	if askYesNo("RECOMMENDED: Enable credential proxy (hides secrets from Claude)?") {
+	if config.AskYesNo("RECOMMENDED: Enable credential proxy (hides secrets from Claude)?") {
 		cfg.ProxyEnabled = true
 		log.Println("✅ Proxy mode enabled")
 		log.Println()
@@ -1212,7 +964,7 @@ func cmdInit() error {
 	log.Println()
 
 	// tmux
-	if askYesNo("Launch with tmux?") {
+	if config.AskYesNo("Launch with tmux?") {
 		cfg.LaunchTmux = true
 		log.Println("✅ tmux launch enabled")
 	}
@@ -1220,7 +972,7 @@ func cmdInit() error {
 	log.Println()
 
 	// Docker-in-Docker
-	if askYesNo("Enable Docker-in-Docker (inner containers, Claude-accessible)?") {
+	if config.AskYesNo("Enable Docker-in-Docker (inner containers, Claude-accessible)?") {
 		cfg.DindEnabled = true
 		log.Println("Docker-in-Docker enabled — Claude can start inner containers")
 		log.Println()
@@ -1259,13 +1011,13 @@ func cmdInit() error {
 	cfg.Workspace = workspace
 
 	if _, err := os.Stat(workspace); os.IsNotExist(err) {
-		if askYesNo("Workspace doesn't exist. Create it?") {
+		if config.AskYesNo("Workspace doesn't exist. Create it?") {
 			os.MkdirAll(workspace, 0755)
 			log.Printf("Created workspace: %s\n", workspace)
 		}
 	}
 
-	if err := writeConfig(projectDir, cfg); err != nil {
+	if err := config.WriteConfig(projectDir, cfg); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
@@ -1289,9 +1041,9 @@ func cmdInit() error {
 	// Seed the project allowlist from the shipped defaults, then encrypt it.
 	log.Println()
 	log.Println("Encrypting allowlist...")
-	seedPath := filepath.Join(assetsDir(), "allowlist-proxy", "allowed-domains.txt")
-	plaintextPath := filepath.Join(sandclaudeDir(), "allowed-domains.txt")
-	encPath := filepath.Join(sandclaudeDir(), "allowed-domains.txt.enc")
+	seedPath := filepath.Join(config.AssetsDir(), "allowlist-proxy", "allowed-domains.txt")
+	plaintextPath := filepath.Join(config.SandclaudeDir(), "allowed-domains.txt")
+	encPath := filepath.Join(config.SandclaudeDir(), "allowed-domains.txt.enc")
 
 	// Copy the seed into the project if the project doesn't already have one.
 	if _, err := os.Stat(plaintextPath); os.IsNotExist(err) {
@@ -1340,47 +1092,9 @@ func cmdInit() error {
 	log.Println()
 
 	// Ensure .sandclaude/ (this project's config, key, and logs) is gitignored.
-	ensureGitignored(".sandclaude/")
+	config.EnsureGitignored(".sandclaude/")
 
 	return nil
-}
-
-// ensureGitignored adds entry to <cwd>/.gitignore if not already present.
-func ensureGitignored(entry string) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return
-	}
-	gitignorePath := filepath.Join(cwd, ".gitignore")
-
-	existing, err := os.ReadFile(gitignorePath)
-	if os.IsNotExist(err) {
-		if writeErr := os.WriteFile(gitignorePath, []byte(entry+"\n"), 0644); writeErr == nil {
-			log.Printf("✅ Created .gitignore with %s\n", entry)
-		}
-		return
-	}
-	if err != nil {
-		return
-	}
-
-	// Check if entry already present (match with or without trailing slash).
-	trimmed := strings.TrimRight(entry, "/")
-	for _, line := range strings.Split(string(existing), "\n") {
-		l := strings.TrimSpace(line)
-		if l == entry || l == trimmed {
-			return
-		}
-	}
-
-	content := string(existing)
-	if len(content) > 0 && !strings.HasSuffix(content, "\n") {
-		content += "\n"
-	}
-	content += entry + "\n"
-	if writeErr := os.WriteFile(gitignorePath, []byte(content), 0644); writeErr == nil {
-		log.Printf("✅ Added %s to .gitignore\n", entry)
-	}
 }
 
 // cmdStart starts Claude Code interactively, attached to the current terminal.
@@ -1440,9 +1154,9 @@ func runStart(args []string, devMode bool) error {
 
 // cmdList shows the ./project/config.json
 func cmdList() error {
-	projectDir := getProjectDir()
+	projectDir := config.GetProjectDir()
 
-	cfg, err := readConfig(projectDir)
+	cfg, err := config.ReadConfig(projectDir)
 	if err != nil {
 		log.Println("No project configured. Run: sandclaude init")
 		return nil
@@ -1458,7 +1172,7 @@ func cmdList() error {
 			log.Printf(" (ports: %s)", strings.Join(cfg.DindPorts, ", "))
 		}
 		log.Println()
-		log.Printf("  DinD data: docker volume %s\n", dindVolumeName(cfg.Workspace))
+		log.Printf("  DinD data: docker volume %s\n", config.DindVolumeName(cfg.Workspace))
 	}
 	if cfg.ProxyEnabled {
 		log.Println("  Proxy:     enabled")
@@ -1488,10 +1202,10 @@ func cmdFirewallMonitor() error {
 
 // cmdShell opens a bash shell in the container
 func cmdShell() error {
-	projectDir := getProjectDir()
+	projectDir := config.GetProjectDir()
 
 	workspace := projectDir // fallback
-	if cfg, err := readConfig(projectDir); err == nil {
+	if cfg, err := config.ReadConfig(projectDir); err == nil {
 		workspace = cfg.Workspace
 	}
 
@@ -1539,12 +1253,12 @@ func cmdShell() error {
 // cmdRebuild rebuilds the Docker image, optionally destroying the existing image/container and/or inner docker data first
 func cmdRebuild(destroy bool, destroyInner bool) error {
 	if destroyInner {
-		projectDir := getProjectDir()
-		cfg, cfgErr := readConfig(projectDir)
+		projectDir := config.GetProjectDir()
+		cfg, cfgErr := config.ReadConfig(projectDir)
 		if cfgErr != nil {
 			log.Printf("Warning: could not read config to derive DinD volume name: %v", cfgErr)
 		} else {
-			volName := dindVolumeName(cfg.Workspace)
+			volName := config.DindVolumeName(cfg.Workspace)
 			log.Printf("Removing inner docker volume %s...", volName)
 			rmCmd := exec.Command("docker", "volume", "rm", volName)
 			rmCmd.Stdout = os.Stdout
@@ -1556,7 +1270,7 @@ func cmdRebuild(destroy bool, destroyInner bool) error {
 			}
 		}
 		// Remove legacy bind-mount directory if it survived from an older install.
-		legacyDir := filepath.Join(getProjectDir(), "dind-data")
+		legacyDir := filepath.Join(config.GetProjectDir(), "dind-data")
 		if _, err := os.Stat(legacyDir); err == nil {
 			log.Printf("Removing legacy DinD data directory %s...", legacyDir)
 			os.RemoveAll(legacyDir)
@@ -1603,7 +1317,7 @@ func cmdRebuild(destroy bool, destroyInner bool) error {
 	if destroy {
 		buildArgs = append(buildArgs, "--no-cache")
 	}
-	buildArgs = append(buildArgs, "-t", "sandclaude-stable", assetsDir())
+	buildArgs = append(buildArgs, "-t", "sandclaude-stable", config.AssetsDir())
 	buildCmd := exec.Command("docker", buildArgs...)
 	buildCmd.Stdout = os.Stdout
 	buildCmd.Stderr = os.Stderr
@@ -1614,13 +1328,13 @@ func cmdRebuild(destroy bool, destroyInner bool) error {
 // globalCredentialsPath returns the shared, cross-project credentials file
 // (~/.sandclaude/proxy-credentials.json).
 func globalCredentialsPath() string {
-	return filepath.Join(sandclaudeHome(), "proxy-credentials.json")
+	return filepath.Join(config.SandclaudeHome(), "proxy-credentials.json")
 }
 
 // projectCredentialsPath returns the per-project credentials override
 // (<cwd>/.sandclaude/project/proxy-credentials.json).
 func projectCredentialsPath() string {
-	return filepath.Join(getProjectDir(), "proxy-credentials.json")
+	return filepath.Join(config.GetProjectDir(), "proxy-credentials.json")
 }
 
 // loadCredsMap reads a proxy-credentials.json file into a domain->entry map.
@@ -1723,13 +1437,13 @@ func resolveCredentialsFileTracked() (credsFile string, tempFile string) {
 	}
 	tmp.Close()
 
-	debugf("Merged %d global + %d project credential entries -> %s", len(global), len(project), tmp.Name())
+	config.Debugf("Merged %d global + %d project credential entries -> %s", len(global), len(project), tmp.Name())
 	return tmp.Name(), tmp.Name()
 }
 
 // dummyCredValues is the set of placeholder values written by the cmdInit template.
 var dummyCredValues = map[string]bool{
-	"Bearer sk-ant-oat01-...":  true,
+	"Bearer sk-ant-oat01-...":   true,
 	"token gho_real_token_here": true,
 }
 
@@ -1762,15 +1476,15 @@ func hasOnlyDummyCredentials(credsPath string) bool {
 func cmdPopulateProxyCredentials(projectScope bool) error {
 	var credsPath string
 	if projectScope {
-		projectDir := getProjectDir()
+		projectDir := config.GetProjectDir()
 		if _, err := os.Stat(projectDir); os.IsNotExist(err) {
 			return fmt.Errorf("no project found — run: sandclaude init")
 		}
 		credsPath = projectCredentialsPath()
 		fmt.Printf("Writing project-specific credentials to: %s\n\n", credsPath)
 	} else {
-		if err := os.MkdirAll(sandclaudeHome(), 0700); err != nil {
-			return fmt.Errorf("failed to create %s: %w", sandclaudeHome(), err)
+		if err := os.MkdirAll(config.SandclaudeHome(), 0700); err != nil {
+			return fmt.Errorf("failed to create %s: %w", config.SandclaudeHome(), err)
 		}
 		credsPath = globalCredentialsPath()
 		fmt.Printf("Writing global credentials to: %s\n\n", credsPath)
@@ -1779,7 +1493,7 @@ func cmdPopulateProxyCredentials(projectScope bool) error {
 	// If real credentials already exist, confirm before overwriting
 	if !hasOnlyDummyCredentials(credsPath) {
 		fmt.Println("⚠️  proxy-credentials.json already contains real credentials.")
-		if !askYesNo("Are you sure you want to replace them?") {
+		if !config.AskYesNo("Are you sure you want to replace them?") {
 			fmt.Println("Aborted.")
 			return nil
 		}
@@ -1799,7 +1513,7 @@ func cmdPopulateProxyCredentials(projectScope bool) error {
 	// Claude credentials
 	if _, err := exec.LookPath("claude"); err != nil {
 		fmt.Println("'claude' not found in PATH — skipping Anthropic credentials")
-	} else if askYesNo("Populate Claude credentials?") {
+	} else if config.AskYesNo("Populate Claude credentials?") {
 		fmt.Println("Running 'claude setup-token' — follow any browser prompts...")
 		cmd := exec.Command("claude", "setup-token")
 		cmd.Stdin = os.Stdin
@@ -1838,7 +1552,7 @@ func cmdPopulateProxyCredentials(projectScope bool) error {
 	// GitHub credentials
 	if _, err := exec.LookPath("gh"); err != nil {
 		fmt.Println("'gh' not found in PATH — skipping GitHub credentials")
-	} else if askYesNo("Populate GitHub credentials?") {
+	} else if config.AskYesNo("Populate GitHub credentials?") {
 		cmd := exec.Command("gh", "auth", "token")
 		output, err := cmd.Output()
 		if err != nil {
@@ -1879,11 +1593,11 @@ func cmdPopulateProxyCredentials(projectScope bool) error {
 
 // cmdRemove removes the <cwd>/.sandclaude/ directory (config, allowlist, logs).
 func cmdRemove() error {
-	scDir := sandclaudeDir()
+	scDir := config.SandclaudeDir()
 
 	// Check if project exists
-	if _, err := os.Stat(getProjectDir()); os.IsNotExist(err) {
-		return fmt.Errorf("no project found at %s", getProjectDir())
+	if _, err := os.Stat(config.GetProjectDir()); os.IsNotExist(err) {
+		return fmt.Errorf("no project found at %s", config.GetProjectDir())
 	}
 
 	// Confirm deletion
@@ -1892,7 +1606,7 @@ func cmdRemove() error {
 	log.Println("   (config, allowlist, encryption key, and logs)")
 	log.Println()
 
-	if !askYesNo("Are you sure you want to remove this project?") {
+	if !config.AskYesNo("Are you sure you want to remove this project?") {
 		log.Println("Cancelled")
 		return nil
 	}
@@ -1940,7 +1654,7 @@ func allowlistEncrypt(key [32]byte, plaintext []byte) ([]byte, error) {
 // It is the single source of truth for keeping the encrypted file in step with the
 // plaintext, shared by startup (Run) and the firewall-reload command.
 func syncEncryptedAllowlist() error {
-	projectDir := getProjectDir()
+	projectDir := config.GetProjectDir()
 
 	keyPath := filepath.Join(projectDir, ".allowlist-key")
 	keyData, err := os.ReadFile(keyPath)
@@ -1953,8 +1667,8 @@ func syncEncryptedAllowlist() error {
 		return err
 	}
 
-	plaintextPath := filepath.Join(sandclaudeDir(), "allowed-domains.txt")
-	encPath := filepath.Join(sandclaudeDir(), "allowed-domains.txt.enc")
+	plaintextPath := filepath.Join(config.SandclaudeDir(), "allowed-domains.txt")
+	encPath := filepath.Join(config.SandclaudeDir(), "allowed-domains.txt.enc")
 
 	plaintext, err := os.ReadFile(plaintextPath)
 	if err != nil {
@@ -2021,7 +1735,7 @@ func tmuxSessionNameForWorkspace(workspace string) string {
 // (sandclaude_<workspace-basename>), matching the name used by start/dev. Falls back
 // to the legacy bare "sandclaude" if no project config is readable.
 func runningContainerName() string {
-	if cfg, err := readConfig(getProjectDir()); err == nil && cfg.Workspace != "" {
+	if cfg, err := config.ReadConfig(config.GetProjectDir()); err == nil && cfg.Workspace != "" {
 		return containerNameForWorkspace(cfg.Workspace)
 	}
 	return "sandclaude"
@@ -2065,7 +1779,7 @@ func reloadProxyInContainer(containerName string) error {
 
 // detachedSessionName derives the tmux session name for the current project's container.
 func detachedSessionName() (session string, container string, err error) {
-	cfg, err := readConfig(getProjectDir())
+	cfg, err := config.ReadConfig(config.GetProjectDir())
 	if err != nil {
 		return "", "", fmt.Errorf("no project configured — run sandclaude init first")
 	}
@@ -2219,14 +1933,14 @@ func Main() {
 	filteredArgs := os.Args[:1]
 	for _, arg := range os.Args[1:] {
 		if arg == "--debug" {
-			debugMode = true
+			config.DebugMode = true
 		} else {
 			filteredArgs = append(filteredArgs, arg)
 		}
 	}
 	os.Args = filteredArgs
 
-	if debugMode {
+	if config.DebugMode {
 		log.Println("[DEBUG] Debug logging enabled")
 	}
 

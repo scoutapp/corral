@@ -3,6 +3,7 @@ package app
 import (
 	"bufio"
 	"encoding/json"
+	"github.com/jackrothrock/sandclaude/internal/config"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -27,8 +28,8 @@ import (
 
 type credView struct {
 	Host   string `json:"host"`
-	Kind   string `json:"kind"`  // "header" or "url_param"
-	Name   string `json:"name"`  // the header/param name (not secret)
+	Kind   string `json:"kind"`   // "header" or "url_param"
+	Name   string `json:"name"`   // the header/param name (not secret)
 	Masked string `json:"masked"` // always "********" — the value is never exposed
 }
 
@@ -72,7 +73,7 @@ func (d *dashboardServer) handleConfigRead(w http.ResponseWriter, r *http.Reques
 		Workspace:    workspace,
 		MonitorHosts: cfg.MonitorHosts,
 		MonitorAll:   len(cfg.MonitorHosts) == 0,
-		MitmPorts:    cfg.mitmPortsOrDefault(),
+		MitmPorts:    cfg.MitmPortsOrDefault(),
 		ProxyEnabled: cfg.ProxyEnabled,
 		DindEnabled:  cfg.DindEnabled,
 		DindPorts:    cfg.DindPorts,
@@ -96,13 +97,13 @@ func (d *dashboardServer) handleConfigRead(w http.ResponseWriter, r *http.Reques
 // ----------------------------------------------------------------------------
 
 // sandclaudeDirForWorkspace is <workspace>/.sandclaude (the plaintext allowlist,
-// logs/, and project/ live under here). Mirrors the cwd-based sandclaudeDir().
+// logs/, and project/ live under here). Mirrors the cwd-based config.SandclaudeDir().
 func sandclaudeDirForWorkspace(workspace string) string {
 	return filepath.Join(workspace, ".sandclaude")
 }
 
-func readConfigForWorkspace(workspace string) (*ProjectConfig, error) {
-	return readConfig(projectDirForWorkspace(workspace))
+func readConfigForWorkspace(workspace string) (*config.ProjectConfig, error) {
+	return config.ReadConfig(projectDirForWorkspace(workspace))
 }
 
 // readAllowedHostsForWorkspace reads the plaintext allowlist (the human-editable

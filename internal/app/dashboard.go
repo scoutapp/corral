@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/jackrothrock/sandclaude/internal/config"
 	"html/template"
 	"io"
 	"io/fs"
@@ -47,7 +48,7 @@ type ProjectRegistry struct {
 }
 
 func registryPath() string {
-	return filepath.Join(sandclaudeHome(), "projects.json")
+	return filepath.Join(config.SandclaudeHome(), "projects.json")
 }
 
 // readRegistry tolerates a missing file (first run) but not a corrupt one.
@@ -71,7 +72,7 @@ func writeRegistry(reg *ProjectRegistry) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(sandclaudeHome(), 0700); err != nil {
+	if err := os.MkdirAll(config.SandclaudeHome(), 0700); err != nil {
 		return err
 	}
 	return os.WriteFile(registryPath(), data, 0600)
@@ -104,7 +105,7 @@ func registerProject(workspace string) error {
 // ----------------------------------------------------------------------------
 // Per-project paths, parameterized by workspace.
 //
-// Every existing helper (sandclaudeDir/getProjectDir/getLogsDir) resolves via
+// Every existing helper (config.SandclaudeDir/config.GetProjectDir/config.GetLogsDir) resolves via
 // os.Getwd(), which is correct for every existing command — they only ever
 // operate on "the project you're standing in." The dashboard is host-wide and
 // needs to inspect *other* projects regardless of its own cwd, so it needs
@@ -135,11 +136,11 @@ type ProxyRuntimeState struct {
 }
 
 func proxyRuntimeStatePath() string {
-	return filepath.Join(getProjectDir(), "runtime.json")
+	return filepath.Join(config.GetProjectDir(), "runtime.json")
 }
 
 // writeProxyRuntimeState is called from startProxy() (cwd == project workspace,
-// same assumption getLogsDir() already makes).
+// same assumption config.GetLogsDir() already makes).
 func writeProxyRuntimeState(webPort int, pid int) error {
 	state := ProxyRuntimeState{
 		ProxyPort: 0, // filled in by caller if ever needed; not used by the dashboard today
@@ -151,7 +152,7 @@ func writeProxyRuntimeState(webPort int, pid int) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(getProjectDir(), 0700); err != nil {
+	if err := os.MkdirAll(config.GetProjectDir(), 0700); err != nil {
 		return err
 	}
 	return os.WriteFile(proxyRuntimeStatePath(), data, 0600)
@@ -216,8 +217,8 @@ type ProjectStatus struct {
 
 	// Activity is a coarse "what is this project doing" signal derived from the
 	// rate of api.anthropic.com requests in proxy.log — see activity.go.
-	Activity     string // "working" | "waiting" | "off"
-	AnthropicHits int   // hits in the recent window, for display
+	Activity      string // "working" | "waiting" | "off"
+	AnthropicHits int    // hits in the recent window, for display
 }
 
 func projectLiveStatus(workspace string) ProjectStatus {
@@ -231,7 +232,7 @@ func projectLiveStatus(workspace string) ProjectStatus {
 	status.TmuxUp = tmuxSessionExists(status.Session)
 
 	if state, err := readProxyRuntimeStateFor(workspace); err != nil {
-		debugf("Warning: failed to read proxy runtime state for %s: %v", workspace, err)
+		config.Debugf("Warning: failed to read proxy runtime state for %s: %v", workspace, err)
 	} else if state != nil && pidAlive(state.Pid) {
 		status.MitmUp = true
 		status.MitmWebPort = state.WebPort
@@ -825,7 +826,7 @@ type dashboardState struct {
 }
 
 func dashboardStatePath() string {
-	return filepath.Join(sandclaudeHome(), "dashboard.json")
+	return filepath.Join(config.SandclaudeHome(), "dashboard.json")
 }
 
 func readDashboardState() (*dashboardState, error) {
@@ -916,7 +917,7 @@ func ensureDashboardRunning() (*dashboardState, bool, error) {
 		return nil, false, fmt.Errorf("failed to generate dashboard token: %w", err)
 	}
 
-	port, err := findFreePort(7777)
+	port, err := config.FindFreePort(7777)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to find free port for dashboard: %w", err)
 	}
@@ -926,10 +927,10 @@ func ensureDashboardRunning() (*dashboardState, bool, error) {
 		return nil, false, fmt.Errorf("failed to resolve sandclaude binary path: %w", err)
 	}
 
-	if err := os.MkdirAll(sandclaudeHome(), 0700); err != nil {
+	if err := os.MkdirAll(config.SandclaudeHome(), 0700); err != nil {
 		return nil, false, err
 	}
-	logPath := filepath.Join(sandclaudeHome(), "dashboard.log")
+	logPath := filepath.Join(config.SandclaudeHome(), "dashboard.log")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to open %s: %w", logPath, err)

@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/jackrothrock/sandclaude/internal/config"
 	"os"
 	"path/filepath"
 	"sort"
@@ -24,7 +25,7 @@ import (
 // Manages the monitor-list — the hosts routed through mitm. Empty list = monitor
 // all allowed hosts (the default).
 func cmdMonitor(args []string) error {
-	cfg, err := readConfig(getProjectDir())
+	cfg, err := config.ReadConfig(config.GetProjectDir())
 	if err != nil {
 		return err
 	}
@@ -57,7 +58,7 @@ func cmdMonitor(args []string) error {
 		}
 		cfg.MonitorHosts = append(cfg.MonitorHosts, host)
 		sort.Strings(cfg.MonitorHosts)
-		if err := writeConfig(getProjectDir(), cfg); err != nil {
+		if err := config.WriteConfig(config.GetProjectDir(), cfg); err != nil {
 			return err
 		}
 		fmt.Printf("added to monitor-list: %s\n", host)
@@ -69,7 +70,7 @@ func cmdMonitor(args []string) error {
 		}
 		host := strings.ToLower(strings.TrimSpace(args[1]))
 		cfg.MonitorHosts = remove(cfg.MonitorHosts, host)
-		if err := writeConfig(getProjectDir(), cfg); err != nil {
+		if err := config.WriteConfig(config.GetProjectDir(), cfg); err != nil {
 			return err
 		}
 		fmt.Printf("removed from monitor-list: %s\n", host)
@@ -77,7 +78,7 @@ func cmdMonitor(args []string) error {
 
 	case "clear":
 		cfg.MonitorHosts = nil
-		if err := writeConfig(getProjectDir(), cfg); err != nil {
+		if err := config.WriteConfig(config.GetProjectDir(), cfg); err != nil {
 			return err
 		}
 		fmt.Println("monitor-list cleared → monitoring ALL allowed hosts")
@@ -90,7 +91,7 @@ func cmdMonitor(args []string) error {
 
 // cmdMitmPorts: sandclaude mitm-ports [list|add <port>|remove <port>|reset]
 func cmdMitmPorts(args []string) error {
-	cfg, err := readConfig(getProjectDir())
+	cfg, err := config.ReadConfig(config.GetProjectDir())
 	if err != nil {
 		return err
 	}
@@ -102,7 +103,7 @@ func cmdMitmPorts(args []string) error {
 
 	switch action {
 	case "list":
-		fmt.Printf("mitm-eligible ports: %s\n", strings.Join(cfg.mitmPortsOrDefault(), ", "))
+		fmt.Printf("mitm-eligible ports: %s\n", strings.Join(cfg.MitmPortsOrDefault(), ", "))
 		fmt.Println("(CONNECT to any other port — ssh, socks, etc. — is direct-dialed)")
 		return nil
 
@@ -114,14 +115,14 @@ func cmdMitmPorts(args []string) error {
 		if !isPort(port) {
 			return fmt.Errorf("invalid port: %q", port)
 		}
-		ports := cfg.mitmPortsOrDefault()
+		ports := cfg.MitmPortsOrDefault()
 		if contains(ports, port) {
 			fmt.Printf("already present: %s\n", port)
 			return nil
 		}
 		cfg.MitmPorts = append(ports, port)
 		sortPorts(cfg.MitmPorts)
-		if err := writeConfig(getProjectDir(), cfg); err != nil {
+		if err := config.WriteConfig(config.GetProjectDir(), cfg); err != nil {
 			return err
 		}
 		fmt.Printf("added mitm port: %s\n", port)
@@ -132,8 +133,8 @@ func cmdMitmPorts(args []string) error {
 			return fmt.Errorf("usage: sandclaude mitm-ports remove <port>")
 		}
 		port := strings.TrimSpace(args[1])
-		cfg.MitmPorts = remove(cfg.mitmPortsOrDefault(), port)
-		if err := writeConfig(getProjectDir(), cfg); err != nil {
+		cfg.MitmPorts = remove(cfg.MitmPortsOrDefault(), port)
+		if err := config.WriteConfig(config.GetProjectDir(), cfg); err != nil {
 			return err
 		}
 		fmt.Printf("removed mitm port: %s\n", port)
@@ -141,7 +142,7 @@ func cmdMitmPorts(args []string) error {
 
 	case "reset":
 		cfg.MitmPorts = nil
-		if err := writeConfig(getProjectDir(), cfg); err != nil {
+		if err := config.WriteConfig(config.GetProjectDir(), cfg); err != nil {
 			return err
 		}
 		fmt.Println("mitm-ports reset to default (80,443)")
@@ -227,7 +228,7 @@ type applyScope struct {
 // if a container is running, reloads the allowlist-proxy for monitor/port changes.
 // Credential changes need no action here — mitmweb picks them up via mtime watch.
 func applyProxyConfig(scope applyScope) error {
-	cfg, err := readConfig(getProjectDir())
+	cfg, err := config.ReadConfig(config.GetProjectDir())
 	if err != nil {
 		return err
 	}
@@ -235,7 +236,7 @@ func applyProxyConfig(scope applyScope) error {
 	if scope.monitorOrPorts {
 		monitorPath := monitorHostsPath()
 		if len(cfg.MonitorHosts) > 0 {
-			if err := writeMonitorHostsFile(monitorPath, cfg.MonitorHosts); err != nil {
+			if err := config.WriteMonitorHostsFile(monitorPath, cfg.MonitorHosts); err != nil {
 				return err
 			}
 		} else {
@@ -268,7 +269,7 @@ func applyProxyConfig(scope applyScope) error {
 // ----------------------------------------------------------------------------
 
 func monitorHostsPath() string {
-	return filepath.Join(getProjectDir(), "monitor-hosts.txt")
+	return filepath.Join(config.GetProjectDir(), "monitor-hosts.txt")
 }
 
 // writeCredsMap writes a domain->entry credentials map as pretty JSON (0600 —
