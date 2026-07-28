@@ -7,9 +7,11 @@
     terminal: document.getElementById("tab-terminal"),
     mitm: document.getElementById("tab-mitm"),
     firewall: document.getElementById("tab-firewall"),
+    config: document.getElementById("tab-config"),
   };
   var firewallStarted = false;
   var mitmStarted = false;
+  var configStarted = false;
 
   function activate(tab) {
     buttons.forEach(function (b) {
@@ -35,6 +37,12 @@
     if (tab === "mitm" && !mitmStarted && typeof startMitmFlows === "function") {
       mitmStarted = true;
       startMitmFlows(projectId);
+    }
+
+    // startConfig is defined in config.js; load the config panel on first open.
+    if (tab === "config" && !configStarted && typeof startConfig === "function") {
+      configStarted = true;
+      startConfig(projectId);
     }
   }
 
