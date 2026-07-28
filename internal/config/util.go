@@ -106,7 +106,13 @@ func IsDirWritable(dir string) bool {
 // OpenBrowser best-effort opens url in the user's default browser. Launching
 // is a convenience on top of the printed URL, never a requirement, so callers
 // should treat a returned error as non-fatal (e.g. log at debug level).
+//
+// Set SANDCLAUDE_NO_BROWSER=1 to suppress the launch entirely — used by the e2e
+// suite (and handy for headless/CI use) so `start` doesn't pop a tab per run.
 func OpenBrowser(url string) error {
+	if os.Getenv("SANDCLAUDE_NO_BROWSER") != "" {
+		return nil
+	}
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":

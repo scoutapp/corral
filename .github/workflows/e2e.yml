@@ -1,0 +1,61 @@
+name: e2e
+
+# End-to-end suite: builds sandclaude, boots a real privileged DinD sandbox, and
+# drives the full build -> run -> reach-from-host -> dashboard chain.
+# ubuntu-latest ships Docker; the sandbox brings up its own privileged outer
+# container (the CLI passes `--privileged` itself), so no special runner config
+# is needed.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SANDCLAUDE_NO_BROWSER: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build sandclaude
+        run: go build -o sandclaude ./cmd/sandclaude
+
+      - name: Install e2e deps
+        working-directory: tests/e2e
+        run: npm ci
+
+      - name: Install Playwright (chromium)
+        working-directory: tests/e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Run e2e suite
+        working-directory: tests/e2e
+        run: npm test
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            tests/e2e/.artifacts/**
+            tests/e2e/playwright-report/**
+            tests/e2e/.workspace/.sandclaude/logs/**
