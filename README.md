@@ -44,8 +44,10 @@ sandclaude start             # now enforced — nothing new gets out
 ## Watching & driving
 
 `start` opens a browser dashboard where you can watch Claude live, see what it's
-reaching out to, and drop into a terminal. It's private to your machine and
-requires the link it prints — treat that link like a password.
+reaching out to, and drop into a terminal. One dashboard covers **all** your
+projects at once — run Claude across several repos and watch them side by side
+from a single page. It's private to your machine and requires the link it prints —
+treat that link like a password.
 
 Prefer the terminal? `sandclaude dev` runs Claude in the background so you can
 `capture` its output, `send` it a prompt, or `attach` to it directly.
