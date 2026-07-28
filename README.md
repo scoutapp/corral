@@ -369,7 +369,7 @@ sandclaude start --disable-dind
 
 **Firewall**: A Go HTTP CONNECT proxy (`allowlist-proxy`) runs inside the container on `127.0.0.1:3128`. Claude's `HTTP_PROXY`/`HTTPS_PROXY` env vars point to it. Connections to domains not in the allowlist are rejected with a `403`. The allowlist is stored encrypted at `.sandclaude/allowed-domains.txt.enc` (bind-mounted into the container) and supports hot-reload via `sandclaude firewall-reload`. Logs go to `logs/proxy.log` inside the container.
 
-**Skill System**: `sandbox/skills/environment/SKILL.md` is baked into the image (and a workspace's own `.claude/skills/` is layered on top at runtime) to teach Claude:
+**Skill System**: `.claude/skills/environment/SKILL.md` auto-mounted into the container teaches Claude:
 - Firewall architecture and allowed domains
 - How to request domain access
 - Troubleshooting steps
