@@ -1,0 +1,80 @@
+# GoReleaser config for sandclaude.
+#
+# `git tag vX.Y.Z && git push --tags` triggers .github/workflows/release.yml,
+# which runs `goreleaser release`. That produces, on the GitHub Release:
+#   - sandclaude_<os>_<arch>.tar.gz   (one per platform, each holds the binary)
+#   - sandclaude-assets.tar.gz        (the runtime asset bundle: sandbox/ + host/)
+#   - checksums.txt
+# The remote installer (scripts/install.sh, served via curl | bash) downloads the
+# matching platform archive + sandclaude-assets.tar.gz.
+#
+# The asset bundle is shipped SEPARATELY (not embedded) because sandbox/ is a
+# Docker build context the binary materializes at runtime via config.AssetsDir();
+# it is the same bundle the from-clone install.sh syncs to ~/.sandclaude/assets.
+version: 2
+
+project_name: sandclaude
+
+before:
+  hooks:
+    # Package the runtime asset bundle once, up front, into build/ (NOT dist/ —
+    # goreleaser requires dist/ to be empty when it starts). Both tiers keep
+    # their directory structure inside the tarball (sandbox/…, host/…), matching
+    # what config.AssetsDir()/HostAssetsDir() expect under ~/.sandclaude/assets.
+    # Exclude project-specific/secret artifacts that must never ship.
+    - mkdir -p build
+    - >-
+      tar czf build/sandclaude-assets.tar.gz
+      --exclude='allowed-domains.txt.enc'
+      --exclude='*.pem' --exclude='*.key' --exclude='.allowlist-key'
+      --exclude='__pycache__' --exclude='*.pyc'
+      sandbox host
+
+builds:
+  - id: sandclaude
+    main: ./cmd/sandclaude
+    binary: sandclaude
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/jackrothrock/sandclaude/internal/config.Version={{.Version}}
+      - -X github.com/jackrothrock/sandclaude/internal/config.Commit={{.ShortCommit}}
+      - -X github.com/jackrothrock/sandclaude/internal/config.Date={{.Date}}
+
+archives:
+  - id: sandclaude
+    ids: [sandclaude]
+    # sandclaude_darwin_arm64.tar.gz, sandclaude_linux_amd64.tar.gz, …
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    files:
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  github:
+    owner: scoutapp
+    name: sandclaude
+  # Attach the separately-built asset bundle (from the before-hook) to the release.
+  extra_files:
+    - glob: build/sandclaude-assets.tar.gz
+  # Publish directly (not a draft) so the release assets are downloadable by the
+  # anonymous `curl | bash` installer — that's the path we validate.
+  draft: false
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot-{{ .ShortCommit }}"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - Merge pull request

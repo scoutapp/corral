@@ -13,14 +13,32 @@ Credential proxy requires `mitmproxy` — install via `brew install mitmproxy` o
 Install once, then use `sandclaude` in any project — no per-project clone, no `.devcontainer`.
 
 ```bash
-# Clone the repo somewhere permanent and install
-git clone https://github.com/scoutapp/sandclaude.git
-cd sandclaude
-./install.sh          # builds the binary -> /usr/local/bin, assets -> ~/.sandclaude/assets
+# Download prebuilt binary + assets (no clone, no Go required)
+curl -fsSL https://raw.githubusercontent.com/scoutapp/sandclaude/main/scripts/install.sh | bash
 ```
 
-`install.sh` puts the `sandclaude` binary on your `$PATH` and copies the Docker build
-context (Dockerfile, entrypoint, launcher, allowlist proxy, etc.) into `~/.sandclaude/assets`.
+This installs the `sandclaude` binary to your `$PATH` (`/usr/local/bin`, or `~/.local/bin`
+if that isn't writable) and the runtime asset bundle to `~/.sandclaude/assets`. Pin a
+version or override locations with env vars:
+
+```bash
+SANDCLAUDE_VERSION=v0.1.0 SANDCLAUDE_PREFIX=~/.local/bin \
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/scoutapp/sandclaude/main/scripts/install.sh)"
+```
+
+<details>
+<summary>Install from source instead (for development)</summary>
+
+```bash
+git clone https://github.com/scoutapp/sandclaude.git
+cd sandclaude
+./install.sh          # builds from source, then installs binary + assets the same way
+```
+
+The repo-root `./install.sh` builds the binary with Go and syncs the asset bundle from
+the checkout — used for development and CI. The `curl | bash` installer above downloads
+prebuilt release artifacts instead. Both end up at the same install locations.
+</details>
 
 ```bash
 # In any project you want to work on
