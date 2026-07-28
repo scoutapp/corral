@@ -375,6 +375,12 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleTerminalPage(w, r, id)
 	case sub == "config":
 		d.handleConfigRead(w, r, id)
+	case sub == "config/diff":
+		d.handleConfigDiff(w, r, id)
+	case sub == "config/apply":
+		d.handleConfigApply(w, r, id)
+	case sub == "config/restart":
+		d.handleConfigRestart(w, r, id)
 	case sub == "mitm/flows":
 		d.handleMitmFlows(w, r, id)
 	case strings.HasPrefix(sub, "mitm/flows/"):
