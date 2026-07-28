@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/jackrothrock/sandclaude/internal/creds"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -134,13 +135,13 @@ func readAllowedHostsForWorkspace(workspace string) []string {
 // the project-scoped credentials file (the one the dashboard write side edits).
 func readMaskedCredsForWorkspace(workspace string) []credView {
 	path := filepath.Join(projectDirForWorkspace(workspace), "proxy-credentials.json")
-	creds, err := loadCredsMap(path)
+	credsMap, err := creds.LoadCredsMap(path)
 	if err != nil {
 		return nil
 	}
 
-	out := make([]credView, 0, len(creds))
-	for host, entry := range creds {
+	out := make([]credView, 0, len(credsMap))
+	for host, entry := range credsMap {
 		cv := credView{Host: host, Masked: "********"}
 		if v, ok := entry["header"]; ok {
 			cv.Kind, cv.Name = "header", v

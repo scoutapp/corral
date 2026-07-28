@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/jackrothrock/sandclaude/internal/creds"
 	"net/http"
 	"os"
 	"os/exec"
@@ -95,10 +96,10 @@ func (d *dashboardServer) handleGlobalPage(w http.ResponseWriter, r *http.Reques
 }
 
 func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Request) {
-	creds, _ := loadCredsMap(globalCredentialsPath())
-	view := globalView{CredsPath: globalCredentialsPath()}
+	credsMap, _ := creds.LoadCredsMap(creds.GlobalCredentialsPath())
+	view := globalView{CredsPath: creds.GlobalCredentialsPath()}
 
-	for host, entry := range creds {
+	for host, entry := range credsMap {
 		cv := globalCredView{Host: host, Masked: maskTail(entry["value"])}
 		if v, ok := entry["header"]; ok {
 			cv.Kind, cv.Name = "header", v
@@ -142,7 +143,7 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 	results := []string{}
 
 	if len(edit.SetCreds) > 0 || len(edit.UnsetCreds) > 0 {
-		creds, err := loadCredsMap(globalCredentialsPath())
+		credsMap, err := creds.LoadCredsMap(creds.GlobalCredentialsPath())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -152,14 +153,14 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 				results = append(results, "✗ "+c.Host+": kind must be header|url_param")
 				continue
 			}
-			creds[strings.ToLower(c.Host)] = map[string]string{c.Kind: c.Name, "value": c.Value}
+			credsMap[strings.ToLower(c.Host)] = map[string]string{c.Kind: c.Name, "value": c.Value}
 			results = append(results, "✓ credential set: "+c.Host)
 		}
 		for _, h := range edit.UnsetCreds {
-			delete(creds, strings.ToLower(h))
+			delete(credsMap, strings.ToLower(h))
 			results = append(results, "✓ credential removed: "+h)
 		}
-		if err := writeCredsMap(globalCredentialsPath(), creds); err != nil {
+		if err := creds.WriteCredsMap(creds.GlobalCredentialsPath(), credsMap); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

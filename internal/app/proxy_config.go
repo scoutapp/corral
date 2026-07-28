@@ -1,9 +1,9 @@
 package app
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/jackrothrock/sandclaude/internal/creds"
 	"os"
 	"path/filepath"
 	"sort"
@@ -168,13 +168,13 @@ func cmdSetCred(args []string) error {
 		return fmt.Errorf("second arg must be 'header' or 'url_param', got %q", kind)
 	}
 
-	path := projectCredentialsPath()
-	creds, err := loadCredsMap(path)
+	path := creds.ProjectCredentialsPath()
+	credsMap, err := creds.LoadCredsMap(path)
 	if err != nil {
 		return err
 	}
-	creds[host] = map[string]string{kind: name, "value": value}
-	if err := writeCredsMap(path, creds); err != nil {
+	credsMap[host] = map[string]string{kind: name, "value": value}
+	if err := creds.WriteCredsMap(path, credsMap); err != nil {
 		return err
 	}
 	fmt.Printf("set credential for %s (%s: %s)\n", host, kind, name)
@@ -187,17 +187,17 @@ func cmdUnsetCred(args []string) error {
 		return fmt.Errorf("usage: sandclaude unset-cred <host>")
 	}
 	host := strings.ToLower(strings.TrimSpace(args[0]))
-	path := projectCredentialsPath()
-	creds, err := loadCredsMap(path)
+	path := creds.ProjectCredentialsPath()
+	credsMap, err := creds.LoadCredsMap(path)
 	if err != nil {
 		return err
 	}
-	if _, ok := creds[host]; !ok {
+	if _, ok := credsMap[host]; !ok {
 		fmt.Printf("no credential for %s\n", host)
 		return nil
 	}
-	delete(creds, host)
-	if err := writeCredsMap(path, creds); err != nil {
+	delete(credsMap, host)
+	if err := creds.WriteCredsMap(path, credsMap); err != nil {
 		return err
 	}
 	fmt.Printf("removed credential for %s\n", host)
@@ -270,16 +270,6 @@ func applyProxyConfig(scope applyScope) error {
 
 func monitorHostsPath() string {
 	return filepath.Join(config.GetProjectDir(), "monitor-hosts.txt")
-}
-
-// writeCredsMap writes a domain->entry credentials map as pretty JSON (0600 —
-// it holds secrets).
-func writeCredsMap(path string, creds map[string]map[string]string) error {
-	data, err := json.MarshalIndent(creds, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0600)
 }
 
 func contains(xs []string, x string) bool {

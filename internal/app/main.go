@@ -2,15 +2,12 @@ package app
 
 import (
 	"bufio"
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/jackrothrock/sandclaude/internal/config"
-	"io"
+	"github.com/jackrothrock/sandclaude/internal/creds"
 	"log"
 	"os"
 	"os/exec"
@@ -57,7 +54,7 @@ func NewSandClaude() (*SandClaude, error) {
 	// for cleanup); here we just pick a best-effort path.
 	credentialsFile := os.Getenv("SANDCLAUDE_PROXY_CREDS")
 	if credentialsFile == "" {
-		credentialsFile = resolveCredentialsFile()
+		credentialsFile = creds.ResolveCredentialsFile()
 	}
 
 	addonScript := filepath.Join(config.AssetsDir(), "proxy-addon.py")
@@ -75,7 +72,7 @@ func (sc *SandClaude) startProxy(workspace string) error {
 	// cleaned up on stopProxy. An explicit SANDCLAUDE_PROXY_CREDS override is honored
 	// as-is (no merge, no temp file). Skip when merging isn't applicable.
 	if os.Getenv("SANDCLAUDE_PROXY_CREDS") == "" {
-		credsFile, tempFile := resolveCredentialsFileTracked()
+		credsFile, tempFile := creds.ResolveCredentialsFileTracked()
 		sc.credentialsFile = credsFile
 		sc.mergedCredsFile = tempFile
 	}
@@ -762,7 +759,7 @@ func (sc *SandClaude) Run(keepDevfiles bool) error {
 	// running start/dev silently launches with a stale .enc (the proxy reads the
 	// encrypted file, not the plaintext), so newly-added domains stay blocked.
 	if cfg.ProxyEnabled {
-		if err := syncEncryptedAllowlist(); err != nil {
+		if err := creds.SyncEncryptedAllowlist(); err != nil {
 			log.Printf("Warning: could not re-encrypt allowlist, using existing .enc: %v", err)
 		}
 	}
@@ -956,7 +953,7 @@ func cmdInit() error {
 		log.Println("✅ Proxy mode enabled")
 		log.Println()
 		log.Println("⚠️  IMPORTANT: You must configure real credentials before starting!")
-		log.Printf("   Global credentials live at: %s\n", globalCredentialsPath())
+		log.Printf("   Global credentials live at: %s\n", creds.GlobalCredentialsPath())
 		log.Println("   Run: sandclaude populate-proxy-credentials")
 		log.Println("   For a project-specific override, run: sandclaude populate-proxy-credentials --project")
 	}
@@ -1064,12 +1061,12 @@ func cmdInit() error {
 		return fmt.Errorf("read %s: %w", plaintextPath, err)
 	}
 
-	key, err := allowlistDeriveKey(keyHex)
+	key, err := creds.AllowlistDeriveKey(keyHex)
 	if err != nil {
 		return err
 	}
 
-	ciphertext, err := allowlistEncrypt(key, plaintext)
+	ciphertext, err := creds.AllowlistEncrypt(key, plaintext)
 	if err != nil {
 		return fmt.Errorf("encrypt: %w", err)
 	}
@@ -1325,150 +1322,6 @@ func cmdRebuild(destroy bool, destroyInner bool) error {
 	return buildCmd.Run()
 }
 
-// globalCredentialsPath returns the shared, cross-project credentials file
-// (~/.sandclaude/proxy-credentials.json).
-func globalCredentialsPath() string {
-	return filepath.Join(config.SandclaudeHome(), "proxy-credentials.json")
-}
-
-// projectCredentialsPath returns the per-project credentials override
-// (<cwd>/.sandclaude/project/proxy-credentials.json).
-func projectCredentialsPath() string {
-	return filepath.Join(config.GetProjectDir(), "proxy-credentials.json")
-}
-
-// loadCredsMap reads a proxy-credentials.json file into a domain->entry map.
-// Returns an empty map (not an error) when the file is absent.
-func loadCredsMap(path string) (map[string]map[string]string, error) {
-	creds := map[string]map[string]string{}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return creds, nil
-		}
-		return nil, err
-	}
-	if len(data) == 0 {
-		return creds, nil
-	}
-	if err := json.Unmarshal(data, &creds); err != nil {
-		return nil, fmt.Errorf("invalid JSON in %s: %w", path, err)
-	}
-	return creds, nil
-}
-
-// resolveCredentialsFile returns a best-effort credentials path WITHOUT creating a
-// temp file — used at construction time (NewSandClaude) where no lifecycle owner
-// exists to clean up. It prefers the global file, falling back to the project file.
-// startProxy re-resolves via resolveCredentialsFileTracked, which performs the real
-// per-domain merge and records the temp file for cleanup on stopProxy.
-func resolveCredentialsFile() string {
-	if _, err := os.Stat(globalCredentialsPath()); err == nil {
-		return globalCredentialsPath()
-	}
-	if _, err := os.Stat(projectCredentialsPath()); err == nil {
-		return projectCredentialsPath()
-	}
-	return globalCredentialsPath()
-}
-
-// resolveCredentialsFileTracked is like resolveCredentialsFile but also returns the
-// path of any temp file it created (empty string if it returned a real file directly),
-// so the caller can delete it on shutdown.
-func resolveCredentialsFileTracked() (credsFile string, tempFile string) {
-	globalPath := globalCredentialsPath()
-	projectPath := projectCredentialsPath()
-
-	_, globalErr := os.Stat(globalPath)
-	_, projectErr := os.Stat(projectPath)
-	globalExists := globalErr == nil
-	projectExists := projectErr == nil
-
-	switch {
-	case globalExists && !projectExists:
-		return globalPath, ""
-	case !globalExists && projectExists:
-		return projectPath, ""
-	case !globalExists && !projectExists:
-		// Neither exists — return the global path so downstream "file not found"
-		// messaging points at the canonical location.
-		return globalPath, ""
-	}
-
-	// Both exist: merge, project wins per-domain.
-	global, err := loadCredsMap(globalPath)
-	if err != nil {
-		log.Printf("Warning: %v — falling back to project credentials only", err)
-		return projectPath, ""
-	}
-	project, err := loadCredsMap(projectPath)
-	if err != nil {
-		log.Printf("Warning: %v — falling back to global credentials only", err)
-		return globalPath, ""
-	}
-
-	merged := make(map[string]map[string]string, len(global)+len(project))
-	for k, v := range global {
-		merged[k] = v
-	}
-	for k, v := range project {
-		merged[k] = v // project overrides/extends
-	}
-
-	data, err := json.MarshalIndent(merged, "", "  ")
-	if err != nil {
-		log.Printf("Warning: failed to marshal merged credentials: %v — using global only", err)
-		return globalPath, ""
-	}
-
-	tmp, err := os.CreateTemp("", "sandclaude-merged-creds-*.json")
-	if err != nil {
-		log.Printf("Warning: failed to create temp credentials file: %v — using global only", err)
-		return globalPath, ""
-	}
-	if err := os.Chmod(tmp.Name(), 0600); err != nil {
-		log.Printf("Warning: failed to chmod temp credentials file: %v", err)
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
-		log.Printf("Warning: failed to write merged credentials: %v — using global only", err)
-		return globalPath, ""
-	}
-	tmp.Close()
-
-	config.Debugf("Merged %d global + %d project credential entries -> %s", len(global), len(project), tmp.Name())
-	return tmp.Name(), tmp.Name()
-}
-
-// dummyCredValues is the set of placeholder values written by the cmdInit template.
-var dummyCredValues = map[string]bool{
-	"Bearer sk-ant-oat01-...":   true,
-	"token gho_real_token_here": true,
-}
-
-// hasOnlyDummyCredentials returns true when the file doesn't exist, can't be
-// parsed, is empty, or every credential value matches a known placeholder.
-func hasOnlyDummyCredentials(credsPath string) bool {
-	data, err := os.ReadFile(credsPath)
-	if err != nil {
-		return true
-	}
-	creds := map[string]map[string]string{}
-	if err := json.Unmarshal(data, &creds); err != nil {
-		return true
-	}
-	if len(creds) == 0 {
-		return true
-	}
-	for _, entry := range creds {
-		if !dummyCredValues[entry["value"]] {
-			return false
-		}
-	}
-	return true
-}
-
 // cmdPopulateProxyCredentials populates proxy-credentials.json interactively using
 // claude setup-token. By default it writes the global file (~/.sandclaude/proxy-credentials.json)
 // shared across all projects; with projectScope=true it writes the per-project override
@@ -1480,18 +1333,18 @@ func cmdPopulateProxyCredentials(projectScope bool) error {
 		if _, err := os.Stat(projectDir); os.IsNotExist(err) {
 			return fmt.Errorf("no project found — run: sandclaude init")
 		}
-		credsPath = projectCredentialsPath()
+		credsPath = creds.ProjectCredentialsPath()
 		fmt.Printf("Writing project-specific credentials to: %s\n\n", credsPath)
 	} else {
 		if err := os.MkdirAll(config.SandclaudeHome(), 0700); err != nil {
 			return fmt.Errorf("failed to create %s: %w", config.SandclaudeHome(), err)
 		}
-		credsPath = globalCredentialsPath()
+		credsPath = creds.GlobalCredentialsPath()
 		fmt.Printf("Writing global credentials to: %s\n\n", credsPath)
 	}
 
 	// If real credentials already exist, confirm before overwriting
-	if !hasOnlyDummyCredentials(credsPath) {
+	if !creds.HasOnlyDummyCredentials(credsPath) {
 		fmt.Println("⚠️  proxy-credentials.json already contains real credentials.")
 		if !config.AskYesNo("Are you sure you want to replace them?") {
 			fmt.Println("Aborted.")
@@ -1620,77 +1473,10 @@ func cmdRemove() error {
 	return nil
 }
 
-// ----------------------------------------------------------------------------
-// Encryption helpers (must match allowlist-proxy/main.go)
-// ----------------------------------------------------------------------------
-
-// allowlistDeriveKey derives a 32-byte AES-256 key from the passphrase.
-func allowlistDeriveKey(passphrase string) ([32]byte, error) {
-	if passphrase == "" {
-		return [32]byte{}, fmt.Errorf("ALLOWLIST_KEY environment variable is not set")
-	}
-	return sha256.Sum256([]byte(passphrase + ":allowlist-proxy-v1")), nil
-}
-
-// allowlistEncrypt encrypts plaintext with AES-256-GCM. Format: nonce || ciphertext.
-func allowlistEncrypt(key [32]byte, plaintext []byte) ([]byte, error) {
-	block, err := aes.NewCipher(key[:])
-	if err != nil {
-		return nil, err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return nil, err
-	}
-	return gcm.Seal(nonce, nonce, plaintext, nil), nil
-}
-
-// syncEncryptedAllowlist encrypts <cwd>/.sandclaude/allowed-domains.txt →
-// allowed-domains.txt.enc using the key from .sandclaude/project/.allowlist-key.
-// It is the single source of truth for keeping the encrypted file in step with the
-// plaintext, shared by startup (Run) and the firewall-reload command.
-func syncEncryptedAllowlist() error {
-	projectDir := config.GetProjectDir()
-
-	keyPath := filepath.Join(projectDir, ".allowlist-key")
-	keyData, err := os.ReadFile(keyPath)
-	if err != nil {
-		return fmt.Errorf("read %s: %w\n\nRun 'sandclaude init' first to generate the encryption key", keyPath, err)
-	}
-
-	key, err := allowlistDeriveKey(strings.TrimSpace(string(keyData)))
-	if err != nil {
-		return err
-	}
-
-	plaintextPath := filepath.Join(config.SandclaudeDir(), "allowed-domains.txt")
-	encPath := filepath.Join(config.SandclaudeDir(), "allowed-domains.txt.enc")
-
-	plaintext, err := os.ReadFile(plaintextPath)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", plaintextPath, err)
-	}
-
-	ciphertext, err := allowlistEncrypt(key, plaintext)
-	if err != nil {
-		return fmt.Errorf("encrypt: %w", err)
-	}
-
-	if err := os.WriteFile(encPath, ciphertext, 0644); err != nil {
-		return fmt.Errorf("write %s: %w", encPath, err)
-	}
-	log.Printf("Encrypted allowlist written to %s", encPath)
-	return nil
-}
-
 // cmdFirewallReload encrypts allowed-domains.txt → allowed-domains.txt.enc
 // using the key from project/.allowlist-key, and reloads the running proxy.
 func cmdFirewallReload() error {
-	if err := syncEncryptedAllowlist(); err != nil {
+	if err := creds.SyncEncryptedAllowlist(); err != nil {
 		return err
 	}
 
