@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/jackrothrock/sandclaude/internal/session"
 	"github.com/jackrothrock/sandclaude/internal/creds"
 	"net/http"
 	"os"
@@ -199,7 +200,7 @@ func reloadAllRunningProjectMitmweb() int {
 	}
 	n := 0
 	for _, p := range reg.Projects {
-		if dockerContainerRunning(containerNameForWorkspace(p.Workspace)) {
+		if dockerContainerRunning(session.ContainerNameForWorkspace(p.Workspace)) {
 			n++
 		}
 	}

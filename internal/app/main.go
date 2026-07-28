@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/jackrothrock/sandclaude/internal/session"
 	"github.com/jackrothrock/sandclaude/internal/creds"
 	"log"
 	"os"
@@ -228,7 +229,7 @@ func (sc *SandClaude) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) 
 	}
 
 	// Build docker args
-	containerName := containerNameForWorkspace(workspace)
+	containerName := session.ContainerNameForWorkspace(workspace)
 	args := []string{"run", "--rm", "-it", "--name", containerName}
 
 	// DinD requires --privileged (superset of NET_ADMIN + NET_RAW + SYS_ADMIN).
@@ -577,7 +578,7 @@ func (sc *SandClaude) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) 
 // interactive container behaves identically to the attached path; capture/send/attach
 // then observe and drive the inner Claude.
 func (sc *SandClaude) startDetached(containerName string, args []string) error {
-	sessionName := tmuxSessionNameForContainer(containerName)
+	sessionName := session.TmuxSessionNameForContainer(containerName)
 
 	if exec.Command("tmux", "has-session", "-t", sessionName).Run() == nil {
 		log.Printf("Killing existing tmux session '%s'", sessionName)
@@ -698,8 +699,8 @@ func (sc *SandClaude) startDirect(cfg *config.ProjectConfig) error {
 	// dev: create a new detached tmux session and run claude directly inside it.
 	// We avoid launcher.py because it would try to create a session named "sandclaude"
 	// which already exists (the outer session we're running in).
-	containerName := containerNameForWorkspace(cfg.Workspace)
-	sessionName := tmuxSessionNameForContainer(containerName)
+	containerName := session.ContainerNameForWorkspace(cfg.Workspace)
+	sessionName := session.TmuxSessionNameForContainer(containerName)
 
 	if exec.Command("tmux", "has-session", "-t", sessionName).Run() == nil {
 		log.Printf("Killing existing tmux session '%s'", sessionName)
@@ -1181,7 +1182,7 @@ func cmdList() error {
 
 // cmdFirewallMonitor tails the allowlist proxy log inside the running container
 func cmdFirewallMonitor() error {
-	containerName := runningContainerName()
+	containerName := session.RunningContainerName()
 
 	// Verify container is running.
 	if out, err := exec.Command("docker", "inspect", "--format={{.Id}}", containerName).Output(); err != nil || len(strings.TrimSpace(string(out))) == 0 {
@@ -1481,7 +1482,7 @@ func cmdFirewallReload() error {
 	}
 
 	// If a container is running, reload the proxy so it picks up the new allowlist.
-	containerName := runningContainerName()
+	containerName := session.RunningContainerName()
 	checkCmd := exec.Command("docker", "inspect", "--format={{.State.Running}}", containerName)
 	if out, err := checkCmd.Output(); err == nil && strings.TrimSpace(string(out)) == "true" {
 		if err := reloadProxyInContainer(containerName); err != nil {
@@ -1496,37 +1497,9 @@ func cmdFirewallReload() error {
 	return nil
 }
 
-// containerNameForWorkspace derives the container name sandclaude uses for a given
+// session.ContainerNameForWorkspace derives the container name sandclaude uses for a given
 // workspace path (sandclaude_<workspace-basename>). Shared by every call site that
 // needs to name or look up a project's container, so the convention lives in one place.
-func containerNameForWorkspace(workspace string) string {
-	return "sandclaude_" + filepath.Base(workspace)
-}
-
-// tmuxSessionNameForContainer derives the host-level tmux session name for a detached
-// dev session from its container name. The session name matches the container name
-// verbatim (underscores preserved) to stay consistent with the container naming
-// convention.
-func tmuxSessionNameForContainer(containerName string) string {
-	return containerName
-}
-
-// tmuxSessionNameForWorkspace derives the host-level tmux session name for a given
-// workspace path directly.
-func tmuxSessionNameForWorkspace(workspace string) string {
-	return tmuxSessionNameForContainer(containerNameForWorkspace(workspace))
-}
-
-// runningContainerName returns the running container name for the current project
-// (sandclaude_<workspace-basename>), matching the name used by start/dev. Falls back
-// to the legacy bare "sandclaude" if no project config is readable.
-func runningContainerName() string {
-	if cfg, err := config.ReadConfig(config.GetProjectDir()); err == nil && cfg.Workspace != "" {
-		return containerNameForWorkspace(cfg.Workspace)
-	}
-	return "sandclaude"
-}
-
 // reloadProxyInContainer makes the running allowlist-proxy pick up the freshly
 // re-encrypted allowlist. The proxy reads its allowlist from /tmp/allowed-domains.txt.enc
 // (a startup copy proxyuser can read), while the host's edits land on the bind-mounted
@@ -1563,20 +1536,9 @@ func reloadProxyInContainer(containerName string) error {
 	return cmd.Run()
 }
 
-// detachedSessionName derives the tmux session name for the current project's container.
-func detachedSessionName() (session string, container string, err error) {
-	cfg, err := config.ReadConfig(config.GetProjectDir())
-	if err != nil {
-		return "", "", fmt.Errorf("no project configured — run sandclaude init first")
-	}
-	container = containerNameForWorkspace(cfg.Workspace)
-	session = tmuxSessionNameForContainer(container)
-	return session, container, nil
-}
-
 // cmdCapture prints the last 100 lines of the detached session's terminal output.
 func cmdCapture() error {
-	session, _, err := detachedSessionName()
+	session, _, err := session.DetachedSessionName()
 	if err != nil {
 		return err
 	}
@@ -1594,7 +1556,7 @@ func cmdSend(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: sandclaude send <prompt>")
 	}
-	session, _, err := detachedSessionName()
+	session, _, err := session.DetachedSessionName()
 	if err != nil {
 		return err
 	}
@@ -1626,7 +1588,7 @@ func cmdSend(args []string) error {
 
 // cmdAttach attaches the current terminal to the detached session for interactive viewing.
 func cmdAttach() error {
-	session, _, err := detachedSessionName()
+	session, _, err := session.DetachedSessionName()
 	if err != nil {
 		return err
 	}

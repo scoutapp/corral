@@ -10,6 +10,8 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
+
+	"github.com/jackrothrock/sandclaude/internal/session"
 )
 
 // ----------------------------------------------------------------------------
@@ -70,12 +72,12 @@ func (d *dashboardServer) handleTerminalPage(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	session := tmuxSessionNameForWorkspace(workspace)
+	sessionName := session.TmuxSessionNameForWorkspace(workspace)
 	data := struct {
 		ID        string
 		Session   string
 		SessionUp bool
-	}{ID: id, Session: session, SessionUp: tmuxSessionExists(session)}
+	}{ID: id, Session: sessionName, SessionUp: tmuxSessionExists(sessionName)}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := dashboardTemplates.ExecuteTemplate(w, "terminal.html.tmpl", data); err != nil {
@@ -95,7 +97,7 @@ func (d *dashboardServer) handleTerminalWS(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	d.bridgeSessionWS(w, r, tmuxSessionNameForWorkspace(workspace),
+	d.bridgeSessionWS(w, r, session.TmuxSessionNameForWorkspace(workspace),
 		"no tmux dev session for this project — start it with `sandclaude dev`")
 }
 

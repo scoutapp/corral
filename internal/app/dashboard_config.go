@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/jackrothrock/sandclaude/internal/session"
 	"github.com/jackrothrock/sandclaude/internal/creds"
 	"net/http"
 	"os"
@@ -79,7 +80,7 @@ func (d *dashboardServer) handleConfigRead(w http.ResponseWriter, r *http.Reques
 		DindEnabled:  cfg.DindEnabled,
 		DindPorts:    cfg.DindPorts,
 		LaunchTmux:   cfg.LaunchTmux,
-		ContainerUp:  dockerContainerRunning(containerNameForWorkspace(workspace)),
+		ContainerUp:  dockerContainerRunning(session.ContainerNameForWorkspace(workspace)),
 	}
 
 	view.AllowedHosts = readAllowedHostsForWorkspace(workspace)

@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/jackrothrock/sandclaude/internal/session"
 	"github.com/jackrothrock/sandclaude/internal/creds"
 	"os"
 	"path/filepath"
@@ -244,7 +245,7 @@ func applyProxyConfig(scope applyScope) error {
 			os.Remove(monitorPath)
 		}
 
-		containerName := runningContainerName()
+		containerName := session.RunningContainerName()
 		if dockerContainerRunning(containerName) {
 			if err := reloadProxyInContainer(containerName); err != nil {
 				return fmt.Errorf("proxy reload failed: %w", err)

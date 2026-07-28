@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/jackrothrock/sandclaude/internal/session"
 	"html/template"
 	"io"
 	"io/fs"
@@ -32,7 +33,7 @@ import (
 // Purely a discovery aid — "which workspace paths has the user ever started a
 // project in" — never trusted for liveness. Whether a registered project is
 // actually running right now is always re-derived on demand (projectLiveStatus),
-// the same way runningContainerName() already re-checks Docker rather than
+// the same way session.RunningContainerName() already re-checks Docker rather than
 // caching a status flag. This sidesteps the many unreliable ways a project can
 // stop (Ctrl-C, `docker kill`, crash, `sandclaude remove`) — there is no single
 // hook to deregister from, so we don't try.
@@ -224,8 +225,8 @@ type ProjectStatus struct {
 func projectLiveStatus(workspace string) ProjectStatus {
 	status := ProjectStatus{
 		Workspace: workspace,
-		Container: containerNameForWorkspace(workspace),
-		Session:   tmuxSessionNameForWorkspace(workspace),
+		Container: session.ContainerNameForWorkspace(workspace),
+		Session:   session.TmuxSessionNameForWorkspace(workspace),
 	}
 
 	status.ContainerUp = dockerContainerRunning(status.Container)

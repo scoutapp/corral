@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/jackrothrock/sandclaude/internal/session"
 	"net/http"
 	"os"
 	"os/exec"
@@ -202,7 +203,7 @@ func (d *dashboardServer) handleConfigRestart(w http.ResponseWriter, r *http.Req
 
 	// Stop then start via the CLI, in the workspace. `remove`-style teardown is
 	// avoided; we kill the container and re-start dev so the session comes back.
-	container := containerNameForWorkspace(workspace)
+	container := session.ContainerNameForWorkspace(workspace)
 	_ = exec.Command("docker", "kill", container).Run() // best-effort; may already be down
 
 	startCmd := exec.Command(exe, "dev")
