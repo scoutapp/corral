@@ -1,0 +1,13 @@
+{
+  "name": "nest-scout-test",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Fixture for verifying transparent DinD egress + build-time MITM CA injection.",
+  "dependencies": {
+    "@nestjs/common": "^10",
+    "@nestjs/core": "^10",
+    "@nestjs/platform-express": "^10",
+    "rxjs": "^7",
+    "reflect-metadata": "^0.2"
+  }
+}
