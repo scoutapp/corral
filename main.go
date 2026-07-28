@@ -214,9 +214,11 @@ func (sc *SandClaude) startProxy(workspace string) error {
 		dashboardURL := fmt.Sprintf("http://127.0.0.1:%d/p/%s?token=%s", state.Port, projectID(workspace), state.Token)
 		log.Printf("Dashboard: %s", dashboardURL)
 		// Only pop a browser tab when this start actually launched the dashboard
-		// daemon. If it was already running (e.g. another project is up), just log
-		// the URL so N project starts don't open N tabs at the same dashboard.
-		if spawned {
+		// daemon (so N project starts don't open N tabs at the same dashboard), AND
+		// only for the foreground path. The detached path (`start` default, `dev`)
+		// opens the project's terminal itself after launch — see Run() — so it owns
+		// the open and this would just be a duplicate.
+		if spawned && !sc.devMode {
 			if err := openBrowser(dashboardURL); err != nil {
 				debugf("failed to open browser: %v", err)
 			}
@@ -1047,6 +1049,20 @@ func (sc *SandClaude) Run(keepDevfiles bool) error {
 		}
 	}
 
+	// Browser-first: after a detached start, open the dashboard straight to this
+	// project's terminal so the browser is where you interact. (The dashboard
+	// daemon is already up — startProxy ensured it.) Skipped for the foreground
+	// path, which keeps the classic in-terminal session.
+	if err == nil && sc.detachedSession != "" {
+		if state, derr := readDashboardState(); derr == nil && state != nil {
+			url := fmt.Sprintf("http://127.0.0.1:%d/p/%s?token=%s", state.Port, projectID(cfg.Workspace), state.Token)
+			log.Printf("Open in dashboard: %s", url)
+			if oerr := openBrowser(url); oerr != nil {
+				debugf("failed to open browser: %v", oerr)
+			}
+		}
+	}
+
 	return err
 }
 
@@ -1368,8 +1384,19 @@ func ensureGitignored(entry string) {
 }
 
 // cmdStart starts Claude Code interactively, attached to the current terminal.
+// cmdStart launches Claude Code detached and opens the dashboard to this
+// project, so the browser is where you interact — your shell prompt returns
+// immediately. Pass --foreground for the classic behavior of running attached to
+// the current terminal instead.
 func cmdStart(args []string) error {
-	return runStart(args, false)
+	foreground := false
+	for _, arg := range args {
+		if arg == "--foreground" {
+			foreground = true
+		}
+	}
+	// Detached by default (like dev), unless --foreground was asked for.
+	return runStart(args, !foreground)
 }
 
 // cmdDev starts Claude Code in a detached host tmux session for closed-loop development:
@@ -1394,8 +1421,8 @@ func runStart(args []string, devMode bool) error {
 			disableDind = true
 		case "--keep-devfiles":
 			keepDevfiles = true
-		case "--debug":
-			// already handled globally in main(), ignore here
+		case "--foreground", "--debug":
+			// --foreground handled in cmdStart; --debug handled globally in main()
 		}
 	}
 
@@ -2122,7 +2149,8 @@ func usage() {
 	fmt.Println("Commands:")
 	fmt.Println("  init                     Initialize ./.sandclaude/ in the current directory")
 	fmt.Println("  update                   Update project config (preserves credentials and allowlist key)")
-	fmt.Println("  start [flags]            Start Claude Code (uses ./.sandclaude/ config)")
+	fmt.Println("  start [flags]            Start Claude Code detached and open it in the dashboard (browser-first)")
+	fmt.Println("    --foreground                   Run attached to this terminal instead (classic interactive mode)")
 	fmt.Println("    --disable-firewall             Skip firewall initialization")
 	fmt.Println("    --passthrough-firewall-and-write   Keep proxy but allow all domains; write unknown ones to allowed-domains.txt")
 	fmt.Println("    --disable-dind                 Skip inner dockerd startup")
@@ -2154,7 +2182,8 @@ func usage() {
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  sandclaude init                    # Initialize ./.sandclaude/ in the current directory")
-	fmt.Println("  sandclaude start                   # Start Claude Code (interactive)")
+	fmt.Println("  sandclaude start                   # Start detached + open in the dashboard (browser-first)")
+	fmt.Println("  sandclaude start --foreground      # Classic interactive session in this terminal")
 	fmt.Println("  sandclaude dev                     # Start detached in tmux for closed-loop development")
 	fmt.Println("  sandclaude start --debug           # Start with verbose debug logging")
 	fmt.Println("  sandclaude --debug start           # Same (--debug works in any position)")
