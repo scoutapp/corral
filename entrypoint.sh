@@ -111,17 +111,19 @@ if [ -z "$DISABLE_FIREWALL" ]; then
     cp "$ALLOWLIST_ENC" "$ALLOWLIST_COPY"
     chmod 644 "$ALLOWLIST_COPY"
 
-    # Selective mitm: if a monitor-hosts file was mounted, copy it where proxyuser
-    # can read it (same bind-mount permission dance as the allowlist) and pass it
-    # as --monitorlist. Absent => proxy monitors all allowed hosts (default).
-    MONITOR_ARG=""
-    MONITOR_SRC="${HOME}/monitor-hosts.txt"
+    # Selective mitm: always point --monitorlist at /tmp/monitor-hosts.txt, even if
+    # the file doesn't exist yet — the proxy treats an absent monitor file as
+    # "monitor all" (the default). Seeding the flag unconditionally is what lets a
+    # project ENABLE the monitor-list on a running container without a restart:
+    # `sandclaude proxy-apply`/the dashboard docker-cp the file in and SIGHUP, and
+    # the proxy (already watching that path) picks it up live.
     MONITOR_COPY="/tmp/monitor-hosts.txt"
+    MONITOR_SRC="${HOME}/monitor-hosts.txt"
     if [ -f "$MONITOR_SRC" ]; then
         cp "$MONITOR_SRC" "$MONITOR_COPY"
         chmod 644 "$MONITOR_COPY"
-        MONITOR_ARG="--monitorlist $MONITOR_COPY"
     fi
+    MONITOR_ARG="--monitorlist $MONITOR_COPY"
 
     # mitm-ports: forwarded from the host config via env (default handled by the proxy).
     MITM_PORTS_ARG=""
