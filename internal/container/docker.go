@@ -411,8 +411,22 @@ func (sc *SandClaude) startDetached(containerName string, args []string) error {
 	dockerCmdStr := config.BuildShellCommand(parts)
 	config.Debugf("Detached tmux command: tmux new-session -d -s %s %q", sessionName, dockerCmdStr)
 
-	if err := exec.Command("tmux", "new-session", "-d", "-s", sessionName, dockerCmdStr).Run(); err != nil {
-		return fmt.Errorf("failed to create tmux session '%s': %w\n\nIs tmux installed?", sessionName, err)
+	// -x/-y force an explicit pane size so the pane gets a real PTY even when the
+	// tmux server has no controlling terminal (headless CI/SSH). Without a sized
+	// pane the PTY can be unusable, and `docker run -it` then exits immediately —
+	// which also tears the whole session down ("no server running"), leaving no
+	// container and nothing to debug.
+	//
+	// `set-option -g remain-on-exit on`, chained into the SAME invocation so it
+	// applies before the pane can die, keeps the pane (and thus the session)
+	// around after its process exits — so a failed `docker run` is inspectable via
+	// capture-pane instead of vanishing. Belt-and-suspenders with the sizing fix.
+	newSession := exec.Command(
+		"tmux", "new-session", "-d", "-x", "200", "-y", "50", "-s", sessionName, dockerCmdStr,
+		";", "set-option", "-g", "remain-on-exit", "on",
+	)
+	if out, err := newSession.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to create tmux session '%s': %w\n%s\n\nIs tmux installed?", sessionName, err, string(out))
 	}
 
 	sc.detachedSession = sessionName
