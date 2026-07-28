@@ -213,6 +213,11 @@ type ProjectStatus struct {
 	TmuxUp      bool
 	MitmUp      bool
 	MitmWebPort int
+
+	// Activity is a coarse "what is this project doing" signal derived from the
+	// rate of api.anthropic.com requests in proxy.log — see activity.go.
+	Activity     string // "working" | "waiting" | "off"
+	AnthropicHits int   // hits in the recent window, for display
 }
 
 func projectLiveStatus(workspace string) ProjectStatus {
@@ -231,6 +236,8 @@ func projectLiveStatus(workspace string) ProjectStatus {
 		status.MitmUp = true
 		status.MitmWebPort = state.WebPort
 	}
+
+	status.Activity, status.AnthropicHits = projectActivity(workspace, status.ContainerUp, status.TmuxUp)
 
 	return status
 }
@@ -349,6 +356,13 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Live status JSON for the landing page to poll (activity, up/down per project)
+	// without re-rendering the whole index HTML.
+	if path == "/status" {
+		d.handleStatus(w, r)
+		return
+	}
+
 	if !strings.HasPrefix(path, "/p/") {
 		http.NotFound(w, r)
 		return
@@ -414,6 +428,80 @@ func (d *dashboardServer) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if err := dashboardTemplates.ExecuteTemplate(w, "index.html.tmpl", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// statusRow is the per-project JSON the landing page polls for live pane updates.
+type statusRow struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Workspace     string `json:"workspace"`
+	ContainerUp   bool   `json:"container_up"`
+	TmuxUp        bool   `json:"tmux_up"`
+	MitmUp        bool   `json:"mitm_up"`
+	Activity      string `json:"activity"` // working | waiting | off
+	AnthropicHits int    `json:"anthropic_hits"`
+	Peek          string `json:"peek"` // last non-empty terminal line, for the pane preview
+}
+
+// handleStatus returns live status for every registered project as JSON. The
+// landing page polls this to keep the panes fresh without a full HTML re-render.
+func (d *dashboardServer) handleStatus(w http.ResponseWriter, r *http.Request) {
+	reg, err := readRegistry()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	rows := make([]statusRow, 0, len(reg.Projects))
+	for _, p := range reg.Projects {
+		st := projectLiveStatus(p.Workspace)
+		row := statusRow{
+			ID:            projectID(p.Workspace),
+			Name:          filepath.Base(p.Workspace),
+			Workspace:     p.Workspace,
+			ContainerUp:   st.ContainerUp,
+			TmuxUp:        st.TmuxUp,
+			MitmUp:        st.MitmUp,
+			Activity:      st.Activity,
+			AnthropicHits: st.AnthropicHits,
+		}
+		if st.TmuxUp {
+			row.Peek = tmuxLastLine(st.Session)
+		}
+		rows = append(rows, row)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"projects": rows})
+}
+
+// tmuxLastLine returns the last meaningful line of a tmux session's current
+// screen — a cheap "what's on screen right now" peek for the project pane.
+// Capturing without -S/-E and dropping the very last row skips tmux's own status
+// bar (the "[session] ... time date" line), which is never useful content. Best
+// effort: returns "" if capture fails.
+func tmuxLastLine(session string) string {
+	out, err := exec.Command("tmux", "capture-pane", "-t", session, "-p").Output()
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		s := strings.TrimSpace(lines[i])
+		if s == "" {
+			continue
+		}
+		// Skip tmux's status bar and Claude Code's box-drawing chrome, which read
+		// as noise in a one-line preview.
+		if strings.Contains(s, "\"✳") || strings.HasPrefix(s, "[") && strings.Contains(s, ":claude") {
+			continue
+		}
+		if strings.Trim(s, "─╭╮╰╯│ ") == "" {
+			continue
+		}
+		return s
+	}
+	return ""
 }
 
 func (d *dashboardServer) handleProject(w http.ResponseWriter, r *http.Request, id string) {
