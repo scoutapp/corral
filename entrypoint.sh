@@ -111,6 +111,24 @@ if [ -z "$DISABLE_FIREWALL" ]; then
     cp "$ALLOWLIST_ENC" "$ALLOWLIST_COPY"
     chmod 644 "$ALLOWLIST_COPY"
 
+    # Selective mitm: if a monitor-hosts file was mounted, copy it where proxyuser
+    # can read it (same bind-mount permission dance as the allowlist) and pass it
+    # as --monitorlist. Absent => proxy monitors all allowed hosts (default).
+    MONITOR_ARG=""
+    MONITOR_SRC="${HOME}/monitor-hosts.txt"
+    MONITOR_COPY="/tmp/monitor-hosts.txt"
+    if [ -f "$MONITOR_SRC" ]; then
+        cp "$MONITOR_SRC" "$MONITOR_COPY"
+        chmod 644 "$MONITOR_COPY"
+        MONITOR_ARG="--monitorlist $MONITOR_COPY"
+    fi
+
+    # mitm-ports: forwarded from the host config via env (default handled by the proxy).
+    MITM_PORTS_ARG=""
+    if [ -n "$SANDCLAUDE_MITM_PORTS" ]; then
+        MITM_PORTS_ARG="--mitm-ports $SANDCLAUDE_MITM_PORTS"
+    fi
+
     # Create log file with write permissions for proxyuser
     touch "$PROXY_LOG"
     chmod 666 "$PROXY_LOG"
@@ -129,6 +147,8 @@ if [ -z "$DISABLE_FIREWALL" ]; then
             --listen 0.0.0.0:3128 \
             --transparent-listen 0.0.0.0:$TRANSPARENT_PORT \
             --allowlist "$ALLOWLIST_COPY" \
+            $MONITOR_ARG \
+            $MITM_PORTS_ARG \
             $UPSTREAM_ARG \
             $PASSTHROUGH_ARG \
         >> "$PROXY_LOG" 2>&1 &
