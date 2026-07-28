@@ -1,11 +1,11 @@
-package app
+package dashboard
 
 import (
 	"bufio"
 	"encoding/json"
 	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/session"
 	"github.com/jackrothrock/sandclaude/internal/creds"
+	"github.com/jackrothrock/sandclaude/internal/session"
 	"net/http"
 	"os"
 	"path/filepath"

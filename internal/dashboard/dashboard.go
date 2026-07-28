@@ -1,4 +1,4 @@
-package app
+package dashboard
 
 import (
 	"context"
@@ -79,9 +79,9 @@ func writeRegistry(reg *ProjectRegistry) error {
 	return os.WriteFile(registryPath(), data, 0600)
 }
 
-// registerProject upserts a workspace's entry (matched by absolute path) with the
+// RegisterProject upserts a workspace's entry (matched by absolute path) with the
 // current timestamp. Called from Run() every time a project starts.
-func registerProject(workspace string) error {
+func RegisterProject(workspace string) error {
 	absWorkspace, err := filepath.Abs(workspace)
 	if err != nil {
 		absWorkspace = workspace
@@ -136,13 +136,13 @@ type ProxyRuntimeState struct {
 	StartedAt string `json:"started_at"`
 }
 
-func proxyRuntimeStatePath() string {
+func ProxyRuntimeStatePath() string {
 	return filepath.Join(config.GetProjectDir(), "runtime.json")
 }
 
-// writeProxyRuntimeState is called from startProxy() (cwd == project workspace,
+// WriteProxyRuntimeState is called from startProxy() (cwd == project workspace,
 // same assumption config.GetLogsDir() already makes).
-func writeProxyRuntimeState(webPort int, pid int) error {
+func WriteProxyRuntimeState(webPort int, pid int) error {
 	state := ProxyRuntimeState{
 		ProxyPort: 0, // filled in by caller if ever needed; not used by the dashboard today
 		WebPort:   webPort,
@@ -156,7 +156,7 @@ func writeProxyRuntimeState(webPort int, pid int) error {
 	if err := os.MkdirAll(config.GetProjectDir(), 0700); err != nil {
 		return err
 	}
-	return os.WriteFile(proxyRuntimeStatePath(), data, 0600)
+	return os.WriteFile(ProxyRuntimeStatePath(), data, 0600)
 }
 
 // readProxyRuntimeStateFor reads another project's runtime state by workspace path.
@@ -231,9 +231,9 @@ var dashboardTemplates = template.Must(template.ParseFS(webuiFS, "webui/template
 
 const dashboardCookieName = "sc_dash_token"
 
-// projectID derives a short, stable, URL-safe id for a workspace path, so URLs
+// ProjectID derives a short, stable, URL-safe id for a workspace path, so URLs
 // don't need to embed (and percent-encode) an absolute filesystem path.
-func projectID(workspace string) string {
+func ProjectID(workspace string) string {
 	sum := sha256.Sum256([]byte(workspace))
 	return hex.EncodeToString(sum[:])[:12]
 }
@@ -244,7 +244,7 @@ func lookupWorkspaceByID(id string) (string, error) {
 		return "", err
 	}
 	for _, p := range reg.Projects {
-		if projectID(p.Workspace) == id {
+		if ProjectID(p.Workspace) == id {
 			return p.Workspace, nil
 		}
 	}
@@ -262,7 +262,7 @@ func newDashboardServer(token string) *dashboardServer {
 }
 
 // requireAuth gates every route but /healthz behind a random per-launch token.
-// Loopback-only binding (see cmdDashboardServe) keeps the dashboard off the
+// Loopback-only binding (see CmdDashboardServe) keeps the dashboard off the
 // network entirely, but that alone doesn't stop a malicious page open in
 // another browser tab from targeting 127.0.0.1 (DNS-rebinding-style attacks) —
 // worth defending against here since the terminal tab grants a real shell.
@@ -417,7 +417,7 @@ func (d *dashboardServer) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	rows := make([]projectRow, 0, len(reg.Projects))
 	for _, p := range reg.Projects {
-		rows = append(rows, projectRow{ID: projectID(p.Workspace), ProjectStatus: projectLiveStatus(p.Workspace)})
+		rows = append(rows, projectRow{ID: ProjectID(p.Workspace), ProjectStatus: projectLiveStatus(p.Workspace)})
 	}
 
 	data := struct{ Projects []projectRow }{Projects: rows}
@@ -453,7 +453,7 @@ func (d *dashboardServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 	for _, p := range reg.Projects {
 		st := projectLiveStatus(p.Workspace)
 		row := statusRow{
-			ID:            projectID(p.Workspace),
+			ID:            ProjectID(p.Workspace),
 			Name:          filepath.Base(p.Workspace),
 			Workspace:     p.Workspace,
 			ContainerUp:   st.ContainerUp,
@@ -795,7 +795,7 @@ func (d *dashboardServer) pollFirewallLog(w http.ResponseWriter, logPath string,
 // existing URL instead of spawning a duplicate.
 // ----------------------------------------------------------------------------
 
-type dashboardState struct {
+type DashboardState struct {
 	Pid       int    `json:"pid"`
 	Port      int    `json:"port"`
 	Token     string `json:"token"`
@@ -806,7 +806,7 @@ func dashboardStatePath() string {
 	return filepath.Join(config.SandclaudeHome(), "dashboard.json")
 }
 
-func readDashboardState() (*dashboardState, error) {
+func ReadDashboardState() (*DashboardState, error) {
 	data, err := os.ReadFile(dashboardStatePath())
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -814,14 +814,14 @@ func readDashboardState() (*dashboardState, error) {
 		}
 		return nil, err
 	}
-	var state dashboardState
+	var state DashboardState
 	if err := json.Unmarshal(data, &state); err != nil {
 		return nil, err
 	}
 	return &state, nil
 }
 
-func writeDashboardState(state *dashboardState) error {
+func writeDashboardState(state *DashboardState) error {
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
@@ -850,12 +850,12 @@ func dashboardHealthy(port int) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-func printDashboardURL(state *dashboardState) {
+func printDashboardURL(state *DashboardState) {
 	fmt.Printf("Dashboard running at http://127.0.0.1:%d/?token=%s\n", state.Port, state.Token)
 	fmt.Println("(the token is remembered as a cookie after your first visit — you won't need to paste it again)")
 }
 
-func cmdDashboard(args []string) error {
+func CmdDashboard(args []string) error {
 	if len(args) > 0 && args[0] == "stop" {
 		return cmdDashboardStop()
 	}
@@ -868,7 +868,7 @@ func cmdDashboard(args []string) error {
 // (main.go Run(), sc.detachedSession != ""), which this daemon is deliberately
 // not modeled after since it's long-lived by design rather than incidentally.
 func cmdDashboardStart() error {
-	state, _, err := ensureDashboardRunning()
+	state, _, err := EnsureDashboardRunning()
 	if err != nil {
 		return err
 	}
@@ -876,7 +876,7 @@ func cmdDashboardStart() error {
 	return nil
 }
 
-// ensureDashboardRunning returns the state of the already-running dashboard,
+// EnsureDashboardRunning returns the state of the already-running dashboard,
 // or spawns it as a detached daemon (same re-exec approach as cmdDashboardStart
 // used to do directly) if it isn't running yet. Shared by `sandclaude dashboard`
 // and `sandclaude start`/`dev`, which both want the singleton daemon up without
@@ -884,8 +884,8 @@ func cmdDashboardStart() error {
 // The bool return reports whether this call spawned a new daemon (true) vs found
 // one already running (false) — callers use it to open a browser tab only on the
 // first launch, so N project starts don't pop N tabs at the same dashboard.
-func ensureDashboardRunning() (*dashboardState, bool, error) {
-	if state, err := readDashboardState(); err == nil && state != nil && session.PidAlive(state.Pid) && dashboardHealthy(state.Port) {
+func EnsureDashboardRunning() (*DashboardState, bool, error) {
+	if state, err := ReadDashboardState(); err == nil && state != nil && session.PidAlive(state.Pid) && dashboardHealthy(state.Port) {
 		return state, false, nil
 	}
 
@@ -922,7 +922,7 @@ func ensureDashboardRunning() (*dashboardState, bool, error) {
 		return nil, false, fmt.Errorf("failed to start dashboard server: %w", err)
 	}
 
-	state := &dashboardState{
+	state := &DashboardState{
 		Pid:       cmd.Process.Pid,
 		Port:      port,
 		Token:     token,
@@ -937,7 +937,7 @@ func ensureDashboardRunning() (*dashboardState, bool, error) {
 }
 
 func cmdDashboardStop() error {
-	state, err := readDashboardState()
+	state, err := ReadDashboardState()
 	if err != nil {
 		return err
 	}
@@ -955,10 +955,10 @@ func cmdDashboardStop() error {
 	return nil
 }
 
-// cmdDashboardServe is the actual long-running server process, spawned only by
+// CmdDashboardServe is the actual long-running server process, spawned only by
 // cmdDashboardStart — intentionally undocumented in usage(), like startDetached
 // isn't itself a user-facing command.
-func cmdDashboardServe(args []string) error {
+func CmdDashboardServe(args []string) error {
 	fset := flag.NewFlagSet("dashboard-serve", flag.ContinueOnError)
 	port := fset.Int("port", 0, "port to listen on")
 	token := fset.String("token", "", "auth token")

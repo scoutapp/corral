@@ -1,11 +1,11 @@
-package app
+package dashboard
 
 import (
 	"encoding/json"
 	"fmt"
 	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/session"
 	"github.com/jackrothrock/sandclaude/internal/creds"
+	"github.com/jackrothrock/sandclaude/internal/session"
 	"net/http"
 	"os"
 	"os/exec"
@@ -28,7 +28,7 @@ import (
 // keys apart without exposing the secret — see maskTail.
 // ----------------------------------------------------------------------------
 
-type globalDefaults struct {
+type GlobalDefaults struct {
 	MonitorHosts []string `json:"monitor_hosts,omitempty"`
 	MitmPorts    []string `json:"mitm_ports,omitempty"`
 }
@@ -37,8 +37,8 @@ func globalDefaultsPath() string {
 	return filepath.Join(config.SandclaudeHome(), "defaults.json")
 }
 
-func readGlobalDefaults() globalDefaults {
-	var d globalDefaults
+func ReadGlobalDefaults() GlobalDefaults {
+	var d GlobalDefaults
 	data, err := os.ReadFile(globalDefaultsPath())
 	if err != nil {
 		return d
@@ -47,7 +47,7 @@ func readGlobalDefaults() globalDefaults {
 	return d
 }
 
-func writeGlobalDefaults(d globalDefaults) error {
+func writeGlobalDefaults(d GlobalDefaults) error {
 	if err := os.MkdirAll(config.SandclaudeHome(), 0700); err != nil {
 		return err
 	}
@@ -111,7 +111,7 @@ func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Reques
 	}
 	sort.Slice(view.Credentials, func(i, j int) bool { return view.Credentials[i].Host < view.Credentials[j].Host })
 
-	def := readGlobalDefaults()
+	def := ReadGlobalDefaults()
 	view.MonitorHosts = def.MonitorHosts
 	view.MitmPorts = def.MitmPorts
 	if len(view.MitmPorts) == 0 {
@@ -170,7 +170,7 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 	}
 
 	if edit.MonitorHosts != nil || edit.MitmPorts != nil {
-		def := readGlobalDefaults()
+		def := ReadGlobalDefaults()
 		if edit.MonitorHosts != nil {
 			def.MonitorHosts = *edit.MonitorHosts
 		}

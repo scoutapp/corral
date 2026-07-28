@@ -1,0 +1,527 @@
+package container
+
+import (
+	"encoding/base64"
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/jackrothrock/sandclaude/internal/proxy"
+	"github.com/jackrothrock/sandclaude/internal/session"
+)
+
+// startDocker starts the Docker container with Claude Code
+func (sc *SandClaude) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) error {
+	workspace := cfg.Workspace
+	// Build image if needed
+	imageName := "sandclaude-stable"
+	if err := sc.EnsureImage(imageName); err != nil {
+		return err
+	}
+
+	log.Printf("Starting sandclaude (workspace: %s)", workspace)
+
+	// Get home directory
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	// Build docker args
+	containerName := session.ContainerNameForWorkspace(workspace)
+	args := []string{"run", "--rm", "-it", "--name", containerName}
+
+	// DinD requires --privileged (superset of NET_ADMIN + NET_RAW + SYS_ADMIN).
+	// Without DinD, use minimal capabilities.
+	if sc.dindEnabled {
+		args = append(args, "--privileged")
+	} else {
+		args = append(args, "--cap-add=NET_ADMIN", "--cap-add=NET_RAW")
+	}
+
+	if sc.DisableFirewall {
+		args = append(args, "-e", "DISABLE_FIREWALL=1")
+	} else if sc.PassthroughFirewallAndWrite {
+		args = append(args, "-e", "DISABLE_FIREWALL_AND_WRITE=1")
+		// Still need the allowlist key and file for the proxy to start
+		projectDir := config.GetProjectDir()
+		keyPath := filepath.Join(projectDir, ".allowlist-key")
+		keyData, err := os.ReadFile(keyPath)
+		if err != nil {
+			return fmt.Errorf("encryption key not found at %s\nRun 'sandclaude init' to generate it", keyPath)
+		}
+		args = append(args, "-e", fmt.Sprintf("ALLOWLIST_KEY=%s", strings.TrimSpace(string(keyData))))
+
+		encPath := filepath.Join(config.SandclaudeDir(), "allowed-domains.txt.enc")
+		if _, err := os.Stat(encPath); os.IsNotExist(err) {
+			return fmt.Errorf("encrypted allowlist not found at %s\nRun 'sandclaude firewall-reload' to create it", encPath)
+		}
+		os.Chmod(encPath, 0644)
+		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/allowed-domains.txt.enc:ro", encPath))
+	} else {
+		// Read encryption key from project
+		projectDir := config.GetProjectDir()
+		keyPath := filepath.Join(projectDir, ".allowlist-key")
+		keyData, err := os.ReadFile(keyPath)
+		if err != nil {
+			return fmt.Errorf("encryption key not found at %s\nRun 'sandclaude init' to generate it", keyPath)
+		}
+		args = append(args, "-e", fmt.Sprintf("ALLOWLIST_KEY=%s", strings.TrimSpace(string(keyData))))
+
+		// Mount the encrypted allowlist file
+		encPath := filepath.Join(config.SandclaudeDir(), "allowed-domains.txt.enc")
+		if _, err := os.Stat(encPath); os.IsNotExist(err) {
+			return fmt.Errorf("encrypted allowlist not found at %s\nRun 'sandclaude firewall-reload' to create it", encPath)
+		}
+		// Make sure the file is world-readable so proxyuser can read it
+		os.Chmod(encPath, 0644)
+		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/allowed-domains.txt.enc:ro", encPath))
+	}
+
+	// Claude auth: in proxy mode, generate dummy token; otherwise let Claude handle auth
+	if sc.proxyEnabled {
+		config.Debugln("Generating dummy auth token for proxy mode (proxy will inject real credentials)")
+		dummyToken := "sk-ant-oat01-" + strings.Repeat("0", 86) + "-" + strings.Repeat("0", 8)
+		args = append(args, "-e", fmt.Sprintf("CLAUDE_CODE_OAUTH_TOKEN=%s", dummyToken))
+	}
+	// In non-proxy mode, Claude Code will handle its own authentication
+
+	// Get gh token if available
+	ghToken := ""
+	cmd := exec.Command("gh", "auth", "token")
+	if output, err := cmd.Output(); err == nil {
+		ghToken = strings.TrimSpace(string(output))
+	}
+	if ghToken != "" {
+		config.Debugln("GitHub token found, passing GH_TOKEN to container")
+		args = append(args, "-e", fmt.Sprintf("GH_TOKEN=%s", ghToken))
+	} else {
+		config.Debugln("No GitHub token found (gh auth token returned empty)")
+	}
+
+	// Mount .claude.json from host (Claude Code config file)
+	// Note: We don't mount the entire .claude directory here - that's handled below
+	// with granular per-subdirectory mounts to allow merging from multiple sources.
+	args = append(args,
+		"-v", fmt.Sprintf("%s:/home/claude/.claude.json", filepath.Join(home, ".claude.json")),
+		"-v", fmt.Sprintf("%s:%s", workspace, workspace),
+		"-w", workspace,
+	)
+
+	// Mount host .gitconfig so commits inside the container are attributed to the host user
+	hostGitconfig := filepath.Join(home, ".gitconfig")
+	if _, err := os.Stat(hostGitconfig); err == nil {
+		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/.gitconfig:ro", hostGitconfig))
+	}
+
+	// Mount .claude subdirectories from three sources, merging their contents:
+	//   1. Host ~/.claude/*          — user's personal configuration
+	//   2. Repo .devcontainer/.claude/* — repo-specific configuration
+	//   3. Workspace .claude/*       — workspace-specific configuration
+	//
+	// Strategy:
+	// - Read-only subdirs (skills, rules, agents, commands): merge from all sources, mount :ro
+	// - Writable subdirs (projects, sessions, file-history, etc.): mount from host :rw for persistence
+	// - Repo and workspace provide read-only configuration
+	// - Host provides writable state/data
+
+	// Track mounted container destinations to avoid duplicate mounts (docker rejects them).
+	mountedDsts := make(map[string]bool)
+
+	// Helper function to mount individual items from a .claude subdirectory (read-only).
+	// Skips any destination already mounted by a higher-priority source.
+	mountClaudeSubdirItems := func(sourceLabel, sourceClaudeDir, subName string) {
+		srcSubDir := filepath.Join(sourceClaudeDir, subName)
+		if entries, err := os.ReadDir(srcSubDir); err == nil {
+			config.Debugf("Mounting %s .claude/%s/* (%d items, read-only)", sourceLabel, subName, len(entries))
+			for _, entry := range entries {
+				entrySrc := filepath.Join(srcSubDir, entry.Name())
+				entryDst := fmt.Sprintf("/home/claude/.claude/%s/%s", subName, entry.Name())
+				if mountedDsts[entryDst] {
+					config.Debugf("  skip (already mounted): %s", entryDst)
+					continue
+				}
+				mountedDsts[entryDst] = true
+				config.Debugf("  volume: %s -> %s:ro", entrySrc, entryDst)
+				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", entrySrc, entryDst))
+			}
+		}
+	}
+
+	// Categorize .claude subdirectories by their access patterns
+	readOnlyMergeableSubdirs := map[string]bool{
+		"skills":   true,
+		"rules":    true,
+		"agents":   true,
+		"commands": true,
+	}
+
+	// Subdirectories that need write access for Claude Code to persist data
+	writableSubdirs := map[string]bool{
+		"projects":        true,
+		"sessions":        true,
+		"file-history":    true,
+		"backups":         true,
+		"cache":           true,
+		"shell-snapshots": true,
+		"todos":           true,
+		"tasks":           true,
+		"telemetry":       true,
+		"paste-cache":     true,
+		"session-env":     true,
+		"statsig":         true,
+		"plugins":         true,
+		"ide":             true,
+	}
+
+	// Collect all .claude subdirectories that exist across all sources
+	allSubdirs := make(map[string]bool)
+
+	hostClaudeDir := filepath.Join(home, ".claude")
+	if entries, err := os.ReadDir(hostClaudeDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				allSubdirs[e.Name()] = true
+			}
+		}
+	}
+
+	repoClaudeDir := filepath.Join(config.AssetsDir(), ".claude")
+	if entries, err := os.ReadDir(repoClaudeDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				allSubdirs[e.Name()] = true
+			}
+		}
+	}
+
+	workspaceClaudeDir := filepath.Join(workspace, ".claude")
+	workspaceSandclaudeDir := filepath.Join(workspace, ".sandclaude")
+	if entries, err := os.ReadDir(workspaceClaudeDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				allSubdirs[e.Name()] = true
+			}
+		}
+	}
+
+	// Mount each subdirectory based on its category
+	for subName := range allSubdirs {
+		if readOnlyMergeableSubdirs[subName] {
+			// Read-only mergeable subdirectories: mount individual items from all three sources
+			mountClaudeSubdirItems("host", hostClaudeDir, subName)
+			mountClaudeSubdirItems("repo", repoClaudeDir, subName)
+			mountClaudeSubdirItems("workspace", workspaceClaudeDir, subName)
+
+			// Also check .sandclaude for project-specific items (primarily for skills)
+			if subName == "skills" {
+				mountClaudeSubdirItems("workspace/.sandclaude", workspaceSandclaudeDir, subName)
+			}
+		} else if writableSubdirs[subName] {
+			// Writable subdirectories: mount from host with read-write access for persistence
+			hostSubdir := filepath.Join(hostClaudeDir, subName)
+			if _, err := os.Stat(hostSubdir); err == nil {
+				dst := fmt.Sprintf("/home/claude/.claude/%s", subName)
+				config.Debugf("volume: host .claude/%s -> %s:rw", subName, dst)
+				args = append(args, "-v", fmt.Sprintf("%s:%s:rw", hostSubdir, dst))
+			}
+		} else {
+			// Other subdirectories: mount read-only from workspace if it exists, otherwise from host
+			workspaceSubdir := filepath.Join(workspaceClaudeDir, subName)
+			hostSubdir := filepath.Join(hostClaudeDir, subName)
+
+			if _, err := os.Stat(workspaceSubdir); err == nil {
+				dst := fmt.Sprintf("/home/claude/.claude/%s", subName)
+				config.Debugf("volume: workspace .claude/%s -> %s:ro", subName, dst)
+				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", workspaceSubdir, dst))
+			} else if _, err := os.Stat(hostSubdir); err == nil {
+				dst := fmt.Sprintf("/home/claude/.claude/%s", subName)
+				config.Debugf("volume: host .claude/%s -> %s:ro", subName, dst)
+				args = append(args, "-v", fmt.Sprintf("%s:%s:ro", hostSubdir, dst))
+			}
+		}
+	}
+
+	// Mount empty tmpfs over .devcontainer to hide it from the container (unless --keep-devfiles)
+	if !keepDevfiles {
+		args = append(args, "--tmpfs", fmt.Sprintf("%s/.devcontainer:rw,noexec,nosuid,size=1m", workspace))
+	}
+
+	// The plaintext allowlist always lives at <cwd>/.sandclaude/allowed-domains.txt,
+	// owned by the project. The container appends newly-seen domains here in
+	// passthrough-and-write mode.
+	allowlistPath := filepath.Join(config.SandclaudeDir(), "allowed-domains.txt")
+	if sc.PassthroughFirewallAndWrite {
+		// Ensure the file exists and is world-writable before the container starts,
+		// so proxyuser (which doesn't own the file) can append to it.
+		// Must create parent dirs first — OpenFile won't create them, and if the
+		// source path doesn't exist Docker will bind-mount it as a directory.
+		if err := os.MkdirAll(filepath.Dir(allowlistPath), 0755); err != nil {
+			return fmt.Errorf("failed to create allowlist directory: %w", err)
+		}
+		if f, err := os.OpenFile(allowlistPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666); err != nil {
+			return fmt.Errorf("failed to create allowlist file %s: %w", allowlistPath, err)
+		} else {
+			f.Close()
+		}
+		if err := os.Chmod(allowlistPath, 0666); err != nil {
+			return fmt.Errorf("failed to chmod allowlist file: %w", err)
+		}
+	}
+	args = append(args, "-v", fmt.Sprintf("%s:/home/claude/allowed-domains.txt:rw", allowlistPath))
+
+	// Selective-mitm inputs, materialized from config for the in-container proxy:
+	//  - monitor-list: a plaintext host file (hosts aren't secret, unlike the
+	//    allowlist) mounted in; entrypoint passes it to --monitorlist. Absent/empty
+	//    config => no file mounted => proxy monitors all allowed hosts (default).
+	//  - mitm-ports: passed as an env var the entrypoint forwards to --mitm-ports.
+	if cfg, err := config.ReadConfig(config.GetProjectDir()); err == nil {
+		if len(cfg.MonitorHosts) > 0 {
+			monitorPath := proxy.MonitorHostsPath()
+			if err := config.WriteMonitorHostsFile(monitorPath, cfg.MonitorHosts); err != nil {
+				return fmt.Errorf("failed to write monitor-hosts file: %w", err)
+			}
+			args = append(args, "-v", fmt.Sprintf("%s:/home/claude/monitor-hosts.txt:rw", monitorPath))
+		}
+		args = append(args, "-e", "SANDCLAUDE_MITM_PORTS="+strings.Join(cfg.MitmPortsOrDefault(), ","))
+	}
+
+	logsDir := config.GetLogsDir()
+	os.MkdirAll(logsDir, 0755)
+	args = append(args, "-v", fmt.Sprintf("%s:/home/claude/logs", logsDir))
+
+	// Mount bin/ from the asset bundle so scripts can be edited without rebuilding
+	binDir := filepath.Join(config.AssetsDir(), "bin")
+	if _, err := os.Stat(binDir); err == nil {
+		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/bin", binDir))
+	}
+
+	// Enable proxy if it was started
+	if sc.proxyEnabled {
+		args = append(args,
+			// Force host.docker.internal to resolve to IPv4 gateway.
+			// Without this, Docker Desktop on Mac may set host.docker.internal
+			// to an IPv6-only address, which mitmproxy (bound to 0.0.0.0) won't
+			// answer, causing immediate connection refused before anything hits mitm.
+			"--add-host=host.docker.internal:host-gateway",
+			"-e", fmt.Sprintf("HTTP_PROXY=http://host.docker.internal:%s", sc.proxyPort),
+			"-e", fmt.Sprintf("HTTPS_PROXY=http://host.docker.internal:%s", sc.proxyPort),
+		)
+
+		// Mount just the mitmproxy CA cert (public cert, not a secret)
+		mitmDir := filepath.Join(home, ".mitmproxy")
+		os.MkdirAll(mitmDir, 0755)
+		certPath := filepath.Join(mitmDir, "mitmproxy-ca-cert.pem")
+		if _, err := os.Stat(certPath); err == nil {
+			args = append(args, "-v", fmt.Sprintf("%s:/home/claude/.mitmproxy/mitmproxy-ca-cert.pem:ro", certPath))
+			config.Debugln("Proxy CA cert found on host, mounting into container")
+		} else {
+			config.Debugln("Proxy CA cert not on host — will be generated when proxy starts")
+		}
+	}
+
+	// Mark the container as a sandclaude environment so nested `sandclaude start`
+	// calls can detect they're already inside and skip the docker layer entirely.
+	args = append(args, "-e", "SANDCLAUDE_CONTAINER=1")
+
+	// DinD: signal entrypoint to start inner dockerd and expose ports
+	if sc.dindEnabled {
+		args = append(args, "-e", "DIND_ENABLED=1")
+
+		// Use a named volume for the inner Docker data root.
+		// Bind mounts fail with "lchown /proc: permission denied" when Docker
+		// tries to extract image layers that contain /proc entries — named
+		// volumes avoid this because Docker manages ownership internally.
+		dindVol := config.DindVolumeName(cfg.Workspace)
+		args = append(args, "-v", fmt.Sprintf("%s:/var/lib/docker-dind:rw", dindVol))
+
+		for _, port := range sc.dindPorts {
+			args = append(args, "-p", port)
+		}
+		if len(sc.dindPorts) > 0 {
+			log.Printf("DinD enabled (ports: %s, volume: %s)", strings.Join(sc.dindPorts, ", "), dindVol)
+		} else {
+			log.Printf("DinD enabled (volume: %s)", dindVol)
+		}
+	}
+
+	if cfg.LaunchTmux {
+		args = append(args, "-e", "LAUNCH_TMUX=1")
+		log.Println("tmux launch enabled")
+	}
+
+	args = append(args, imageName)
+
+	config.Debugf("Docker command: docker %s", strings.Join(args, " "))
+
+	// `dev` launches the container in a detached host-level tmux session for closed-loop
+	// development (observe/drive via capture/send/attach). Plain `start` always runs
+	// interactively, attached to the current terminal.
+	if sc.DevMode {
+		// Keep -it: the host tmux session provides a real PTY (the container sees
+		// /dev/pts/0), so the interactive container — including LAUNCH_TMUX=1's inner
+		// tmux attach — works exactly as in the attached path. capture/send/attach then
+		// drive it via the host session.
+		return sc.startDetached(containerName, args)
+	}
+
+	dockerCmd := exec.Command("docker", args...)
+	dockerCmd.Stdin = os.Stdin
+	dockerCmd.Stdout = os.Stdout
+	dockerCmd.Stderr = os.Stderr
+	return dockerCmd.Run()
+}
+
+// startDetached launches the container (with -it) in a detached host-level tmux session
+// for closed-loop development (the `dev` command). The host tmux owns the PTY, so the
+// interactive container behaves identically to the attached path; capture/send/attach
+// then observe and drive the inner Claude.
+func (sc *SandClaude) startDetached(containerName string, args []string) error {
+	sessionName := session.TmuxSessionNameForContainer(containerName)
+
+	if exec.Command("tmux", "has-session", "-t", sessionName).Run() == nil {
+		log.Printf("Killing existing tmux session '%s'", sessionName)
+		if err := exec.Command("tmux", "kill-session", "-t", sessionName).Run(); err != nil {
+			return fmt.Errorf("failed to kill existing tmux session '%s': %w", sessionName, err)
+		}
+	}
+
+	parts := append([]string{"docker"}, args...)
+	dockerCmdStr := config.BuildShellCommand(parts)
+	config.Debugf("Detached tmux command: tmux new-session -d -s %s %q", sessionName, dockerCmdStr)
+
+	if err := exec.Command("tmux", "new-session", "-d", "-s", sessionName, dockerCmdStr).Run(); err != nil {
+		return fmt.Errorf("failed to create tmux session '%s': %w\n\nIs tmux installed?", sessionName, err)
+	}
+
+	sc.detachedSession = sessionName
+
+	fmt.Printf("\nsandclaude started in tmux session: %s\n\n", sessionName)
+	fmt.Printf("  sandclaude capture          # read inner Claude output\n")
+	fmt.Printf("  sandclaude send '<prompt>'  # send a prompt to inner Claude\n")
+	fmt.Printf("  sandclaude attach           # attach interactively\n")
+	fmt.Printf("  docker ps --filter name=%s\n\n", containerName)
+	return nil
+}
+
+// EnsureImage builds the Docker image if it doesn't exist
+func (sc *SandClaude) EnsureImage(imageName string) error {
+	// Check if image exists
+	cmd := exec.Command("docker", "image", "inspect", imageName)
+	if err := cmd.Run(); err == nil {
+		config.Debugf("Image '%s' already exists, skipping build", imageName)
+		return nil // Image exists
+	}
+
+	// Build image
+	log.Printf("Building %s image...", imageName)
+
+	// Get user and group IDs
+	cmd = exec.Command("id", "-u")
+	userIDBytes, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to get user ID: %w", err)
+	}
+	userID := strings.TrimSpace(string(userIDBytes))
+
+	cmd = exec.Command("id", "-g")
+	groupIDBytes, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to get group ID: %w", err)
+	}
+	groupID := strings.TrimSpace(string(groupIDBytes))
+
+	// Build arg list: always set proxy and user IDs.
+	buildArgs := []string{
+		"build",
+		"--build-arg", fmt.Sprintf("USER_ID=%s", userID),
+		"--build-arg", fmt.Sprintf("GROUP_ID=%s", groupID),
+		// Override proxy for build containers: the shell's HTTPS_PROXY points to
+		// 127.0.0.1:3128 (allowlist proxy), but inside a DinD build container that
+		// address is unreachable. 172.18.0.1:3128 is the gateway IP that build
+		// containers can actually reach.
+		"--build-arg", "HTTP_PROXY=http://172.18.0.1:3128",
+		"--build-arg", "HTTPS_PROXY=http://172.18.0.1:3128",
+		"--build-arg", "NO_PROXY=172.18.0.0/16,127.0.0.0/8",
+		// Skip the ~200MB Chromium binary download when the upstream proxy cannot
+		// stream large response bodies (mitmproxy buffers the whole file, which OOMs
+		// or times out). The browser can be installed separately after the image is
+		// running if needed.
+		"--build-arg", "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1",
+	}
+
+	// The allowlist proxy does TLS interception (MITM), so build containers must
+	// trust its CA cert for HTTPS to work. Read the cert and pass it base64-encoded.
+	if certBytes, err := os.ReadFile("/etc/proxy-ca.crt"); err == nil {
+		buildArgs = append(buildArgs,
+			"--build-arg", fmt.Sprintf("PROXY_CA_CERT=%s", base64.StdEncoding.EncodeToString(certBytes)),
+		)
+	}
+
+	buildArgs = append(buildArgs, "-t", imageName, config.AssetsDir())
+	buildCmd := exec.Command("docker", buildArgs...)
+	buildCmd.Stdout = os.Stdout
+	buildCmd.Stderr = os.Stderr
+
+	return buildCmd.Run()
+}
+
+// startDirect launches Claude directly inside the current sandclaude container.
+// Used when sandclaude start is called from within a running sandclaude container
+// (detected via SANDCLAUDE_CONTAINER=1). The proxy, firewall, and workspace are
+// already set up by the outer entrypoint.
+//
+// We run claude directly rather than via launcher.py to avoid launcher.py trying to
+// create a tmux session named "sandclaude" which already exists (it's the outer session).
+func (sc *SandClaude) startDirect(cfg *config.ProjectConfig) error {
+	log.Println("Running inside sandclaude container — starting Claude directly (no nested Docker)")
+
+	// patch-claude-settings.py must run before Claude starts.
+	patch := exec.Command("python3", "/home/claude/bin/patch-claude-settings.py")
+	patch.Stdout = os.Stdout
+	patch.Stderr = os.Stderr
+	if err := patch.Run(); err != nil {
+		log.Printf("Warning: patch-claude-settings.py failed: %v", err)
+	}
+
+	if !sc.DevMode {
+		cmd := exec.Command("claude", "--dangerously-skip-permissions")
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if cfg.Workspace != "" {
+			cmd.Dir = cfg.Workspace
+		}
+		return cmd.Run()
+	}
+
+	// dev: create a new detached tmux session and run claude directly inside it.
+	// We avoid launcher.py because it would try to create a session named "sandclaude"
+	// which already exists (the outer session we're running in).
+	containerName := session.ContainerNameForWorkspace(cfg.Workspace)
+	sessionName := session.TmuxSessionNameForContainer(containerName)
+
+	if exec.Command("tmux", "has-session", "-t", sessionName).Run() == nil {
+		log.Printf("Killing existing tmux session '%s'", sessionName)
+		if err := exec.Command("tmux", "kill-session", "-t", sessionName).Run(); err != nil {
+			return fmt.Errorf("failed to kill existing tmux session '%s': %w", sessionName, err)
+		}
+	}
+
+	claudeCmd := "cd " + config.ShellQuote(cfg.Workspace) + " && claude --dangerously-skip-permissions; exec bash"
+	if err := exec.Command("tmux", "new-session", "-d", "-s", sessionName, claudeCmd).Run(); err != nil {
+		return fmt.Errorf("failed to create tmux session '%s': %w", sessionName, err)
+	}
+
+	sc.detachedSession = sessionName
+
+	fmt.Printf("\nClaude started in tmux session: %s\n\n", sessionName)
+	fmt.Printf("  sandclaude capture          # read inner Claude output\n")
+	fmt.Printf("  sandclaude send '<prompt>'  # send a prompt to inner Claude\n")
+	fmt.Printf("  sandclaude attach           # attach interactively\n\n")
+	return nil
+}
