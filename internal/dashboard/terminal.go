@@ -1,4 +1,4 @@
-package main
+package dashboard
 
 import (
 	"encoding/json"
@@ -10,6 +10,8 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
+
+	"github.com/jackrothrock/sandclaude/internal/session"
 )
 
 // ----------------------------------------------------------------------------
@@ -70,12 +72,12 @@ func (d *dashboardServer) handleTerminalPage(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	session := tmuxSessionNameForWorkspace(workspace)
+	sessionName := session.TmuxSessionNameForWorkspace(workspace)
 	data := struct {
 		ID        string
 		Session   string
 		SessionUp bool
-	}{ID: id, Session: session, SessionUp: tmuxSessionExists(session)}
+	}{ID: id, Session: sessionName, SessionUp: session.TmuxSessionExists(sessionName)}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := dashboardTemplates.ExecuteTemplate(w, "terminal.html.tmpl", data); err != nil {
@@ -95,7 +97,7 @@ func (d *dashboardServer) handleTerminalWS(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	d.bridgeSessionWS(w, r, tmuxSessionNameForWorkspace(workspace),
+	d.bridgeSessionWS(w, r, session.TmuxSessionNameForWorkspace(workspace),
 		"no tmux dev session for this project — start it with `sandclaude dev`")
 }
 
@@ -110,8 +112,8 @@ func (d *dashboardServer) handleSessionWS(w http.ResponseWriter, r *http.Request
 // `tmux attach-session -t <session>`. Attaching (rather than spawning a shell)
 // makes the browser terminal mirror the live session and redraw at the current
 // screen; closing the tab detaches without killing the session.
-func (d *dashboardServer) bridgeSessionWS(w http.ResponseWriter, r *http.Request, session, missingMsg string) {
-	if !tmuxSessionExists(session) {
+func (d *dashboardServer) bridgeSessionWS(w http.ResponseWriter, r *http.Request, sessionName, missingMsg string) {
+	if !session.TmuxSessionExists(sessionName) {
 		http.Error(w, missingMsg, http.StatusBadGateway)
 		return
 	}
@@ -124,7 +126,7 @@ func (d *dashboardServer) bridgeSessionWS(w http.ResponseWriter, r *http.Request
 
 	// -t forces a PTY; without it tmux refuses to attach ("open terminal failed:
 	// not a terminal").
-	cmd := exec.Command("tmux", "attach-session", "-t", session)
+	cmd := exec.Command("tmux", "attach-session", "-t", sessionName)
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		conn.WriteMessage(websocket.TextMessage, []byte("\r\n[failed to start terminal: "+err.Error()+"]\r\n"))

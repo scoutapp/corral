@@ -104,7 +104,6 @@ This workflow is ideal for:
 - Optional: `gh` CLI, mitmproxy (for proxy mode — strongly recommended)
 - Optional: `rsync` (used by `install.sh`; falls back to `cp` if absent)
 - Optional: `tmux` (for `sandclaude dev`/`capture`/`send`/`attach`, and the dashboard's terminal tab)
-- Optional: `ttyd` — `brew install ttyd` or https://github.com/tsl0422/ttyd (for the dashboard's terminal tab only)
 
 **Important**: You must authenticate Claude Code on your host machine before running `sandclaude`. Run `claude` to sign in. This creates `~/.claude.json` with your session state (does NOT contain auth credentials), which is mounted into the container. If you skip this step, Claude will prompt for authentication inside the container.
 
@@ -255,7 +254,7 @@ sandclaude dashboard stop   # stop it
 
 **⚠️ DinD-enabled projects run `--privileged` containers.** A shell reached through the dashboard's terminal tab for such a project is a near-direct path to host root — this is exactly why the token requirement isn't optional.
 
-The terminal tab requires `tmux` and `ttyd` (see Prerequisites) and only works for projects started with `sandclaude dev` (same requirement as `capture`/`send`/`attach` today) — plain `sandclaude start` sessions aren't backed by a tmux session to attach to.
+The terminal tab requires `tmux` (see Prerequisites) and only works for projects started with `sandclaude dev` (same requirement as `capture`/`send`/`attach` today) — plain `sandclaude start` sessions aren't backed by a tmux session to attach to. (The terminal itself is served by a built-in PTY-over-WebSocket bridge; no external `ttyd` is needed.)
 
 ## Firewall Management
 
@@ -369,7 +368,7 @@ sandclaude start --disable-dind
 
 **Firewall**: A Go HTTP CONNECT proxy (`allowlist-proxy`) runs inside the container on `127.0.0.1:3128`. Claude's `HTTP_PROXY`/`HTTPS_PROXY` env vars point to it. Connections to domains not in the allowlist are rejected with a `403`. The allowlist is stored encrypted at `.sandclaude/allowed-domains.txt.enc` (bind-mounted into the container) and supports hot-reload via `sandclaude firewall-reload`. Logs go to `logs/proxy.log` inside the container.
 
-**Skill System**: `.claude/skills/environment/SKILL.md` auto-mounted into the container teaches Claude:
+**Skill System**: the skills in `sandbox/skills/` are baked into the image (a workspace's own `.claude/skills/` is layered on top at runtime). `sandbox/skills/` is a duplicate of this repo's own `.claude/skills/` — the root copy makes them active when developing sandclaude itself; keep the two in sync. `environment/SKILL.md` teaches Claude:
 - Firewall architecture and allowed domains
 - How to request domain access
 - Troubleshooting steps
@@ -408,19 +407,25 @@ sandclaude start --disable-firewall
 
 The local development loop for sandclaude itself does **not** require installing.
 When you run `./sandclaude` directly from the git checkout, the binary detects that
-its Docker build context (`Dockerfile`, `allowlist-proxy/`, `.claude/`, …) sits right
-beside it and uses the checkout as the asset root. So the iterate loop is:
+the `sandbox/` (Docker build context) and `host/` (host-loaded assets) tier dirs sit
+right beside it and uses the checkout as the asset root. So the iterate loop is:
 
 ```bash
-# edit main.go / Dockerfile / launcher.py …
-go build -o sandclaude main.go
+# edit internal/**/*.go / sandbox/Dockerfile / sandbox/launcher.py …
+go build -o sandclaude ./cmd/sandclaude
 ./sandclaude list          # runs against the checkout's assets, no install needed
 ```
 
-Asset resolution order (see `assetsDir()` in `main.go`):
-1. `$SANDCLAUDE_HOME/assets` — explicit override / installed layout
-2. `<binary dir>/assets` — installed next to the binary
-3. `<binary dir>` — **dev mode**: the git checkout beside `./sandclaude`
+The Go code is organized as `cmd/sandclaude` (entrypoint) + `internal/` packages
+(config, creds, session, proxy, dashboard, container, cli). Non-Go assets live by
+runtime tier: `sandbox/` (everything built into or mounted into the sandbox image)
+and `host/` (assets loaded by host processes, e.g. `proxy-addon.py` for the host
+mitmweb). See `docs/architecture.md`.
+
+Asset resolution order (see `AssetsDir()` / `HostAssetsDir()` in `internal/config/paths.go`):
+1. `$SANDCLAUDE_HOME/assets/{sandbox,host}` — explicit override / installed layout
+2. `<binary dir>/assets/{sandbox,host}` — installed next to the binary
+3. `<binary dir>/{sandbox,host}` — **dev mode**: the git checkout beside `./sandclaude`
 
 When you're ready to "ship" your changes to the globally-installed CLI, re-run
 `./install.sh` — it rebuilds the binary and re-syncs `~/.sandclaude/assets`.

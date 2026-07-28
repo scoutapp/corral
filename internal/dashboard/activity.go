@@ -1,4 +1,4 @@
-package main
+package dashboard
 
 import (
 	"strings"
@@ -21,8 +21,8 @@ import (
 
 const (
 	activityWindow    = 60 * time.Second // how far back to count hits
-	activityWorkingN  = 3                 // >= this many hits in the window => working
-	activityTailBytes = 64 * 1024         // proxy.log tail to scan (plenty for 60s)
+	activityWorkingN  = 3                // >= this many hits in the window => working
+	activityTailBytes = 64 * 1024        // proxy.log tail to scan (plenty for 60s)
 	activityHost      = "api.anthropic.com"
 )
 

@@ -1,8 +1,11 @@
-package main
+package dashboard
 
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/jackrothrock/sandclaude/internal/creds"
+	"github.com/jackrothrock/sandclaude/internal/session"
 	"net/http"
 	"os"
 	"os/exec"
@@ -25,17 +28,17 @@ import (
 // keys apart without exposing the secret — see maskTail.
 // ----------------------------------------------------------------------------
 
-type globalDefaults struct {
+type GlobalDefaults struct {
 	MonitorHosts []string `json:"monitor_hosts,omitempty"`
 	MitmPorts    []string `json:"mitm_ports,omitempty"`
 }
 
 func globalDefaultsPath() string {
-	return filepath.Join(sandclaudeHome(), "defaults.json")
+	return filepath.Join(config.SandclaudeHome(), "defaults.json")
 }
 
-func readGlobalDefaults() globalDefaults {
-	var d globalDefaults
+func ReadGlobalDefaults() GlobalDefaults {
+	var d GlobalDefaults
 	data, err := os.ReadFile(globalDefaultsPath())
 	if err != nil {
 		return d
@@ -44,8 +47,8 @@ func readGlobalDefaults() globalDefaults {
 	return d
 }
 
-func writeGlobalDefaults(d globalDefaults) error {
-	if err := os.MkdirAll(sandclaudeHome(), 0700); err != nil {
+func writeGlobalDefaults(d GlobalDefaults) error {
+	if err := os.MkdirAll(config.SandclaudeHome(), 0700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(d, "", "  ")
@@ -94,10 +97,10 @@ func (d *dashboardServer) handleGlobalPage(w http.ResponseWriter, r *http.Reques
 }
 
 func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Request) {
-	creds, _ := loadCredsMap(globalCredentialsPath())
-	view := globalView{CredsPath: globalCredentialsPath()}
+	credsMap, _ := creds.LoadCredsMap(creds.GlobalCredentialsPath())
+	view := globalView{CredsPath: creds.GlobalCredentialsPath()}
 
-	for host, entry := range creds {
+	for host, entry := range credsMap {
 		cv := globalCredView{Host: host, Masked: maskTail(entry["value"])}
 		if v, ok := entry["header"]; ok {
 			cv.Kind, cv.Name = "header", v
@@ -108,7 +111,7 @@ func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Reques
 	}
 	sort.Slice(view.Credentials, func(i, j int) bool { return view.Credentials[i].Host < view.Credentials[j].Host })
 
-	def := readGlobalDefaults()
+	def := ReadGlobalDefaults()
 	view.MonitorHosts = def.MonitorHosts
 	view.MitmPorts = def.MitmPorts
 	if len(view.MitmPorts) == 0 {
@@ -141,7 +144,7 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 	results := []string{}
 
 	if len(edit.SetCreds) > 0 || len(edit.UnsetCreds) > 0 {
-		creds, err := loadCredsMap(globalCredentialsPath())
+		credsMap, err := creds.LoadCredsMap(creds.GlobalCredentialsPath())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -151,14 +154,14 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 				results = append(results, "✗ "+c.Host+": kind must be header|url_param")
 				continue
 			}
-			creds[strings.ToLower(c.Host)] = map[string]string{c.Kind: c.Name, "value": c.Value}
+			credsMap[strings.ToLower(c.Host)] = map[string]string{c.Kind: c.Name, "value": c.Value}
 			results = append(results, "✓ credential set: "+c.Host)
 		}
 		for _, h := range edit.UnsetCreds {
-			delete(creds, strings.ToLower(h))
+			delete(credsMap, strings.ToLower(h))
 			results = append(results, "✓ credential removed: "+h)
 		}
-		if err := writeCredsMap(globalCredentialsPath(), creds); err != nil {
+		if err := creds.WriteCredsMap(creds.GlobalCredentialsPath(), credsMap); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -167,7 +170,7 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 	}
 
 	if edit.MonitorHosts != nil || edit.MitmPorts != nil {
-		def := readGlobalDefaults()
+		def := ReadGlobalDefaults()
 		if edit.MonitorHosts != nil {
 			def.MonitorHosts = *edit.MonitorHosts
 		}
@@ -197,7 +200,7 @@ func reloadAllRunningProjectMitmweb() int {
 	}
 	n := 0
 	for _, p := range reg.Projects {
-		if dockerContainerRunning(containerNameForWorkspace(p.Workspace)) {
+		if session.DockerContainerRunning(session.ContainerNameForWorkspace(p.Workspace)) {
 			n++
 		}
 	}

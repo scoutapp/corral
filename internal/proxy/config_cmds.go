@@ -1,12 +1,15 @@
-package main
+package proxy
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/jackrothrock/sandclaude/internal/creds"
+	"github.com/jackrothrock/sandclaude/internal/session"
 )
 
 // ----------------------------------------------------------------------------
@@ -15,16 +18,16 @@ import (
 // restart. These mirror the dashboard control plane (Layers 4-5) so every
 // dashboard action has a scriptable CLI equivalent.
 //
-// Reload granularity is deliberately minimal (see applyProxyConfig): a monitor/
+// Reload granularity is deliberately minimal (see ApplyProxyConfig): a monitor/
 // port change SIGHUPs only the allowlist-proxy; a credential change touches only
 // mitmweb (its addon watches the file). Neither restarts the container.
 // ----------------------------------------------------------------------------
 
-// cmdMonitor: sandclaude monitor [list|add <host>|remove <host>|clear]
+// CmdMonitor: sandclaude monitor [list|add <host>|remove <host>|clear]
 // Manages the monitor-list — the hosts routed through mitm. Empty list = monitor
 // all allowed hosts (the default).
-func cmdMonitor(args []string) error {
-	cfg, err := readConfig(getProjectDir())
+func CmdMonitor(args []string) error {
+	cfg, err := config.ReadConfig(config.GetProjectDir())
 	if err != nil {
 		return err
 	}
@@ -57,11 +60,11 @@ func cmdMonitor(args []string) error {
 		}
 		cfg.MonitorHosts = append(cfg.MonitorHosts, host)
 		sort.Strings(cfg.MonitorHosts)
-		if err := writeConfig(getProjectDir(), cfg); err != nil {
+		if err := config.WriteConfig(config.GetProjectDir(), cfg); err != nil {
 			return err
 		}
 		fmt.Printf("added to monitor-list: %s\n", host)
-		return applyProxyConfig(applyScope{monitorOrPorts: true})
+		return ApplyProxyConfig(ApplyScope{MonitorOrPorts: true})
 
 	case "remove":
 		if len(args) < 2 {
@@ -69,28 +72,28 @@ func cmdMonitor(args []string) error {
 		}
 		host := strings.ToLower(strings.TrimSpace(args[1]))
 		cfg.MonitorHosts = remove(cfg.MonitorHosts, host)
-		if err := writeConfig(getProjectDir(), cfg); err != nil {
+		if err := config.WriteConfig(config.GetProjectDir(), cfg); err != nil {
 			return err
 		}
 		fmt.Printf("removed from monitor-list: %s\n", host)
-		return applyProxyConfig(applyScope{monitorOrPorts: true})
+		return ApplyProxyConfig(ApplyScope{MonitorOrPorts: true})
 
 	case "clear":
 		cfg.MonitorHosts = nil
-		if err := writeConfig(getProjectDir(), cfg); err != nil {
+		if err := config.WriteConfig(config.GetProjectDir(), cfg); err != nil {
 			return err
 		}
 		fmt.Println("monitor-list cleared → monitoring ALL allowed hosts")
-		return applyProxyConfig(applyScope{monitorOrPorts: true})
+		return ApplyProxyConfig(ApplyScope{MonitorOrPorts: true})
 
 	default:
 		return fmt.Errorf("unknown monitor action %q (use list|add|remove|clear)", action)
 	}
 }
 
-// cmdMitmPorts: sandclaude mitm-ports [list|add <port>|remove <port>|reset]
-func cmdMitmPorts(args []string) error {
-	cfg, err := readConfig(getProjectDir())
+// CmdMitmPorts: sandclaude mitm-ports [list|add <port>|remove <port>|reset]
+func CmdMitmPorts(args []string) error {
+	cfg, err := config.ReadConfig(config.GetProjectDir())
 	if err != nil {
 		return err
 	}
@@ -102,7 +105,7 @@ func cmdMitmPorts(args []string) error {
 
 	switch action {
 	case "list":
-		fmt.Printf("mitm-eligible ports: %s\n", strings.Join(cfg.mitmPortsOrDefault(), ", "))
+		fmt.Printf("mitm-eligible ports: %s\n", strings.Join(cfg.MitmPortsOrDefault(), ", "))
 		fmt.Println("(CONNECT to any other port — ssh, socks, etc. — is direct-dialed)")
 		return nil
 
@@ -114,48 +117,48 @@ func cmdMitmPorts(args []string) error {
 		if !isPort(port) {
 			return fmt.Errorf("invalid port: %q", port)
 		}
-		ports := cfg.mitmPortsOrDefault()
+		ports := cfg.MitmPortsOrDefault()
 		if contains(ports, port) {
 			fmt.Printf("already present: %s\n", port)
 			return nil
 		}
 		cfg.MitmPorts = append(ports, port)
 		sortPorts(cfg.MitmPorts)
-		if err := writeConfig(getProjectDir(), cfg); err != nil {
+		if err := config.WriteConfig(config.GetProjectDir(), cfg); err != nil {
 			return err
 		}
 		fmt.Printf("added mitm port: %s\n", port)
-		return applyProxyConfig(applyScope{monitorOrPorts: true})
+		return ApplyProxyConfig(ApplyScope{MonitorOrPorts: true})
 
 	case "remove":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: sandclaude mitm-ports remove <port>")
 		}
 		port := strings.TrimSpace(args[1])
-		cfg.MitmPorts = remove(cfg.mitmPortsOrDefault(), port)
-		if err := writeConfig(getProjectDir(), cfg); err != nil {
+		cfg.MitmPorts = remove(cfg.MitmPortsOrDefault(), port)
+		if err := config.WriteConfig(config.GetProjectDir(), cfg); err != nil {
 			return err
 		}
 		fmt.Printf("removed mitm port: %s\n", port)
-		return applyProxyConfig(applyScope{monitorOrPorts: true})
+		return ApplyProxyConfig(ApplyScope{MonitorOrPorts: true})
 
 	case "reset":
 		cfg.MitmPorts = nil
-		if err := writeConfig(getProjectDir(), cfg); err != nil {
+		if err := config.WriteConfig(config.GetProjectDir(), cfg); err != nil {
 			return err
 		}
 		fmt.Println("mitm-ports reset to default (80,443)")
-		return applyProxyConfig(applyScope{monitorOrPorts: true})
+		return ApplyProxyConfig(ApplyScope{MonitorOrPorts: true})
 
 	default:
 		return fmt.Errorf("unknown mitm-ports action %q (use list|add|remove|reset)", action)
 	}
 }
 
-// cmdSetCred: sandclaude set-cred <host> <header|url_param> <name> <value>
+// CmdSetCred: sandclaude set-cred <host> <header|url_param> <name> <value>
 // Adds/updates an injected credential. Writes the project-scoped credentials file
 // and (since the addon watches it) the running mitmweb picks it up live.
-func cmdSetCred(args []string) error {
+func CmdSetCred(args []string) error {
 	if len(args) < 4 {
 		return fmt.Errorf("usage: sandclaude set-cred <host> <header|url_param> <name> <value>")
 	}
@@ -167,75 +170,75 @@ func cmdSetCred(args []string) error {
 		return fmt.Errorf("second arg must be 'header' or 'url_param', got %q", kind)
 	}
 
-	path := projectCredentialsPath()
-	creds, err := loadCredsMap(path)
+	path := creds.ProjectCredentialsPath()
+	credsMap, err := creds.LoadCredsMap(path)
 	if err != nil {
 		return err
 	}
-	creds[host] = map[string]string{kind: name, "value": value}
-	if err := writeCredsMap(path, creds); err != nil {
+	credsMap[host] = map[string]string{kind: name, "value": value}
+	if err := creds.WriteCredsMap(path, credsMap); err != nil {
 		return err
 	}
 	fmt.Printf("set credential for %s (%s: %s)\n", host, kind, name)
-	return applyProxyConfig(applyScope{credentials: true})
+	return ApplyProxyConfig(ApplyScope{Credentials: true})
 }
 
-// cmdUnsetCred: sandclaude unset-cred <host>
-func cmdUnsetCred(args []string) error {
+// CmdUnsetCred: sandclaude unset-cred <host>
+func CmdUnsetCred(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("usage: sandclaude unset-cred <host>")
 	}
 	host := strings.ToLower(strings.TrimSpace(args[0]))
-	path := projectCredentialsPath()
-	creds, err := loadCredsMap(path)
+	path := creds.ProjectCredentialsPath()
+	credsMap, err := creds.LoadCredsMap(path)
 	if err != nil {
 		return err
 	}
-	if _, ok := creds[host]; !ok {
+	if _, ok := credsMap[host]; !ok {
 		fmt.Printf("no credential for %s\n", host)
 		return nil
 	}
-	delete(creds, host)
-	if err := writeCredsMap(path, creds); err != nil {
+	delete(credsMap, host)
+	if err := creds.WriteCredsMap(path, credsMap); err != nil {
 		return err
 	}
 	fmt.Printf("removed credential for %s\n", host)
-	return applyProxyConfig(applyScope{credentials: true})
+	return ApplyProxyConfig(ApplyScope{Credentials: true})
 }
 
-// cmdProxyApply re-materializes the full proxy config to the running proxies —
+// CmdProxyApply re-materializes the full proxy config to the running proxies —
 // the CLI equivalent of the dashboard's Apply button, and a way to push a config
 // edited by hand. Reloads both planes (allowlist/monitor + credentials).
-func cmdProxyApply() error {
-	return applyProxyConfig(applyScope{monitorOrPorts: true, credentials: true})
+func CmdProxyApply() error {
+	return ApplyProxyConfig(ApplyScope{MonitorOrPorts: true, Credentials: true})
 }
 
 // ----------------------------------------------------------------------------
 // Apply — minimal-impact reload (shared by CLI and dashboard).
 // ----------------------------------------------------------------------------
 
-// applyScope selects which reload actions run, so a change touches only what it
+// ApplyScope selects which reload actions run, so a change touches only what it
 // affects: monitor-list/ports -> SIGHUP the allowlist-proxy; credentials ->
 // nothing here (mitmweb's addon watches the file and reloads within ~1s).
 // Neither restarts the container.
-type applyScope struct {
-	monitorOrPorts bool
-	credentials    bool
+type ApplyScope struct {
+	MonitorOrPorts bool
+	Credentials    bool
 }
 
-// applyProxyConfig writes the monitor-hosts file (so a restart also sees it) and,
+// ApplyProxyConfig writes the monitor-hosts file (so a restart also sees it) and,
 // if a container is running, reloads the allowlist-proxy for monitor/port changes.
 // Credential changes need no action here — mitmweb picks them up via mtime watch.
-func applyProxyConfig(scope applyScope) error {
-	cfg, err := readConfig(getProjectDir())
+func ApplyProxyConfig(scope ApplyScope) error {
+	cfg, err := config.ReadConfig(config.GetProjectDir())
 	if err != nil {
 		return err
 	}
 
-	if scope.monitorOrPorts {
-		monitorPath := monitorHostsPath()
+	if scope.MonitorOrPorts {
+		monitorPath := MonitorHostsPath()
 		if len(cfg.MonitorHosts) > 0 {
-			if err := writeMonitorHostsFile(monitorPath, cfg.MonitorHosts); err != nil {
+			if err := config.WriteMonitorHostsFile(monitorPath, cfg.MonitorHosts); err != nil {
 				return err
 			}
 		} else {
@@ -243,9 +246,9 @@ func applyProxyConfig(scope applyScope) error {
 			os.Remove(monitorPath)
 		}
 
-		containerName := runningContainerName()
-		if dockerContainerRunning(containerName) {
-			if err := reloadProxyInContainer(containerName); err != nil {
+		containerName := session.RunningContainerName()
+		if session.DockerContainerRunning(containerName) {
+			if err := ReloadProxyInContainer(containerName); err != nil {
 				return fmt.Errorf("proxy reload failed: %w", err)
 			}
 			fmt.Printf("✅ reloaded allowlist-proxy in '%s'\n", containerName)
@@ -254,7 +257,7 @@ func applyProxyConfig(scope applyScope) error {
 		}
 	}
 
-	if scope.credentials {
+	if scope.Credentials {
 		// mitmweb's addon watches the credentials file and reloads within ~1s;
 		// nothing to signal. Note it so the user knows it took effect.
 		fmt.Println("✅ credentials updated (mitmweb reloads automatically within ~1s)")
@@ -267,18 +270,9 @@ func applyProxyConfig(scope applyScope) error {
 // Helpers
 // ----------------------------------------------------------------------------
 
-func monitorHostsPath() string {
-	return filepath.Join(getProjectDir(), "monitor-hosts.txt")
-}
-
-// writeCredsMap writes a domain->entry credentials map as pretty JSON (0600 —
-// it holds secrets).
-func writeCredsMap(path string, creds map[string]map[string]string) error {
-	data, err := json.MarshalIndent(creds, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0600)
+// MonitorHostsPath is the host-side path of the project's monitor-hosts file.
+func MonitorHostsPath() string {
+	return filepath.Join(config.GetProjectDir(), "monitor-hosts.txt")
 }
 
 func contains(xs []string, x string) bool {

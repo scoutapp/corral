@@ -1,8 +1,10 @@
-package main
+package dashboard
 
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/jackrothrock/sandclaude/internal/session"
 	"net/http"
 	"os"
 	"os/exec"
@@ -201,7 +203,7 @@ func (d *dashboardServer) handleConfigRestart(w http.ResponseWriter, r *http.Req
 
 	// Stop then start via the CLI, in the workspace. `remove`-style teardown is
 	// avoided; we kill the container and re-start dev so the session comes back.
-	container := containerNameForWorkspace(workspace)
+	container := session.ContainerNameForWorkspace(workspace)
 	_ = exec.Command("docker", "kill", container).Run() // best-effort; may already be down
 
 	startCmd := exec.Command(exe, "dev")
@@ -220,7 +222,7 @@ func (d *dashboardServer) handleConfigRestart(w http.ResponseWriter, r *http.Req
 
 // loadEditContext resolves the workspace, decodes the POSTed edit, and loads the
 // current config. Writes an HTTP error and returns ok=false on any failure.
-func (d *dashboardServer) loadEditContext(w http.ResponseWriter, r *http.Request, id string) (workspace string, edit configEdit, cur *ProjectConfig, ok bool) {
+func (d *dashboardServer) loadEditContext(w http.ResponseWriter, r *http.Request, id string) (workspace string, edit configEdit, cur *config.ProjectConfig, ok bool) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST required", http.StatusMethodNotAllowed)
 		return
@@ -242,7 +244,7 @@ func (d *dashboardServer) loadEditContext(w http.ResponseWriter, r *http.Request
 	return workspace, edit, cur, true
 }
 
-func computeDiff(edit configEdit, cur *ProjectConfig, curAllowed []string) []diffEntry {
+func computeDiff(edit configEdit, cur *config.ProjectConfig, curAllowed []string) []diffEntry {
 	var out []diffEntry
 
 	if edit.AllowedHosts != nil {
@@ -252,7 +254,7 @@ func computeDiff(edit configEdit, cur *ProjectConfig, curAllowed []string) []dif
 		out = append(out, listDiff("monitor", cur.MonitorHosts, *edit.MonitorHosts, false)...)
 	}
 	if edit.MitmPorts != nil {
-		out = append(out, listDiff("mitm port", cur.mitmPortsOrDefault(), *edit.MitmPorts, false)...)
+		out = append(out, listDiff("mitm port", cur.MitmPortsOrDefault(), *edit.MitmPorts, false)...)
 	}
 	for _, c := range edit.SetCreds {
 		out = append(out, diffEntry{Field: "credential", Change: "~ " + c.Host + " (" + c.kindLabel() + ")"})
@@ -320,7 +322,7 @@ func applyRestartFields(workspace string, edit configEdit) error {
 	if edit.LaunchTmux != nil {
 		cfg.LaunchTmux = *edit.LaunchTmux
 	}
-	return writeConfig(projectDirForWorkspace(workspace), cfg)
+	return config.WriteConfig(projectDirForWorkspace(workspace), cfg)
 }
 
 // writeAllowedHostsForWorkspace writes the plaintext allowlist (one host per

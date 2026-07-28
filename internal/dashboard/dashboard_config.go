@@ -1,8 +1,11 @@
-package main
+package dashboard
 
 import (
 	"bufio"
 	"encoding/json"
+	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/jackrothrock/sandclaude/internal/creds"
+	"github.com/jackrothrock/sandclaude/internal/session"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -27,8 +30,8 @@ import (
 
 type credView struct {
 	Host   string `json:"host"`
-	Kind   string `json:"kind"`  // "header" or "url_param"
-	Name   string `json:"name"`  // the header/param name (not secret)
+	Kind   string `json:"kind"`   // "header" or "url_param"
+	Name   string `json:"name"`   // the header/param name (not secret)
 	Masked string `json:"masked"` // always "********" — the value is never exposed
 }
 
@@ -72,12 +75,12 @@ func (d *dashboardServer) handleConfigRead(w http.ResponseWriter, r *http.Reques
 		Workspace:    workspace,
 		MonitorHosts: cfg.MonitorHosts,
 		MonitorAll:   len(cfg.MonitorHosts) == 0,
-		MitmPorts:    cfg.mitmPortsOrDefault(),
+		MitmPorts:    cfg.MitmPortsOrDefault(),
 		ProxyEnabled: cfg.ProxyEnabled,
 		DindEnabled:  cfg.DindEnabled,
 		DindPorts:    cfg.DindPorts,
 		LaunchTmux:   cfg.LaunchTmux,
-		ContainerUp:  dockerContainerRunning(containerNameForWorkspace(workspace)),
+		ContainerUp:  session.DockerContainerRunning(session.ContainerNameForWorkspace(workspace)),
 	}
 
 	view.AllowedHosts = readAllowedHostsForWorkspace(workspace)
@@ -96,13 +99,13 @@ func (d *dashboardServer) handleConfigRead(w http.ResponseWriter, r *http.Reques
 // ----------------------------------------------------------------------------
 
 // sandclaudeDirForWorkspace is <workspace>/.sandclaude (the plaintext allowlist,
-// logs/, and project/ live under here). Mirrors the cwd-based sandclaudeDir().
+// logs/, and project/ live under here). Mirrors the cwd-based config.SandclaudeDir().
 func sandclaudeDirForWorkspace(workspace string) string {
 	return filepath.Join(workspace, ".sandclaude")
 }
 
-func readConfigForWorkspace(workspace string) (*ProjectConfig, error) {
-	return readConfig(projectDirForWorkspace(workspace))
+func readConfigForWorkspace(workspace string) (*config.ProjectConfig, error) {
+	return config.ReadConfig(projectDirForWorkspace(workspace))
 }
 
 // readAllowedHostsForWorkspace reads the plaintext allowlist (the human-editable
@@ -133,13 +136,13 @@ func readAllowedHostsForWorkspace(workspace string) []string {
 // the project-scoped credentials file (the one the dashboard write side edits).
 func readMaskedCredsForWorkspace(workspace string) []credView {
 	path := filepath.Join(projectDirForWorkspace(workspace), "proxy-credentials.json")
-	creds, err := loadCredsMap(path)
+	credsMap, err := creds.LoadCredsMap(path)
 	if err != nil {
 		return nil
 	}
 
-	out := make([]credView, 0, len(creds))
-	for host, entry := range creds {
+	out := make([]credView, 0, len(credsMap))
+	for host, entry := range credsMap {
 		cv := credView{Host: host, Masked: "********"}
 		if v, ok := entry["header"]; ok {
 			cv.Kind, cv.Name = "header", v
