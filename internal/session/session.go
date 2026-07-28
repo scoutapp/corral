@@ -7,6 +7,7 @@ package session
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/jackrothrock/sandclaude/internal/config"
 )
@@ -17,12 +18,25 @@ func ContainerNameForWorkspace(workspace string) string {
 	return "sandclaude_" + filepath.Base(workspace)
 }
 
-// TmuxSessionNameForContainer derives the host-level tmux session name for a detached
-// dev session from its container name. The session name matches the container name
-// verbatim (underscores preserved) to stay consistent with the container naming
-// convention.
+// TmuxSessionNameForContainer derives the host-level tmux session name for a
+// detached dev session from its container name.
+//
+// tmux parses '.' and ':' in a target as window/pane separators (session.window
+// or session:window), so a container name like "sandclaude_my.app" (a project in
+// a directory named "my.app") would make tmux look for window "app" in session
+// "sandclaude_my" — new-session/has-session/kill-session/capture-pane all
+// mis-resolve, breaking start/capture/send/attach. Docker permits '.'/':' in
+// container names, so we sanitize only for the tmux layer. Every tmux operation
+// derives its target from this one function, so they stay mutually consistent.
 func TmuxSessionNameForContainer(containerName string) string {
-	return containerName
+	return sanitizeTmuxName(containerName)
+}
+
+// sanitizeTmuxName replaces characters tmux treats specially in a target name
+// ('.' and ':') with '_'. The mapping is deterministic and collision-tolerant
+// enough for our names (all begin with the fixed "sandclaude_" prefix).
+func sanitizeTmuxName(name string) string {
+	return strings.NewReplacer(".", "_", ":", "_").Replace(name)
 }
 
 // TmuxSessionNameForWorkspace derives the host-level tmux session name for a given
