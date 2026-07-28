@@ -207,14 +207,19 @@ func (sc *SandClaude) startProxy(workspace string) error {
 	}
 
 	log.Printf("Starting proxy on port %s", sc.proxyPort)
-	if state, err := ensureDashboardRunning(); err != nil {
+	if state, spawned, err := ensureDashboardRunning(); err != nil {
 		log.Printf("Warning: could not start dashboard: %v", err)
 		log.Printf("Proxy web UI: http://127.0.0.1:%d", webPort)
 	} else {
 		dashboardURL := fmt.Sprintf("http://127.0.0.1:%d/p/%s?token=%s", state.Port, projectID(workspace), state.Token)
 		log.Printf("Dashboard: %s", dashboardURL)
-		if err := openBrowser(dashboardURL); err != nil {
-			debugf("failed to open browser: %v", err)
+		// Only pop a browser tab when this start actually launched the dashboard
+		// daemon. If it was already running (e.g. another project is up), just log
+		// the URL so N project starts don't open N tabs at the same dashboard.
+		if spawned {
+			if err := openBrowser(dashboardURL); err != nil {
+				debugf("failed to open browser: %v", err)
+			}
 		}
 	}
 	debugf("Credentials file: %s", sc.credentialsFile)
