@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"bufio"
@@ -2210,7 +2210,8 @@ func usage() {
 	fmt.Println()
 }
 
-func main() {
+// Main is the CLI entrypoint. It is invoked by cmd/sandclaude/main.go.
+func Main() {
 	log.SetFlags(0) // Remove timestamp prefix
 
 	// Scan all args for --debug before command dispatch so it works in any position

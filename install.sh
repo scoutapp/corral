@@ -27,7 +27,7 @@ if ! command -v go >/dev/null 2>&1; then
   echo "Error: 'go' is not installed. Install Go 1.21+ and re-run." >&2
   exit 1
 fi
-go build -o "$REPO_DIR/sandclaude" "$REPO_DIR"
+go build -o "$REPO_DIR/sandclaude" "$REPO_DIR/cmd/sandclaude"
 
 # ttyd is a hard runtime dependency of the dashboard's Terminal tab: the dashboard
 # spawns `ttyd` to bridge a browser terminal to the project's tmux session (see
