@@ -804,6 +804,7 @@ func usage() {
 	fmt.Println("  attach                   Attach interactively to the detached session")
 	fmt.Println("  dashboard                Start (or print the URL of) the host-wide project dashboard")
 	fmt.Println("  dashboard stop           Stop the dashboard server")
+	fmt.Println("  version                  Print version, commit, and build date")
 	fmt.Println("  help                     Show this help")
 	fmt.Println()
 	fmt.Println("Examples:")
@@ -943,6 +944,10 @@ func Main() {
 
 	case "dashboard-serve": // internal only, spawned by `sandclaude dashboard`
 		err = dashboard.CmdDashboardServe(os.Args[2:])
+
+	case "version", "--version", "-v":
+		fmt.Println(config.VersionString())
+		return
 
 	case "help", "--help", "-h":
 		usage()
