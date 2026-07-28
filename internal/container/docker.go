@@ -452,23 +452,28 @@ func (sc *SandClaude) EnsureImage(imageName string) error {
 	}
 	groupID := strings.TrimSpace(string(groupIDBytes))
 
-	// Build arg list: always set proxy and user IDs.
+	// Build arg list: user IDs + Playwright skip. This is the OUTER sandbox image
+	// build, running on the HOST's docker daemon BEFORE any sandbox/proxy exists —
+	// so it must NOT be pointed at the in-sandbox allowlist proxy (172.18.0.1:3128).
+	// That address is unreachable here; hardcoding it broke cold builds (e.g. a
+	// fresh CI runner) where apt in the Dockerfile timed out against a dead proxy.
+	// Inner DinD build containers DO use 172.18.0.1:3128 — see the separate build
+	// path there. Here we simply pass through the host's own proxy env if it has
+	// one (nested-sandbox case); otherwise the build uses direct host networking.
 	buildArgs := []string{
 		"build",
 		"--build-arg", fmt.Sprintf("USER_ID=%s", userID),
 		"--build-arg", fmt.Sprintf("GROUP_ID=%s", groupID),
-		// Override proxy for build containers: the shell's HTTPS_PROXY points to
-		// 127.0.0.1:3128 (allowlist proxy), but inside a DinD build container that
-		// address is unreachable. 172.18.0.1:3128 is the gateway IP that build
-		// containers can actually reach.
-		"--build-arg", "HTTP_PROXY=http://172.18.0.1:3128",
-		"--build-arg", "HTTPS_PROXY=http://172.18.0.1:3128",
-		"--build-arg", "NO_PROXY=172.18.0.0/16,127.0.0.0/8",
-		// Skip the ~200MB Chromium binary download when the upstream proxy cannot
-		// stream large response bodies (mitmproxy buffers the whole file, which OOMs
-		// or times out). The browser can be installed separately after the image is
-		// running if needed.
+		// Skip the ~200MB Chromium binary download at build time; it can be
+		// installed after the image is running if needed.
 		"--build-arg", "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1",
+	}
+	// Propagate the host's proxy env only when actually set (e.g. sandclaude
+	// running inside another sandbox). Empty otherwise -> direct networking.
+	for _, key := range []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"} {
+		if v := os.Getenv(key); v != "" {
+			buildArgs = append(buildArgs, "--build-arg", fmt.Sprintf("%s=%s", key, v))
+		}
 	}
 
 	// The allowlist proxy does TLS interception (MITM), so build containers must
