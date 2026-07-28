@@ -20,7 +20,10 @@
 
 <div class="tab-panel" id="tab-terminal">
   {{if .TmuxUp}}
-    <iframe class="tab-iframe" data-src="/p/{{.ID}}/terminal/"></iframe>
+    <div class="screen-frame">
+      <div class="screen-bar"><i class="screen-dot"></i>{{.Session}} · live session</div>
+      <iframe class="screen-iframe" data-src="/p/{{.ID}}/terminal/"></iframe>
+    </div>
   {{else}}
     <p class="empty">No tmux dev session for this project — start it with <code>sandclaude dev</code>.</p>
   {{end}}
@@ -42,7 +45,10 @@
 </div>
 
 <div class="tab-panel" id="tab-firewall" style="display:none">
-  <pre id="firewall-log"></pre>
+  <div class="screen-frame">
+    <div class="screen-bar"><i class="screen-dot"></i>allowlist proxy · live log</div>
+    <pre id="firewall-log" class="screen-body"></pre>
+  </div>
 </div>
 
 <div class="tab-panel" id="tab-config" style="display:none">
