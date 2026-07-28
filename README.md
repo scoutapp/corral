@@ -19,30 +19,26 @@ Code signed in (`claude` once, to log in).
 
 ```bash
 cd ~/my-project
-sandclaude init     # answer a few prompts, once per project
-sandclaude start    # Claude starts working; your browser opens to watch it
+sandclaude init                                     # answer a few prompts, once per project
+sandclaude populate-proxy-credentials               # set your credentials once
+sandclaude start --passthrough-firewall-and-write   # start working
 ```
 
 During `init` you'll be asked a few yes/no questions (protect my credentials?
 let Claude use Docker? expose any ports?) — the recommended answers are the
-defaults. The first `start` sets things up and can take a minute; after that it's
-quick.
+defaults. Your credentials are set once and reused across every project.
 
-If you turned on credential protection, set your credentials once and they're
-reused across every project:
+**Start with `--passthrough-firewall-and-write`.** A brand-new project has an empty
+allowlist, so a plain `start` would block the sites your project needs. Passthrough
+lets everything through *and quietly records what gets used* — so Claude can work
+right away while Sandclaude learns your project's real network needs. (The first
+`start` sets things up and can take a minute; after that it's quick.)
 
-```bash
-sandclaude populate-proxy-credentials
-```
-
-**Working on something new?** If you're not sure which sites your project needs,
-start in discovery mode, work normally, and Sandclaude records everything it
-reaches — then lock it in:
+Once things are working, lock it down to just what was actually used:
 
 ```bash
-sandclaude start --passthrough-firewall-and-write   # note what's used
-sandclaude firewall-reload                          # lock it in
-sandclaude start                                    # now enforced
+sandclaude firewall-reload   # lock in the discovered sites
+sandclaude start             # now enforced — nothing new gets out
 ```
 
 ## Watching & driving
