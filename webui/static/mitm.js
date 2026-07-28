@@ -36,6 +36,17 @@ function startMitmFlows(projectId) {
     return Math.round((r.timestamp_end - f.request.timestamp_start) * 1000) + "ms";
   }
 
+  // Wall-clock time a flow started, as local HH:MM:SS. mitmweb reports
+  // timestamp_created in epoch seconds (float); the request start is used when
+  // present since it's the moment the request actually went out.
+  function fmtWhen(f) {
+    var t = (f.request && f.request.timestamp_start) || f.timestamp_created;
+    if (!t) return "";
+    var d = new Date(t * 1000);
+    var p = function (n) { return (n < 10 ? "0" : "") + n; };
+    return p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+  }
+
   function statusClass(code) {
     if (!code) return "s-pending";
     if (code >= 500) return "s-5xx";
@@ -146,6 +157,7 @@ function startMitmFlows(projectId) {
       var open = !!expanded[f.id];
       var main =
         '<tr class="m-row" data-id="' + esc(f.id) + '">' +
+          '<td class="m-when">' + esc(fmtWhen(f)) + "</td>" +
           '<td class="m-caret">' + (open ? "▾" : "▸") + "</td>" +
           '<td class="m-method">' + esc(req.method || "") + "</td>" +
           '<td class="m-host">' + esc(req.pretty_host || req.host || "") + "</td>" +
@@ -155,14 +167,14 @@ function startMitmFlows(projectId) {
           '<td class="m-dur">' + esc(fmtDuration(f)) + "</td>" +
         "</tr>";
       var detail = open
-        ? '<tr class="m-detailrow" data-id="' + esc(f.id) + '"><td colspan="7">' + detailHTML(f) + "</td></tr>"
+        ? '<tr class="m-detailrow" data-id="' + esc(f.id) + '"><td colspan="8">' + detailHTML(f) + "</td></tr>"
         : "";
       return main + detail;
     }).join("");
 
     flowsEl.innerHTML =
       '<table class="mitm-table"><thead><tr>' +
-      "<th></th><th>Method</th><th>Host</th><th>Path</th><th>Status</th><th>Size</th><th>Time</th>" +
+      "<th>When</th><th></th><th>Method</th><th>Host</th><th>Path</th><th>Status</th><th>Size</th><th>Dur</th>" +
       "</tr></thead><tbody>" + rowsHTML + "</tbody></table>";
 
     // Populate bodies for any currently-expanded rows.
