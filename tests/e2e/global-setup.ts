@@ -168,17 +168,27 @@ export default async function globalSetup() {
   banner('sandbox is up: outer container running, inner dockerd ready.');
 }
 
-// Capture whatever the outer container printed, for debugging a failed boot.
+// Capture everything useful for debugging a failed boot. The container is
+// launched detached INSIDE a tmux session (startDetached), so a `docker run`
+// that fails or exits immediately is invisible to `sandclaude start` (which
+// returns 0 after creating the session). The tmux pane holds that output, and
+// `docker ps -a` shows whether the container exists / exited — both essential
+// on CI where we can't poke around interactively.
 async function dumpDiagnostics() {
-  try {
-    const logs = await run('docker', ['logs', outerContainerName()], {
-      cwd: REPO_ROOT,
-      timeoutMs: 20_000,
-    });
-    await stash('outer-container.logs.txt', logs.stdout + '\n' + logs.stderr);
-  } catch {
-    /* best-effort */
-  }
+  const name = outerContainerName();
+  const session = `sandclaude_${path.basename(WORKSPACE)}`;
+  // What does docker see? (created / running / exited-with-code)
+  await run('docker', ['ps', '-a', '--filter', `name=${name}`, '--format',
+    'table {{.Names}}\t{{.Status}}\t{{.Ports}}'], { cwd: REPO_ROOT, timeoutMs: 15_000 })
+    .then((r) => stash('docker-ps.txt', r.stdout + '\n' + r.stderr)).catch(() => {});
+  // Container's own stdout/stderr (empty if it never started).
+  await run('docker', ['logs', name], { cwd: REPO_ROOT, timeoutMs: 20_000 })
+    .then((r) => stash('outer-container.logs.txt', r.stdout + '\n' + r.stderr)).catch(() => {});
+  // The tmux pane where `docker run` actually ran — this is where a failed run
+  // (bad flag, privileged denied, mount error) prints its error.
+  await run('tmux', ['capture-pane', '-t', session, '-p', '-S', '-2000'],
+    { cwd: REPO_ROOT, timeoutMs: 15_000 })
+    .then((r) => stash('tmux-pane.txt', r.stdout + '\n' + r.stderr)).catch(() => {});
 }
 
 // Kill a lingering outer container + tmux session from a prior run so a fresh
