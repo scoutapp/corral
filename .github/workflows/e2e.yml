@@ -75,11 +75,11 @@ jobs:
           name: e2e-artifacts
           if-no-files-found: ignore
           retention-days: 14
-          # upload-artifact@v4 excludes dotfiles by default; our diagnostics live
-          # under .artifacts/ and .workspace/.sandclaude/ — both hidden. Without
-          # this, a failed boot uploads almost nothing to debug from.
+          # upload-artifact@v4 excludes dotfiles by default; .artifacts/ and the
+          # workspace's .sandclaude/ are hidden. Without this, a failed boot
+          # uploads almost nothing to debug from.
           include-hidden-files: true
           path: |
             tests/e2e/.artifacts/**
             tests/e2e/playwright-report/**
-            tests/e2e/.workspace/.sandclaude/logs/**
+            tests/e2e/e2e-workspace/.sandclaude/logs/**

@@ -3,4 +3,4 @@ node_modules/
 .artifacts/
 playwright-report/
 test-results/
-.workspace/
+e2e-workspace/

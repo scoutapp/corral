@@ -21,8 +21,15 @@ export const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 /** The built host binary. install/build places it at the repo root. */
 export const SANDCLAUDE_BIN = process.env.SANDCLAUDE_BIN || path.join(REPO_ROOT, 'sandclaude');
 
-/** The isolated workspace the test inits sandclaude into (set by the spec). */
-export const WORKSPACE = process.env.E2E_WORKSPACE || path.join(REPO_ROOT, 'tests', 'e2e', '.workspace');
+/**
+ * The isolated workspace the test inits sandclaude into.
+ * NOTE: deliberately NOT a dot-directory. The basename becomes the container +
+ * tmux session name (sandclaude_<basename>); a leading '.' produced
+ * 'sandclaude_.workspace', and tmux treats '.' in a target as a window/pane
+ * separator — so has-session / capture / send / attach all mis-resolved and the
+ * detached launch broke on headless CI. A plain name avoids that entirely.
+ */
+export const WORKSPACE = process.env.E2E_WORKSPACE || path.join(REPO_ROOT, 'tests', 'e2e', 'e2e-workspace');
 
 // Port scheme for the DinD chain. The app listens on APP_PORT inside the inner
 // container; the inner `docker run -p APP_PORT:APP_PORT` publishes it onto the
