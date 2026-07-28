@@ -95,24 +95,35 @@ func (d *dashboardServer) handleTerminalWS(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	session := tmuxSessionNameForWorkspace(workspace)
+	d.bridgeSessionWS(w, r, tmuxSessionNameForWorkspace(workspace),
+		"no tmux dev session for this project — start it with `sandclaude dev`")
+}
+
+// handleSessionWS bridges a browser terminal to a named tmux session directly
+// (not a project's dev session) — used for the interactive `populate-proxy-
+// credentials` flow the dashboard spawns into its own tmux session.
+func (d *dashboardServer) handleSessionWS(w http.ResponseWriter, r *http.Request, session string) {
+	d.bridgeSessionWS(w, r, session, "session not running")
+}
+
+// bridgeSessionWS upgrades to a WebSocket and bridges it to a PTY running
+// `tmux attach-session -t <session>`. Attaching (rather than spawning a shell)
+// makes the browser terminal mirror the live session and redraw at the current
+// screen; closing the tab detaches without killing the session.
+func (d *dashboardServer) bridgeSessionWS(w http.ResponseWriter, r *http.Request, session, missingMsg string) {
 	if !tmuxSessionExists(session) {
-		// The page renders its own "no session" message; if a client connects
-		// anyway (e.g. session died after page load), fail the upgrade cleanly.
-		http.Error(w, "no tmux dev session for this project — start it with `sandclaude dev`", http.StatusBadGateway)
+		http.Error(w, missingMsg, http.StatusBadGateway)
 		return
 	}
 
 	conn, err := terminalUpgrader.Upgrade(w, r, nil)
 	if err != nil {
-		// Upgrade already wrote an error response on failure.
-		return
+		return // Upgrade already wrote an error response
 	}
 	defer conn.Close()
 
 	// -t forces a PTY; without it tmux refuses to attach ("open terminal failed:
-	// not a terminal"). A fresh attach each connect is intentional — closing the
-	// browser tab detaches without killing the underlying session.
+	// not a terminal").
 	cmd := exec.Command("tmux", "attach-session", "-t", session)
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
@@ -125,8 +136,6 @@ func (d *dashboardServer) handleTerminalWS(w http.ResponseWriter, r *http.Reques
 	d.terms[sess] = struct{}{}
 	d.mu.Unlock()
 
-	// Cleanup runs once, from whichever pump exits first. Killing the tmux CLIENT
-	// process (the `attach`) only detaches; it never kills the tmux server/session.
 	var once sync.Once
 	cleanup := func() {
 		once.Do(func() {
@@ -142,8 +151,6 @@ func (d *dashboardServer) handleTerminalWS(w http.ResponseWriter, r *http.Reques
 	}
 	defer cleanup()
 
-	// PTY → WebSocket. A read error (EOF) means the attach ended; close the conn
-	// so the browser-side onclose fires and the write pump below also unwinds.
 	go func() {
 		defer cleanup()
 		buf := make([]byte, 4096)
@@ -163,12 +170,10 @@ func (d *dashboardServer) handleTerminalWS(w http.ResponseWriter, r *http.Reques
 		}
 	}()
 
-	// WebSocket → PTY. Binary frames are raw keystrokes; text frames are JSON
-	// control messages (currently only resize).
 	for {
 		msgType, data, err := conn.ReadMessage()
 		if err != nil {
-			return // client closed or errored; deferred cleanup tears down the PTY
+			return
 		}
 		switch msgType {
 		case websocket.BinaryMessage:

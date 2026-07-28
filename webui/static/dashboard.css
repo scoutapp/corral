@@ -151,6 +151,37 @@ body.console code {
   background: var(--con-panel-hi); padding: 1px 6px; border-radius: 4px; color: var(--con-text);
 }
 
+.header-right { display: flex; align-items: center; gap: 1.5rem; }
+.header-link {
+  font-size: 0.78rem; color: var(--con-muted); text-decoration: none;
+  border: 1px solid var(--con-line); border-radius: 6px; padding: 4px 10px;
+}
+.header-link:hover { color: var(--con-text); border-color: var(--con-muted); }
+.brand-back { color: var(--con-muted); text-decoration: none; font-size: 1.1rem; margin-right: 0.3rem; }
+.brand-back:hover { color: var(--con-text); }
+
+/* Global settings page — reuses the console theme + the .cfg-* config controls */
+.global-wrap { padding: 1.6rem; max-width: 56rem; }
+.global-intro { color: var(--con-muted); font-size: 0.85rem; line-height: 1.5; margin: 0 0 1.25rem; }
+.global-path {
+  font-family: ui-monospace, monospace; font-size: 0.72rem;
+  margin-bottom: 0.6rem; word-break: break-all;
+}
+body.console .cfg-zone { border-color: var(--con-line); background: var(--con-panel); }
+body.console .cfg-zone h3 { color: var(--con-text); }
+body.console .cfg-field { border-top-color: var(--con-line); }
+body.console .cfg-label { color: var(--con-muted); }
+body.console .cfg-edit, body.console .cfg-cred-add input, body.console .cfg-cred-add select {
+  background: var(--con-ground); color: var(--con-text); border-color: var(--con-line);
+}
+body.console .cfg-creds th { color: var(--con-muted); }
+.cred-mask { font-family: ui-monospace, monospace; letter-spacing: 0.05em; color: var(--con-text); }
+.populate-term {
+  margin-top: 0.75rem; height: 20rem;
+  border: 1px solid var(--con-line); border-radius: 8px; overflow: hidden;
+  background: #0B0E14; padding: 4px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .state-working .beacon, .state-waiting .beacon { animation: none; }
 }

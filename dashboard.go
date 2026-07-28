@@ -363,6 +363,25 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Global (cross-project) control plane.
+	switch path {
+	case "/global":
+		d.handleGlobalPage(w, r)
+		return
+	case "/global/config":
+		d.handleGlobalRead(w, r)
+		return
+	case "/global/apply":
+		d.handleGlobalApply(w, r)
+		return
+	case "/global/populate":
+		d.handleGlobalPopulate(w, r)
+		return
+	case "/global/populate/ws":
+		d.handleSessionWS(w, r, "sandclaude-populate-creds")
+		return
+	}
+
 	if !strings.HasPrefix(path, "/p/") {
 		http.NotFound(w, r)
 		return
