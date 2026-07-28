@@ -105,10 +105,26 @@ func (al *Allowlist) load(path string, key []byte) error {
 	if err != nil {
 		return fmt.Errorf("decrypt allowlist: %w", err)
 	}
+	return al.setFromText(string(plaintext), path, "allowlist")
+}
 
+// loadPlain reads a plaintext (unencrypted) domain list. Used for the monitor-list,
+// whose contents are just hostnames — not secret — so they're stored plainly in
+// config.json and materialized to a bind-mounted file, unlike the allowlist.
+func (al *Allowlist) loadPlain(path string) error {
+	text, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read monitor-list: %w", err)
+	}
+	return al.setFromText(string(text), path, "monitor-list")
+}
+
+// setFromText parses a newline-separated domain list (ignoring blanks and #
+// comments) and atomically replaces the in-memory set.
+func (al *Allowlist) setFromText(text, path, label string) error {
 	domains := make(map[string]struct{})
 	domainList := []string{}
-	scanner := bufio.NewScanner(strings.NewReader(string(plaintext)))
+	scanner := bufio.NewScanner(strings.NewReader(text))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -123,8 +139,7 @@ func (al *Allowlist) load(path string, key []byte) error {
 	al.domains = domains
 	al.mu.Unlock()
 
-	log.Printf("allowlist: loaded %d domains from %s", len(domains), path)
-	log.Printf("allowed domains:")
+	log.Printf("%s: loaded %d domains from %s", label, len(domains), path)
 	for _, d := range domainList {
 		log.Printf("  - %s", d)
 	}
@@ -550,7 +565,7 @@ func main() {
 			log.Printf("monitor-list absent (%s) — monitoring all allowed hosts", *monitorPath)
 			return
 		}
-		if err := handler.monitorlist.load(*monitorPath, key); err != nil {
+		if err := handler.monitorlist.loadPlain(*monitorPath); err != nil {
 			log.Printf("monitor-list load failed: %v — monitoring all allowed hosts", err)
 			handler.monitorActive.Store(false)
 			return

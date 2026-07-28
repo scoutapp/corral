@@ -325,7 +325,26 @@ type ProjectConfig struct {
 	DindEnabled  bool     `json:"dind_enabled,omitempty"`
 	DindPorts    []string `json:"dind_ports,omitempty"`
 	LaunchTmux   bool     `json:"launch_tmux,omitempty"`
-	CreatedAt    string   `json:"created_at"`
+
+	// Selective mitm (see allowlist-proxy). MonitorHosts, when non-empty, is the
+	// set of hosts routed through mitmweb for full interception + credential
+	// injection; every other allowed host is direct-dialed (still logged, not
+	// decrypted). Empty = monitor all allowed hosts (default).
+	MonitorHosts []string `json:"monitor_hosts,omitempty"`
+	// MitmPorts are the destination ports eligible for mitm; CONNECT to any other
+	// port (ssh, SOCKS, …) is direct-dialed. Empty = default 80,443.
+	MitmPorts []string `json:"mitm_ports,omitempty"`
+
+	CreatedAt string `json:"created_at"`
+}
+
+// mitmPortsOrDefault returns the configured mitm ports, or the 80,443 default
+// when unset — centralizing the default so start, apply, and the dashboard agree.
+func (c *ProjectConfig) mitmPortsOrDefault() []string {
+	if len(c.MitmPorts) == 0 {
+		return []string{"80", "443"}
+	}
+	return c.MitmPorts
 }
 
 func readConfig(projectDir string) (*ProjectConfig, error) {
@@ -346,6 +365,17 @@ func writeConfig(projectDir string, cfg *ProjectConfig) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(projectDir, "config.json"), data, 0600)
+}
+
+// writeMonitorHostsFile materializes the monitor-list to a newline-separated
+// plaintext file (0644 so proxyuser in the container can read the bind-mount).
+// The file is the on-disk form the allowlist-proxy's --monitorlist reads.
+func writeMonitorHostsFile(path string, hosts []string) error {
+	content := strings.Join(hosts, "\n")
+	if content != "" {
+		content += "\n"
+	}
+	return os.WriteFile(path, []byte(content), 0644)
 }
 
 // sandclaudeHome returns the per-user data directory (~/.sandclaude), overridable
@@ -688,6 +718,22 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 		}
 	}
 	args = append(args, "-v", fmt.Sprintf("%s:/home/claude/allowed-domains.txt:rw", allowlistPath))
+
+	// Selective-mitm inputs, materialized from config for the in-container proxy:
+	//  - monitor-list: a plaintext host file (hosts aren't secret, unlike the
+	//    allowlist) mounted in; entrypoint passes it to --monitorlist. Absent/empty
+	//    config => no file mounted => proxy monitors all allowed hosts (default).
+	//  - mitm-ports: passed as an env var the entrypoint forwards to --mitm-ports.
+	if cfg, err := readConfig(getProjectDir()); err == nil {
+		if len(cfg.MonitorHosts) > 0 {
+			monitorPath := monitorHostsPath()
+			if err := writeMonitorHostsFile(monitorPath, cfg.MonitorHosts); err != nil {
+				return fmt.Errorf("failed to write monitor-hosts file: %w", err)
+			}
+			args = append(args, "-v", fmt.Sprintf("%s:/home/claude/monitor-hosts.txt:rw", monitorPath))
+		}
+		args = append(args, "-e", "SANDCLAUDE_MITM_PORTS="+strings.Join(cfg.mitmPortsOrDefault(), ","))
+	}
 
 	logsDir := getLogsDir()
 	os.MkdirAll(logsDir, 0755)
@@ -1946,9 +1992,14 @@ func runningContainerName() string {
 // SIGHUP, otherwise the proxy reloads stale content. Both steps run as root: the proxy
 // runs as proxyuser, which the default exec user (claude) cannot signal.
 func reloadProxyInContainer(containerName string) error {
+	// Re-copy both the allowlist and (if present) the monitor-hosts file into the
+	// proxyuser-readable /tmp locations before SIGHUP, so the proxy reloads fresh
+	// content for both. The monitor file may not exist (monitor-all default) — the
+	// `|| true` keeps the reload working in that case.
 	cmd := exec.Command("docker", "exec", "-u", "root", containerName, "bash", "-c",
 		"cp /home/claude/allowed-domains.txt.enc /tmp/allowed-domains.txt.enc && "+
 			"chmod 644 /tmp/allowed-domains.txt.enc && "+
+			"{ cp /home/claude/monitor-hosts.txt /tmp/monitor-hosts.txt && chmod 644 /tmp/monitor-hosts.txt; } || true && "+
 			"pkill -HUP -x allowlist-proxy")
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -2051,6 +2102,12 @@ func usage() {
 	fmt.Println("  remove                   Remove ./.sandclaude/ directory after confirmation")
 	fmt.Println("  firewall-reload          Encrypt allowed-domains.txt and SIGHUP proxy")
 	fmt.Println("  firewall-monitor         Tail allowlist proxy log in running container")
+	fmt.Println("  monitor [list|add <host>|remove <host>|clear]   Selective mitm: hosts routed through mitm")
+	fmt.Println("    (empty list = monitor all allowed hosts; others allowed+logged but direct-dialed)")
+	fmt.Println("  mitm-ports [list|add <port>|remove <port>|reset]   Ports eligible for mitm (default 80,443)")
+	fmt.Println("  set-cred <host> <header|url_param> <name> <value>   Add/update an injected credential (live)")
+	fmt.Println("  unset-cred <host>        Remove an injected credential")
+	fmt.Println("  proxy-apply              Re-apply proxy config to the running proxies (no restart)")
 	fmt.Println("  shell                    Open bash shell in container")
 	fmt.Println("  populate-proxy-credentials [--project]   Populate credentials from 'claude setup-token'")
 	fmt.Println("    (default: global ~/.sandclaude/proxy-credentials.json; --project: this project's override)")
@@ -2144,6 +2201,21 @@ func main() {
 
 	case "firewall-monitor":
 		err = cmdFirewallMonitor()
+
+	case "monitor":
+		err = cmdMonitor(os.Args[2:])
+
+	case "mitm-ports":
+		err = cmdMitmPorts(os.Args[2:])
+
+	case "set-cred":
+		err = cmdSetCred(os.Args[2:])
+
+	case "unset-cred":
+		err = cmdUnsetCred(os.Args[2:])
+
+	case "proxy-apply":
+		err = cmdProxyApply()
 
 	case "shell":
 		err = cmdShell()
