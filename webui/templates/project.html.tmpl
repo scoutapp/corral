@@ -15,6 +15,7 @@
   <button class="tab-btn active" data-tab="terminal">Terminal</button>
   <button class="tab-btn" data-tab="mitm">Mitm Proxy</button>
   <button class="tab-btn" data-tab="firewall">Firewall Log</button>
+  <button class="tab-btn" data-tab="config">Config</button>
 </div>
 
 <div class="tab-panel" id="tab-terminal">
@@ -44,7 +45,12 @@
   <pre id="firewall-log"></pre>
 </div>
 
+<div class="tab-panel" id="tab-config" style="display:none">
+  <div id="config-root"><p class="muted">loading config…</p></div>
+</div>
+
 <script src="/static/mitm.js"></script>
+<script src="/static/config.js"></script>
 <script src="/static/dashboard.js"></script>
 </body>
 </html>

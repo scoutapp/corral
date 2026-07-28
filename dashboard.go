@@ -373,6 +373,8 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleTerminalWS(w, r, id)
 	case sub == "terminal" || sub == "terminal/":
 		d.handleTerminalPage(w, r, id)
+	case sub == "config":
+		d.handleConfigRead(w, r, id)
 	case sub == "mitm/flows":
 		d.handleMitmFlows(w, r, id)
 	case strings.HasPrefix(sub, "mitm/flows/"):
