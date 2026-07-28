@@ -1138,6 +1138,21 @@ func cmdUpdate() error {
 		}
 	}
 
+	// Inherit cross-project defaults (monitor-list, mitm-ports) set in the global
+	// settings, so a new project starts with the selective-mitm policy you've
+	// chosen once. Existing projects are never touched by global defaults.
+	if def := readGlobalDefaults(); len(def.MonitorHosts) > 0 || len(def.MitmPorts) > 0 {
+		if len(cfg.MonitorHosts) == 0 {
+			cfg.MonitorHosts = def.MonitorHosts
+		}
+		if len(cfg.MitmPorts) == 0 {
+			cfg.MitmPorts = def.MitmPorts
+		}
+		if len(def.MonitorHosts) > 0 || len(def.MitmPorts) > 0 {
+			log.Println("  Inherited selective-mitm defaults from global settings")
+		}
+	}
+
 	if err := writeConfig(projectDir, cfg); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
