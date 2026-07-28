@@ -111,9 +111,9 @@
     wrap.style.display = "block";
     wrap.innerHTML = '<div class="muted">starting…</div>';
     post("/global/populate", {}).then(function () {
-      wrap.innerHTML = "";
+      wrap.innerHTML = '<div class="screen-bar"><i class="screen-dot"></i>claude setup-token · answer the prompts</div><div class="screen-body-host"></div>';
       if (populateTerm) populateTerm.dispose();
-      populateTerm = openEmbeddedTerminal(wrap, "/global/populate/ws");
+      populateTerm = openEmbeddedTerminal(wrap.querySelector(".screen-body-host"), "/global/populate/ws");
       setMsg("complete the prompts in the terminal; credentials refresh here when done", false);
     }).catch(function (err) {
       wrap.innerHTML = '<div class="s-4xx">could not start: ' + esc(err.message) + "</div>";

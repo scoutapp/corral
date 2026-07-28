@@ -21,9 +21,10 @@
       panels[key].style.display = key === tab ? "block" : "none";
     });
 
-    // Lazily point iframes at their real src on first activation, so ttyd/mitmweb
-    // aren't touched (and no ttyd process is spawned) until the tab is opened.
-    var iframe = panels[tab].querySelector("iframe.tab-iframe");
+    // Lazily point the terminal iframe at its real src on first activation, so no
+    // PTY is spawned until the Terminal tab is opened. (Class is screen-iframe —
+    // it lives inside the titled screen frame.)
+    var iframe = panels[tab].querySelector("iframe.screen-iframe");
     if (iframe && !iframe.getAttribute("src") && iframe.dataset.src) {
       iframe.setAttribute("src", iframe.dataset.src);
     }

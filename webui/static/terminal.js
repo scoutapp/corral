@@ -10,7 +10,7 @@
     cursorBlink: true,
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
     fontSize: 13,
-    theme: { background: "#000000" },
+    theme: { background: "#0B0E14" },
     scrollback: 10000,
   });
   var fit = new FitAddon.FitAddon();

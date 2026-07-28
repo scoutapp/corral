@@ -1,24 +1,18 @@
+/* One dark operator theme across the whole app. The per-project page variables
+   are aligned to the console landing's palette (defined again on body.console)
+   so navigating landing -> project -> global stays a single coherent surface —
+   no light flash. color-scheme:dark keeps native form controls/scrollbars dark. */
 :root {
-  color-scheme: light dark;
-  --bg: #ffffff;
-  --fg: #1a1a1a;
-  --muted: #666666;
-  --border: #dddddd;
-  --up: #1a7f37;
-  --down: #999999;
-  --accent: #0969da;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0d1117;
-    --fg: #e6edf3;
-    --muted: #9198a1;
-    --border: #30363d;
-    --up: #3fb950;
-    --down: #6e7681;
-    --accent: #58a6ff;
-  }
+  color-scheme: dark;
+  --bg: #0B0E14;        /* = console ground */
+  --panel: #12161F;     /* raised surface (tabs iframes, cards) */
+  --fg: #C7CDD9;
+  --muted: #6B7688;
+  --border: #232A38;
+  --up: #5CE6A8;        /* working / on — console mint */
+  --down: #3A4150;
+  --accent: #5CE6A8;    /* primary accent unified to mint */
+  --warn: #FFB454;      /* waiting / attention — console amber */
 }
 
 * { box-sizing: border-box; }
@@ -177,10 +171,11 @@ body.console .cfg-edit, body.console .cfg-cred-add input, body.console .cfg-cred
 body.console .cfg-creds th { color: var(--con-muted); }
 .cred-mask { font-family: ui-monospace, monospace; letter-spacing: 0.05em; color: var(--con-text); }
 .populate-term {
-  margin-top: 0.75rem; height: 20rem;
-  border: 1px solid var(--con-line); border-radius: 8px; overflow: hidden;
-  background: #0B0E14; padding: 4px;
+  margin-top: 0.75rem;
+  border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  background: var(--bg);
 }
+.populate-term .screen-body-host { height: 20rem; padding: 4px; background: var(--bg); }
 
 @media (prefers-reduced-motion: reduce) {
   .state-working .beacon, .state-waiting .beacon { animation: none; }
@@ -355,7 +350,8 @@ table.projects th, table.projects td {
 .cfg-btn {
   font: inherit; font-size: 12px; cursor: pointer;
   padding: 4px 12px; border-radius: 5px;
-  border: 1px solid var(--accent); color: #fff; background: var(--accent);
+  /* dark ink on the mint accent — white-on-mint is low contrast */
+  border: 1px solid var(--accent); color: #08110C; background: var(--accent); font-weight: 600;
 }
 .cfg-btn:hover { filter: brightness(1.08); }
 .cfg-btn:disabled { opacity: 0.6; cursor: default; }
@@ -428,22 +424,40 @@ table.projects th, table.projects td {
 .mitm-table .s-5xx { color: #cf222e; font-weight: 600; }
 .mitm-table .s-pending { color: var(--muted); }
 
-.tab-iframe {
-  width: 100%;
-  height: 75vh;
+/* Titled screen frame — wraps embedded live surfaces (terminal, firewall log)
+   so a near-black screen doesn't blend into the near-black page. A header strip
+   labels the surface and carries a live mint dot matching the console's status
+   language; the screen body sits on the page ground inside a hairline frame. */
+.screen-frame {
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.screen-bar {
+  display: flex; align-items: center; gap: 0.45rem;
+  padding: 6px 11px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px; color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.screen-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: var(--up);
+  box-shadow: 0 0 6px var(--up);
+  animation: screen-live 2s ease-in-out infinite;
+}
+@keyframes screen-live { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+.screen-iframe {
+  display: block; width: 100%; height: 72vh; border: 0; background: var(--bg);
+}
+.screen-body {
+  width: 100%; height: 72vh; overflow: auto; margin: 0;
+  padding: 0.75rem; background: var(--bg);
+  white-space: pre-wrap; word-break: break-all;
 }
 
-#firewall-log {
-  width: 100%;
-  height: 75vh;
-  overflow: auto;
-  margin: 0;
-  padding: 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
+@media (prefers-reduced-motion: reduce) { .screen-dot { animation: none; } }
