@@ -157,8 +157,8 @@ function startMitmFlows(projectId) {
       var open = !!expanded[f.id];
       var main =
         '<tr class="m-row" data-id="' + esc(f.id) + '">' +
-          '<td class="m-caret">' + (open ? "▾" : "▸") + "</td>" +
           '<td class="m-when">' + esc(fmtWhen(f)) + "</td>" +
+          '<td class="m-caret">' + (open ? "▾" : "▸") + "</td>" +
           '<td class="m-method">' + esc(req.method || "") + "</td>" +
           '<td class="m-host">' + esc(req.pretty_host || req.host || "") + "</td>" +
           '<td class="m-path" title="' + esc(req.path || "") + '">' + esc(req.path || "") + "</td>" +
@@ -174,7 +174,7 @@ function startMitmFlows(projectId) {
 
     flowsEl.innerHTML =
       '<table class="mitm-table"><thead><tr>' +
-      "<th></th><th>When</th><th>Method</th><th>Host</th><th>Path</th><th>Status</th><th>Size</th><th>Dur</th>" +
+      "<th>When</th><th></th><th>Method</th><th>Host</th><th>Path</th><th>Status</th><th>Size</th><th>Dur</th>" +
       "</tr></thead><tbody>" + rowsHTML + "</tbody></table>";
 
     // Populate bodies for any currently-expanded rows.
