@@ -148,9 +148,13 @@ export default async function globalSetup() {
     );
   }
 
-  // 5. Wait for the outer container, then the inner dockerd.
+  // 5. Wait for the outer container, then the inner dockerd. These are POST-build
+  //    waits — `start` (above, with its own 900s timeout) already did the cold
+  //    image build, so a healthy boot reaches Running / answers `docker info`
+  //    within seconds. Keep these tight so a broken boot fails fast (~1-1.5 min)
+  //    instead of idling for minutes; dumpDiagnostics captures the cause either way.
   banner(`waiting for outer container ${outerContainerName()} to be Running…`);
-  await waitFor('outerRunning', outerRunning, { timeoutMs: 180_000, intervalMs: 2_000 }).catch(
+  await waitFor('outerRunning', outerRunning, { timeoutMs: 60_000, intervalMs: 2_000 }).catch(
     async (e) => {
       await dumpDiagnostics();
       throw e;
@@ -158,7 +162,7 @@ export default async function globalSetup() {
   );
 
   banner('waiting for inner dockerd to answer `docker info`…');
-  await waitFor('innerDockerdUp', innerDockerdUp, { timeoutMs: 180_000, intervalMs: 3_000 }).catch(
+  await waitFor('innerDockerdUp', innerDockerdUp, { timeoutMs: 90_000, intervalMs: 3_000 }).catch(
     async (e) => {
       await dumpDiagnostics();
       throw e;
