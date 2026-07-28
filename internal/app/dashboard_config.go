@@ -80,7 +80,7 @@ func (d *dashboardServer) handleConfigRead(w http.ResponseWriter, r *http.Reques
 		DindEnabled:  cfg.DindEnabled,
 		DindPorts:    cfg.DindPorts,
 		LaunchTmux:   cfg.LaunchTmux,
-		ContainerUp:  dockerContainerRunning(session.ContainerNameForWorkspace(workspace)),
+		ContainerUp:  session.DockerContainerRunning(session.ContainerNameForWorkspace(workspace)),
 	}
 
 	view.AllowedHosts = readAllowedHostsForWorkspace(workspace)

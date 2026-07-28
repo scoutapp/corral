@@ -200,7 +200,7 @@ func reloadAllRunningProjectMitmweb() int {
 	}
 	n := 0
 	for _, p := range reg.Projects {
-		if dockerContainerRunning(session.ContainerNameForWorkspace(p.Workspace)) {
+		if session.DockerContainerRunning(session.ContainerNameForWorkspace(p.Workspace)) {
 			n++
 		}
 	}

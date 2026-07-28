@@ -178,30 +178,6 @@ func readProxyRuntimeStateFor(workspace string) (*ProxyRuntimeState, error) {
 	return &state, nil
 }
 
-// dockerContainerRunning reports whether a container with the given name is
-// currently running. Mirrors the same `docker inspect --format={{.State.Running}}`
-// check already used at cmdFirewallReload (main.go) and cmdFirewallMonitor's
-// existence check, factored here so the dashboard doesn't duplicate it a third time.
-func dockerContainerRunning(containerName string) bool {
-	out, err := exec.Command("docker", "inspect", "--format={{.State.Running}}", containerName).Output()
-	return err == nil && strings.TrimSpace(string(out)) == "true"
-}
-
-// tmuxSessionExists mirrors the `tmux has-session` check already used in
-// startDetached/startDirect.
-func tmuxSessionExists(sessionName string) bool {
-	return exec.Command("tmux", "has-session", "-t", sessionName).Run() == nil
-}
-
-// pidAlive reports whether a process with the given pid currently exists.
-// Signal 0 performs no actual signal delivery, just existence/permission checks.
-func pidAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	return syscall.Kill(pid, syscall.Signal(0)) == nil
-}
-
 // ----------------------------------------------------------------------------
 // Live status — always re-derived from Docker/tmux/the runtime-state file,
 // never trusted from a cached "running" flag anywhere on disk.
@@ -229,12 +205,12 @@ func projectLiveStatus(workspace string) ProjectStatus {
 		Session:   session.TmuxSessionNameForWorkspace(workspace),
 	}
 
-	status.ContainerUp = dockerContainerRunning(status.Container)
-	status.TmuxUp = tmuxSessionExists(status.Session)
+	status.ContainerUp = session.DockerContainerRunning(status.Container)
+	status.TmuxUp = session.TmuxSessionExists(status.Session)
 
 	if state, err := readProxyRuntimeStateFor(workspace); err != nil {
 		config.Debugf("Warning: failed to read proxy runtime state for %s: %v", workspace, err)
-	} else if state != nil && pidAlive(state.Pid) {
+	} else if state != nil && session.PidAlive(state.Pid) {
 		status.MitmUp = true
 		status.MitmWebPort = state.WebPort
 	}
@@ -572,7 +548,7 @@ func (d *dashboardServer) handleMitmFlows(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if state == nil || !pidAlive(state.Pid) {
+	if state == nil || !session.PidAlive(state.Pid) {
 		http.Error(w, "credential proxy is not running for this project", http.StatusBadGateway)
 		return
 	}
@@ -609,7 +585,7 @@ func (d *dashboardServer) handleMitmContent(w http.ResponseWriter, r *http.Reque
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if state == nil || !pidAlive(state.Pid) {
+	if state == nil || !session.PidAlive(state.Pid) {
 		http.Error(w, "credential proxy is not running for this project", http.StatusBadGateway)
 		return
 	}
@@ -909,7 +885,7 @@ func cmdDashboardStart() error {
 // one already running (false) — callers use it to open a browser tab only on the
 // first launch, so N project starts don't pop N tabs at the same dashboard.
 func ensureDashboardRunning() (*dashboardState, bool, error) {
-	if state, err := readDashboardState(); err == nil && state != nil && pidAlive(state.Pid) && dashboardHealthy(state.Port) {
+	if state, err := readDashboardState(); err == nil && state != nil && session.PidAlive(state.Pid) && dashboardHealthy(state.Port) {
 		return state, false, nil
 	}
 
@@ -965,7 +941,7 @@ func cmdDashboardStop() error {
 	if err != nil {
 		return err
 	}
-	if state == nil || !pidAlive(state.Pid) {
+	if state == nil || !session.PidAlive(state.Pid) {
 		fmt.Println("Dashboard is not running.")
 		removeDashboardState()
 		return nil

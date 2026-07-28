@@ -7,8 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/session"
 	"github.com/jackrothrock/sandclaude/internal/creds"
+	"github.com/jackrothrock/sandclaude/internal/proxy"
+	"github.com/jackrothrock/sandclaude/internal/session"
 	"log"
 	"os"
 	"os/exec"
@@ -478,7 +479,7 @@ func (sc *SandClaude) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) 
 	//  - mitm-ports: passed as an env var the entrypoint forwards to --mitm-ports.
 	if cfg, err := config.ReadConfig(config.GetProjectDir()); err == nil {
 		if len(cfg.MonitorHosts) > 0 {
-			monitorPath := monitorHostsPath()
+			monitorPath := proxy.MonitorHostsPath()
 			if err := config.WriteMonitorHostsFile(monitorPath, cfg.MonitorHosts); err != nil {
 				return fmt.Errorf("failed to write monitor-hosts file: %w", err)
 			}
@@ -1485,7 +1486,7 @@ func cmdFirewallReload() error {
 	containerName := session.RunningContainerName()
 	checkCmd := exec.Command("docker", "inspect", "--format={{.State.Running}}", containerName)
 	if out, err := checkCmd.Output(); err == nil && strings.TrimSpace(string(out)) == "true" {
-		if err := reloadProxyInContainer(containerName); err != nil {
+		if err := proxy.ReloadProxyInContainer(containerName); err != nil {
 			log.Printf("Warning: proxy reload failed (proxy may not be running yet): %v", err)
 		} else {
 			log.Printf("✅ Reloaded allowlist-proxy in container '%s'", containerName)
@@ -1495,45 +1496,6 @@ func cmdFirewallReload() error {
 	}
 
 	return nil
-}
-
-// session.ContainerNameForWorkspace derives the container name sandclaude uses for a given
-// workspace path (sandclaude_<workspace-basename>). Shared by every call site that
-// needs to name or look up a project's container, so the convention lives in one place.
-// reloadProxyInContainer makes the running allowlist-proxy pick up the freshly
-// re-encrypted allowlist. The proxy reads its allowlist from /tmp/allowed-domains.txt.enc
-// (a startup copy proxyuser can read), while the host's edits land on the bind-mounted
-// /home/claude/allowed-domains.txt.enc — so we must re-copy that into /tmp before the
-// SIGHUP, otherwise the proxy reloads stale content. Both steps run as root: the proxy
-// runs as proxyuser, which the default exec user (claude) cannot signal.
-func reloadProxyInContainer(containerName string) error {
-	// The monitor-hosts file is bind-mounted only when it exists at `docker run`
-	// time, so a project that enables the monitor-list for the first time on a
-	// running container has no mount to reload from. To make first-enable work
-	// live (no restart), docker cp the current host file into the container before
-	// SIGHUP. If the host file doesn't exist (monitor-all default), remove any
-	// stale copy so the proxy falls back to monitoring all hosts.
-	hostMonitor := monitorHostsPath()
-	if _, err := os.Stat(hostMonitor); err == nil {
-		cp := exec.Command("docker", "cp", hostMonitor, containerName+":/tmp/monitor-hosts.txt")
-		cp.Stderr = os.Stderr
-		if err := cp.Run(); err != nil {
-			return fmt.Errorf("copy monitor-hosts into container: %w", err)
-		}
-	} else {
-		// Best-effort removal of a stale in-container copy.
-		exec.Command("docker", "exec", "-u", "root", containerName, "rm", "-f", "/tmp/monitor-hosts.txt").Run()
-	}
-
-	// Re-copy the allowlist into the proxyuser-readable /tmp path, ensure the
-	// monitor copy is readable, then SIGHUP so the proxy reloads both.
-	cmd := exec.Command("docker", "exec", "-u", "root", containerName, "bash", "-c",
-		"cp /home/claude/allowed-domains.txt.enc /tmp/allowed-domains.txt.enc && "+
-			"chmod 644 /tmp/allowed-domains.txt.enc && "+
-			"chmod 644 /tmp/monitor-hosts.txt 2>/dev/null || true && "+
-			"pkill -HUP -x allowlist-proxy")
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
 }
 
 // cmdCapture prints the last 100 lines of the detached session's terminal output.
@@ -1726,19 +1688,19 @@ func Main() {
 		err = cmdFirewallMonitor()
 
 	case "monitor":
-		err = cmdMonitor(os.Args[2:])
+		err = proxy.CmdMonitor(os.Args[2:])
 
 	case "mitm-ports":
-		err = cmdMitmPorts(os.Args[2:])
+		err = proxy.CmdMitmPorts(os.Args[2:])
 
 	case "set-cred":
-		err = cmdSetCred(os.Args[2:])
+		err = proxy.CmdSetCred(os.Args[2:])
 
 	case "unset-cred":
-		err = cmdUnsetCred(os.Args[2:])
+		err = proxy.CmdUnsetCred(os.Args[2:])
 
 	case "proxy-apply":
-		err = cmdProxyApply()
+		err = proxy.CmdProxyApply()
 
 	case "shell":
 		err = cmdShell()
