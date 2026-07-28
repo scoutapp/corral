@@ -30,6 +30,9 @@ __pycache__/
 # Docker volumes and state
 .docker/
 
+# Scratch planning docs — not part of the shipped project
+plans/
+
 # Legacy firewall directory (replaced by allowlist-proxy/allowed-domains.txt.enc)
 .firewall/
 

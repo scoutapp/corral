@@ -103,6 +103,8 @@ This workflow is ideal for:
 - Claude Code installed and authenticated on the host (`claude` to sign in first)
 - Optional: `gh` CLI, mitmproxy (for proxy mode — strongly recommended)
 - Optional: `rsync` (used by `install.sh`; falls back to `cp` if absent)
+- Optional: `tmux` (for `sandclaude dev`/`capture`/`send`/`attach`, and the dashboard's terminal tab)
+- Optional: `ttyd` — `brew install ttyd` or https://github.com/tsl0422/ttyd (for the dashboard's terminal tab only)
 
 **Important**: You must authenticate Claude Code on your host machine before running `sandclaude`. Run `claude` to sign in. This creates `~/.claude.json` with your session state (does NOT contain auth credentials), which is mounted into the container. If you skip this step, Claude will prompt for authentication inside the container.
 
@@ -122,6 +124,8 @@ This workflow is ideal for:
 | `sandclaude rebuild` | Force rebuild Docker image (from `~/.sandclaude/assets`) |
 | `sandclaude rebuild --destroy` | Rebuild from scratch (removes existing image/container first) |
 | `sandclaude populate-proxy-credentials [--project]` | Populate global (or per-project) credentials |
+| `sandclaude dashboard` | Start (or print the URL of) the host-wide project dashboard |
+| `sandclaude dashboard stop` | Stop the dashboard server |
 | `sandclaude help` | Show help |
 
 ## Usage
@@ -233,6 +237,25 @@ sandclaude rebuild
 ```
 
 **Proxy logs** are written to `.sandclaude/logs/mitm.log` in the directory where you run `sandclaude start`. View the mitmweb UI at `http://127.0.0.1:8081` while the session is running.
+
+## Dashboard
+
+`sandclaude dashboard` starts one long-lived, host-wide web page listing every project you've ever started, with tabs per project for a live terminal, the mitmweb credential-proxy UI, and the firewall allowlist log:
+
+```bash
+sandclaude dashboard        # start it (or print the URL if already running)
+sandclaude dashboard stop   # stop it
+```
+
+`sandclaude start`/`dev` also start the dashboard daemon automatically (if it isn't already running) and open your default browser straight to that project's tab, so you don't need to run `sandclaude dashboard` yourself in the common case.
+
+**Loopback-only, token-gated.** The dashboard binds to `127.0.0.1` only — never reachable from another machine — matching mitmweb's existing posture. On top of that, every route requires a random per-launch token, passed once as `?token=...` in the printed URL and then remembered as an `HttpOnly` cookie so reloading or reopening the page doesn't need it re-pasted. Loopback-only alone isn't enough here: the terminal tab grants a real shell, and a malicious page open in another browser tab could otherwise target `127.0.0.1` directly (a DNS-rebinding-style attack) — the token defends against that too. Treat the printed URL/token like a credential, not a bookmark.
+
+**Reopening the page resumes exactly where you left off**, with no special app-level "session" logic — the dashboard is a thin, stateless viewer over backends that are already persistent on their own: the terminal tab reattaches to the same tmux dev session (full scrollback intact), the mitm tab reverse-proxies to the same long-running mitmweb process (its flow list is unaffected), and the firewall tab tails the log file directly off disk.
+
+**⚠️ DinD-enabled projects run `--privileged` containers.** A shell reached through the dashboard's terminal tab for such a project is a near-direct path to host root — this is exactly why the token requirement isn't optional.
+
+The terminal tab requires `tmux` and `ttyd` (see Prerequisites) and only works for projects started with `sandclaude dev` (same requirement as `capture`/`send`/`attach` today) — plain `sandclaude start` sessions aren't backed by a tmux session to attach to.
 
 ## Firewall Management
 

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{.Workspace}} — sandclaude</title>
+<link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body data-project-id="{{.ID}}">
+<header>
+  <a href="/" class="back">&larr; All projects</a>
+  <h1>{{.Workspace}}</h1>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="terminal">Terminal</button>
+  <button class="tab-btn" data-tab="mitm">Mitm Proxy</button>
+  <button class="tab-btn" data-tab="firewall">Firewall Log</button>
+</div>
+
+<div class="tab-panel" id="tab-terminal">
+  {{if .TmuxUp}}
+    <iframe class="tab-iframe" data-src="/p/{{.ID}}/terminal/"></iframe>
+  {{else}}
+    <p class="empty">No tmux dev session for this project — start it with <code>sandclaude dev</code>.</p>
+  {{end}}
+</div>
+
+<div class="tab-panel" id="tab-mitm" style="display:none">
+  {{if .MitmUp}}
+    {{/* mitmweb's SPA can't be embedded (absolute asset paths, no base-path, IP-only
+         Host guard). Instead we render its /flows JSON as a native table, fetched
+         server-side through /p/<id>/mitm/flows. */}}
+    <div class="mitm-toolbar">
+      <input id="mitm-filter" type="text" placeholder="filter: host, path, method, status…" autocomplete="off" spellcheck="false">
+      <span id="mitm-status" class="muted">loading flows…</span>
+    </div>
+    <div id="mitm-flows"></div>
+  {{else}}
+    <p class="empty">Credential proxy isn't running for this project.</p>
+  {{end}}
+</div>
+
+<div class="tab-panel" id="tab-firewall" style="display:none">
+  <pre id="firewall-log"></pre>
+</div>
+
+<script src="/static/mitm.js"></script>
+<script src="/static/dashboard.js"></script>
+</body>
+</html>

@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -160,8 +161,24 @@ func isDirWritable(dir string) bool {
 	return true
 }
 
+// openBrowser best-effort opens url in the user's default browser. Launching
+// is a convenience on top of the printed URL, never a requirement, so callers
+// should treat a returned error as non-fatal (e.g. log at debug level).
+func openBrowser(url string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	default:
+		return fmt.Errorf("don't know how to open a browser on %s", runtime.GOOS)
+	}
+	return cmd.Start()
+}
+
 // startProxy starts the mitmweb proxy process
-func (sc *SandClaude) startProxy() error {
+func (sc *SandClaude) startProxy(workspace string) error {
 	// Re-resolve credentials with lifecycle tracking so any merged temp file gets
 	// cleaned up on stopProxy. An explicit SANDCLAUDE_PROXY_CREDS override is honored
 	// as-is (no merge, no temp file). Skip when merging isn't applicable.
@@ -189,7 +206,17 @@ func (sc *SandClaude) startProxy() error {
 		return fmt.Errorf("failed to find free port for mitmweb UI: %w", err)
 	}
 
-	log.Printf("Starting proxy on port %s (web UI: http://127.0.0.1:%d)", sc.proxyPort, webPort)
+	log.Printf("Starting proxy on port %s", sc.proxyPort)
+	if state, err := ensureDashboardRunning(); err != nil {
+		log.Printf("Warning: could not start dashboard: %v", err)
+		log.Printf("Proxy web UI: http://127.0.0.1:%d", webPort)
+	} else {
+		dashboardURL := fmt.Sprintf("http://127.0.0.1:%d/p/%s?token=%s", state.Port, projectID(workspace), state.Token)
+		log.Printf("Dashboard: %s", dashboardURL)
+		if err := openBrowser(dashboardURL); err != nil {
+			debugf("failed to open browser: %v", err)
+		}
+	}
 	debugf("Credentials file: %s", sc.credentialsFile)
 
 	// Check if addon script exists
@@ -245,6 +272,10 @@ func (sc *SandClaude) startProxy() error {
 
 	log.Printf("Proxy started (PID %d), logs: %s", sc.proxyCmd.Process.Pid, mitmLog)
 
+	if err := writeProxyRuntimeState(webPort, sc.proxyCmd.Process.Pid); err != nil {
+		debugf("Warning: failed to write proxy runtime state: %v", err)
+	}
+
 	// Give proxy time to start
 	time.Sleep(2 * time.Second)
 
@@ -272,6 +303,10 @@ func (sc *SandClaude) stopProxy() {
 			debugf("Failed to remove merged credentials temp file %s: %v", sc.mergedCredsFile, err)
 		}
 		sc.mergedCredsFile = ""
+	}
+
+	if err := os.Remove(proxyRuntimeStatePath()); err != nil && !os.IsNotExist(err) {
+		debugf("Failed to remove proxy runtime state: %v", err)
 	}
 }
 
@@ -407,7 +442,7 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 	}
 
 	// Build docker args
-	containerName := "sandclaude_" + filepath.Base(workspace)
+	containerName := containerNameForWorkspace(workspace)
 	args := []string{"run", "--rm", "-it", "--name", containerName}
 
 	// DinD requires --privileged (superset of NET_ADMIN + NET_RAW + SYS_ADMIN).
@@ -740,9 +775,7 @@ func (sc *SandClaude) startDocker(cfg *ProjectConfig, keepDevfiles bool) error {
 // interactive container behaves identically to the attached path; capture/send/attach
 // then observe and drive the inner Claude.
 func (sc *SandClaude) startDetached(containerName string, args []string) error {
-	// Session name matches the container name verbatim (underscores) to stay
-	// consistent with the container naming convention.
-	sessionName := containerName
+	sessionName := tmuxSessionNameForContainer(containerName)
 
 	if exec.Command("tmux", "has-session", "-t", sessionName).Run() == nil {
 		log.Printf("Killing existing tmux session '%s'", sessionName)
@@ -863,10 +896,8 @@ func (sc *SandClaude) startDirect(cfg *ProjectConfig) error {
 	// dev: create a new detached tmux session and run claude directly inside it.
 	// We avoid launcher.py because it would try to create a session named "sandclaude"
 	// which already exists (the outer session we're running in).
-	containerName := "sandclaude_" + filepath.Base(cfg.Workspace)
-	// Session name matches the container name verbatim (underscores) for
-	// consistency with the container naming convention.
-	sessionName := containerName
+	containerName := containerNameForWorkspace(cfg.Workspace)
+	sessionName := tmuxSessionNameForContainer(containerName)
 
 	if exec.Command("tmux", "has-session", "-t", sessionName).Run() == nil {
 		log.Printf("Killing existing tmux session '%s'", sessionName)
@@ -905,6 +936,10 @@ func (sc *SandClaude) Run(keepDevfiles bool) error {
 		return fmt.Errorf("workspace not found: %s", cfg.Workspace)
 	}
 
+	if err := registerProject(cfg.Workspace); err != nil {
+		debugf("Warning: failed to update project registry: %v", err)
+	}
+
 	// If we're already inside a sandclaude container, skip docker entirely.
 	// The proxy, firewall, and workspace are set up by the outer entrypoint.
 	if os.Getenv("SANDCLAUDE_CONTAINER") == "1" {
@@ -937,7 +972,7 @@ func (sc *SandClaude) Run(keepDevfiles bool) error {
 		sc.proxyEnabled = true
 		log.Println("Proxy enabled, starting...")
 
-		if err := sc.startProxy(); err != nil {
+		if err := sc.startProxy(cfg.Workspace); err != nil {
 			return err
 		}
 
@@ -1868,12 +1903,33 @@ func cmdFirewallReload() error {
 	return nil
 }
 
+// containerNameForWorkspace derives the container name sandclaude uses for a given
+// workspace path (sandclaude_<workspace-basename>). Shared by every call site that
+// needs to name or look up a project's container, so the convention lives in one place.
+func containerNameForWorkspace(workspace string) string {
+	return "sandclaude_" + filepath.Base(workspace)
+}
+
+// tmuxSessionNameForContainer derives the host-level tmux session name for a detached
+// dev session from its container name. The session name matches the container name
+// verbatim (underscores preserved) to stay consistent with the container naming
+// convention.
+func tmuxSessionNameForContainer(containerName string) string {
+	return containerName
+}
+
+// tmuxSessionNameForWorkspace derives the host-level tmux session name for a given
+// workspace path directly.
+func tmuxSessionNameForWorkspace(workspace string) string {
+	return tmuxSessionNameForContainer(containerNameForWorkspace(workspace))
+}
+
 // runningContainerName returns the running container name for the current project
 // (sandclaude_<workspace-basename>), matching the name used by start/dev. Falls back
 // to the legacy bare "sandclaude" if no project config is readable.
 func runningContainerName() string {
 	if cfg, err := readConfig(getProjectDir()); err == nil && cfg.Workspace != "" {
-		return "sandclaude_" + filepath.Base(cfg.Workspace)
+		return containerNameForWorkspace(cfg.Workspace)
 	}
 	return "sandclaude"
 }
@@ -1899,10 +1955,8 @@ func detachedSessionName() (session string, container string, err error) {
 	if err != nil {
 		return "", "", fmt.Errorf("no project configured — run sandclaude init first")
 	}
-	container = "sandclaude_" + filepath.Base(cfg.Workspace)
-	// The tmux session name matches the container name verbatim (underscores),
-	// to stay consistent with the container naming convention.
-	session = container
+	container = containerNameForWorkspace(cfg.Workspace)
+	session = tmuxSessionNameForContainer(container)
 	return session, container, nil
 }
 
@@ -2001,6 +2055,8 @@ func usage() {
 	fmt.Println("  capture                  Print inner Claude output (when started without a TTY)")
 	fmt.Println("  send <prompt>            Send a prompt to inner Claude in the detached session")
 	fmt.Println("  attach                   Attach interactively to the detached session")
+	fmt.Println("  dashboard                Start (or print the URL of) the host-wide project dashboard")
+	fmt.Println("  dashboard stop           Stop the dashboard server")
 	fmt.Println("  help                     Show this help")
 	fmt.Println()
 	fmt.Println("Examples:")
@@ -2017,6 +2073,8 @@ func usage() {
 	fmt.Println("  sandclaude capture                 # Read inner Claude output (non-interactive start)")
 	fmt.Println("  sandclaude send 'fix the bug'      # Send a prompt to inner Claude")
 	fmt.Println("  sandclaude attach                  # Attach interactively to the running session")
+	fmt.Println("  sandclaude dashboard                # Start/open the cross-project dashboard")
+	fmt.Println("  sandclaude dashboard stop            # Stop the dashboard")
 	fmt.Println()
 	fmt.Println("Per-project config lives in ./.sandclaude/ (relative to the current directory):")
 	fmt.Println("  ./.sandclaude/project/config.json          — workspace, proxy, dind settings")
@@ -2115,6 +2173,12 @@ func main() {
 
 	case "attach":
 		err = cmdAttach()
+
+	case "dashboard":
+		err = cmdDashboard(os.Args[2:])
+
+	case "dashboard-serve": // internal only, spawned by `sandclaude dashboard`
+		err = cmdDashboardServe(os.Args[2:])
 
 	case "help", "--help", "-h":
 		usage()

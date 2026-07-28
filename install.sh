@@ -27,7 +27,31 @@ if ! command -v go >/dev/null 2>&1; then
   echo "Error: 'go' is not installed. Install Go 1.21+ and re-run." >&2
   exit 1
 fi
-go build -o "$REPO_DIR/sandclaude" "$REPO_DIR/main.go"
+go build -o "$REPO_DIR/sandclaude" "$REPO_DIR"
+
+# ttyd is a hard runtime dependency of the dashboard's Terminal tab: the dashboard
+# spawns `ttyd` to bridge a browser terminal to the project's tmux session (see
+# getOrSpawnTtyd in dashboard.go). Without it, that tab loads a bare 502 ("executable
+# file not found") that renders as a black screen. Handle it here, loudly, at install
+# time rather than deferring a cryptic failure to first tab-open.
+# mitmproxy provides `mitmweb`, the credential proxy that every `sandclaude start`
+# launches (see startProxy in main.go) — it terminates TLS to inject credentials and
+# enforce the domain allowlist. It's the most fundamental runtime dependency, so guard
+# it the same way: install via Homebrew, or fail loudly with install instructions.
+echo "==> Checking for mitmproxy (mitmweb credential proxy)"
+if ! command -v mitmweb >/dev/null 2>&1; then
+  if command -v brew >/dev/null 2>&1; then
+    echo "    mitmproxy not found; installing with Homebrew"
+    brew install mitmproxy
+  else
+    echo "Error: 'mitmproxy' is not installed and Homebrew is unavailable to install it." >&2
+    echo "       mitmweb is the credential proxy behind every 'sandclaude start'." >&2
+    echo "       Install it and re-run:" >&2
+    echo "         macOS:  brew install mitmproxy" >&2
+    echo "         Linux:  see https://docs.mitmproxy.org/stable/overview-installation/" >&2
+    exit 1
+  fi
+fi
 
 echo "==> Installing binary to $PREFIX/sandclaude"
 if [ -w "$PREFIX" ]; then
