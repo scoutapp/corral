@@ -1,7 +1,7 @@
 # Sandclaude
 
 Run Claude Code in any project — sandboxed, network-firewalled, with a live web
-dashboard and full Docker-in-Docker — without a per-project clone or `.devcontainer`.
+dashboard and full Docker-in-Docker.
 
 Claude runs in **dangerous mode** (no permission prompts) inside an ephemeral
 container whose outbound network is restricted to an allowlist, and whose real
