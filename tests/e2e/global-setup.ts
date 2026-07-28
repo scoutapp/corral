@@ -64,19 +64,27 @@ export default async function globalSetup() {
 
   await mkdir(ARTIFACTS_DIR, { recursive: true });
 
-  // 1. Build the host binary.
-  banner('building sandclaude binary (go build)…');
-  try {
-    const { stdout, stderr } = await execFileAsync(
-      'go',
-      ['build', '-o', SANDCLAUDE_BIN, './cmd/sandclaude'],
-      { cwd: REPO_ROOT, maxBuffer: 32 * 1024 * 1024 },
-    );
-    await stash('go-build.stdout.txt', stdout + '\n' + stderr);
-  } catch (err: any) {
-    const detail = `${err?.message ?? err}\nSTDOUT:\n${err?.stdout ?? ''}\nSTDERR:\n${err?.stderr ?? ''}`;
-    await stash('go-build.error.txt', detail);
-    throw new Error(`go build failed:\n${detail}`);
+  // 1. Provide the host binary. When SANDCLAUDE_BIN is set (e.g. CI runs
+  //    install.sh first and points here at /usr/local/bin/sandclaude), trust the
+  //    caller's binary + its installed asset bundle and skip the build — this is
+  //    how CI exercises the real install path. Otherwise build from source for a
+  //    frictionless local `npm test`.
+  if (process.env.SANDCLAUDE_BIN) {
+    banner(`using pre-installed binary: ${SANDCLAUDE_BIN} (skipping go build)`);
+  } else {
+    banner('building sandclaude binary (go build)…');
+    try {
+      const { stdout, stderr } = await execFileAsync(
+        'go',
+        ['build', '-o', SANDCLAUDE_BIN, './cmd/sandclaude'],
+        { cwd: REPO_ROOT, maxBuffer: 32 * 1024 * 1024 },
+      );
+      await stash('go-build.stdout.txt', stdout + '\n' + stderr);
+    } catch (err: any) {
+      const detail = `${err?.message ?? err}\nSTDOUT:\n${err?.stdout ?? ''}\nSTDERR:\n${err?.stderr ?? ''}`;
+      await stash('go-build.error.txt', detail);
+      throw new Error(`go build failed:\n${detail}`);
+    }
   }
 
   // 2. Clean, isolated workspace. Remove any stale outer container/tmux first.

@@ -1,10 +1,10 @@
 name: e2e
 
-# End-to-end suite: builds sandclaude, boots a real privileged DinD sandbox, and
-# drives the full build -> run -> reach-from-host -> dashboard chain.
-# ubuntu-latest ships Docker; the sandbox brings up its own privileged outer
-# container (the CLI passes `--privileged` itself), so no special runner config
-# is needed.
+# End-to-end suite: installs sandclaude the real way (install.sh), boots a real
+# privileged DinD sandbox, and drives the full build -> run -> reach-from-host ->
+# dashboard chain. ubuntu-latest ships Docker; the sandbox brings up its own
+# privileged outer container (the CLI passes `--privileged` itself), so no
+# special runner config is needed.
 
 on:
   push:
@@ -19,6 +19,12 @@ jobs:
     timeout-minutes: 45
     env:
       SANDCLAUDE_NO_BROWSER: '1'
+      # Install into a user-writable prefix + home so install.sh needs no sudo,
+      # and point the e2e harness at the INSTALLED binary + asset bundle so the
+      # suite exercises the real install path (not an ad-hoc go build).
+      SANDCLAUDE_PREFIX: /home/runner/.local/bin
+      SANDCLAUDE_HOME: /home/runner/.sandclaude
+      SANDCLAUDE_BIN: /home/runner/.local/bin/sandclaude
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,8 +39,13 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Build sandclaude
-        run: go build -o sandclaude ./cmd/sandclaude
+      - name: Install sandclaude (install.sh)
+        # Builds the binary, auto-installs mitmproxy via apt (see install.sh's
+        # install_pkg), and syncs the asset bundle to $SANDCLAUDE_HOME/assets.
+        run: |
+          mkdir -p "$SANDCLAUDE_PREFIX"
+          ./install.sh
+          echo "$SANDCLAUDE_PREFIX" >> "$GITHUB_PATH"
 
       - name: Install e2e deps
         working-directory: tests/e2e
