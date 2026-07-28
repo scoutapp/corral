@@ -375,6 +375,8 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleTerminalPage(w, r, id)
 	case sub == "mitm/flows":
 		d.handleMitmFlows(w, r, id)
+	case strings.HasPrefix(sub, "mitm/flows/"):
+		d.handleMitmContent(w, r, id, strings.TrimPrefix(sub, "mitm/flows/"))
 	case sub == "firewall/stream":
 		d.handleFirewallStream(w, r, id)
 	default:
@@ -458,18 +460,63 @@ func (d *dashboardServer) handleMitmFlows(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	upstream := fmt.Sprintf("http://127.0.0.1:%d/flows", state.WebPort)
+	d.proxyMitmGet(w, r, state.WebPort, "/flows", "application/json")
+}
+
+// handleMitmContent proxies a single flow's request/response body from mitmweb.
+// tail is the part after "mitm/flows/" — expected form "<flowID>/<side>/content"
+// where side is "request" or "response". mitmweb serves the raw body at
+// /flows/<id>/<side>/content.data; the content-type is whatever the captured
+// traffic was, so it's passed through from mitmweb rather than forced.
+func (d *dashboardServer) handleMitmContent(w http.ResponseWriter, r *http.Request, id, tail string) {
+	parts := strings.Split(tail, "/")
+	if len(parts) != 3 || parts[2] != "content" || (parts[1] != "request" && parts[1] != "response") {
+		http.NotFound(w, r)
+		return
+	}
+	flowID, side := parts[0], parts[1]
+	// flowIDs are mitmweb UUIDs; reject anything with path characters so this
+	// can't be coaxed into fetching an arbitrary mitmweb path.
+	if flowID == "" || strings.ContainsAny(flowID, "/.\\") {
+		http.NotFound(w, r)
+		return
+	}
+
+	workspace, err := lookupWorkspaceByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	state, err := readProxyRuntimeStateFor(workspace)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if state == nil || !pidAlive(state.Pid) {
+		http.Error(w, "credential proxy is not running for this project", http.StatusBadGateway)
+		return
+	}
+
+	path := fmt.Sprintf("/flows/%s/%s/content.data", flowID, side)
+	d.proxyMitmGet(w, r, state.WebPort, path, "")
+}
+
+// proxyMitmGet performs a server-side GET against mitmweb on webPort and copies
+// the response back. It exists because mitmweb rejects any Host header that isn't
+// a bare loopback IP (its DNS-rebinding guard) — setting req.Host here is the
+// whole reason these must be server-side fetches rather than browser-side
+// reverse proxies. If contentType is non-empty it overrides the response type;
+// otherwise mitmweb's own content-type is passed through.
+func (d *dashboardServer) proxyMitmGet(w http.ResponseWriter, r *http.Request, webPort int, path, contentType string) {
+	upstream := fmt.Sprintf("http://127.0.0.1:%d%s", webPort, path)
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, upstream, nil)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// mitmweb rejects any Host header that isn't a bare loopback IP (its
-	// DNS-rebinding guard). Setting it here is the whole reason this must be a
-	// server-side fetch rather than a browser-side reverse proxy.
-	req.Host = fmt.Sprintf("127.0.0.1:%d", state.WebPort)
+	req.Host = fmt.Sprintf("127.0.0.1:%d", webPort)
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		http.Error(w, "failed to reach mitmweb: "+err.Error(), http.StatusBadGateway)
@@ -477,7 +524,11 @@ func (d *dashboardServer) handleMitmFlows(w http.ResponseWriter, r *http.Request
 	}
 	defer resp.Body.Close()
 
-	w.Header().Set("Content-Type", "application/json")
+	if contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	} else if ct := resp.Header.Get("Content-Type"); ct != "" {
+		w.Header().Set("Content-Type", ct)
+	}
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
 }

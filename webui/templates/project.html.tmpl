@@ -31,6 +31,7 @@
          Host guard). Instead we render its /flows JSON as a native table, fetched
          server-side through /p/<id>/mitm/flows. */}}
     <div class="mitm-toolbar">
+      <input id="mitm-filter" type="text" placeholder="filter: host, path, method, status…" autocomplete="off" spellcheck="false">
       <span id="mitm-status" class="muted">loading flows…</span>
     </div>
     <div id="mitm-flows"></div>
