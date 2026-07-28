@@ -104,7 +104,6 @@ This workflow is ideal for:
 - Optional: `gh` CLI, mitmproxy (for proxy mode — strongly recommended)
 - Optional: `rsync` (used by `install.sh`; falls back to `cp` if absent)
 - Optional: `tmux` (for `sandclaude dev`/`capture`/`send`/`attach`, and the dashboard's terminal tab)
-- Optional: `ttyd` — `brew install ttyd` or https://github.com/tsl0422/ttyd (for the dashboard's terminal tab only)
 
 **Important**: You must authenticate Claude Code on your host machine before running `sandclaude`. Run `claude` to sign in. This creates `~/.claude.json` with your session state (does NOT contain auth credentials), which is mounted into the container. If you skip this step, Claude will prompt for authentication inside the container.
 
@@ -255,7 +254,7 @@ sandclaude dashboard stop   # stop it
 
 **⚠️ DinD-enabled projects run `--privileged` containers.** A shell reached through the dashboard's terminal tab for such a project is a near-direct path to host root — this is exactly why the token requirement isn't optional.
 
-The terminal tab requires `tmux` and `ttyd` (see Prerequisites) and only works for projects started with `sandclaude dev` (same requirement as `capture`/`send`/`attach` today) — plain `sandclaude start` sessions aren't backed by a tmux session to attach to.
+The terminal tab requires `tmux` (see Prerequisites) and only works for projects started with `sandclaude dev` (same requirement as `capture`/`send`/`attach` today) — plain `sandclaude start` sessions aren't backed by a tmux session to attach to. (The terminal itself is served by a built-in PTY-over-WebSocket bridge; no external `ttyd` is needed.)
 
 ## Firewall Management
 

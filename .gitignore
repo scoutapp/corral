@@ -56,7 +56,10 @@ build/
 *.log
 node_modules/
 
-sandclaude
+# The compiled host binary at the repo root ONLY. Anchored with a leading slash
+# so it does NOT also match the cmd/sandclaude/ source dir (an unanchored
+# `sandclaude` rule silently ignored the entrypoint package).
+/sandclaude
 # SQLite database files
 *.db
 *.db-shm
