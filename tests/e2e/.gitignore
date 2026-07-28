@@ -1,0 +1,6 @@
+# package-lock.json IS committed — CI's `npm ci` requires it for reproducible installs.
+node_modules/
+.artifacts/
+playwright-report/
+test-results/
+e2e-workspace/

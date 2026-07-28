@@ -1,0 +1,16 @@
+{
+  "name": "sandclaude-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "End-to-end Playwright suite for the sandclaude CLI: build -> init -> start (privileged DinD) -> build+run a web app inside DinD -> reach it from the host -> dashboard checks.",
+  "scripts": {
+    "test": "playwright test",
+    "typecheck": "tsc --noEmit",
+    "list": "playwright test --list"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.47.0",
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.0"
+  }
+}

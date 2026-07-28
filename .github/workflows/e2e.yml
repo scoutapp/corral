@@ -1,0 +1,85 @@
+name: e2e
+
+# End-to-end suite: installs sandclaude the real way (install.sh), boots a real
+# privileged DinD sandbox, and drives the full build -> run -> reach-from-host ->
+# dashboard chain. ubuntu-latest ships Docker; the sandbox brings up its own
+# privileged outer container (the CLI passes `--privileged` itself), so no
+# special runner config is needed.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SANDCLAUDE_NO_BROWSER: '1'
+      # Install into a user-writable prefix + home so install.sh needs no sudo,
+      # and point the e2e harness at the INSTALLED binary + asset bundle so the
+      # suite exercises the real install path (not an ad-hoc go build).
+      SANDCLAUDE_PREFIX: /home/runner/.local/bin
+      SANDCLAUDE_HOME: /home/runner/.sandclaude
+      SANDCLAUDE_BIN: /home/runner/.local/bin/sandclaude
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Ensure tmux (detached `sandclaude start` uses it)
+        # `start` launches the container in a detached tmux session; capture/
+        # send/attach and the e2e harness rely on it. Present on ubuntu-latest
+        # today, but install explicitly so the dependency is not implicit.
+        run: |
+          if ! command -v tmux >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq tmux
+          fi
+
+      - name: Install sandclaude (install.sh)
+        # Builds the binary, auto-installs mitmproxy via apt (see install.sh's
+        # install_pkg), and syncs the asset bundle to $SANDCLAUDE_HOME/assets.
+        run: |
+          mkdir -p "$SANDCLAUDE_PREFIX"
+          ./install.sh
+          echo "$SANDCLAUDE_PREFIX" >> "$GITHUB_PATH"
+
+      - name: Install e2e deps
+        working-directory: tests/e2e
+        run: npm ci
+
+      - name: Install Playwright (chromium)
+        working-directory: tests/e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Run e2e suite
+        working-directory: tests/e2e
+        run: npm test
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          if-no-files-found: ignore
+          retention-days: 14
+          # upload-artifact@v4 excludes dotfiles by default; .artifacts/ and the
+          # workspace's .sandclaude/ are hidden. Without this, a failed boot
+          # uploads almost nothing to debug from.
+          include-hidden-files: true
+          path: |
+            tests/e2e/.artifacts/**
+            tests/e2e/playwright-report/**
+            tests/e2e/e2e-workspace/.sandclaude/logs/**

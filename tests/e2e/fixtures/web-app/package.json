@@ -1,0 +1,13 @@
+{
+  "name": "sandclaude-e2e-web-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimal express server built + served inside DinD during the sandclaude e2e test",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
