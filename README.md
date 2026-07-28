@@ -104,23 +104,9 @@ config). Run it manually with `sandclaude dashboard` / `dashboard stop`. It bind
 
 Enable during `init` (with optional `3000:3000`-style host port mappings). A full
 inner `dockerd` runs in the sandbox; `DOCKER_HOST` points Claude's `docker` at it,
-never the host socket.
-
-```
-sandclaude container (--privileged)
-  ├── allowlist-proxy (:3128)
-  ├── dockerd (unix:///var/run/dind/docker.sock)
-  │     └── inner containers on 172.18.0.0/16
-  └── iptables PREROUTING: 172.18.0.0/16 TCP -> :3128   (egress enforced)
-```
-
-Inner image builds trust the mitm CA automatically (the `bin/docker` wrapper
-injects it per `FROM` stage), so `npm install` / `pip` / `bundle` / `go mod` work
-over HTTPS through the proxy with no Dockerfile changes. `bin/cert-injector` does
-the same for `docker run` containers.
-
-Published inner ports reach the host through the outer container's `-p` mapping;
-see the port chain in `docs/architecture.md`. Troubleshooting:
+never the host socket. Inner builds/containers trust the mitm CA automatically, so
+`npm install` / `pip` / `bundle` / `go mod` work over HTTPS with no Dockerfile
+changes.
 
 ```bash
 sandclaude start --dind-storage-driver=vfs   # if overlay2 fails ("operation not permitted")
