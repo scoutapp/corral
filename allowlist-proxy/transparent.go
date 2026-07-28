@@ -162,7 +162,17 @@ func (p *ProxyHandler) handleTransparent(client net.Conn) {
 		log.Printf("ALLOWED  %s (transparent)", checkHost)
 	}
 
-	target, err := p.dialTarget(dialHost)
+	// Decide mitm vs direct — same policy as the explicit CONNECT path. Either
+	// way the host was logged above; this only controls whether the tunnel is
+	// routed through mitmweb for decryption.
+	mitm, reason := p.shouldMitm(dialHost)
+	if mitm {
+		log.Printf("MONITORED %s (transparent)", checkHost)
+	} else {
+		log.Printf("DIRECT   %s (transparent, %s)", checkHost, reason)
+	}
+
+	target, err := p.dialTarget(dialHost, mitm)
 	if err != nil {
 		log.Printf("transparent: dial %s failed: %v", dialHost, err)
 		return

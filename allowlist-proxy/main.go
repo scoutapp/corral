@@ -31,6 +31,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 )
 
@@ -167,6 +168,64 @@ type ProxyHandler struct {
 	upstream        *url.URL // nil = direct
 	passthroughLog  string   // if set, allow unknown domains and append them here
 	transparentPort string   // listen port of the transparent listener (for REDIRECT vs TPROXY detection)
+
+	// Selective mitm. When monitorActive is true, monitorlist restricts which
+	// allowed hosts are routed through the mitmweb upstream (full TLS interception
+	// + credential injection); hosts that are allowed but NOT listed are dialed
+	// directly — still allowlist-checked and logged, but never decrypted. When
+	// monitorActive is false the default is "monitor everything," preserving prior
+	// behavior. monitorlist is always non-nil so SIGHUP can reload into it in place
+	// (its own RWMutex makes that concurrency-safe with in-flight requests);
+	// monitorActive is the toggle the request path reads.
+	//
+	// mitmPorts is the set of destination ports eligible for mitm at all. mitmweb
+	// only speaks HTTP/TLS, so any CONNECT to a port outside this set (ssh:22,
+	// SOCKS, databases, git-over-ssh) is dialed directly regardless of monitorlist
+	// — sending it upstream would just break a protocol mitmweb can't parse.
+	monitorlist   *Allowlist
+	monitorActive atomic.Bool
+	mitmPorts     map[string]struct{}
+}
+
+// shouldMitm decides whether a CONNECT to host ("hostname:port") should be
+// routed through the mitmweb upstream. It assumes the host has already passed the
+// allowlist check. Direct-dial (false) still logs the flow; it just isn't
+// decrypted. Returns the reason for the log line.
+func (p *ProxyHandler) shouldMitm(host string) (bool, string) {
+	if p.upstream == nil {
+		return false, "no-upstream"
+	}
+
+	_, port, err := net.SplitHostPort(host)
+	if err != nil {
+		port = "443" // CONNECT should always carry a port, but assume TLS if not
+	}
+	if _, ok := p.mitmPorts[port]; !ok {
+		return false, "port:" + port
+	}
+
+	if p.monitorActive.Load() {
+		hostname, _, err := net.SplitHostPort(host)
+		if err != nil {
+			hostname = host
+		}
+		if !p.monitorlist.Allowed(hostname) {
+			return false, "not-monitored"
+		}
+	}
+	return true, ""
+}
+
+// parsePorts turns "80,443" into a set. Blank/whitespace entries are skipped.
+func parsePorts(s string) map[string]struct{} {
+	ports := make(map[string]struct{})
+	for _, p := range strings.Split(s, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			ports[p] = struct{}{}
+		}
+	}
+	return ports
 }
 
 // appendDomain appends a domain to the passthrough log file if not already present.
@@ -269,7 +328,16 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("ALLOWED  %s", host)
 	}
 
-	targetConn, err := p.dialTarget(host)
+	// Decide mitm vs direct. Either way the host was logged above; this only
+	// controls whether the tunnel is routed through mitmweb for decryption.
+	mitm, reason := p.shouldMitm(host)
+	if mitm {
+		log.Printf("MONITORED %s", host)
+	} else {
+		log.Printf("DIRECT   %s (%s)", host, reason)
+	}
+
+	targetConn, err := p.dialTarget(host, mitm)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -302,12 +370,12 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	<-done
 }
 
-// dialTarget opens a connection to host ("hostname:port"). If an upstream proxy
-// is configured it issues an HTTP CONNECT to it and returns the tunneled conn;
-// otherwise it dials host directly. Shared by the explicit CONNECT handler and
-// the transparent listener.
-func (p *ProxyHandler) dialTarget(host string) (net.Conn, error) {
-	if p.upstream == nil {
+// dialTarget opens a connection to host ("hostname:port"). When mitm is true and
+// an upstream proxy is configured it issues an HTTP CONNECT to the upstream and
+// returns the tunneled conn (for TLS interception); otherwise it dials host
+// directly. Shared by the explicit CONNECT handler and the transparent listener.
+func (p *ProxyHandler) dialTarget(host string, mitm bool) (net.Conn, error) {
+	if p.upstream == nil || !mitm {
 		conn, err := net.Dial("tcp", host)
 		if err != nil {
 			return nil, fmt.Errorf("dial failed: %v", err)
@@ -380,6 +448,8 @@ func main() {
 	upstreamStr    := flag.String("upstream", "", "upstream proxy URL (e.g. http://host.docker.internal:8080); empty = direct")
 	allowlistPath  := flag.String("allowlist", "", "path to encrypted allowlist file (allowed-domains.txt.enc)")
 	passthroughLog := flag.String("passthrough-log", "", "if set, allow unknown domains and append them to this file instead of blocking")
+	monitorPath    := flag.String("monitorlist", "", "path to encrypted monitor-list; if set, only these hosts are routed through the mitm upstream (others allowed+logged but direct-dialed). Empty = monitor all.")
+	mitmPortsStr   := flag.String("mitm-ports", "80,443", "comma-separated destination ports eligible for mitm; CONNECT to any other port is direct-dialed (ssh, socks, etc.)")
 
 	// Encrypt subcommand: allowlist-proxy encrypt <plaintext> <output.enc>
 	// Checked before flag.Parse so it doesn't conflict with flags.
@@ -429,17 +499,8 @@ func main() {
 		log.Fatalf("failed to load allowlist: %v", err)
 	}
 
-	// Hot-reload on SIGHUP.
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGHUP)
-	go func() {
-		for range sigCh {
-			log.Printf("SIGHUP received — reloading allowlist from %s", *allowlistPath)
-			if err := al.load(*allowlistPath, key); err != nil {
-				log.Printf("allowlist reload failed: %v", err)
-			}
-		}
-	}()
+	mitmPorts := parsePorts(*mitmPortsStr)
+	log.Printf("mitm-eligible ports: %s (other ports direct-dialed)", *mitmPortsStr)
 
 	var upstream *url.URL
 	if *upstreamStr != "" {
@@ -457,7 +518,13 @@ func main() {
 		log.Printf("passthrough mode: unknown domains will be allowed and appended to %s", *passthroughLog)
 	}
 
-	handler := &ProxyHandler{allowlist: al, upstream: upstream, passthroughLog: *passthroughLog}
+	handler := &ProxyHandler{
+		allowlist:      al,
+		upstream:       upstream,
+		passthroughLog: *passthroughLog,
+		monitorlist:    &Allowlist{},
+		mitmPorts:      mitmPorts,
+	}
 
 	// Transparent (intercepting) listener for iptables-REDIRECTed connections.
 	// Runs alongside the explicit proxy so clients need no proxy env vars.
@@ -468,6 +535,44 @@ func main() {
 			}
 		}()
 	}
+
+	// loadMonitor (re)loads the monitor-list into handler.monitorlist in place and
+	// toggles monitorActive. Absent file (or unset flag) = monitor all allowed
+	// hosts — the default. Called at startup and on every SIGHUP so selective-mitm
+	// routing refreshes alongside the allowlist.
+	loadMonitor := func() {
+		if *monitorPath == "" {
+			handler.monitorActive.Store(false)
+			return
+		}
+		if _, err := os.Stat(*monitorPath); err != nil {
+			handler.monitorActive.Store(false)
+			log.Printf("monitor-list absent (%s) — monitoring all allowed hosts", *monitorPath)
+			return
+		}
+		if err := handler.monitorlist.load(*monitorPath, key); err != nil {
+			log.Printf("monitor-list load failed: %v — monitoring all allowed hosts", err)
+			handler.monitorActive.Store(false)
+			return
+		}
+		handler.monitorActive.Store(true)
+		log.Printf("monitor-list active: only listed hosts routed through mitm upstream")
+	}
+	loadMonitor()
+
+	// Hot-reload on SIGHUP — refreshes both the allowlist and the monitor-list, so
+	// a single firewall-reload/proxy-apply updates selective-mitm routing too.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGHUP)
+	go func() {
+		for range sigCh {
+			log.Printf("SIGHUP received — reloading allowlist from %s", *allowlistPath)
+			if err := al.load(*allowlistPath, key); err != nil {
+				log.Printf("allowlist reload failed: %v", err)
+			}
+			loadMonitor()
+		}
+	}()
 
 	server := &http.Server{
 		Addr:    *listen,
