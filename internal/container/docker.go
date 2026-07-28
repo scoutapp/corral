@@ -190,13 +190,11 @@ func (sc *SandClaude) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) 
 		}
 	}
 
-	repoClaudeDir := filepath.Join(config.AssetsDir(), ".claude")
-	if entries, err := os.ReadDir(repoClaudeDir); err == nil {
-		for _, e := range entries {
-			if e.IsDir() {
-				allSubdirs[e.Name()] = true
-			}
-		}
+	// The sandbox bundle ships skills at <assets>/skills (they land at
+	// ~/.claude/skills in the image); register it as a .claude subdir so the
+	// mount plan below treats it like any other.
+	if _, err := os.Stat(filepath.Join(config.AssetsDir(), "skills")); err == nil {
+		allSubdirs["skills"] = true
 	}
 
 	workspaceClaudeDir := filepath.Join(workspace, ".claude")
@@ -214,7 +212,10 @@ func (sc *SandClaude) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) 
 		if readOnlyMergeableSubdirs[subName] {
 			// Read-only mergeable subdirectories: mount individual items from all three sources
 			mountClaudeSubdirItems("host", hostClaudeDir, subName)
-			mountClaudeSubdirItems("repo", repoClaudeDir, subName)
+			// The sandbox bundle stores skills at <assets>/skills (no .claude
+			// wrapper), so pass AssetsDir() as the "sourceClaudeDir" — join with
+			// subName ("skills") yields <assets>/skills.
+			mountClaudeSubdirItems("sandbox", config.AssetsDir(), subName)
 			mountClaudeSubdirItems("workspace", workspaceClaudeDir, subName)
 
 			// Also check .sandclaude for project-specific items (primarily for skills)
@@ -294,10 +295,26 @@ func (sc *SandClaude) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) 
 	os.MkdirAll(logsDir, 0755)
 	args = append(args, "-v", fmt.Sprintf("%s:/home/claude/logs", logsDir))
 
-	// Mount bin/ from the asset bundle so scripts can be edited without rebuilding
-	binDir := filepath.Join(config.AssetsDir(), "bin")
-	if _, err := os.Stat(binDir); err == nil {
-		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/bin", binDir))
+	// Mount the bin scripts from the asset bundle so they can be edited without
+	// rebuilding. They live in two tier dirs — setup/ (sandbox self-config) and
+	// dind/ (the sandbox->inner bridge) — but both flatten into /home/claude/bin
+	// to match the flat in-container path everything references. Mount each script
+	// individually (rather than one dir mount) so the two source dirs coexist on
+	// the same target without shadowing each other.
+	for _, tier := range []string{"setup", "dind"} {
+		tierDir := filepath.Join(config.AssetsDir(), tier)
+		entries, err := os.ReadDir(tierDir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			src := filepath.Join(tierDir, e.Name())
+			dst := fmt.Sprintf("/home/claude/bin/%s", e.Name())
+			args = append(args, "-v", fmt.Sprintf("%s:%s", src, dst))
+		}
 	}
 
 	// Enable proxy if it was started

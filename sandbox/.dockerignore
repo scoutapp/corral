@@ -1,0 +1,28 @@
+# Docker build context excludes for the sandbox/ image context. NOTE: Docker
+# does NOT read .gitignore — this file is the ONLY thing that keeps stray paths
+# out of the build context tar sent to the daemon. The context is the sandbox/
+# tier only (Dockerfile, entrypoint.sh, launcher.py, allowlist-proxy/, setup/,
+# dind/, skills/), so it is already small; these excludes guard against secrets
+# and build cruft that can appear inside allowlist-proxy/ or skills/.
+
+# Encrypted/secret allowlist artifacts and keys (allowlist-proxy/ ships a seed
+# allowed-domains.txt but never the encrypted/per-project artifacts or keys)
+*.enc
+*.pem
+*.key
+.allowlist-key
+.env
+.env.*
+
+# Go build artifacts (a stray compiled allowlist-proxy binary from a host build)
+allowlist-proxy/allowlist-proxy
+
+# Python/editor/OS cruft
+__pycache__/
+*.pyc
+.DS_Store
+.vscode/
+.idea/
+
+# Logs and scratch
+*.log

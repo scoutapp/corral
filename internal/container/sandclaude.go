@@ -47,7 +47,9 @@ func NewSandClaude() (*SandClaude, error) {
 		credentialsFile = creds.ResolveCredentialsFile()
 	}
 
-	addonScript := filepath.Join(config.AssetsDir(), "proxy-addon.py")
+	// proxy-addon.py is a HOST-tier asset — loaded by the host's mitmweb, not the
+	// sandbox — so it resolves from the host/ bundle, not the sandbox build context.
+	addonScript := filepath.Join(config.HostAssetsDir(), "proxy-addon.py")
 
 	return &SandClaude{
 		proxyPort:       proxyPort,

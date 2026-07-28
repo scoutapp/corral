@@ -21,21 +21,23 @@ func SandclaudeHome() string {
 	return filepath.Join(home, ".sandclaude")
 }
 
-// AssetsDir returns the Docker build-context asset bundle (Dockerfile,
-// entrypoint.sh, launcher.py, proxy-addon.py, allowlist-proxy/, bin/, .claude/).
+// AssetsDir returns the SANDBOX asset bundle — the Docker build context and the
+// source of the runtime bind-mounts (Dockerfile, entrypoint.sh, launcher.py,
+// allowlist-proxy/, setup/, dind/, skills/). It is the `sandbox/` tier only;
+// the host-tier proxy-addon.py is resolved separately by HostAssetsDir.
 // Resolution order:
-//  1. $SANDCLAUDE_HOME/assets       — only when SANDCLAUDE_HOME is set explicitly
-//  2. <bindir>/assets               — installed next to the binary
-//  3. <bindir>                      — DEV MODE: running ./sandclaude from the git
-//     checkout, where Dockerfile/allowlist-proxy/ sit beside the binary
-//  4. ~/.sandclaude/assets          — default installed location
+//  1. $SANDCLAUDE_HOME/assets/sandbox — only when SANDCLAUDE_HOME is set explicitly
+//  2. <bindir>/assets/sandbox         — installed next to the binary
+//  3. <bindir>/sandbox                — DEV MODE: ./sandclaude from the git checkout,
+//     where the sandbox/ dir sits beside the binary
+//  4. ~/.sandclaude/assets/sandbox    — default installed location
 //
 // The binary-adjacent cases (2 & 3) intentionally take precedence over the default
 // installed location (4) so that running ./sandclaude from a checkout keeps using the
 // live checkout assets even after an install created ~/.sandclaude/assets. An explicit
 // SANDCLAUDE_HOME (1) always wins for deliberate overrides.
 func AssetsDir() string {
-	looksLikeAssets := func(dir string) bool {
+	looksLikeSandbox := func(dir string) bool {
 		if _, err := os.Stat(filepath.Join(dir, "Dockerfile")); err != nil {
 			return false
 		}
@@ -47,7 +49,7 @@ func AssetsDir() string {
 
 	// 1. Explicit override via SANDCLAUDE_HOME.
 	if os.Getenv("SANDCLAUDE_HOME") != "" {
-		if cand := filepath.Join(SandclaudeHome(), "assets"); looksLikeAssets(cand) {
+		if cand := filepath.Join(SandclaudeHome(), "assets", "sandbox"); looksLikeSandbox(cand) {
 			return cand
 		}
 	}
@@ -55,17 +57,43 @@ func AssetsDir() string {
 	// 2 & 3. Relative to the binary (installed-beside, then dev-mode checkout).
 	if exePath, err := os.Executable(); err == nil {
 		binDir := filepath.Dir(exePath)
-		if cand := filepath.Join(binDir, "assets"); looksLikeAssets(cand) {
+		if cand := filepath.Join(binDir, "assets", "sandbox"); looksLikeSandbox(cand) {
 			return cand
 		}
-		if looksLikeAssets(binDir) {
-			return binDir // dev mode: checkout beside the binary
+		if cand := filepath.Join(binDir, "sandbox"); looksLikeSandbox(cand) {
+			return cand // dev mode: checkout's sandbox/ beside the binary
 		}
 	}
 
 	// 4. Default installed location. Returned even if it doesn't exist yet, so callers
 	// produce a clear "run install.sh" style error rather than an empty path.
-	return filepath.Join(SandclaudeHome(), "assets")
+	return filepath.Join(SandclaudeHome(), "assets", "sandbox")
+}
+
+// HostAssetsDir returns the HOST-tier asset directory holding assets loaded by
+// host-side processes (currently proxy-addon.py, loaded by the host's mitmweb).
+// It mirrors AssetsDir's resolution order but points at the host/ tier.
+func HostAssetsDir() string {
+	looksLikeHost := func(dir string) bool {
+		_, err := os.Stat(filepath.Join(dir, "proxy-addon.py"))
+		return err == nil
+	}
+
+	if os.Getenv("SANDCLAUDE_HOME") != "" {
+		if cand := filepath.Join(SandclaudeHome(), "assets", "host"); looksLikeHost(cand) {
+			return cand
+		}
+	}
+	if exePath, err := os.Executable(); err == nil {
+		binDir := filepath.Dir(exePath)
+		if cand := filepath.Join(binDir, "assets", "host"); looksLikeHost(cand) {
+			return cand
+		}
+		if cand := filepath.Join(binDir, "host"); looksLikeHost(cand) {
+			return cand // dev mode: checkout's host/ beside the binary
+		}
+	}
+	return filepath.Join(SandclaudeHome(), "assets", "host")
 }
 
 // SandclaudeDir returns <cwd>/.sandclaude — the per-project directory holding the

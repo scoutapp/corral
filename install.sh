@@ -7,9 +7,13 @@
 #   - the asset bundle       -> $SANDCLAUDE_HOME/assets (default ~/.sandclaude/assets)
 #
 # The asset bundle is the Docker build context + support files the installed
-# binary needs at runtime (Dockerfile, entrypoint.sh, launcher.py, proxy-addon.py,
-# allowlist-proxy/, bin/, .claude/). Per-project state lives in each project's
-# ./.sandclaude/ directory, created by `sandclaude init`.
+# binary needs at runtime, organized by tier:
+#   assets/sandbox/  — the sandbox image build context + runtime mounts
+#                      (Dockerfile, entrypoint.sh, launcher.py, allowlist-proxy/,
+#                       setup/, dind/, skills/)
+#   assets/host/     — host-tier assets loaded by host processes (proxy-addon.py)
+# Per-project state lives in each project's ./.sandclaude/ directory, created by
+# `sandclaude init`.
 #
 # Env overrides:
 #   SANDCLAUDE_PREFIX  directory on $PATH to install the binary  (default /usr/local/bin)
@@ -64,15 +68,12 @@ fi
 echo "==> Syncing asset bundle to $ASSETS_DIR"
 mkdir -p "$ASSETS_DIR"
 
-# The files/dirs the Docker build context and runtime mounts require.
+# The two tier dirs the installed binary resolves at runtime: assets/sandbox
+# (build context + mounts) and assets/host (host-loaded assets). Syncing the
+# dirs wholesale keeps their internal structure (setup/, dind/, skills/, …).
 ASSET_ITEMS=(
-  Dockerfile
-  entrypoint.sh
-  launcher.py
-  proxy-addon.py
-  allowlist-proxy
-  bin
-  .claude
+  sandbox
+  host
 )
 
 if command -v rsync >/dev/null 2>&1; then

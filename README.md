@@ -408,19 +408,25 @@ sandclaude start --disable-firewall
 
 The local development loop for sandclaude itself does **not** require installing.
 When you run `./sandclaude` directly from the git checkout, the binary detects that
-its Docker build context (`Dockerfile`, `allowlist-proxy/`, `.claude/`, …) sits right
-beside it and uses the checkout as the asset root. So the iterate loop is:
+the `sandbox/` (Docker build context) and `host/` (host-loaded assets) tier dirs sit
+right beside it and uses the checkout as the asset root. So the iterate loop is:
 
 ```bash
-# edit main.go / Dockerfile / launcher.py …
-go build -o sandclaude main.go
+# edit internal/**/*.go / sandbox/Dockerfile / sandbox/launcher.py …
+go build -o sandclaude ./cmd/sandclaude
 ./sandclaude list          # runs against the checkout's assets, no install needed
 ```
 
-Asset resolution order (see `assetsDir()` in `main.go`):
-1. `$SANDCLAUDE_HOME/assets` — explicit override / installed layout
-2. `<binary dir>/assets` — installed next to the binary
-3. `<binary dir>` — **dev mode**: the git checkout beside `./sandclaude`
+The Go code is organized as `cmd/sandclaude` (entrypoint) + `internal/` packages
+(config, creds, session, proxy, dashboard, container, cli). Non-Go assets live by
+runtime tier: `sandbox/` (everything built into or mounted into the sandbox image)
+and `host/` (assets loaded by host processes, e.g. `proxy-addon.py` for the host
+mitmweb). See `docs/architecture.md`.
+
+Asset resolution order (see `AssetsDir()` / `HostAssetsDir()` in `internal/config/paths.go`):
+1. `$SANDCLAUDE_HOME/assets/{sandbox,host}` — explicit override / installed layout
+2. `<binary dir>/assets/{sandbox,host}` — installed next to the binary
+3. `<binary dir>/{sandbox,host}` — **dev mode**: the git checkout beside `./sandclaude`
 
 When you're ready to "ship" your changes to the globally-installed CLI, re-run
 `./install.sh` — it rebuilds the binary and re-syncs `~/.sandclaude/assets`.

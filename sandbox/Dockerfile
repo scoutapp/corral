@@ -142,13 +142,18 @@ ENV PATH="/home/claude/.claude/bin:/home/claude/.local/bin:/usr/local/go/bin:${P
 # the host's mitmproxy-ca-cert.pem file, and mitmweb fails on startup.
 RUN mkdir -p /home/claude/.mitmproxy && chown claude:claude /home/claude/.mitmproxy
 
-# Copy launcher, entrypoint, proxy addon, skill, and bin scripts
+# Copy launcher, entrypoint, skills, and bin scripts. The bin/ scripts live in
+# two source dirs by tier — setup/ (sandbox self-config) and dind/ (the
+# sandbox->inner-container bridge) — but flatten into a single /home/claude/bin/
+# because entrypoint.sh, launcher.py, and the skills reference that flat path.
+# NOTE: proxy-addon.py is NOT copied here — it is a HOST-tier asset loaded by the
+# host's mitmweb (see host/proxy-addon.py), never used inside the container.
 COPY --chown=claude:claude launcher.py /home/claude/launcher.py
 COPY --chown=claude:claude entrypoint.sh /home/claude/entrypoint.sh
-COPY --chown=claude:claude proxy-addon.py /usr/local/bin/proxy-addon.py
-COPY --chown=claude:claude .claude/skills/ /home/claude/.claude/skills/
-COPY --chown=claude:claude bin/ /home/claude/bin/
-RUN chmod +x /home/claude/launcher.py /home/claude/entrypoint.sh /usr/local/bin/proxy-addon.py \
+COPY --chown=claude:claude skills/ /home/claude/.claude/skills/
+COPY --chown=claude:claude setup/ /home/claude/bin/
+COPY --chown=claude:claude dind/ /home/claude/bin/
+RUN chmod +x /home/claude/launcher.py /home/claude/entrypoint.sh \
     /home/claude/bin/cert-injector /home/claude/bin/docker
 
 # Put ~/bin first in PATH so the `docker` wrapper (CA injection for builds)

@@ -51,3 +51,26 @@ inner app ─▶ allowlist-proxy ─(if allowed)─▶ host mitmweb ─▶ inter
    │               allowed-domains.txt               logs flow → dashboard
    └─ trusts mitm CA (injected by cert-injector / bin/docker)
 ```
+
+## Where things live (repo layout by tier)
+
+```
+cmd/sandclaude/        host CLI entrypoint (Go)
+internal/              host CLI packages: config, creds, session, proxy,
+                       dashboard, container, cli
+host/                  HOST-tier assets loaded by host processes
+  proxy-addon.py         → loaded by the host's mitmweb
+sandbox/               SANDBOX image build context + runtime mounts
+  Dockerfile             builds the sandbox image
+  entrypoint.sh          sandbox PID 1
+  launcher.py            launches claude in the sandbox
+  allowlist-proxy/       in-sandbox gatekeeper (own Go module)
+  skills/                agent skills → mounted at ~/.claude/skills
+  setup/                 sandbox self-config → /home/claude/bin (flattened)
+    patch-claude-settings.py, statusline.sh, enforce-small-commits.sh
+  dind/                  sandbox→inner bridge → /home/claude/bin (flattened)
+    docker (build wrapper), cert-injector (CA daemon)
+```
+
+Installed layout mirrors this under `~/.sandclaude/assets/{sandbox,host}/`.
+
