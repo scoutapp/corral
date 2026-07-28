@@ -2,32 +2,34 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>sandclaude dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sandclaude — control</title>
 <link rel="stylesheet" href="/static/dashboard.css">
 </head>
-<body>
-<header>
-  <h1>sandclaude dashboard</h1>
+<body class="console">
+<header class="console-header">
+  <div class="brand">
+    <span class="brand-mark">◇</span>
+    <span class="brand-name">sandclaude</span>
+    <span class="brand-sub">control</span>
+  </div>
+  <div class="legend" id="legend">
+    <span class="legend-item"><i class="dot working"></i>working</span>
+    <span class="legend-item"><i class="dot waiting"></i>waiting on you</span>
+    <span class="legend-item"><i class="dot off"></i>idle</span>
+  </div>
 </header>
 
-{{if not .Projects}}
-  <p class="empty">No projects registered yet. Run <code>sandclaude start</code> or <code>sandclaude dev</code> in a project directory, then reload this page.</p>
-{{else}}
-  <table class="projects">
-    <thead>
-      <tr><th>Workspace</th><th>Container</th><th>Terminal</th><th>Mitm Proxy</th></tr>
-    </thead>
-    <tbody>
-      {{range .Projects}}
-      <tr>
-        <td><a href="/p/{{.ID}}">{{.Workspace}}</a></td>
-        <td>{{if .ContainerUp}}<span class="badge up">running</span>{{else}}<span class="badge down">stopped</span>{{end}}</td>
-        <td>{{if .TmuxUp}}<span class="badge up">available</span>{{else}}<span class="badge down">—</span>{{end}}</td>
-        <td>{{if .MitmUp}}<span class="badge up">running</span>{{else}}<span class="badge down">—</span>{{end}}</td>
-      </tr>
-      {{end}}
-    </tbody>
-  </table>
-{{end}}
+<main id="panes" class="panes">
+  {{if not .Projects}}
+  <p class="empty">No projects yet. Run <code>sandclaude dev</code> in a project directory, then reload.</p>
+  {{end}}
+</main>
+
+<footer class="console-footer">
+  <span id="summary" class="muted">connecting…</span>
+</footer>
+
+<script src="/static/panes.js"></script>
 </body>
 </html>

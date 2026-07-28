@@ -23,6 +23,138 @@
 
 * { box-sizing: border-box; }
 
+/* =========================================================================
+   Console landing page — operator's mission control for parallel agents.
+   Two semantic accents carry the entire signal: mint = working (calm, don't
+   look here), amber = waiting on you (look here). Scoped under .console so it
+   never touches the per-project page styles further down this file.
+   ========================================================================= */
+body.console {
+  --con-ground: #0B0E14;
+  --con-panel: #12161F;
+  --con-panel-hi: #171C28;
+  --con-line: #232A38;
+  --con-text: #C7CDD9;
+  --con-muted: #6B7688;
+  --con-working: #5CE6A8;
+  --con-waiting: #FFB454;
+  --con-off: #3A4150;
+
+  margin: 0;
+  min-height: 100vh;
+  padding: 0;
+  background:
+    radial-gradient(1200px 500px at 80% -10%, rgba(92,230,168,0.05), transparent 60%),
+    var(--con-ground);
+  color: var(--con-text);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.console-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap;
+  padding: 1.1rem 1.6rem;
+  border-bottom: 1px solid var(--con-line);
+}
+.brand { display: flex; align-items: baseline; gap: 0.55rem; }
+.brand-mark { color: var(--con-working); font-size: 1.1rem; transform: translateY(1px); }
+.brand-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600; font-size: 1.05rem; letter-spacing: -0.01em;
+}
+.brand-sub {
+  font-family: ui-monospace, monospace; font-size: 0.72rem;
+  text-transform: uppercase; letter-spacing: 0.22em; color: var(--con-muted);
+}
+.legend { display: flex; gap: 1.1rem; font-size: 0.75rem; color: var(--con-muted); }
+.legend-item { display: inline-flex; align-items: center; gap: 0.4rem; }
+.legend .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.legend .dot.working { background: var(--con-working); }
+.legend .dot.waiting { background: var(--con-waiting); }
+.legend .dot.off { background: var(--con-off); }
+
+.panes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1rem;
+  padding: 1.6rem;
+  align-content: start;
+}
+
+.pane {
+  display: block; text-decoration: none; color: inherit;
+  background: var(--con-panel);
+  border: 1px solid var(--con-line);
+  border-left: 3px solid var(--con-off);
+  border-radius: 10px;
+  padding: 0.9rem 1rem 0.8rem;
+  transition: border-color 0.2s, background 0.2s, transform 0.08s;
+}
+.pane:hover { background: var(--con-panel-hi); transform: translateY(-1px); }
+.pane:focus-visible { outline: 2px solid var(--con-working); outline-offset: 2px; }
+.pane-working { border-left-color: var(--con-working); }
+.pane-waiting {
+  border-left-color: var(--con-waiting);
+  background: linear-gradient(90deg, rgba(255,180,84,0.06), transparent 40%), var(--con-panel);
+}
+.pane-off { opacity: 0.62; }
+
+.pane-top { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.pane-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600; font-size: 0.95rem; letter-spacing: -0.01em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pane-state {
+  display: inline-flex; align-items: center; gap: 0.4rem; flex: none;
+  font-size: 0.72rem; letter-spacing: 0.02em;
+}
+.state-working { color: var(--con-working); }
+.state-waiting { color: var(--con-waiting); }
+.state-off { color: var(--con-muted); }
+.beacon { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+.state-working .beacon { animation: beacon-pulse 1.6s ease-in-out infinite; }
+.state-waiting .beacon { animation: beacon-blink 1s steps(1) infinite; }
+@keyframes beacon-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(92,230,168,0.5); }
+  50% { box-shadow: 0 0 0 5px rgba(92,230,168,0); }
+}
+@keyframes beacon-blink { 0%, 60% { opacity: 1; } 61%, 100% { opacity: 0.25; } }
+
+.pane-peek {
+  margin: 0.7rem 0 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem; color: var(--con-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  padding: 0.4rem 0.55rem; background: rgba(0,0,0,0.25);
+  border-radius: 6px; border: 1px solid var(--con-line);
+}
+.peek-caret { color: var(--con-working); opacity: 0.7; margin-right: 0.35rem; }
+
+.pane-foot { display: flex; align-items: center; gap: 0.9rem; font-size: 0.72rem; color: var(--con-muted); }
+.svc { display: inline-flex; align-items: center; gap: 0.32rem; }
+.pdot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.pdot.on { background: var(--con-working); }
+.pdot.off { background: var(--con-off); }
+.rate { margin-left: auto; font-family: ui-monospace, monospace; color: var(--con-working); }
+.rate.quiet { color: var(--con-muted); }
+
+.console-footer {
+  padding: 0.9rem 1.6rem; border-top: 1px solid var(--con-line);
+  font-size: 0.78rem; font-family: ui-monospace, monospace;
+}
+.console-footer .muted { color: var(--con-muted); }
+.console-footer .attention { color: var(--con-waiting); }
+body.console .empty { color: var(--con-muted); padding: 1rem 0; }
+body.console code {
+  font-family: ui-monospace, monospace; font-size: 0.85em;
+  background: var(--con-panel-hi); padding: 1px 6px; border-radius: 4px; color: var(--con-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .state-working .beacon, .state-waiting .beacon { animation: none; }
+}
+
 body {
   margin: 0;
   padding: 1.5rem;
