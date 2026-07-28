@@ -417,6 +417,7 @@ table.projects th, table.projects td {
   text-overflow: ellipsis;
 }
 .mitm-table .m-size, .mitm-table .m-dur { color: var(--muted); text-align: right; }
+.mitm-table .m-when { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mitm-table .m-status { font-variant-numeric: tabular-nums; }
 .mitm-table .s-2xx { color: var(--up); }
 .mitm-table .s-3xx { color: var(--accent); }
