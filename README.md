@@ -74,29 +74,24 @@ sandclaude start                                    # enforce it
 
 ## Architecture
 
-Four runtime tiers. Full detail in [`docs/architecture.md`](docs/architecture.md).
+Full detail in [`docs/architecture.md`](docs/architecture.md).
 
 ```
-HOST                          SANDBOX (outer, --privileged)          INNER (DinD)
-────                          ─────────────────────────────          ───────────
-sandclaude (Go CLI)           entrypoint.sh · launcher.py            app containers
-mitmweb ◀─ proxy-addon.py     allowlist-proxy ─chains up─▶ host       (rails, pg, …)
-   ▲ injects creds,             │ enforces allowed-domains.txt              ▲
-   │ enforces allowlist         └─ iptables PREROUTING ─▶ :3128 ───────────┘
-web dashboard (:PORT)         bin/docker (build CA-inject) · bin/cert-injector
+HOST                       SANDBOX (outer, --privileged)     INNER (DinD)
+────                       ─────────────────────────────     ───────────
+sandclaude CLI             claude (dummy token)              app containers
+mitmweb (creds/TLS) ◀──── allowlist-proxy :3128 ───────────  (rails, pg, …)
+web dashboard              enforces allowed-domains.txt              ▲
+                           iptables PREROUTING ─▶ :3128 ────────────┘
 ```
 
-- **Firewall** — an in-sandbox `allowlist-proxy` (`:3128`) that every outbound
-  connection (including inner DinD containers, captured via iptables PREROUTING)
-  must pass; non-allowlisted domains get `403`. The allowlist ships encrypted and
-  hot-reloads on `firewall-reload`.
-- **Credential proxy** — the host's `mitmweb` terminates TLS and injects real
-  credentials, so Claude only ever holds a dummy token. The sandbox's
-  `allowlist-proxy` chains up to it.
-- **Repo layout** — `cmd/sandclaude` (entrypoint) + `internal/` packages
-  (`config`, `creds`, `session`, `proxy`, `dashboard`, `container`, `cli`).
-  Non-Go assets live by tier: `sandbox/` (baked into / mounted into the image)
-  and `host/` (loaded by host processes, e.g. `proxy-addon.py`).
+- **mitm proxy** (host) — `mitmweb` terminates TLS and injects real credentials,
+  so Claude only ever holds a dummy token.
+- **allowlist-proxy** (sandbox, `:3128`) — every outbound connection, including
+  inner DinD containers (captured via iptables PREROUTING), must pass it;
+  non-allowlisted domains get `403`. Chains up to the host mitmweb.
+- **web dashboard** (host) — live per-project view: terminal, mitm flows,
+  firewall log, config.
 
 ## Dashboard
 
