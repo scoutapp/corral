@@ -103,14 +103,23 @@ func (sc *SandClaude) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) 
 		config.Debugln("No GitHub token found (gh auth token returned empty)")
 	}
 
-	// Mount .claude.json from host (Claude Code config file)
-	// Note: We don't mount the entire .claude directory here - that's handled below
-	// with granular per-subdirectory mounts to allow merging from multiple sources.
+	// Mount the workspace and set it as the working dir.
 	args = append(args,
-		"-v", fmt.Sprintf("%s:/home/claude/.claude.json", filepath.Join(home, ".claude.json")),
 		"-v", fmt.Sprintf("%s:%s", workspace, workspace),
 		"-w", workspace,
 	)
+
+	// Mount host ~/.claude.json (Claude Code config file) ONLY if it exists as a
+	// file. Docker auto-creates a missing bind source as a DIRECTORY, which then
+	// fails the container with a cryptic OCI "not a directory" mount error when
+	// the target is a file. A host that hasn't run `claude` auth yet simply has
+	// no ~/.claude.json — skip the mount and let Claude prompt inside the
+	// container. (We don't mount the whole ~/.claude dir here; that's done below
+	// with granular per-subdir mounts.)
+	hostClaudeJSON := filepath.Join(home, ".claude.json")
+	if fi, err := os.Stat(hostClaudeJSON); err == nil && !fi.IsDir() {
+		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/.claude.json", hostClaudeJSON))
+	}
 
 	// Mount host .gitconfig so commits inside the container are attributed to the host user
 	hostGitconfig := filepath.Join(home, ".gitconfig")
