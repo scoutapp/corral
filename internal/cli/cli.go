@@ -444,6 +444,27 @@ func cmdShell() error {
 	return dockerCmd.Run()
 }
 
+// containersUsingImage returns the names of all containers (running or stopped)
+// created from the given image tag. Used by rebuild --destroy to tear down every
+// per-workspace container before removing the image, since container names are
+// derived from the workspace path and don't match the image tag.
+func containersUsingImage(image string) []string {
+	out, err := exec.Command("docker", "ps", "-a",
+		"--filter", "ancestor="+image,
+		"--format", "{{.Names}}").Output()
+	if err != nil {
+		log.Printf("Warning: could not list containers for image %s: %v", image, err)
+		return nil
+	}
+	var names []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if name := strings.TrimSpace(line); name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
 // cmdRebuild rebuilds the Docker image, optionally destroying the existing image/container and/or inner docker data first
 func cmdRebuild(destroy bool, destroyInner bool) error {
 	if destroyInner {
@@ -472,13 +493,20 @@ func cmdRebuild(destroy bool, destroyInner bool) error {
 	}
 
 	if destroy {
-		log.Println("Destroying existing sandclaude container and image...")
+		log.Println("Destroying existing sandclaude containers and image...")
 
-		// Stop and remove any running container
-		stopCmd := exec.Command("docker", "rm", "-f", "sandclaude-stable")
-		stopCmd.Stdout = os.Stdout
-		stopCmd.Stderr = os.Stderr
-		stopCmd.Run() // ignore error — container may not exist
+		// Containers are named per-workspace (sandclaude_<workspace>), not
+		// "sandclaude-stable" (that's the image tag). Enumerate every container
+		// — running or stopped — built from the sandclaude-stable image and
+		// remove them. Otherwise the old containers survive the rebuild and the
+		// image can't be removed while a container still references it.
+		for _, name := range containersUsingImage("sandclaude-stable") {
+			log.Printf("Removing container %s...", name)
+			rmCmd := exec.Command("docker", "rm", "-f", name)
+			rmCmd.Stdout = os.Stdout
+			rmCmd.Stderr = os.Stderr
+			rmCmd.Run() // ignore error — container may have already exited
+		}
 
 		// Remove the image
 		rmiCmd := exec.Command("docker", "rmi", "-f", "sandclaude-stable")
