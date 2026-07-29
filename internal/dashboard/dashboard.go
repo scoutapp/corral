@@ -439,6 +439,20 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleConfigRestart(w, r, id)
 	case sub == "remove":
 		d.handleRemoveProject(w, r, id)
+	case sub == "files/tree":
+		d.handleFilesTree(w, r, id)
+	case sub == "files/read":
+		d.handleFilesRead(w, r, id)
+	case sub == "files/write":
+		d.handleFilesWrite(w, r, id)
+	case sub == "git/status":
+		d.handleGitStatus(w, r, id)
+	case sub == "git/diff":
+		d.handleGitDiff(w, r, id)
+	case sub == "container/ws":
+		d.handleContainerWS(w, r, id)
+	case sub == "container" || sub == "container/":
+		d.handleContainerPage(w, r, id)
 	case sub == "mitm/flows":
 		d.handleMitmFlows(w, r, id)
 	case strings.HasPrefix(sub, "mitm/flows/"):

@@ -101,6 +101,50 @@ func (d *dashboardServer) handleTerminalWS(w http.ResponseWriter, r *http.Reques
 		"no tmux dev session for this project — start it with `sandclaude dev`")
 }
 
+// handleContainerPage serves the xterm host page for the Container Shell tab.
+// Mirrors handleTerminalPage but gates on the container running and points the
+// client at /container/ws (via data-ws-path in container.html.tmpl).
+func (d *dashboardServer) handleContainerPage(w http.ResponseWriter, r *http.Request, id string) {
+	workspace, err := lookupWorkspaceByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	containerName := session.ContainerNameForWorkspace(workspace)
+	data := struct {
+		ID          string
+		ContainerUp bool
+	}{ID: id, ContainerUp: session.DockerContainerRunning(containerName)}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := dashboardTemplates.ExecuteTemplate(w, "container.html.tmpl", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// handleContainerWS bridges a browser terminal to an interactive shell INSIDE
+// the project's Docker container via `docker exec -it <container> bash`. Unlike
+// the tmux terminal (which mirrors the Claude dev session), this is a fresh shell
+// for poking around the container's filesystem. Gated on the container running.
+func (d *dashboardServer) handleContainerWS(w http.ResponseWriter, r *http.Request, id string) {
+	workspace, err := lookupWorkspaceByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	containerName := session.ContainerNameForWorkspace(workspace)
+	if !session.DockerContainerRunning(containerName) {
+		http.Error(w, "container is not running for this project", http.StatusBadGateway)
+		return
+	}
+	// -it: interactive + TTY so bash behaves like a real shell. Prefer bash, fall
+	// back to sh (some minimal inner images lack bash — though the sandbox image
+	// has it). exec via sh -c so the fallback works in one command.
+	cmd := exec.Command("docker", "exec", "-it", containerName,
+		"sh", "-c", "exec bash 2>/dev/null || exec sh")
+	d.bridgePTY(w, r, cmd)
+}
+
 // handleSessionWS bridges a browser terminal to a named tmux session directly
 // (not a project's dev session) — used for the interactive `populate-proxy-
 // credentials` flow the dashboard spawns into its own tmux session.
@@ -117,16 +161,23 @@ func (d *dashboardServer) bridgeSessionWS(w http.ResponseWriter, r *http.Request
 		http.Error(w, missingMsg, http.StatusBadGateway)
 		return
 	}
+	// -t forces a PTY; without it tmux refuses to attach ("open terminal failed:
+	// not a terminal").
+	d.bridgePTY(w, r, exec.Command("tmux", "attach-session", "-t", sessionName))
+}
 
+// bridgePTY upgrades to a WebSocket and bridges it to a PTY running the given
+// command: PTY output -> binary ws frames, binary ws frames -> PTY input, and a
+// JSON {"type":"resize"} control frame -> TIOCSWINSZ. Shared by the tmux-attach
+// terminal, the populate-credentials session, and the container shell (which
+// runs `docker exec -it`). The caller is responsible for any liveness precheck.
+func (d *dashboardServer) bridgePTY(w http.ResponseWriter, r *http.Request, cmd *exec.Cmd) {
 	conn, err := terminalUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return // Upgrade already wrote an error response
 	}
 	defer conn.Close()
 
-	// -t forces a PTY; without it tmux refuses to attach ("open terminal failed:
-	// not a terminal").
-	cmd := exec.Command("tmux", "attach-session", "-t", sessionName)
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		conn.WriteMessage(websocket.TextMessage, []byte("\r\n[failed to start terminal: "+err.Error()+"]\r\n"))

@@ -9,52 +9,83 @@
 <header>
   <a href="/" class="back">&larr; All projects</a>
   <h1>{{.Workspace}}</h1>
+  <button id="dock-toggle" class="dock-toggle" type="button" title="Show/hide the Claude terminal">⌨ Terminal</button>
 </header>
 
-<div class="tabs">
-  <button class="tab-btn active" data-tab="terminal">Terminal</button>
-  <button class="tab-btn" data-tab="mitm">Mitm Proxy</button>
-  <button class="tab-btn" data-tab="firewall">Firewall Log</button>
-  <button class="tab-btn" data-tab="config">Config</button>
-</div>
-
-<div class="tab-panel" id="tab-terminal">
-  {{if .TmuxUp}}
-    <div class="screen-frame">
-      <div class="screen-bar"><i class="screen-dot"></i>{{.Session}} · live session</div>
-      <iframe class="screen-iframe" data-src="/p/{{.ID}}/terminal/"></iframe>
+<!-- Main work area: the tab set on the left/top, the collapsible Claude terminal
+     dock on the right. The dock keeps its own PTY iframe independent of which tab
+     is active, so you can view the terminal alongside the editor or collapse it. -->
+<div class="project-layout" id="project-layout">
+  <div class="tab-area">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="files">Files</button>
+      <button class="tab-btn" data-tab="diff">Diff</button>
+      <button class="tab-btn" data-tab="container">Container</button>
+      <button class="tab-btn" data-tab="mitm">Mitm Proxy</button>
+      <button class="tab-btn" data-tab="firewall">Firewall Log</button>
+      <button class="tab-btn" data-tab="config">Config</button>
     </div>
-  {{else}}
-    <p class="empty">No tmux dev session for this project — start it with <code>sandclaude dev</code>.</p>
-  {{end}}
-</div>
 
-<div class="tab-panel" id="tab-mitm" style="display:none">
-  {{if .MitmUp}}
-    {{/* mitmweb's SPA can't be embedded (absolute asset paths, no base-path, IP-only
-         Host guard). Instead we render its /flows JSON as a native table, fetched
-         server-side through /p/<id>/mitm/flows. */}}
-    <div class="mitm-toolbar">
-      <input id="mitm-filter" type="text" placeholder="filter: host, path, method, status…" autocomplete="off" spellcheck="false">
-      <span id="mitm-status" class="muted">loading flows…</span>
+    <div class="tab-panel" id="tab-files">
+      <div id="files-root" class="files-root"><p class="muted">loading files…</p></div>
     </div>
-    <div id="mitm-flows"></div>
-  {{else}}
-    <p class="empty">Credential proxy isn't running for this project.</p>
-  {{end}}
-</div>
 
-<div class="tab-panel" id="tab-firewall" style="display:none">
-  <div class="screen-frame">
-    <div class="screen-bar"><i class="screen-dot"></i>allowlist proxy · live log</div>
-    <pre id="firewall-log" class="screen-body"></pre>
+    <div class="tab-panel" id="tab-diff" style="display:none">
+      <div id="diff-root" class="diff-root"><p class="muted">loading changes…</p></div>
+    </div>
+
+    <div class="tab-panel" id="tab-container" style="display:none">
+      {{if .ContainerUp}}
+        <div class="screen-frame">
+          <div class="screen-bar"><i class="screen-dot"></i>container shell · {{.Workspace}}</div>
+          <iframe class="screen-iframe" data-src="/p/{{.ID}}/container/"></iframe>
+        </div>
+      {{else}}
+        <p class="empty">The container isn't running — start it with <code>sandclaude start</code>.</p>
+      {{end}}
+    </div>
+
+    <div class="tab-panel" id="tab-mitm" style="display:none">
+      {{if .MitmUp}}
+        <div class="mitm-toolbar">
+          <input id="mitm-filter" type="text" placeholder="filter: host, path, method, status…" autocomplete="off" spellcheck="false">
+          <span id="mitm-status" class="muted">loading flows…</span>
+        </div>
+        <div id="mitm-flows"></div>
+      {{else}}
+        <p class="empty">Credential proxy isn't running for this project.</p>
+      {{end}}
+    </div>
+
+    <div class="tab-panel" id="tab-firewall" style="display:none">
+      <div class="screen-frame">
+        <div class="screen-bar"><i class="screen-dot"></i>allowlist proxy · live log</div>
+        <pre id="firewall-log" class="screen-body"></pre>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="tab-config" style="display:none">
+      <div id="config-root"><p class="muted">loading config…</p></div>
+    </div>
   </div>
+
+  <!-- Detachable Claude terminal dock. Collapsible via #dock-toggle; its iframe
+       src is set lazily so no PTY spawns until the dock is first shown. -->
+  <aside class="term-dock" id="term-dock">
+    {{if .TmuxUp}}
+      <div class="screen-frame">
+        <div class="screen-bar"><i class="screen-dot"></i>{{.Session}} · Claude</div>
+        <iframe class="screen-iframe" id="dock-iframe" data-src="/p/{{.ID}}/terminal/"></iframe>
+      </div>
+    {{else}}
+      <p class="empty">No tmux dev session — start it with <code>sandclaude dev</code>.</p>
+    {{end}}
+  </aside>
 </div>
 
-<div class="tab-panel" id="tab-config" style="display:none">
-  <div id="config-root"><p class="muted">loading config…</p></div>
-</div>
-
+<script src="/static/codemirror.bundle.js"></script>
+<script src="/static/files.js"></script>
+<script src="/static/diff.js"></script>
 <script src="/static/mitm.js"></script>
 <script src="/static/config.js"></script>
 <script src="/static/dashboard.js"></script>

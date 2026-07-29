@@ -479,3 +479,75 @@ table.projects th, table.projects td {
 }
 
 @media (prefers-reduced-motion: reduce) { .screen-dot { animation: none; } }
+
+/* ==========================================================================
+   Project page: tab area + detachable Claude terminal dock
+   ========================================================================== */
+.dock-toggle {
+  margin-left: auto; background: var(--con-panel-hi); color: var(--con-text);
+  border: 1px solid var(--con-line); border-radius: 6px; padding: 0.3rem 0.6rem;
+  font-size: 0.8rem; cursor: pointer;
+}
+.dock-toggle.on { border-color: var(--con-working); color: var(--con-working); }
+
+.project-layout { display: flex; gap: 0; height: calc(100vh - 64px); }
+.tab-area { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.term-dock {
+  flex: 0 0 42%; min-width: 320px; max-width: 60%;
+  border-left: 1px solid var(--con-line); overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.project-layout.dock-collapsed .term-dock { display: none; }
+.term-dock .screen-frame, .term-dock .screen-iframe { height: 100%; }
+
+/* Files tab: tree | editor */
+.files-root { display: flex; height: 100%; min-height: 0; }
+.files-tree {
+  flex: 0 0 240px; overflow: auto; border-right: 1px solid var(--con-line);
+  padding: 0.5rem; font-family: ui-monospace, Menlo, monospace; font-size: 0.82rem;
+}
+.files-tree ul { list-style: none; margin: 0; padding-left: 0.8rem; }
+.files-tree > ul { padding-left: 0; }
+.ftree-label { cursor: pointer; display: inline-block; padding: 1px 3px; border-radius: 3px; color: var(--con-text); }
+.ftree-label:hover { background: var(--con-panel-hi); }
+.ftree-dir > .ftree-label { color: var(--con-waiting); }
+
+.files-editor { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.files-editor-bar {
+  display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--con-line); font-size: 0.8rem;
+}
+.files-editor-bar button {
+  margin-left: auto; background: var(--con-working); color: #04120b; border: none;
+  border-radius: 5px; padding: 0.3rem 0.8rem; font-weight: 600; cursor: pointer;
+}
+.files-editor-bar button:disabled { opacity: 0.4; cursor: default; }
+.files-cm { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.files-cm .cm-editor { height: 100%; }
+
+/* Diff tab: changed-file list | unified diff */
+.diff-root { display: flex; height: 100%; min-height: 0; }
+.diff-list { flex: 0 0 280px; overflow: auto; border-right: 1px solid var(--con-line); padding: 0.4rem; }
+.diff-file {
+  display: flex; align-items: baseline; gap: 0.5rem; padding: 0.35rem 0.5rem;
+  border-radius: 5px; cursor: pointer; font-size: 0.82rem;
+}
+.diff-file:hover { background: var(--con-panel-hi); }
+.diff-file.active { background: var(--con-panel-hi); outline: 1px solid var(--con-line); }
+.d-status { flex: none; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--con-muted); }
+.d-path { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, monospace; }
+.d-stat { flex: none; font-family: ui-monospace, Menlo, monospace; font-size: 0.75rem; }
+.diff-view { flex: 1 1 auto; min-width: 0; overflow: auto; }
+.diff-body {
+  margin: 0; padding: 0.6rem 0.8rem; font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.8rem; line-height: 1.45; white-space: pre; overflow-x: auto;
+}
+.diff-body .d-add { color: var(--con-working); display: block; }
+.diff-body .d-del { color: #ff6b81; display: block; }
+.diff-body .d-hunk { color: #6ea8ff; display: block; }
+.diff-body .d-meta { color: var(--con-muted); display: block; }
+
+@media (max-width: 900px) {
+  .project-layout { flex-direction: column; height: auto; }
+  .term-dock { flex-basis: 320px; max-width: none; border-left: none; border-top: 1px solid var(--con-line); }
+}

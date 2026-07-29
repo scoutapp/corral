@@ -71,23 +71,32 @@ test.describe.serial('sandclaude DinD chain', () => {
     const proxyEnv =
       `HTTP_PROXY=http://172.18.0.1:3128 HTTPS_PROXY=http://172.18.0.1:3128 ` +
       `NO_PROXY=172.18.0.0/16,127.0.0.0/8,localhost`;
-    const build = await execInOuter(
-      [
-        'sh',
-        '-c',
-        `export DOCKER_HOST=${INNER_DOCKER} ${proxyEnv}; ` +
-          `/home/claude/bin/docker build ` +
-          `--build-arg HTTP_PROXY=http://172.18.0.1:3128 ` +
-          `--build-arg HTTPS_PROXY=http://172.18.0.1:3128 ` +
-          `--build-arg NO_PROXY=172.18.0.0/16,127.0.0.0/8,localhost ` +
-          `-t ${IMAGE} ${dest}`,
-      ],
-      { timeoutMs: 600_000 },
-    );
-    // Persist build output for debugging / CI artifacts.
-    await writeArtifact('inner-build.log', `${build.stdout}\n---STDERR---\n${build.stderr}`);
+    const buildCmd =
+      `export DOCKER_HOST=${INNER_DOCKER} ${proxyEnv}; ` +
+      `/home/claude/bin/docker build ` +
+      `--build-arg HTTP_PROXY=http://172.18.0.1:3128 ` +
+      `--build-arg HTTPS_PROXY=http://172.18.0.1:3128 ` +
+      `--build-arg NO_PROXY=172.18.0.0/16,127.0.0.0/8,localhost ` +
+      `-t ${IMAGE} ${dest}`;
 
-    expect(build.code, `inner docker build failed\nSTDOUT:\n${build.stdout}\nSTDERR:\n${build.stderr}`).toBe(0);
+    // Retry the build a few times. The base-image manifest pull
+    // (`FROM node:20-slim` → HEAD registry-1.docker.io) goes through the mitm
+    // proxy, and there is a startup race: the entrypoint installs the mitm CA
+    // into the inner dockerd's trust store shortly AFTER dockerd is up, so a
+    // build fired immediately can hit "x509: certificate signed by unknown
+    // authority" (or a transient registry error). A short bounded retry rides
+    // over that window without masking a real, persistent failure.
+    let build = { code: 1, stdout: '', stderr: '' } as { code: number | null; stdout: string; stderr: string };
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      build = await execInOuter(['sh', '-c', buildCmd], { timeoutMs: 600_000 });
+      await writeArtifact(`inner-build.attempt${attempt}.log`, `${build.stdout}\n---STDERR---\n${build.stderr}`);
+      if (build.code === 0) break;
+      const transient = /certificate signed by unknown authority|failed to (do request|resolve source metadata)|TLS handshake|i\/o timeout/i.test(build.stderr);
+      if (!transient) break; // a real build error — fail fast, don't spin
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+
+    expect(build.code, `inner docker build failed after retries\nSTDOUT:\n${build.stdout}\nSTDERR:\n${build.stderr}`).toBe(0);
 
     // Confirm the image now exists in the inner daemon.
     const images = await innerDocker(['images', '--format', '{{.Repository}}'], { timeoutMs: 30_000 });

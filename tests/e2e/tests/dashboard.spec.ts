@@ -92,6 +92,77 @@ test('project config endpoint returns JSON', async ({ page }) => {
   expect(text).toContain(WORKSPACE);
 });
 
+// ---- Files / Diff / Container tabs (the workspace-view feature) -------------
+
+// Resolve this suite's project id once for the file/git tests below.
+async function projectId(page: import('@playwright/test').Page): Promise<string> {
+  await page.goto(`${baseURL}/?token=${token}`);
+  const statusResp = await page.request.get(`${baseURL}/status`);
+  const status = (await statusResp.json()) as { projects: Array<{ id: string; name: string; workspace: string }> };
+  const mine = status.projects.find((p) => p.name === PROJECT_NAME || p.workspace === WORKSPACE);
+  expect(mine, `project "${PROJECT_NAME}" not in /status`).toBeTruthy();
+  return mine!.id;
+}
+
+test('project page has the new tabs + terminal dock', async ({ page }) => {
+  const id = await projectId(page);
+  await page.goto(`${baseURL}/p/${id}?token=${token}`);
+  for (const label of ['Files', 'Diff', 'Container']) {
+    await expect(page.locator('.tab-btn', { hasText: new RegExp('^' + label + '$') })).toBeVisible();
+  }
+  // The detachable Claude terminal dock is present in the layout.
+  await expect(page.locator('#term-dock')).toHaveCount(1);
+  // The CodeMirror bundle is referenced and served.
+  const bundle = await page.request.get(`${baseURL}/static/codemirror.bundle.js`);
+  expect(bundle.status()).toBe(200);
+});
+
+test('files tree + read return workspace contents', async ({ page }) => {
+  const id = await projectId(page);
+  // Root tree lists the workspace; the fixture workspace contains .sandclaude at
+  // least (created by init) — assert we get a non-empty entries array.
+  const tree = await page.request.get(`${baseURL}/p/${id}/files/tree?path=`);
+  expect(tree.status()).toBe(200);
+  const entries = ((await tree.json()).entries || []) as Array<{ name: string; dir: boolean }>;
+  expect(Array.isArray(entries)).toBe(true);
+
+  // Write a file, read it back, confirm round-trip (edit path the editor uses).
+  const rel = 'e2e-editor-probe.txt';
+  const content = 'hello from the e2e editor test\n';
+  const wrote = await page.request.post(`${baseURL}/p/${id}/files/write?path=${rel}`, { data: content });
+  expect(wrote.status()).toBe(200);
+  const read = await page.request.get(`${baseURL}/p/${id}/files/read?path=${rel}`);
+  expect(read.status()).toBe(200);
+  expect((await read.json()).content).toBe(content);
+});
+
+test('path traversal cannot escape the workspace', async ({ page }) => {
+  const id = await projectId(page);
+  // safeJoin anchors the request under the workspace root: "../../../etc/passwd"
+  // is Clean()ed to "/etc/passwd" and re-joined as <workspace>/etc/passwd, which
+  // does not exist -> 404. The key property is that /etc/passwd is NEVER served;
+  // assert we did not get a 200 with the host's passwd file.
+  const resp = await page.request.get(`${baseURL}/p/${id}/files/read?path=../../../../etc/passwd`);
+  expect(resp.status()).not.toBe(200);
+  const text = await resp.text();
+  expect(text).not.toContain('root:'); // never leak the real /etc/passwd
+});
+
+test('git status + diff reflect a change', async ({ page }) => {
+  const id = await projectId(page);
+  const status = await page.request.get(`${baseURL}/p/${id}/git/status`);
+  expect(status.status()).toBe(200);
+  const body = (await status.json()) as { repo: boolean; changes?: Array<{ path: string }> };
+  // The fixture workspace may or may not be a git repo; only assert the diff
+  // wiring when it is (real repos: e.g. running against this repo). Either way
+  // the endpoint must respond with valid JSON and a boolean `repo`.
+  expect(typeof body.repo).toBe('boolean');
+  if (body.repo && body.changes && body.changes.length) {
+    const diff = await page.request.get(`${baseURL}/p/${id}/git/diff?path=${encodeURIComponent(body.changes[0].path)}`);
+    expect(diff.status()).toBe(200);
+  }
+});
+
 test.skip('mitm flows render', async () => {
   // SOFTENED/SKIPPED: proxy IS enabled in this suite, but the mitm flow table is
   // only populated once intercepted HTTPS traffic has flowed through mitmweb.

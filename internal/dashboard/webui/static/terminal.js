@@ -5,6 +5,9 @@
 (function () {
   var id = document.body.dataset.id;
   if (!id || document.body.dataset.sessionUp !== "true") return;
+  // Which PTY endpoint to bridge to. Defaults to the tmux dev terminal; the
+  // container shell page sets data-ws-path="/container/ws" to reuse this client.
+  var wsPath = document.body.dataset.wsPath || "/terminal/ws";
 
   var term = new Terminal({
     cursorBlink: true,
@@ -21,7 +24,7 @@
   // ws(s):// mirrors the page's http(s) scheme so the terminal works whether the
   // dashboard is ever fronted by TLS or (as today) plain loopback HTTP.
   var proto = location.protocol === "https:" ? "wss:" : "ws:";
-  var ws = new WebSocket(proto + "//" + location.host + "/p/" + id + "/terminal/ws");
+  var ws = new WebSocket(proto + "//" + location.host + "/p/" + id + wsPath);
   ws.binaryType = "arraybuffer";
 
   var decoder = new TextDecoder();
