@@ -62,6 +62,10 @@ Prefer the terminal? `sandclaude dev` runs Claude in the background so you can
   your machine is as it was.
 - **You're always watching.** The live dashboard shows exactly what's happening.
 
+For the full trust model — including the deliberate trade-offs and residual risks
+(the privileged DinD container, loopback reachability, dangerous mode) — see
+[`docs/security.md`](docs/security.md).
+
 ## Commands
 
 | Command | What it does |
