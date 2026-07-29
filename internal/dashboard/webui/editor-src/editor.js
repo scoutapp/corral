@@ -42,7 +42,7 @@ import { basicSetup, EditorView } from "codemirror";
 import { EditorState, Compartment } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
 import { indentWithTab } from "@codemirror/commands";
-import { oneDark } from "@codemirror/theme-one-dark";
+import { vscodeDark } from "./vscode-dark.js";
 import { unifiedMergeView } from "@codemirror/merge";
 
 // Language packages. Each factory returns a CM6 extension.
@@ -131,7 +131,7 @@ function createEditor(opts) {
   const extensions = [
     basicSetup,
     keymap.of([indentWithTab]),
-    oneDark,
+    vscodeDark,
     languageExtension(opts.filename),
     readOnlyComp.of(EditorState.readOnly.of(!!opts.readOnly)),
   ];
@@ -187,7 +187,7 @@ function createDiff(opts) {
       doc: modified,
       extensions: [
         basicSetup,
-        oneDark,
+        vscodeDark,
         languageExtension(opts.filename),
         EditorState.readOnly.of(true),
         unifiedMergeView({ original, mergeControls: false }),
