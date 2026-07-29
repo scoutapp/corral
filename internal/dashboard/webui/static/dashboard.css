@@ -501,26 +501,49 @@ table.projects th, table.projects td {
 .term-dock .screen-frame, .term-dock .screen-iframe { height: 100%; }
 
 /* Files tab: tree | editor */
-.files-root { display: flex; height: 100%; min-height: 0; }
-.files-tree {
-  flex: 0 0 240px; overflow: auto; border-right: 1px solid var(--con-line);
-  padding: 0.5rem; font-family: ui-monospace, Menlo, monospace; font-size: 0.82rem;
+/* Files tab styled to sit flush with the VS Code "Dark Modern" editor the
+   CodeMirror bundle renders (editor bg #1e1e1e). VS Code palette, scoped here. */
+.files-root {
+  display: flex; height: 100%; min-height: 0;
+  --vsc-editor: #1e1e1e;   /* editor surface */
+  --vsc-side: #252526;     /* sidebar / tree */
+  --vsc-bar: #2d2d2d;      /* tab / breadcrumb bar */
+  --vsc-border: #3c3c3c;
+  --vsc-fg: #cccccc;
+  --vsc-fg-dim: #858585;
+  --vsc-accent: #0e639c;   /* button blue */
+  --vsc-accent-hi: #1177bb;
+  --vsc-hover: #2a2d2e;    /* list hover */
+  --vsc-active: #37373d;   /* list active/selected */
+  background: var(--vsc-editor);
 }
-.files-tree ul { list-style: none; margin: 0; padding-left: 0.8rem; }
+.files-tree {
+  flex: 0 0 260px; overflow: auto; background: var(--vsc-side);
+  border-right: 1px solid var(--vsc-border);
+  padding: 0.4rem 0.3rem; font-size: 0.82rem;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+.files-tree ul { list-style: none; margin: 0; padding-left: 0.9rem; }
 .files-tree > ul { padding-left: 0; }
-.ftree-label { cursor: pointer; display: inline-block; padding: 1px 3px; border-radius: 3px; color: var(--con-text); }
-.ftree-label:hover { background: var(--con-panel-hi); }
-.ftree-dir > .ftree-label { color: var(--con-waiting); }
+.ftree-label {
+  cursor: pointer; display: block; padding: 2px 6px; border-radius: 3px;
+  color: var(--vsc-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ftree-label:hover { background: var(--vsc-hover); }
+.ftree-file.active > .ftree-label { background: var(--vsc-active); }
+.ftree-dir > .ftree-label { color: var(--vsc-fg); }
 
-.files-editor { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.files-editor { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; background: var(--vsc-editor); }
 .files-editor-bar {
-  display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 0.6rem;
-  border-bottom: 1px solid var(--con-line); font-size: 0.8rem;
+  display: flex; align-items: center; gap: 0.75rem; padding: 0.35rem 0.7rem;
+  background: var(--vsc-bar); border-bottom: 1px solid var(--vsc-border);
+  font-size: 0.8rem; color: var(--vsc-fg);
 }
 .files-editor-bar button {
-  margin-left: auto; background: var(--con-working); color: #04120b; border: none;
-  border-radius: 5px; padding: 0.3rem 0.8rem; font-weight: 600; cursor: pointer;
+  margin-left: auto; background: var(--vsc-accent); color: #fff; border: none;
+  border-radius: 3px; padding: 0.3rem 0.9rem; font-weight: 600; cursor: pointer;
 }
+.files-editor-bar button:hover:not(:disabled) { background: var(--vsc-accent-hi); }
 .files-editor-bar button:disabled { opacity: 0.4; cursor: default; }
 .files-cm { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .files-cm .cm-editor { height: 100%; }
