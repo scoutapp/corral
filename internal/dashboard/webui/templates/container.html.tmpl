@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>container shell</title>
+<link rel="stylesheet" href="/static/xterm.css">
+<style>
+  html, body { margin: 0; height: 100%; background: #0B0E14; }
+  #term { position: absolute; inset: 0; padding: 4px; }
+  #msg {
+    color: #e6edf3; font-family: ui-monospace, Menlo, monospace;
+    padding: 1rem; font-size: 13px; line-height: 1.5;
+  }
+  #msg code { background: #222; padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body data-id="{{.ID}}" data-session-up="{{.ContainerUp}}" data-ws-path="/container/ws">
+{{if .ContainerUp}}
+  <div id="term"></div>
+  <script src="/static/xterm.js"></script>
+  <script src="/static/xterm-addon-fit.js"></script>
+  <script src="/static/terminal.js"></script>
+{{else}}
+  <div id="msg">
+    The container isn't running for this project.<br><br>
+    Start it with <code>sandclaude start</code>, then reopen this tab.
+  </div>
+{{end}}
+</body>
+</html>
