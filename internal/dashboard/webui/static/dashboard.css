@@ -612,3 +612,25 @@ table.projects th, table.projects td {
   .project-layout { flex-direction: column; height: auto; }
   .term-dock { flex-basis: 320px; max-width: none; border-left: none; border-top: 1px solid var(--con-line); }
 }
+
+/* Host-terminal overlay — slides up from the bottom (VS Code integrated terminal). */
+.host-overlay {
+  position: fixed; left: 0; right: 0; bottom: 0; height: 300px; z-index: 40;
+  display: flex; flex-direction: column;
+  background: #1e1e1e; border-top: 1px solid #3c3c3c;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45);
+}
+.host-overlay[hidden] { display: none; }
+.host-overlay-handle { height: 5px; cursor: ns-resize; background: transparent; flex: none; }
+.host-overlay-handle:hover { background: var(--con-working); }
+.host-overlay-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.25rem 0.7rem; background: #2d2d2d; border-bottom: 1px solid #3c3c3c;
+  font-size: 0.75rem; color: #cccccc; flex: none;
+}
+.host-overlay-bar button {
+  background: transparent; border: none; color: #cccccc; cursor: pointer;
+  font-size: 0.85rem; padding: 0 0.3rem; border-radius: 3px;
+}
+.host-overlay-bar button:hover { background: rgba(255,255,255,0.1); }
+.host-overlay-iframe { flex: 1 1 auto; width: 100%; border: none; background: #1e1e1e; }

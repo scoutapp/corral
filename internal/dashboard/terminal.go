@@ -145,6 +145,45 @@ func (d *dashboardServer) handleContainerWS(w http.ResponseWriter, r *http.Reque
 	d.bridgePTY(w, r, cmd)
 }
 
+// handleHostWS bridges a browser terminal to a real shell on the HOST (the
+// machine running the dashboard), started in the project's workspace directory.
+// This is the VS Code-style "integrated terminal" — unlike the container shell,
+// it is NOT sandboxed; it runs with the operator's full privileges. That's
+// acceptable because the dashboard is loopback-only and token-gated (the same
+// gate that guards the container shell), and the operator is the machine owner.
+func (d *dashboardServer) handleHostWS(w http.ResponseWriter, r *http.Request, id string) {
+	workspace, err := lookupWorkspaceByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/bash"
+	}
+	// -l: a login shell so the user's normal PATH/aliases/env are present.
+	cmd := exec.Command(shell, "-l")
+	if _, serr := os.Stat(workspace); serr == nil {
+		cmd.Dir = workspace // land in the project on the host
+	}
+	d.bridgePTY(w, r, cmd)
+}
+
+// handleHostPage serves the xterm host page for the host-terminal overlay.
+func (d *dashboardServer) handleHostPage(w http.ResponseWriter, r *http.Request, id string) {
+	if _, err := lookupWorkspaceByID(id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	data := struct {
+		ID string
+	}{ID: id}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := dashboardTemplates.ExecuteTemplate(w, "host.html.tmpl", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
 // handleSessionWS bridges a browser terminal to a named tmux session directly
 // (not a project's dev session) — used for the interactive `populate-proxy-
 // credentials` flow the dashboard spawns into its own tmux session.
