@@ -15,7 +15,7 @@ This is a sandboxed environment for running Claude Code in "dangerous mode" (no 
 - Claude can execute commands without asking (dangerous mode)
 - Network firewall restricts what external services Claude can reach
 - Interactive approval system for adding new domains
-- Credentials mounted read-only, never exposed in container
+- Real credentials never enter the container — injected by the host proxy
 
 ## Environment Details
 
@@ -27,7 +27,7 @@ This is a sandboxed environment for running Claude Code in "dangerous mode" (no 
 - **Tool**: Go allowlist-proxy (HTTP CONNECT proxy) + iptables egress enforcement
 - **Config**: `/home/claude/allowed-domains.txt.enc` (AES-256-GCM encrypted, bind-mounted from host)
 - **Logging**: `/home/claude/logs/proxy.log` (ALLOWED/BLOCKED entries per request)
-- **Hot-reload**: Send SIGHUP to allowlist-proxy or run `sandclaude reload-firewall` from host
+- **Hot-reload**: Send SIGHUP to allowlist-proxy or run `sandclaude firewall-reload` from host
 
 ## Pre-approved Domains
 
@@ -78,7 +78,7 @@ When Claude Code needs to access a blocked domain, edit the allowlist and reload
 # Edit the plaintext allowlist
 vim allowlist-proxy/allowed-domains.txt
 # Encrypt and SIGHUP the proxy
-./sandclaude reload-firewall [project]
+./sandclaude firewall-reload [project]
 ```
 
 **Method 2: Restart the container**
@@ -86,7 +86,7 @@ vim allowlist-proxy/allowed-domains.txt
 # Edit the plaintext allowlist
 vim allowlist-proxy/allowed-domains.txt
 # Re-encrypt
-./sandclaude reload-firewall
+./sandclaude firewall-reload
 # Restart
 ./sandclaude start [project]
 ```
@@ -110,7 +110,7 @@ tail -f ~/logs/proxy.log
 4. All traffic must flow through the proxy; ALLOWED/BLOCKED logged to `~/logs/proxy.log` (transparent entries are tagged `(transparent)`)
 
 **Hot-reload:**
-- Write new `.enc` file to host (via `sandclaude reload-firewall`)
+- Write new `.enc` file to host (via `sandclaude firewall-reload`)
 - Bind mount means container sees it immediately
 - SIGHUP to allowlist-proxy atomically swaps the in-memory domain set
 
@@ -333,7 +333,7 @@ Copy files to your project using the built-in command:
 
 **Important:** If Claude attempts to access a site blocked by the proxy, Claude should:
 1. Add the domain to `/home/claude/allowed-domains.txt` — this file is always bind-mounted from `allowlist-proxy/allowed-domains.txt` on the host (read-write), so edits are immediately visible to the host
-2. Notify the user to run `sandclaude reload-firewall` from the host to encrypt the updated file and SIGHUP the proxy
+2. Notify the user to run `sandclaude firewall-reload` from the host to encrypt the updated file and SIGHUP the proxy
 3. Retry the request once the user confirms the reload is done
 
 In passthrough mode (`--passthrough-firewall-and-write`), unknown domains are appended to `/home/claude/allowed-domains.txt` automatically — no manual editing needed.
@@ -342,7 +342,7 @@ In passthrough mode (`--passthrough-firewall-and-write`), unknown domains are ap
 
 **Symptom:** `curl: (7) Failed to connect` or HTTP 403 from proxy
 - **Cause:** Domain not in allowlist
-- **Fix:** Restart with `sandclaude start --passthrough-firewall-and-write` to auto-log needed domains, then `sandclaude reload-firewall` to lock it back down
+- **Fix:** Restart with `sandclaude start --passthrough-firewall-and-write` to auto-log needed domains, then `sandclaude firewall-reload` to lock it back down
 
 **Symptom:** DNS resolution fails
 - **Cause:** Firewall blocks DNS or Docker DNS broken
@@ -350,7 +350,7 @@ In passthrough mode (`--passthrough-firewall-and-write`), unknown domains are ap
 
 **Symptom:** Proxy fails to start — "decrypt allowlist" error
 - **Cause:** Wrong `ALLOWLIST_KEY` or corrupted `.enc` file
-- **Fix:** Re-run `sandclaude reload-firewall` with the correct `ALLOWLIST_KEY`
+- **Fix:** Re-run `sandclaude firewall-reload` with the correct `ALLOWLIST_KEY`
 
 **Symptom:** Firewall not enforced (processes bypass proxy)
 - **Cause:** Container missing `NET_ADMIN` capability
