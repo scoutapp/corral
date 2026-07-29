@@ -523,15 +523,25 @@ table.projects th, table.projects td {
   padding: 0.4rem 0.3rem; font-size: 0.82rem;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 }
-.files-tree ul { list-style: none; margin: 0; padding-left: 0.9rem; }
+/* Nested lists with a left guide line per level (VS Code's tree indent guides). */
+.files-tree ul { list-style: none; margin: 0; padding-left: 0.75rem; }
 .files-tree > ul { padding-left: 0; }
+.files-tree li > div > ul { border-left: 1px solid var(--vsc-border); margin-left: 0.35rem; }
 .ftree-label {
-  cursor: pointer; display: block; padding: 2px 6px; border-radius: 3px;
-  color: var(--vsc-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  cursor: pointer; display: flex; align-items: center; gap: 0.4rem;
+  padding: 2px 6px; border-radius: 3px; color: var(--vsc-fg);
 }
+.ftree-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ftree-label:hover { background: var(--vsc-hover); }
 .ftree-file.active > .ftree-label { background: var(--vsc-active); }
-.ftree-dir > .ftree-label { color: var(--vsc-fg); }
+
+/* Icons: a small fixed-width monogram. Directory chevron rotates on expand. */
+.ficon {
+  flex: none; width: 1.35em; text-align: center; font-size: 0.72rem;
+  font-weight: 700; font-family: ui-monospace, Menlo, monospace;
+}
+.ficon-dir { color: var(--vsc-fg-dim); font-weight: 400; transition: transform 0.12s ease; }
+.ftree-dir:not(.collapsed) > .ftree-label > .ficon-dir { transform: rotate(90deg); }
 
 .files-editor { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; background: var(--vsc-editor); }
 .files-editor-bar {
