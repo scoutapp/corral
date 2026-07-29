@@ -35,13 +35,20 @@ treat "Claude has the outer container" as a meaningful capability, not an
 airtight jail. DinD is the reason; running with `--disable-dind` avoids the
 privileged flag.
 
-### 2. GitHub token is reachable from inside the container *(being fixed)*
-Today the real GitHub token is passed into the container as `GH_TOKEN`, so Claude
-can read it directly (`echo $GH_TOKEN`, `gh auth token`) — this bypasses the
-credential-proxy protection that applies to the Anthropic token. A change in
-flight replaces it with a **dummy** `GH_TOKEN` + a `gh` wrapper that blocks the
-token-revealing commands, so real GitHub auth happens only at the proxy. Until
-that lands, assume any GitHub token you authenticate with is visible to Claude.
+### 2. GitHub token, unlike the Anthropic token, is currently the real token
+The Anthropic token is handled well: in proxy mode Claude gets a **dummy**
+`CLAUDE_CODE_OAUTH_TOKEN` and the proxy injects the real one, so Claude never sees
+it. **GitHub is not (yet) handled the same way.** On the current codebase the real
+host GitHub token (`gh auth token`) is passed into the container as `GH_TOKEN`
+**unconditionally — including in proxy mode** — so Claude can read it directly
+(`echo $GH_TOKEN`, `gh auth token`). This is the one credential the proxy does not
+shield today.
+
+A separate change (open PR) brings GitHub in line with Anthropic: inject a
+**dummy** `GH_TOKEN` (so `gh`/`git` still work without prompting) while the real
+token is injected only at the proxy, plus a `gh` wrapper that blocks the
+token-revealing commands. Until that merges, assume any GitHub token you
+authenticate with is visible to Claude.
 
 ### 3. Loopback services are reachable from the container → the token is the guard
 The container reaches the host over `host.docker.internal` (mapped to the host
