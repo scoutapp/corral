@@ -136,13 +136,20 @@ type ProxyRuntimeState struct {
 	StartedAt string `json:"started_at"`
 }
 
-func ProxyRuntimeStatePath() string {
-	return filepath.Join(config.GetProjectDir(), "runtime.json")
+// ProxyRuntimeStatePathFor returns the runtime-state file path for a given
+// workspace. Both the write path (WriteProxyRuntimeState) and the read path
+// (readProxyRuntimeStateFor) derive from projectDirForWorkspace(workspace) so
+// they are guaranteed symmetric even when the writing process's cwd differs
+// from the workspace (e.g. `sandclaude start` run from another directory).
+func ProxyRuntimeStatePathFor(workspace string) string {
+	return filepath.Join(projectDirForWorkspace(workspace), "runtime.json")
 }
 
-// WriteProxyRuntimeState is called from startProxy() (cwd == project workspace,
-// same assumption config.GetLogsDir() already makes).
-func WriteProxyRuntimeState(webPort int, pid int) error {
+// WriteProxyRuntimeState is called from startProxy() with the project's
+// workspace path. It writes to the workspace's project dir (NOT cwd) so the
+// dashboard, which reads the same workspace-derived path, always sees fresh
+// state regardless of the writer's working directory.
+func WriteProxyRuntimeState(workspace string, webPort int, pid int) error {
 	state := ProxyRuntimeState{
 		ProxyPort: 0, // filled in by caller if ever needed; not used by the dashboard today
 		WebPort:   webPort,
@@ -153,17 +160,27 @@ func WriteProxyRuntimeState(webPort int, pid int) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(config.GetProjectDir(), 0700); err != nil {
+	if err := os.MkdirAll(projectDirForWorkspace(workspace), 0700); err != nil {
 		return err
 	}
-	return os.WriteFile(ProxyRuntimeStatePath(), data, 0600)
+	return os.WriteFile(ProxyRuntimeStatePathFor(workspace), data, 0600)
+}
+
+// RemoveProxyRuntimeState deletes a workspace's runtime-state file. Used by
+// stopProxy so cleanup targets the same workspace-derived path that was
+// written, not a cwd-relative one. A missing file is not an error.
+func RemoveProxyRuntimeState(workspace string) error {
+	if err := os.Remove(ProxyRuntimeStatePathFor(workspace)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 // readProxyRuntimeStateFor reads another project's runtime state by workspace path.
 // Returns (nil, nil) if the file doesn't exist (proxy never started, or already
 // cleaned up) rather than an error — absence is a normal, expected state here.
 func readProxyRuntimeStateFor(workspace string) (*ProxyRuntimeState, error) {
-	path := filepath.Join(projectDirForWorkspace(workspace), "runtime.json")
+	path := ProxyRuntimeStatePathFor(workspace)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -176,6 +193,29 @@ func readProxyRuntimeStateFor(workspace string) (*ProxyRuntimeState, error) {
 		return nil, err
 	}
 	return &state, nil
+}
+
+// mitmwebResponding is a lightweight liveness probe for a recorded mitmweb web
+// port: it GETs mitmweb's /flows API with a short timeout and returns true only
+// on a 2xx response. Used as a safety net alongside session.PidAlive so a
+// stale/reused port (e.g. an old runtime.json whose pid happens to be alive
+// again, or a port now owned by an unrelated process) is treated as "not
+// running." mitmweb rejects any Host header that isn't a bare loopback IP (its
+// DNS-rebinding guard), so req.Host must be set explicitly here too.
+func mitmwebResponding(webPort int) bool {
+	upstream := fmt.Sprintf("http://127.0.0.1:%d/flows", webPort)
+	req, err := http.NewRequest(http.MethodGet, upstream, nil)
+	if err != nil {
+		return false
+	}
+	req.Host = fmt.Sprintf("127.0.0.1:%d", webPort)
+	client := &http.Client{Timeout: 1 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode >= 200 && resp.StatusCode < 300
 }
 
 // ----------------------------------------------------------------------------
@@ -591,7 +631,7 @@ func (d *dashboardServer) handleMitmFlows(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if state == nil || !session.PidAlive(state.Pid) {
+	if state == nil || !session.PidAlive(state.Pid) || !mitmwebResponding(state.WebPort) {
 		http.Error(w, "credential proxy is not running for this project", http.StatusBadGateway)
 		return
 	}
@@ -628,7 +668,7 @@ func (d *dashboardServer) handleMitmContent(w http.ResponseWriter, r *http.Reque
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if state == nil || !session.PidAlive(state.Pid) {
+	if state == nil || !session.PidAlive(state.Pid) || !mitmwebResponding(state.WebPort) {
 		http.Error(w, "credential proxy is not running for this project", http.StatusBadGateway)
 		return
 	}
