@@ -154,7 +154,7 @@ COPY --chown=claude:claude skills/ /home/claude/.claude/skills/
 COPY --chown=claude:claude setup/ /home/claude/bin/
 COPY --chown=claude:claude dind/ /home/claude/bin/
 RUN chmod +x /home/claude/launcher.py /home/claude/entrypoint.sh \
-    /home/claude/bin/cert-injector /home/claude/bin/docker
+    /home/claude/bin/*
 
 # Put ~/bin first in PATH so the `docker` wrapper (CA injection for builds)
 # shadows /usr/bin/docker. The wrapper calls the real binary at /usr/bin/docker.

@@ -123,25 +123,25 @@ tail -f ~/logs/proxy.log
 
 **Rule: Credentials NEVER enter the container filesystem in readable form.**
 
-The `sandclaude` wrapper mounts:
-- `~/.claude` → `/home/claude/.claude` (Claude credentials)
-- `~/.claude.json` → `/home/claude/.claude.json` (session state)
-- `~/.config/gh` → `/home/claude/.config/gh:ro` (GitHub CLI, read-only)
-- `$GH_TOKEN` environment variable (if `gh auth token` succeeds)
+Real credentials are held on the HOST and injected by the credential proxy — they
+never enter the container. Inside the container you only ever have dummy tokens:
+- Claude's `CLAUDE_CODE_OAUTH_TOKEN` is a dummy; the proxy injects the real one.
+- `GH_TOKEN` is a dummy so `gh`/`git` don't prompt for login; the proxy injects the
+  real GitHub token into `api.github.com` requests. `gh auth token` and
+  `gh auth status --show-token` are disabled by an in-container `gh` wrapper.
 
-All credential mounts are handled by the Docker runtime. They exist in the container but are never copied, logged, or written elsewhere.
+There is no readable GitHub or Claude credential file in the container. Running
+`gh auth token` or `echo $GH_TOKEN` will not reveal a real secret — don't try.
 
 **Never ask Claude to:**
-- Read credential files directly
-- Echo or display tokens
-- Copy credentials to other locations
-- Commit credentials to git
-- Send credentials over network
+- Read credential files or echo/display tokens
+- Copy credentials elsewhere, commit them, or send them over the network
 
 If Claude needs authenticated access:
-- GitHub: Use `gh` CLI (already authenticated via mount)
-- npm: Use `npm login` interactively (persists to mounted `~/.claude` if needed)
-- Other services: Mount credentials read-only or use env vars
+- GitHub: just use `gh` / `git` normally — the proxy injects the real token into
+  `api.github.com` requests. You never need (and cannot read) the raw token.
+- Other services: their credentials are injected by the proxy too when configured
+  via `sandclaude set-cred` / `populate-proxy-credentials`.
 
 ## Docker-in-Docker (DinD)
 
