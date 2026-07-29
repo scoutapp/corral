@@ -8,7 +8,17 @@
     if (!root) return;
 
     root.innerHTML =
-      '<div class="files-tree" id="files-tree"></div>' +
+      '<div class="files-side">' +
+      '  <div class="files-search">' +
+      '    <input id="files-q" type="text" placeholder="search files…" autocomplete="off" spellcheck="false">' +
+      '    <div class="files-search-mode">' +
+      '      <button id="mode-name" class="active" type="button" title="Find files by name">name</button>' +
+      '      <button id="mode-grep" type="button" title="Search file contents (grep)">grep</button>' +
+      '    </div>' +
+      '  </div>' +
+      '  <div class="files-tree" id="files-tree"></div>' +
+      '  <div class="files-results" id="files-results" style="display:none"></div>' +
+      '</div>' +
       '<div class="files-editor">' +
       '  <div class="files-editor-bar">' +
       '    <span id="files-current" class="muted">select a file</span>' +
@@ -17,6 +27,10 @@
       '  <div id="files-cm" class="files-cm"></div>' +
       "</div>";
 
+    var qEl = document.getElementById("files-q");
+    var modeNameBtn = document.getElementById("mode-name");
+    var modeGrepBtn = document.getElementById("mode-grep");
+    var resultsEl = document.getElementById("files-results");
     var treeEl = document.getElementById("files-tree");
     var currentEl = document.getElementById("files-current");
     var saveBtn = document.getElementById("files-save");
@@ -115,7 +129,9 @@
       if (node) node.classList.add("active");
     }
 
-    function openFile(rel) {
+    // openFile(rel[, line]) — open a file; if line (1-based) is given, scroll to
+    // and select that line (used by grep results to jump to the match).
+    function openFile(rel, line) {
       if (dirty && !window.confirm("Discard unsaved changes to " + openPath + "?")) return;
       markActive(rel);
       fetch(api("/files/read?path=" + encodeURIComponent(rel)), { credentials: "same-origin" })
@@ -137,8 +153,24 @@
             onChange: function () { if (!dirty) setDirty(true); },
           });
           setDirty(false);
+          if (line && editor.view) revealLine(editor.view, line);
         })
         .catch(function (err) { cmHost.innerHTML = '<p class="attention" style="padding:1rem">read error: ' + esc(err.message) + "</p>"; });
+    }
+
+    // Scroll a CodeMirror view to a 1-based line and put the cursor there.
+    function revealLine(view, line) {
+      try {
+        var info = view.state.doc.line(Math.max(1, Math.min(line, view.state.doc.lines)));
+        view.dispatch({
+          selection: { anchor: info.from },
+          effects: window.SandclaudeEditor.scrollToLineEffect
+            ? window.SandclaudeEditor.scrollToLineEffect(info.from)
+            : undefined,
+          scrollIntoView: true,
+        });
+        view.focus();
+      } catch (e) { /* best-effort */ }
     }
 
     function save() {
@@ -156,6 +188,81 @@
     // Ctrl/Cmd-S saves when the editor has focus.
     cmHost.addEventListener("keydown", function (e) {
       if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S")) { e.preventDefault(); if (dirty) save(); }
+    });
+
+    // ---- Search: filename find | content grep ------------------------------
+    var mode = "name"; // or "grep"
+    var searchTimer = null;
+
+    function showTree(show) {
+      treeEl.style.display = show ? "" : "none";
+      resultsEl.style.display = show ? "none" : "";
+    }
+    function setMode(m) {
+      mode = m;
+      modeNameBtn.classList.toggle("active", m === "name");
+      modeGrepBtn.classList.toggle("active", m === "grep");
+      qEl.placeholder = m === "grep" ? "search file contents…" : "search files…";
+      runSearch();
+    }
+    modeNameBtn.addEventListener("click", function () { setMode("name"); qEl.focus(); });
+    modeGrepBtn.addEventListener("click", function () { setMode("grep"); qEl.focus(); });
+
+    function runSearch() {
+      var q = qEl.value.trim();
+      if (!q) { showTree(true); resultsEl.innerHTML = ""; return; }
+      showTree(false);
+      resultsEl.innerHTML = '<p class="muted" style="padding:0.5rem">searching…</p>';
+      var url = mode === "grep"
+        ? api("/files/grep?q=" + encodeURIComponent(q))
+        : api("/files/find?q=" + encodeURIComponent(q));
+      fetch(url, { credentials: "same-origin" })
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        .then(function (data) { mode === "grep" ? renderGrep(data) : renderFind(data); })
+        .catch(function (err) { resultsEl.innerHTML = '<p class="attention" style="padding:0.5rem">search error: ' + esc(err.message) + "</p>"; });
+    }
+
+    function renderFind(data) {
+      var matches = data.matches || [];
+      if (!matches.length) { resultsEl.innerHTML = '<p class="muted" style="padding:0.5rem">no matching files</p>'; return; }
+      resultsEl.innerHTML = "";
+      matches.forEach(function (rel) {
+        var base = rel.split("/").pop();
+        var row = document.createElement("div");
+        row.className = "sresult";
+        row.innerHTML = fileIcon(base) + '<span class="sresult-path">' + esc(rel) + "</span>";
+        row.addEventListener("click", function () { openFile(rel); });
+        resultsEl.appendChild(row);
+      });
+      if (data.truncated) resultsEl.appendChild(truncNote());
+    }
+
+    function renderGrep(data) {
+      var hits = data.hits || [];
+      if (!hits.length) { resultsEl.innerHTML = '<p class="muted" style="padding:0.5rem">no matches</p>'; return; }
+      resultsEl.innerHTML = "";
+      hits.forEach(function (h) {
+        var row = document.createElement("div");
+        row.className = "sresult sresult-grep";
+        row.innerHTML =
+          '<div class="sresult-loc">' + esc(h.path) + '<span class="sresult-ln">:' + h.line + "</span></div>" +
+          '<div class="sresult-text">' + esc(h.text) + "</div>";
+        row.addEventListener("click", function () { openFile(h.path, h.line); });
+        resultsEl.appendChild(row);
+      });
+      if (data.truncated) resultsEl.appendChild(truncNote());
+    }
+
+    function truncNote() {
+      var p = document.createElement("p");
+      p.className = "muted"; p.style.padding = "0.5rem";
+      p.textContent = "…results truncated — narrow your search";
+      return p;
+    }
+
+    qEl.addEventListener("input", function () {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(runSearch, 220); // debounce
     });
 
     renderDir(treeEl, ""); // workspace root

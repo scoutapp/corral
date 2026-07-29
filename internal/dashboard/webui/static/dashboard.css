@@ -517,12 +517,40 @@ table.projects th, table.projects td {
   --vsc-active: #37373d;   /* list active/selected */
   background: var(--vsc-editor);
 }
-.files-tree {
-  flex: 0 0 260px; overflow: auto; background: var(--vsc-side);
-  border-right: 1px solid var(--vsc-border);
-  padding: 0.4rem 0.3rem; font-size: 0.82rem;
+/* Left column: search bar on top, then the tree OR the results list. */
+.files-side {
+  flex: 0 0 280px; min-width: 200px; display: flex; flex-direction: column;
+  background: var(--vsc-side); border-right: 1px solid var(--vsc-border);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 }
+.files-search { padding: 0.4rem; border-bottom: 1px solid var(--vsc-border); }
+.files-search input {
+  width: 100%; box-sizing: border-box; background: var(--vsc-editor);
+  border: 1px solid var(--vsc-border); border-radius: 3px; color: var(--vsc-fg);
+  padding: 0.3rem 0.5rem; font-size: 0.8rem;
+}
+.files-search input:focus { outline: none; border-color: var(--vsc-accent-hi); }
+.files-search-mode { display: flex; gap: 0.3rem; margin-top: 0.35rem; }
+.files-search-mode button {
+  flex: 1; background: transparent; border: 1px solid var(--vsc-border);
+  color: var(--vsc-fg-dim); border-radius: 3px; padding: 0.2rem 0; font-size: 0.72rem;
+  cursor: pointer; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.files-search-mode button.active { background: var(--vsc-accent); color: #fff; border-color: var(--vsc-accent); }
+
+.files-tree, .files-results {
+  flex: 1 1 auto; overflow: auto; padding: 0.4rem 0.3rem; font-size: 0.82rem;
+}
+.sresult {
+  display: flex; align-items: center; gap: 0.4rem; padding: 3px 6px;
+  border-radius: 3px; cursor: pointer; color: var(--vsc-fg);
+}
+.sresult:hover { background: var(--vsc-hover); }
+.sresult-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sresult-grep { flex-direction: column; align-items: stretch; gap: 1px; }
+.sresult-loc { font-size: 0.74rem; color: var(--vsc-fg-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sresult-ln { color: var(--vsc-accent-hi); }
+.sresult-text { font-family: ui-monospace, Menlo, monospace; font-size: 0.76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Nested lists with a left guide line per level (VS Code's tree indent guides). */
 .files-tree ul { list-style: none; margin: 0; padding-left: 0.75rem; }
 .files-tree > ul { padding-left: 0; }

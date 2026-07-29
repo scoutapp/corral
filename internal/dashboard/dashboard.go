@@ -445,6 +445,10 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleFilesRead(w, r, id)
 	case sub == "files/write":
 		d.handleFilesWrite(w, r, id)
+	case sub == "files/find":
+		d.handleFilesFind(w, r, id)
+	case sub == "files/grep":
+		d.handleFilesGrep(w, r, id)
 	case sub == "git/status":
 		d.handleGitStatus(w, r, id)
 	case sub == "git/diff":
