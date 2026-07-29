@@ -28,9 +28,25 @@ Here's what that boundary does and doesn't cover.
    per-launch token is what prevents access — treat the dashboard URL as a secret.
 3. **Dashboard grants shells + writes.** It can open a container shell, a *host*
    shell, and edit workspace files — gated only by loopback + token.
-4. **Passthrough / `--disable-firewall`** turn off egress containment (for
+4. **"Ask Claude" chat panel is NOT sandboxed.** The dashboard chat panel runs
+   the operator's *own host* `claude` (real credentials/subscription — not the
+   Anthropic API, not the sandboxed container instance), started in the project
+   workspace with the operator's full host privileges. It defaults to a read-only
+   tool set (`Read`/`Grep`/`Glob`, validated server-side against a whitelist), but
+   granting `Bash`/`Edit`/`Write` lets it act on the host directly. Same trust
+   basis as the host shell (loopback + token); the panel shows a persistent
+   "not sandboxed" warning to make this explicit to the user.
+5. **Dashboard editor bundle is trusted host-side code.** The CodeMirror editor
+   bundle is built at dev time from npm packages, committed, and `go:embed`-ed
+   into the host binary — it runs in the operator's browser served by the *host*
+   dashboard, outside the sandbox. Dependencies are exact-pinned (lockfile
+   authoritative) and no npm runs at install/deploy time (the frozen bundle is the
+   shipped artifact), so the supply-chain exposure is at *build* time, not deploy
+   time. One grammar (`codemirror-lang-elixir`) is from a now-archived upstream,
+   frozen at a pinned version. Rebuild deliberately and review the bundle diff.
+6. **Passthrough / `--disable-firewall`** turn off egress containment (for
    bootstrapping an allowlist); no network protection while active.
-5. **Dangerous mode** — no per-action approval; the container + firewall are the
+7. **Dangerous mode** — no per-action approval; the container + firewall are the
    only guardrails.
 
 ## Guidance
