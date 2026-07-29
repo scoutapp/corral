@@ -1,0 +1,39 @@
+#!/bin/bash
+# gh wrapper: neutralize the commands that print the raw GitHub token, so neither
+# Claude nor a shell command inside the sandbox can extract it. Real auth is
+# handled invisibly by the host credential proxy (it injects the token into
+# api.github.com requests), so gh/git operations still work — the wrapper only
+# blocks the token-*revealing* surface.
+#
+# Same mechanism as the `docker` wrapper: /home/claude/bin is first on PATH
+# (see Dockerfile), so this shadows /usr/bin/gh. Every non-token subcommand
+# passes straight through to the real binary.
+#
+# Blocked:
+#   gh auth token                 -> prints the token
+#   gh auth status --show-token   -> prints the token
+set -euo pipefail
+
+REAL_GH=/usr/bin/gh
+
+blocked() {
+    echo "gh: this command is disabled in the sandclaude sandbox (it would expose the GitHub token)." >&2
+    echo "    GitHub auth is handled automatically by the credential proxy; gh/git commands work without the raw token." >&2
+    exit 1
+}
+
+# `gh auth token` — the direct token dump.
+if [ "${1:-}" = "auth" ] && [ "${2:-}" = "token" ]; then
+    blocked
+fi
+
+# `gh auth status ... --show-token` — token leaks via any --show-token flag.
+if [ "${1:-}" = "auth" ] && [ "${2:-}" = "status" ]; then
+    for arg in "$@"; do
+        case "$arg" in
+            --show-token|-t) blocked ;;
+        esac
+    done
+fi
+
+exec "$REAL_GH" "$@"

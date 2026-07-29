@@ -90,17 +90,22 @@ func (sc *SandClaude) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) 
 	}
 	// In non-proxy mode, Claude Code will handle its own authentication
 
-	// Get gh token if available
-	ghToken := ""
-	cmd := exec.Command("gh", "auth", "token")
-	if output, err := cmd.Output(); err == nil {
-		ghToken = strings.TrimSpace(string(output))
-	}
-	if ghToken != "" {
-		config.Debugln("GitHub token found, passing GH_TOKEN to container")
-		args = append(args, "-e", fmt.Sprintf("GH_TOKEN=%s", ghToken))
-	} else {
-		config.Debugln("No GitHub token found (gh auth token returned empty)")
+	// GitHub auth mirrors Claude's own token handling above:
+	//   - Proxy mode: pass a DUMMY GH_TOKEN. gh/git need *some* token present or
+	//     they prompt for login, but the real token never enters the container —
+	//     the host credential proxy injects it into api.github.com requests, and
+	//     the in-container `gh` wrapper blocks `gh auth token`. So `echo $GH_TOKEN`
+	//     only ever reveals the dummy.
+	//   - Non-proxy mode: the user opted out of credential protection; pass the
+	//     real token so gh works (there is no injector).
+	if sc.proxyEnabled {
+		config.Debugln("Proxy mode: injecting dummy GH_TOKEN (real GitHub creds injected by the proxy)")
+		args = append(args, "-e", "GH_TOKEN=ghp_"+strings.Repeat("0", 36))
+	} else if output, err := exec.Command("gh", "auth", "token").Output(); err == nil {
+		if ghToken := strings.TrimSpace(string(output)); ghToken != "" {
+			config.Debugln("Non-proxy mode: passing real GH_TOKEN to container")
+			args = append(args, "-e", fmt.Sprintf("GH_TOKEN=%s", ghToken))
+		}
 	}
 
 	// Mount the workspace and set it as the working dir.

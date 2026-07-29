@@ -421,24 +421,17 @@ func cmdShell() error {
 		return err
 	}
 
-	// Get gh token if available
-	ghToken := ""
-	cmd := exec.Command("gh", "auth", "token")
-	if output, err := cmd.Output(); err == nil {
-		ghToken = strings.TrimSpace(string(output))
-	}
-
+	// The real GitHub token is never passed into this debug shell. A dummy
+	// GH_TOKEN keeps gh/git from prompting for login (real auth, when the proxy is
+	// up, happens at the proxy; the in-container `gh` wrapper blocks `gh auth token`).
 	args := []string{
 		"run", "--rm", "-it",
 		"--cap-add=NET_ADMIN",
 		"--cap-add=NET_RAW",
+		"-e", "GH_TOKEN=ghp_" + strings.Repeat("0", 36),
 		"-v", fmt.Sprintf("%s:%s", workspace, workspace),
 		"-w", workspace,
 		"--entrypoint", "/bin/bash",
-	}
-
-	if ghToken != "" {
-		args = append(args, "-e", fmt.Sprintf("GH_TOKEN=%s", ghToken))
 	}
 
 	args = append(args, imageName)
