@@ -18,6 +18,10 @@ import (
 
 // startProxy starts the mitmweb proxy process
 func (sc *SandClaude) startProxy(workspace string) error {
+	// Remember the workspace so stopProxy cleans up the same workspace-relative
+	// runtime.json that WriteProxyRuntimeState writes below.
+	sc.workspace = workspace
+
 	// Re-resolve credentials with lifecycle tracking so any merged temp file gets
 	// cleaned up on stopProxy. An explicit SANDCLAUDE_PROXY_CREDS override is honored
 	// as-is (no merge, no temp file). Skip when merging isn't applicable.
@@ -118,7 +122,7 @@ func (sc *SandClaude) startProxy(workspace string) error {
 
 	log.Printf("Proxy started (PID %d), logs: %s", sc.proxyCmd.Process.Pid, mitmLog)
 
-	if err := dashboard.WriteProxyRuntimeState(webPort, sc.proxyCmd.Process.Pid); err != nil {
+	if err := dashboard.WriteProxyRuntimeState(workspace, webPort, sc.proxyCmd.Process.Pid); err != nil {
 		config.Debugf("Warning: failed to write proxy runtime state: %v", err)
 	}
 
@@ -151,8 +155,13 @@ func (sc *SandClaude) stopProxy() {
 		sc.mergedCredsFile = ""
 	}
 
-	if err := os.Remove(dashboard.ProxyRuntimeStatePath()); err != nil && !os.IsNotExist(err) {
-		config.Debugf("Failed to remove proxy runtime state: %v", err)
+	// Remove the same workspace-relative runtime.json that startProxy wrote.
+	// sc.workspace may be empty if stopProxy runs without a prior startProxy
+	// (e.g. proxy disabled); RemoveProxyRuntimeState tolerates a missing file.
+	if sc.workspace != "" {
+		if err := dashboard.RemoveProxyRuntimeState(sc.workspace); err != nil {
+			config.Debugf("Failed to remove proxy runtime state: %v", err)
+		}
 	}
 }
 
