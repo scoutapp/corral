@@ -10,6 +10,7 @@
   <a href="/" class="back">&larr; All projects</a>
   <h1>{{.Workspace}}</h1>
   <button id="dock-toggle" class="dock-toggle" type="button" title="Show/hide the Claude terminal">⌨ Terminal</button>
+  <button id="host-toggle" class="dock-toggle" type="button" title="Show/hide a host shell (⌃`)">▂ Host shell</button>
 </header>
 
 <!-- Main work area: the tab set on the left/top, the collapsible Claude terminal
@@ -81,6 +82,18 @@
       <p class="empty">No tmux dev session — start it with <code>sandclaude dev</code>.</p>
     {{end}}
   </aside>
+</div>
+
+<!-- Host-terminal overlay: slides up from the bottom (VS Code integrated
+     terminal). Hidden until toggled; drag the handle to resize. Its iframe src
+     is set lazily on first open so no host shell spawns until you ask for one. -->
+<div class="host-overlay" id="host-overlay" hidden>
+  <div class="host-overlay-handle" id="host-overlay-handle"></div>
+  <div class="host-overlay-bar">
+    <span><i class="screen-dot"></i>host shell · {{.Workspace}}</span>
+    <button id="host-close" type="button" title="Close (⌃`)">✕</button>
+  </div>
+  <iframe class="host-overlay-iframe" id="host-iframe" data-src="/p/{{.ID}}/host/"></iframe>
 </div>
 
 <script src="/static/codemirror.bundle.js"></script>

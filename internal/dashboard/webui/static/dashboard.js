@@ -85,6 +85,56 @@
   try { startCollapsed = localStorage.getItem(DOCK_KEY) === "1"; } catch (e) {}
   applyDock(startCollapsed);
 
+  // ---- Host-terminal overlay (VS Code integrated terminal) ------------------
+  var overlay = document.getElementById("host-overlay");
+  var hostToggle = document.getElementById("host-toggle");
+  var hostClose = document.getElementById("host-close");
+  var hostHandle = document.getElementById("host-overlay-handle");
+  var HOST_H_KEY = "sandclaude.hostOverlayHeight";
+
+  function hostVisible() { return overlay && !overlay.hasAttribute("hidden"); }
+  function showHost(show) {
+    if (!overlay) return;
+    if (show) {
+      var h = 0;
+      try { h = parseInt(localStorage.getItem(HOST_H_KEY) || "0", 10); } catch (e) {}
+      if (h > 80) overlay.style.height = h + "px";
+      overlay.removeAttribute("hidden");
+      // Spawn the host shell only on first open (lazy iframe src).
+      var f = document.getElementById("host-iframe");
+      if (f && !f.getAttribute("src") && f.dataset.src) f.setAttribute("src", f.dataset.src);
+    } else {
+      overlay.setAttribute("hidden", "");
+    }
+    if (hostToggle) hostToggle.classList.toggle("on", show);
+  }
+
+  if (hostToggle) hostToggle.addEventListener("click", function () { showHost(!hostVisible()); });
+  if (hostClose) hostClose.addEventListener("click", function () { showHost(false); });
+  // Ctrl-` toggles, like VS Code.
+  document.addEventListener("keydown", function (e) {
+    if (e.ctrlKey && e.key === "`") { e.preventDefault(); showHost(!hostVisible()); }
+  });
+
+  // Drag the top handle to resize.
+  if (hostHandle && overlay) {
+    hostHandle.addEventListener("mousedown", function (start) {
+      start.preventDefault();
+      var startY = start.clientY, startH = overlay.offsetHeight;
+      function onMove(ev) {
+        var h = Math.max(120, Math.min(window.innerHeight - 120, startH + (startY - ev.clientY)));
+        overlay.style.height = h + "px";
+      }
+      function onUp() {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        try { localStorage.setItem(HOST_H_KEY, String(overlay.offsetHeight)); } catch (e) {}
+      }
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+  }
+
   // Activate the initially-selected tab on load.
   var initial = document.querySelector(".tab-btn.active") || buttons[0];
   if (initial) activate(initial.dataset.tab);
