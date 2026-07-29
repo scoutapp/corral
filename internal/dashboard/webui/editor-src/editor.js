@@ -53,6 +53,13 @@ import { markdown } from "@codemirror/lang-markdown";
 import { html } from "@codemirror/lang-html";
 import { css } from "@codemirror/lang-css";
 import { yaml } from "@codemirror/lang-yaml";
+import { elixir } from "codemirror-lang-elixir";
+
+// Legacy stream-parser modes (no dedicated CM6 grammar). Wrapped with
+// StreamLanguage.define() to turn a StreamParser into a language extension.
+import { StreamLanguage } from "@codemirror/language";
+import { ruby } from "@codemirror/legacy-modes/mode/ruby";
+import { lua } from "@codemirror/legacy-modes/mode/lua";
 
 // Map a normalized language key -> a function producing the language extension.
 // Filenames whose extension isn't here get no language extension (plain text),
@@ -66,6 +73,9 @@ const LANGUAGES = {
   html: () => html(),
   css: () => css(),
   yaml: () => yaml(),
+  elixir: () => elixir(),
+  ruby: () => StreamLanguage.define(ruby),
+  lua: () => StreamLanguage.define(lua),
 };
 
 // Extension -> language key. Anything not listed falls through to plain text.
@@ -87,6 +97,11 @@ const EXT_TO_LANG = {
   css: "css",
   yml: "yaml",
   yaml: "yaml",
+  rb: "ruby",
+  ex: "elixir",
+  exs: "elixir",
+  heex: "elixir",
+  lua: "lua",
   // Note: no dedicated lang-go / lang-shell in this bundle (see report notes);
   // .go / .sh / .bash render as plain text with full editing niceties.
 };
