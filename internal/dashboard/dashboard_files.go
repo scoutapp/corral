@@ -167,6 +167,114 @@ func (d *dashboardServer) handleFilesWrite(w http.ResponseWriter, r *http.Reques
 }
 
 // ----------------------------------------------------------------------------
+// Search: filename find + content grep
+// ----------------------------------------------------------------------------
+
+const maxSearchResults = 200
+
+// handleFilesFind returns workspace-relative paths whose name matches q
+// (case-insensitive substring). GET /p/<id>/files/find?q=<query>
+func (d *dashboardServer) handleFilesFind(w http.ResponseWriter, r *http.Request, id string) {
+	workspace, err := lookupWorkspaceByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	if q == "" {
+		writeFilesJSON(w, map[string]any{"matches": []string{}})
+		return
+	}
+	matches := make([]string, 0, 64)
+	truncated := false
+	filepath.WalkDir(workspace, func(path string, dirent os.DirEntry, werr error) error {
+		if werr != nil {
+			return nil // skip unreadable entries
+		}
+		name := dirent.Name()
+		if dirent.IsDir() {
+			if dirsToSkip[name] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if len(matches) >= maxSearchResults {
+			truncated = true
+			return filepath.SkipAll
+		}
+		if strings.Contains(strings.ToLower(name), q) {
+			if rel, rerr := filepath.Rel(workspace, path); rerr == nil {
+				matches = append(matches, rel)
+			}
+		}
+		return nil
+	})
+	writeFilesJSON(w, map[string]any{"matches": matches, "truncated": truncated})
+}
+
+type grepHit struct {
+	Path string `json:"path"`
+	Line int    `json:"line"`
+	Text string `json:"text"`
+}
+
+// handleFilesGrep searches file CONTENTS for q across the workspace, preferring
+// `git grep` (fast, respects .gitignore) with a `grep -rn` fallback for non-repos.
+// GET /p/<id>/files/grep?q=<query>
+func (d *dashboardServer) handleFilesGrep(w http.ResponseWriter, r *http.Request, id string) {
+	workspace, err := lookupWorkspaceByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
+		writeFilesJSON(w, map[string]any{"hits": []grepHit{}})
+		return
+	}
+
+	var out string
+	isRepo := false
+	if s, gerr := gitCmd(workspace, "rev-parse", "--is-inside-work-tree"); gerr == nil && strings.TrimSpace(s) == "true" {
+		isRepo = true
+	}
+	if isRepo {
+		// -I skip binary, -n line numbers, -F fixed-string (literal), -i case-insensitive.
+		out, _ = gitCmd(workspace, "grep", "-I", "-n", "-F", "-i", "-e", q)
+	} else {
+		cmd := exec.Command("grep", "-rInF", "-i", "--", q, ".")
+		cmd.Dir = workspace
+		b, _ := cmd.Output() // grep exits 1 on no matches; ignore, parse what we got
+		out = string(b)
+	}
+
+	hits := make([]grepHit, 0, 64)
+	truncated := false
+	for _, line := range strings.Split(out, "\n") {
+		if line == "" {
+			continue
+		}
+		if len(hits) >= maxSearchResults {
+			truncated = true
+			break
+		}
+		// Format: path:line:text  (grep -rn prepends "./" — trim it)
+		parts := strings.SplitN(line, ":", 3)
+		if len(parts) < 3 {
+			continue
+		}
+		ln, _ := strconv.Atoi(parts[1])
+		p := strings.TrimPrefix(parts[0], "./")
+		text := parts[2]
+		if len(text) > 300 {
+			text = text[:300] + "…"
+		}
+		hits = append(hits, grepHit{Path: p, Line: ln, Text: text})
+	}
+	writeFilesJSON(w, map[string]any{"hits": hits, "truncated": truncated})
+}
+
+// ----------------------------------------------------------------------------
 // Git diff
 // ----------------------------------------------------------------------------
 
