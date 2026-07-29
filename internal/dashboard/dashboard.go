@@ -255,10 +255,15 @@ type dashboardServer struct {
 	mu    sync.Mutex
 	terms map[*termSession]struct{} // live browser-terminal PTYs (see terminal.go)
 	token string
+	// bootID is a fresh random value each time the dashboard daemon starts. It is
+	// surfaced in /status so the browser can tell when the server has restarted
+	// and drop stale per-project UI state (e.g. mute prefs keyed by project id).
+	bootID string
 }
 
 func newDashboardServer(token string) *dashboardServer {
-	return &dashboardServer{terms: make(map[*termSession]struct{}), token: token}
+	boot, _ := randomToken()
+	return &dashboardServer{terms: make(map[*termSession]struct{}), token: token, bootID: boot}
 }
 
 // requireAuth gates every route but /healthz behind a random per-launch token.
@@ -392,6 +397,8 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleConfigApply(w, r, id)
 	case sub == "config/restart":
 		d.handleConfigRestart(w, r, id)
+	case sub == "remove":
+		d.handleRemoveProject(w, r, id)
 	case sub == "mitm/flows":
 		d.handleMitmFlows(w, r, id)
 	case strings.HasPrefix(sub, "mitm/flows/"):
@@ -469,7 +476,43 @@ func (d *dashboardServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"projects": rows})
+	json.NewEncoder(w).Encode(map[string]any{"projects": rows, "boot_id": d.bootID})
+}
+
+// handleRemoveProject unregisters a project from the dashboard registry
+// (projects.json) by its ProjectID. It does NOT touch the project's on-disk
+// ./.sandclaude/ (config, allowlist, logs) — it only removes it from the
+// dashboard list; `sandclaude start` re-registers it. POST only.
+func (d *dashboardServer) handleRemoveProject(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	reg, err := readRegistry()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	kept := reg.Projects[:0]
+	found := false
+	for _, p := range reg.Projects {
+		if ProjectID(p.Workspace) == id {
+			found = true
+			continue
+		}
+		kept = append(kept, p)
+	}
+	if !found {
+		http.Error(w, "unknown project", http.StatusNotFound)
+		return
+	}
+	reg.Projects = kept
+	if err := writeRegistry(reg); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
 
 // tmuxLastLine returns the last meaningful line of a tmux session's current
