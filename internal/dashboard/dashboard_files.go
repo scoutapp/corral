@@ -463,6 +463,72 @@ func (d *dashboardServer) handleGitDiff(w http.ResponseWriter, r *http.Request, 
 	fmt.Fprint(w, diff)
 }
 
+// handleGitFile returns the two sides of a file's diff as plain content, so the
+// frontend can render a syntax-highlighted CodeMirror diff (createDiff needs the
+// original + modified text, not a unified-diff string).
+//
+//	{ "original": <base side>, "modified": <target side>, "filename": <base> }
+//
+// Ref mode (base/target): both sides come from `git show <ref>:<path>`.
+// Default mode: original = HEAD:path, modified = the file on disk (so it shows
+// staged+unstaged; untracked files have an empty original → all-added).
+// A file missing on a side (added/deleted) yields "" for that side.
+// GET /p/<id>/git/file?path=<repo-relative>[&repo=&base=&target=]
+func (d *dashboardServer) handleGitFile(w http.ResponseWriter, r *http.Request, id string) {
+	ws, err := lookupWorkspaceByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	workspace, ok := gitRepoDir(ws, r)
+	if !ok {
+		http.Error(w, "invalid repo", http.StatusBadRequest)
+		return
+	}
+	rel := r.URL.Query().Get("path")
+	abs, ok := safeJoin(workspace, rel)
+	if !ok {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+
+	base := r.URL.Query().Get("base")
+	target := r.URL.Query().Get("target")
+	var original, modified string
+	if base != "" || target != "" {
+		if base == "" {
+			base = "HEAD"
+		}
+		if target == "" {
+			target = "HEAD"
+		}
+		if !validRef(workspace, base) || !validRef(workspace, target) {
+			http.Error(w, "unknown git ref", http.StatusBadRequest)
+			return
+		}
+		original = gitShow(workspace, base, rel)
+		modified = gitShow(workspace, target, rel)
+	} else {
+		original = gitShow(workspace, "HEAD", rel)
+		if data, rerr := os.ReadFile(abs); rerr == nil {
+			modified = string(data)
+		}
+	}
+	writeFilesJSON(w, map[string]any{
+		"original": original, "modified": modified, "filename": filepath.Base(rel),
+	})
+}
+
+// gitShow returns the contents of a path at a ref via `git show <ref>:<path>`,
+// or "" if the path doesn't exist there (added/deleted on that side).
+func gitShow(workspace, ref, rel string) string {
+	out, err := gitCmd(workspace, "show", ref+":"+rel)
+	if err != nil {
+		return ""
+	}
+	return out
+}
+
 // gitCmd runs `git <args...>` in the workspace dir and returns combined stdout.
 // git's own non-zero exits for "no diff" (git diff --no-index) are tolerated by
 // callers; a genuine failure returns the error with stderr attached.
