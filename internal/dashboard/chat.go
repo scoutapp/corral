@@ -66,17 +66,21 @@ func parseChatTools(raw string) []string {
 	return out
 }
 
-// chatClientMsg is what the browser sends per user turn.
+// chatClientMsg is what the browser sends. A "prompt" starts a turn; an
+// action:"cancel" kills the currently-running turn.
 type chatClientMsg struct {
 	Prompt string `json:"prompt"`
+	Action string `json:"action"` // "" (send prompt) | "cancel"
 }
 
 // chatServerMsg is a typed frame the server forwards to the browser. Only the
 // fields relevant to a given Type are populated.
 type chatServerMsg struct {
-	Type    string `json:"type"`              // "text" | "tool_use" | "result" | "error" | "turn_end"
+	Type    string `json:"type"`              // "text" | "tool_use" | "tool_result" | "result" | "error" | "turn_end" | "canceled"
 	Text    string `json:"text,omitempty"`    // assistant text / error message
 	Tool    string `json:"tool,omitempty"`    // tool name for tool_use
+	Input   string `json:"input,omitempty"`   // tool input (JSON) for tool_use
+	Result  string `json:"result,omitempty"`  // tool result content for tool_result
 	CostUSD string `json:"costUsd,omitempty"` // formatted cost on result
 	Model   string `json:"model,omitempty"`   // model id on result
 	IsError bool   `json:"isError,omitempty"` // result subtype != success
@@ -107,7 +111,7 @@ func (d *dashboardServer) handleChatWS(w http.ResponseWriter, r *http.Request, i
 	}
 	defer conn.Close()
 
-	// writeMu serializes writes; the read loop and per-turn streaming both write.
+	// writeMu serializes writes; the read loop and the running turn both write.
 	var writeMu sync.Mutex
 	send := func(m chatServerMsg) error {
 		writeMu.Lock()
@@ -115,18 +119,65 @@ func (d *dashboardServer) handleChatWS(w http.ResponseWriter, r *http.Request, i
 		return conn.WriteJSON(m)
 	}
 
-	sessionID := "" // captured from the first turn's init event, reused via --resume
+	// turnCancel, when non-nil, cancels the in-flight turn's process; guarded by
+	// turnMu since it's set by the read loop and cleared by the turn goroutine.
+	var turnMu sync.Mutex
+	var turnCancel context.CancelFunc
+	var busy bool
+	sessionID := "" // captured from the first turn, reused via --resume
+
 	for {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
-			return // client closed
+			// Client closed / socket error — cancel any running turn and exit.
+			turnMu.Lock()
+			if turnCancel != nil {
+				turnCancel()
+			}
+			turnMu.Unlock()
+			return
 		}
 		var msg chatClientMsg
-		if json.Unmarshal(data, &msg) != nil || strings.TrimSpace(msg.Prompt) == "" {
+		if json.Unmarshal(data, &msg) != nil {
 			continue
 		}
-		sessionID = d.runChatTurn(r.Context(), claudeBin, workspace, tools, msg.Prompt, sessionID, send)
-		_ = send(chatServerMsg{Type: "turn_end"})
+		if msg.Action == "cancel" {
+			turnMu.Lock()
+			if turnCancel != nil {
+				turnCancel()
+			}
+			turnMu.Unlock()
+			continue
+		}
+		turnMu.Lock()
+		running := busy
+		turnMu.Unlock()
+		if running || strings.TrimSpace(msg.Prompt) == "" {
+			continue // ignore prompts while a turn is in flight, and empty prompts
+		}
+
+		// Run the turn in a goroutine so the read loop stays responsive to cancel.
+		ctx, cancel := context.WithCancel(r.Context())
+		turnMu.Lock()
+		turnCancel = cancel
+		busy = true
+		turnMu.Unlock()
+
+		go func(prompt string) {
+			newSession, canceled := d.runChatTurn(ctx, claudeBin, workspace, tools, prompt, sessionID, send)
+			turnMu.Lock()
+			sessionID = newSession
+			busy = false
+			if turnCancel != nil {
+				turnCancel() // release the context
+				turnCancel = nil
+			}
+			turnMu.Unlock()
+			if canceled {
+				_ = send(chatServerMsg{Type: "canceled"})
+			}
+			_ = send(chatServerMsg{Type: "turn_end"})
+		}(msg.Prompt)
 	}
 }
 
@@ -231,8 +282,9 @@ func isExecutable(path string) bool {
 
 // runChatTurn spawns one `claude -p` invocation and streams its parsed events to
 // the browser via send. Returns the (possibly updated) session id to thread into
-// the next turn's --resume.
-func (d *dashboardServer) runChatTurn(ctx context.Context, claudeBin, workspace string, tools []string, prompt, sessionID string, send func(chatServerMsg) error) string {
+// the next turn's --resume, and whether the turn was canceled (ctx done — the
+// caller kills the process via the context).
+func (d *dashboardServer) runChatTurn(ctx context.Context, claudeBin, workspace string, tools []string, prompt, sessionID string, send func(chatServerMsg) error) (string, bool) {
 	args := []string{
 		"-p", prompt,
 		"--output-format", "stream-json", "--verbose",
@@ -251,12 +303,12 @@ func (d *dashboardServer) runChatTurn(ctx context.Context, claudeBin, workspace 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		_ = send(chatServerMsg{Type: "error", Text: "failed to start claude: " + err.Error()})
-		return sessionID
+		return sessionID, false
 	}
 	cmd.Stderr = nil
 	if err := cmd.Start(); err != nil {
 		_ = send(chatServerMsg{Type: "error", Text: "failed to start claude: " + err.Error()})
-		return sessionID
+		return sessionID, false
 	}
 
 	// Parse the newline-delimited JSON event stream. Buffer is generous because a
@@ -267,7 +319,9 @@ func (d *dashboardServer) runChatTurn(ctx context.Context, claudeBin, workspace 
 		sessionID = parseChatEvent(sc.Bytes(), sessionID, send)
 	}
 	_ = cmd.Wait()
-	return sessionID
+	// ctx.Err() != nil means the caller canceled (Stop / socket close) rather than
+	// the turn completing on its own.
+	return sessionID, ctx.Err() != nil
 }
 
 // parseChatEvent decodes one stream-json line and forwards the browser-relevant
@@ -281,9 +335,11 @@ func parseChatEvent(line []byte, sessionID string, send func(chatServerMsg) erro
 		Message   struct {
 			Model   string `json:"model"`
 			Content []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-				Name string `json:"name"`
+				Type    string          `json:"type"`
+				Text    string          `json:"text"`
+				Name    string          `json:"name"`
+				Input   json.RawMessage `json:"input"`   // tool_use arguments
+				Content json.RawMessage `json:"content"` // tool_result payload (string or array)
 			} `json:"content"`
 		} `json:"message"`
 		Result    string  `json:"result"`
@@ -306,7 +362,15 @@ func parseChatEvent(line []byte, sessionID string, send func(chatServerMsg) erro
 					_ = send(chatServerMsg{Type: "text", Text: c.Text})
 				}
 			case "tool_use":
-				_ = send(chatServerMsg{Type: "tool_use", Tool: c.Name})
+				_ = send(chatServerMsg{Type: "tool_use", Tool: c.Name, Input: string(c.Input)})
+			}
+		}
+	case "user":
+		// tool_result blocks arrive as user-role events. Surface the result text
+		// so the panel can show what a tool returned.
+		for _, c := range ev.Message.Content {
+			if c.Type == "tool_result" {
+				_ = send(chatServerMsg{Type: "tool_result", Result: toolResultText(c.Content)})
 			}
 		}
 	case "result":
@@ -320,6 +384,32 @@ func parseChatEvent(line []byte, sessionID string, send func(chatServerMsg) erro
 		})
 	}
 	return sessionID
+}
+
+// toolResultText normalizes a tool_result's content, which stream-json emits
+// either as a bare string or as an array of {type:"text",text:...} blocks.
+func toolResultText(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(raw, &blocks) == nil {
+		var parts []string
+		for _, b := range blocks {
+			if b.Text != "" {
+				parts = append(parts, b.Text)
+			}
+		}
+		return strings.Join(parts, "\n")
+	}
+	return string(raw) // fall back to the raw JSON
 }
 
 // formatUSD renders a cost like "$0.21".
