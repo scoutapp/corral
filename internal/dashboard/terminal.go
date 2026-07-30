@@ -137,14 +137,18 @@ func (d *dashboardServer) handleContainerWS(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "container is not running for this project", http.StatusBadGateway)
 		return
 	}
-	// -it: interactive + TTY so bash behaves like a real shell. `bash -i` is what
-	// gives a usable prompt: the sandbox user's ~/.bashrc sets a colored
-	// user@host:cwd$ PS1, but it's guarded by `case $- in *i*)` and only runs for
-	// INTERACTIVE shells — a bare `exec bash` starts non-interactive, so .bashrc
-	// returns early and PS1 is empty (the "I don't realize I'm in a shell"
-	// symptom). Fall back to `sh -i` on minimal images without bash.
+	// -it: interactive + TTY so the shell behaves like a real terminal. We launch
+	// bash INTERACTIVE (-i) because the sandbox user's ~/.bashrc sets the colored
+	// user@host:cwd$ PS1 but guards it with `case $- in *i*)`, so a bare
+	// `exec bash` starts non-interactive, .bashrc returns early, and PS1 is empty
+	// (the "I don't realize I'm in a shell" symptom).
+	//
+	// Do NOT redirect bash's stderr: an interactive bash writes its PROMPT (and
+	// readline) to stderr, so `2>/dev/null` both hides the prompt and breaks the
+	// interactive session. Pick bash-vs-sh with `command -v` instead of a stderr
+	// hack, and exec the interactive shell with its stderr intact.
 	cmd := exec.Command("docker", "exec", "-it", containerName,
-		"sh", "-c", "exec bash -i 2>/dev/null || exec sh -i")
+		"sh", "-c", "if command -v bash >/dev/null 2>&1; then exec bash -i; else exec sh -i; fi")
 	d.bridgePTY(w, r, cmd)
 }
 
