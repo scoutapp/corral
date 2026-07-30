@@ -288,11 +288,16 @@ type gitChange struct {
 // handleGitStatus reports the changed files for the workspace. Default mode is
 // the working tree vs HEAD. With valid base & target ref query params it instead
 // reports the changes between those two refs (base..target).
-// GET /p/<id>/git/status[?base=<ref>&target=<ref>]
+// GET /p/<id>/git/status[?repo=<subdir>&base=<ref>&target=<ref>]
 func (d *dashboardServer) handleGitStatus(w http.ResponseWriter, r *http.Request, id string) {
-	workspace, err := lookupWorkspaceByID(id)
+	ws, err := lookupWorkspaceByID(id)
 	if err != nil {
 		http.NotFound(w, r)
+		return
+	}
+	workspace, ok := gitRepoDir(ws, r)
+	if !ok {
+		http.Error(w, "invalid repo", http.StatusBadRequest)
 		return
 	}
 	// Is this a git repo at all?
@@ -397,11 +402,17 @@ func (d *dashboardServer) gitStatusRefs(w http.ResponseWriter, workspace, base, 
 }
 
 // handleGitDiff returns the unified diff for one path (working tree vs HEAD).
-// GET /p/<id>/git/diff?path=<workspace-relative file>
+// The path is relative to the selected repo (see gitRepoDir).
+// GET /p/<id>/git/diff?path=<repo-relative file>[&repo=<subdir>&base=&target=]
 func (d *dashboardServer) handleGitDiff(w http.ResponseWriter, r *http.Request, id string) {
-	workspace, err := lookupWorkspaceByID(id)
+	ws, err := lookupWorkspaceByID(id)
 	if err != nil {
 		http.NotFound(w, r)
+		return
+	}
+	workspace, ok := gitRepoDir(ws, r)
+	if !ok {
+		http.Error(w, "invalid repo", http.StatusBadRequest)
 		return
 	}
 	rel := r.URL.Query().Get("path")
@@ -492,12 +503,87 @@ func validRef(workspace, ref string) bool {
 	return true
 }
 
-// handleGitRefs lists the refs available for the diff picker: local branches,
-// the current HEAD, and tags. GET /p/<id>/git/refs
-func (d *dashboardServer) handleGitRefs(w http.ResponseWriter, r *http.Request, id string) {
+// gitRepoDir resolves the git working dir for a request. A workspace can hold
+// more than one repo — submodules, or a parent dir whose children are each their
+// own repo — so a `repo` query param (workspace-relative, from /git/repos)
+// selects which one. Empty means the workspace root. safeJoin guards against
+// escaping the workspace. Returns (absDir, ok).
+func gitRepoDir(workspace string, r *http.Request) (string, bool) {
+	repo := r.URL.Query().Get("repo")
+	if repo == "" {
+		return workspace, true
+	}
+	return safeJoin(workspace, repo)
+}
+
+// gitRepo is one repo detected within a workspace. Path is workspace-relative
+// ("" for the root); Name is a friendly label for the picker.
+type gitRepo struct {
+	Path string `json:"path"`
+	Name string `json:"name"`
+}
+
+// maxRepoScanDepth bounds how deep we look for nested repos, keeping the scan
+// fast on large trees. Depth 0 = workspace root, so 2 covers workspace/*/ and
+// workspace/*/*/ — enough for sibling-projects and typical submodule layouts.
+const maxRepoScanDepth = 2
+
+// handleGitRepos lists the git repositories inside the workspace so the UI can
+// offer a repo picker. Shallow-scans for directories containing a .git entry
+// (dir OR file — submodules use a .git file). GET /p/<id>/git/repos
+func (d *dashboardServer) handleGitRepos(w http.ResponseWriter, r *http.Request, id string) {
 	workspace, err := lookupWorkspaceByID(id)
 	if err != nil {
 		http.NotFound(w, r)
+		return
+	}
+	repos := make([]gitRepo, 0)
+	rootIsRepo := false
+	if _, serr := os.Stat(filepath.Join(workspace, ".git")); serr == nil {
+		rootIsRepo = true
+		repos = append(repos, gitRepo{Path: "", Name: filepath.Base(workspace) + " (root)"})
+	}
+
+	var scan func(dir string, depth int)
+	scan = func(dir string, depth int) {
+		if depth > maxRepoScanDepth {
+			return
+		}
+		entries, rerr := os.ReadDir(dir)
+		if rerr != nil {
+			return
+		}
+		for _, e := range entries {
+			if !e.IsDir() || dirsToSkip[e.Name()] {
+				continue
+			}
+			child := filepath.Join(dir, e.Name())
+			if _, gerr := os.Stat(filepath.Join(child, ".git")); gerr == nil {
+				if rel, relErr := filepath.Rel(workspace, child); relErr == nil {
+					repos = append(repos, gitRepo{Path: rel, Name: rel})
+				}
+				continue // don't descend into a repo (its submodules are its own concern)
+			}
+			scan(child, depth+1)
+		}
+	}
+	scan(workspace, 1)
+
+	sort.Slice(repos, func(i, j int) bool { return repos[i].Path < repos[j].Path })
+	writeFilesJSON(w, map[string]any{"rootIsRepo": rootIsRepo, "repos": repos})
+}
+
+// handleGitRefs lists the refs available for the diff picker: local branches,
+// the current HEAD, and tags. GET /p/<id>/git/refs[?repo=<subdir>]
+func (d *dashboardServer) handleGitRefs(w http.ResponseWriter, r *http.Request, id string) {
+	ws, err := lookupWorkspaceByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	workspace, ok := gitRepoDir(ws, r)
+	if !ok {
+		http.Error(w, "invalid repo", http.StatusBadRequest)
 		return
 	}
 	if out, gerr := gitCmd(workspace, "rev-parse", "--is-inside-work-tree"); gerr != nil || strings.TrimSpace(out) != "true" {
