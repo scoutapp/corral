@@ -135,6 +135,77 @@
     });
   }
 
+  // ---- "Ask Claude" chat panel (left/right dockable slide-out) --------------
+  var chat = document.getElementById("chat-panel");
+  var chatToggle = document.getElementById("chat-toggle");
+  var chatClose = document.getElementById("chat-close");
+  var chatDock = document.getElementById("chat-dock");
+  var chatHandle = document.getElementById("chat-panel-handle");
+  var CHAT_W_KEY = "sandclaude.chatWidth";
+  var CHAT_DOCK_KEY = "sandclaude.chatDock"; // "left" | "right"
+
+  function chatVisible() { return chat && !chat.hasAttribute("hidden"); }
+
+  function applyChatDock() {
+    if (!chat) return;
+    var side = "right";
+    try { side = localStorage.getItem(CHAT_DOCK_KEY) || "right"; } catch (e) {}
+    chat.classList.toggle("dock-left", side === "left");
+  }
+
+  function showChat(show) {
+    if (!chat) return;
+    if (show) {
+      var wpx = 0;
+      try { wpx = parseInt(localStorage.getItem(CHAT_W_KEY) || "0", 10); } catch (e) {}
+      if (wpx > 240) chat.style.width = wpx + "px";
+      applyChatDock();
+      chat.removeAttribute("hidden");
+      // Spawn the host claude only on first open (lazy iframe src).
+      var f = document.getElementById("chat-iframe");
+      if (f && !f.getAttribute("src") && f.dataset.src) f.setAttribute("src", f.dataset.src);
+    } else {
+      chat.setAttribute("hidden", "");
+    }
+    if (chatToggle) chatToggle.classList.toggle("on", show);
+  }
+
+  if (chatToggle) chatToggle.addEventListener("click", function () { showChat(!chatVisible()); });
+  if (chatClose) chatClose.addEventListener("click", function () { showChat(false); });
+  if (chatDock) chatDock.addEventListener("click", function () {
+    var side = "right";
+    try { side = localStorage.getItem(CHAT_DOCK_KEY) || "right"; } catch (e) {}
+    side = side === "left" ? "right" : "left";
+    try { localStorage.setItem(CHAT_DOCK_KEY, side); } catch (e) {}
+    applyChatDock();
+  });
+  // Ctrl-J toggles the chat panel.
+  document.addEventListener("keydown", function (e) {
+    if (e.ctrlKey && (e.key === "j" || e.key === "J")) { e.preventDefault(); showChat(!chatVisible()); }
+  });
+
+  // Drag the inner-edge handle to resize the panel width.
+  if (chatHandle && chat) {
+    chatHandle.addEventListener("mousedown", function (start) {
+      start.preventDefault();
+      var startX = start.clientX, startW = chat.offsetWidth;
+      var dockedLeft = chat.classList.contains("dock-left");
+      function onMove(ev) {
+        // When docked right, dragging left (smaller X) widens; mirror when left.
+        var delta = dockedLeft ? (ev.clientX - startX) : (startX - ev.clientX);
+        var wpx = Math.max(280, Math.min(window.innerWidth - 120, startW + delta));
+        chat.style.width = wpx + "px";
+      }
+      function onUp() {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        try { localStorage.setItem(CHAT_W_KEY, String(chat.offsetWidth)); } catch (e) {}
+      }
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+  }
+
   // Activate the initially-selected tab on load.
   var initial = document.querySelector(".tab-btn.active") || buttons[0];
   if (initial) activate(initial.dataset.tab);

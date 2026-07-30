@@ -634,3 +634,31 @@ table.projects th, table.projects td {
 }
 .host-overlay-bar button:hover { background: rgba(255,255,255,0.1); }
 .host-overlay-iframe { flex: 1 1 auto; width: 100%; border: none; background: #1e1e1e; }
+
+/* "Ask Claude" chat panel — full-height slide-out, docked to the left or right
+   edge (toggled via the .dock-left class; default is right). Mirrors the host
+   overlay's bar/handle styling but oriented vertically. */
+.chat-panel {
+  position: fixed; top: 0; bottom: 0; right: 0; width: 420px; z-index: 45;
+  display: flex; flex-direction: column;
+  background: #1e1e1e; border-left: 1px solid #3c3c3c;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.45);
+}
+.chat-panel.dock-left { right: auto; left: 0; border-left: none; border-right: 1px solid #3c3c3c; box-shadow: 8px 0 24px rgba(0, 0, 0, 0.45); }
+.chat-panel[hidden] { display: none; }
+/* Resize handle sits on the inner edge: left edge when docked right, and vice versa. */
+.chat-panel-handle { position: absolute; top: 0; bottom: 0; width: 5px; left: 0; cursor: ew-resize; background: transparent; z-index: 1; }
+.chat-panel.dock-left .chat-panel-handle { left: auto; right: 0; }
+.chat-panel-handle:hover { background: var(--con-working); }
+.chat-panel-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.25rem 0.7rem; background: #2d2d2d; border-bottom: 1px solid #3c3c3c;
+  font-size: 0.75rem; color: #cccccc; flex: none;
+}
+.chat-panel-actions { display: flex; gap: 0.15rem; }
+.chat-panel-bar button {
+  background: transparent; border: none; color: #cccccc; cursor: pointer;
+  font-size: 0.85rem; padding: 0 0.3rem; border-radius: 3px;
+}
+.chat-panel-bar button:hover { background: rgba(255,255,255,0.1); }
+.chat-panel-iframe { flex: 1 1 auto; width: 100%; border: none; background: #1e1e1e; }

@@ -11,6 +11,7 @@
   <h1>{{.Workspace}}</h1>
   <button id="dock-toggle" class="dock-toggle" type="button" title="Show/hide the Claude terminal">⌨ Terminal</button>
   <button id="host-toggle" class="dock-toggle" type="button" title="Show/hide a host shell (⌃`)">▂ Host shell</button>
+  <button id="chat-toggle" class="dock-toggle" type="button" title="Ask Claude — a host claude chat (⌃J)">💬 Ask Claude</button>
 </header>
 
 <!-- Main work area: the tab set on the left/top, the collapsible Claude terminal
@@ -94,6 +95,21 @@
     <button id="host-close" type="button" title="Close (⌃`)">✕</button>
   </div>
   <iframe class="host-overlay-iframe" id="host-iframe" data-src="/p/{{.ID}}/host/"></iframe>
+</div>
+
+<!-- "Ask Claude" chat panel — a slide-out that runs the HOST claude (see the
+     in-iframe "not sandboxed" warning). Dockable left or right (persisted); the
+     iframe src is set lazily on first open so no claude spawns until asked. -->
+<div class="chat-panel" id="chat-panel" hidden>
+  <div class="chat-panel-handle" id="chat-panel-handle"></div>
+  <div class="chat-panel-bar">
+    <span><i class="screen-dot"></i>ask claude · host</span>
+    <span class="chat-panel-actions">
+      <button id="chat-dock" type="button" title="Dock left/right">⇄</button>
+      <button id="chat-close" type="button" title="Close (⌃J)">✕</button>
+    </span>
+  </div>
+  <iframe class="chat-panel-iframe" id="chat-iframe" data-src="/p/{{.ID}}/chat/"></iframe>
 </div>
 
 <script src="/static/codemirror.bundle.js"></script>

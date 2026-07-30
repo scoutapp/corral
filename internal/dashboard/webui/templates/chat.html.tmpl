@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ask claude</title>
+<link rel="stylesheet" href="/static/xterm.css">
+<style>
+  html, body { margin: 0; height: 100%; background: #1e1e1e; display: flex; flex-direction: column; }
+  /* "Not sandboxed" warning — this runs the host's own `claude` with real host
+     privileges, unlike the container shell. Keep it visible, not dismissible. */
+  #not-sandboxed {
+    flex: 0 0 auto;
+    background: #4a2a00; color: #ffd591; border-bottom: 1px solid #7a4a00;
+    font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    padding: 6px 10px;
+  }
+  #not-sandboxed strong { color: #ffb84d; }
+  #term-wrap { position: relative; flex: 1 1 auto; }
+  #term { position: absolute; inset: 0; padding: 4px; }
+</style>
+</head>
+<!-- Chat panel: runs the HOST `claude` (not the sandbox). Read-only tools by
+     default; ?tools= on the ws path is validated server-side against a whitelist. -->
+<body data-id="{{.ID}}" data-session-up="true" data-ws-path="/chat/ws?tools=Read,Grep,Glob">
+  <div id="not-sandboxed">
+    ⚠️ <strong>Not sandboxed.</strong> This chat runs Claude on your host with your
+    own credentials — not inside the container. Default tools are read-only
+    (Read/Grep/Glob); granting Bash or Edit lets it act on the host directly.
+  </div>
+  <div id="term-wrap"><div id="term"></div></div>
+  <script src="/static/xterm.js"></script>
+  <script src="/static/xterm-addon-fit.js"></script>
+  <script src="/static/terminal.js"></script>
+</body>
+</html>
