@@ -3,7 +3,6 @@ package dashboard
 import (
 	"net/http"
 	"net/http/httptest"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -59,12 +58,12 @@ func TestChatSmoke(t *testing.T) {
 		t.Errorf("unauth chat page status = %d, want 403", r.StatusCode)
 	}
 
-	// 3. WS upgrade spawns claude. Skip if the host has no claude binary. (The
-	// test process has the user's full PATH; the daemon-PATH problem the handler
-	// guards against with SANDCLAUDE_CLAUDE_BIN is specific to the detached
-	// daemon, not this in-process test.)
-	if _, err := exec.LookPath("claude"); err != nil {
-		t.Skip("claude not installed on host; skipping WS spawn check")
+	// 3. WS upgrade spawns claude. Skip only if the handler's own resolver can't
+	// find claude — using resolveClaudeBin (not a bare PATH lookup) means this
+	// also exercises the known-location fallback under a stripped PATH, the exact
+	// scenario the resolver exists for.
+	if _, err := resolveClaudeBin(); err != nil {
+		t.Skip("claude not resolvable on host; skipping WS spawn check")
 	}
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/p/" + id + "/chat/ws"
 	hdr := http.Header{

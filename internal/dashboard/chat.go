@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -128,18 +130,103 @@ func (d *dashboardServer) handleChatWS(w http.ResponseWriter, r *http.Request, i
 	}
 }
 
-// resolveClaudeBin finds the host `claude` executable. It prefers the absolute
-// path captured at daemon-launch time in SANDCLAUDE_CLAUDE_BIN (the launcher
-// runs in the user's interactive terminal env with their real PATH, incl.
-// nvm/asdf dirs the detached daemon's stripped PATH usually omits), and falls
-// back to a plain PATH lookup.
+var (
+	claudeBinMu     sync.Mutex
+	claudeBinCached string
+)
+
+// resolveClaudeBin locates the host `claude` executable, entirely within the
+// daemon so it works regardless of how or from where the dashboard was launched.
+// The detached daemon runs with a stripped PATH that usually omits the
+// version-manager dirs (nvm/asdf/…) where `claude` lives, and the launch-time
+// PATH capture only helps when the launcher itself had claude on PATH — so we
+// probe several strategies, in cheapest-first order, and cache the result:
+//
+//  1. SANDCLAUDE_CLAUDE_BIN — absolute path captured by the launcher (best case)
+//  2. exec.LookPath — the daemon's own PATH
+//  3. known install locations — nvm node bins, ~/.claude, ~/.local/bin,
+//     homebrew, bun/deno, asdf shims
+//  4. an interactive login shell — last resort, since nvm/asdf typically live in
+//     interactive rc files that non-interactive shells don't source
 func resolveClaudeBin() (string, error) {
+	claudeBinMu.Lock()
+	defer claudeBinMu.Unlock()
+	// Reuse a previously-resolved path if it's still valid; re-probe otherwise so
+	// a claude installed after the daemon started is eventually picked up, and a
+	// one-time failure isn't cached forever.
+	if claudeBinCached != "" && isExecutable(claudeBinCached) {
+		return claudeBinCached, nil
+	}
+	p, err := findClaudeBin()
+	if err == nil {
+		claudeBinCached = p
+	}
+	return p, err
+}
+
+func findClaudeBin() (string, error) {
+	// 1. Launch-time capture.
 	if p := os.Getenv("SANDCLAUDE_CLAUDE_BIN"); p != "" {
-		if _, err := os.Stat(p); err == nil {
+		if isExecutable(p) {
 			return p, nil
 		}
 	}
-	return exec.LookPath("claude")
+	// 2. Daemon PATH.
+	if p, err := exec.LookPath("claude"); err == nil {
+		return p, nil
+	}
+	// 3. Known install locations. nvm may hold several node versions; take the
+	// highest-sorting one (newest, lexically, for vNN.NN.NN names).
+	home, _ := os.UserHomeDir()
+	var candidates []string
+	if home != "" {
+		if matches, _ := filepath.Glob(filepath.Join(home, ".nvm/versions/node/*/bin/claude")); len(matches) > 0 {
+			sort.Strings(matches)
+			candidates = append(candidates, matches[len(matches)-1])
+		}
+		candidates = append(candidates,
+			filepath.Join(home, ".claude/local/claude"),
+			filepath.Join(home, ".claude/bin/claude"),
+			filepath.Join(home, ".local/bin/claude"),
+			filepath.Join(home, ".bun/bin/claude"),
+			filepath.Join(home, ".deno/bin/claude"),
+			filepath.Join(home, ".asdf/shims/claude"),
+		)
+	}
+	candidates = append(candidates,
+		"/opt/homebrew/bin/claude",
+		"/usr/local/bin/claude",
+	)
+	for _, p := range candidates {
+		if isExecutable(p) {
+			return p, nil
+		}
+	}
+	// 4. Interactive login shell (sources nvm/asdf rc), sanitized to the last line.
+	if shell := os.Getenv("SHELL"); shell != "" {
+		out, err := exec.Command(shell, "-ic", "command -v claude").Output()
+		if err == nil {
+			for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+				line = strings.TrimSpace(line)
+				if isExecutable(line) {
+					return line, nil
+				}
+			}
+		}
+	}
+	return "", fmt.Errorf("claude executable not found")
+}
+
+// isExecutable reports whether path is a regular, executable file.
+func isExecutable(path string) bool {
+	if path == "" {
+		return false
+	}
+	fi, err := os.Stat(path)
+	if err != nil || fi.IsDir() {
+		return false
+	}
+	return fi.Mode()&0111 != 0
 }
 
 // runChatTurn spawns one `claude -p` invocation and streams its parsed events to
