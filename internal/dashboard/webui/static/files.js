@@ -14,6 +14,7 @@
       '    <div class="files-search-mode">' +
       '      <button id="mode-name" class="active" type="button" title="Find files by name">name</button>' +
       '      <button id="mode-grep" type="button" title="Search file contents (grep)">grep</button>' +
+      '      <button id="files-refresh" type="button" title="Refresh the file tree">⟳</button>' +
       '    </div>' +
       '  </div>' +
       '  <div class="files-tree" id="files-tree"></div>' +
@@ -82,45 +83,100 @@
       currentEl.textContent = (openPath || "select a file") + (d ? " •" : "");
     }
 
-    // Render one directory's entries as a <ul>; directories expand lazily on click.
+    // expandedDirs maps a directory's relPath -> the container element holding its
+    // rendered <ul>. Used both to remember what's open (for collapse) and to let
+    // the auto-refresh poll re-read exactly the currently-open directories.
+    var expandedDirs = {};
+
+    // Build one directory-entry <li>. Directories expand/collapse lazily; the
+    // expand handler records the open dir in expandedDirs so the poller can
+    // refresh it and so state survives a reconcile.
+    function makeEntryLi(e, relPath) {
+      var li = document.createElement("li");
+      var childRel = relPath ? relPath + "/" + e.name : e.name;
+      li.dataset.name = e.name;
+      if (e.dir) {
+        li.className = "ftree-dir collapsed";
+        li.dataset.dir = "1";
+        li.innerHTML =
+          '<span class="ftree-label">' + folderIcon +
+          '<span class="ftree-name">' + esc(e.name) + "</span></span>";
+        li.querySelector(".ftree-label").addEventListener("click", function (ev) {
+          ev.stopPropagation();
+          var sub = li._sub;
+          if (sub) { sub.remove(); li._sub = null; delete expandedDirs[childRel]; li.classList.add("collapsed"); return; }
+          li.classList.remove("collapsed");
+          sub = document.createElement("div");
+          li._sub = sub;
+          li.appendChild(sub);
+          expandedDirs[childRel] = sub;
+          renderDir(sub, childRel);
+        });
+      } else {
+        li.className = "ftree-file";
+        li.dataset.path = childRel;
+        li.innerHTML =
+          '<span class="ftree-label">' + fileIcon(e.name) +
+          '<span class="ftree-name">' + esc(e.name) + "</span></span>";
+        li.querySelector(".ftree-label").addEventListener("click", function (ev) {
+          ev.stopPropagation();
+          openFile(childRel);
+        });
+      }
+      return li;
+    }
+
+    // Render a directory's entries into parentEl. Reconciles against any existing
+    // <ul> so a refresh adds new entries and drops deleted ones WITHOUT collapsing
+    // open subfolders, losing the active-file highlight, or resetting scroll.
     function renderDir(parentEl, relPath) {
       fetch(api("/files/tree?path=" + encodeURIComponent(relPath)), { credentials: "same-origin" })
         .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
         .then(function (data) {
-          var ul = document.createElement("ul");
-          (data.entries || []).forEach(function (e) {
-            var li = document.createElement("li");
-            var childRel = relPath ? relPath + "/" + e.name : e.name;
-            if (e.dir) {
-              li.className = "ftree-dir collapsed";
-              li.innerHTML =
-                '<span class="ftree-label">' + folderIcon +
-                '<span class="ftree-name">' + esc(e.name) + "</span></span>";
-              var sub = null;
-              li.querySelector(".ftree-label").addEventListener("click", function (ev) {
-                ev.stopPropagation();
-                if (sub) { sub.remove(); sub = null; li.classList.add("collapsed"); return; }
-                li.classList.remove("collapsed");
-                sub = document.createElement("div");
-                li.appendChild(sub);
-                renderDir(sub, childRel);
-              });
-            } else {
-              li.className = "ftree-file";
-              li.dataset.path = childRel;
-              li.innerHTML =
-                '<span class="ftree-label">' + fileIcon(e.name) +
-                '<span class="ftree-name">' + esc(e.name) + "</span></span>";
-              li.querySelector(".ftree-label").addEventListener("click", function (ev) {
-                ev.stopPropagation();
-                openFile(childRel);
-              });
+          var entries = data.entries || [];
+          var ul = parentEl.querySelector(":scope > ul");
+          if (!ul) { ul = document.createElement("ul"); parentEl.appendChild(ul); }
+
+          // Index existing <li> by name so we can keep the ones that still exist.
+          var existing = {};
+          Array.prototype.forEach.call(ul.children, function (li) { existing[li.dataset.name] = li; });
+
+          var wanted = {};
+          entries.forEach(function (e, i) {
+            wanted[e.name] = true;
+            var li = existing[e.name];
+            if (!li) {
+              // New entry — insert at its sorted position (entries are pre-sorted).
+              li = makeEntryLi(e, relPath);
+              var ref = ul.children[i] || null;
+              ul.insertBefore(li, ref);
             }
-            ul.appendChild(li);
           });
-          parentEl.appendChild(ul);
+          // Remove entries that disappeared on disk (and forget any expansions).
+          Array.prototype.slice.call(ul.children).forEach(function (li) {
+            if (!wanted[li.dataset.name]) {
+              if (li.dataset.path) { /* file */ }
+              ul.removeChild(li);
+            }
+          });
         })
-        .catch(function (err) { parentEl.innerHTML = '<p class="attention">tree error: ' + esc(err.message) + "</p>"; });
+        .catch(function (err) {
+          if (!parentEl.querySelector(":scope > ul")) {
+            parentEl.innerHTML = '<p class="attention">tree error: ' + esc(err.message) + "</p>";
+          }
+        });
+    }
+
+    // Re-read every currently-expanded directory (plus the root) so the tree
+    // tracks Claude's filesystem changes without a manual collapse/expand.
+    function refreshTree() {
+      renderDir(treeEl, "");
+      Object.keys(expandedDirs).forEach(function (rel) {
+        var container = expandedDirs[rel];
+        if (container && container.isConnected) renderDir(container, rel);
+        else delete expandedDirs[rel];
+      });
+      if (openPath) markActive(openPath);
     }
 
     function markActive(rel) {
@@ -265,7 +321,23 @@
       searchTimer = setTimeout(runSearch, 220); // debounce
     });
 
+    // Manual refresh button — immediate re-read of the visible tree.
+    var refreshBtn = document.getElementById("files-refresh");
+    if (refreshBtn) refreshBtn.addEventListener("click", function () { refreshTree(); });
+
     renderDir(treeEl, ""); // workspace root
+
+    // Auto-refresh: poll the open directories so files Claude creates/deletes
+    // appear without a manual collapse+expand. Only polls while the Files tab is
+    // actually visible (and pauses during an active filename/grep search, which
+    // swaps the tree out). Modelled on the mitm.js flow poller.
+    var POLL_MS = 2500;
+    setInterval(function () {
+      var panel = document.getElementById("tab-files");
+      var visible = panel && panel.offsetParent !== null;
+      var searching = resultsEl && resultsEl.style.display !== "none";
+      if (visible && !searching) refreshTree();
+    }, POLL_MS);
   }
 
   window.startFiles = startFiles;
