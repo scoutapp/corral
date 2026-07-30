@@ -588,7 +588,23 @@ table.projects th, table.projects td {
 
 /* Diff tab: changed-file list | unified diff */
 .diff-root { display: flex; height: 100%; min-height: 0; }
-.diff-list { flex: 0 0 280px; overflow: auto; border-right: 1px solid var(--con-line); padding: 0.4rem; }
+/* Left column: ref pickers on top, changed-file list below. */
+.diff-side { flex: 0 0 300px; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--con-line); }
+.diff-refs {
+  flex: none; display: flex; align-items: center; gap: 0.3rem;
+  padding: 0.4rem; border-bottom: 1px solid var(--con-line);
+}
+.diff-ref {
+  flex: 1 1 0; min-width: 0; background: var(--con-panel); color: var(--con-text);
+  border: 1px solid var(--con-line); border-radius: 5px; padding: 0.2rem 0.3rem; font-size: 0.75rem;
+}
+.diff-refs-arrow { flex: none; color: var(--con-muted); font-size: 0.8rem; }
+#diff-reset {
+  flex: none; display: none; background: transparent; border: 1px solid var(--con-line);
+  color: var(--con-muted); border-radius: 5px; cursor: pointer; padding: 0.15rem 0.4rem; font-size: 0.75rem;
+}
+#diff-reset:hover { background: var(--con-panel-hi); }
+.diff-list { flex: 1 1 auto; overflow: auto; padding: 0.4rem; }
 .diff-file {
   display: flex; align-items: baseline; gap: 0.5rem; padding: 0.35rem 0.5rem;
   border-radius: 5px; cursor: pointer; font-size: 0.82rem;
