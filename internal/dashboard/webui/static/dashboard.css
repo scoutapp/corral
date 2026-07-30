@@ -590,6 +590,10 @@ table.projects th, table.projects td {
 .diff-root { display: flex; height: 100%; min-height: 0; }
 /* Left column: ref pickers on top, changed-file list below. */
 .diff-side { flex: 0 0 300px; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--con-line); }
+.diff-repo {
+  flex: none; padding: 0.4rem 0.4rem 0;
+}
+.diff-repo .diff-ref { width: 100%; }
 .diff-refs {
   flex: none; display: flex; align-items: center; gap: 0.3rem;
   padding: 0.4rem; border-bottom: 1px solid var(--con-line);

@@ -14,6 +14,9 @@
 
     root.innerHTML =
       '<div class="diff-side">' +
+      '  <div class="diff-repo" id="diff-repo-row" style="display:none">' +
+      '    <select id="diff-repo" class="diff-ref" title="Repository"></select>' +
+      '  </div>' +
       '  <div class="diff-refs" id="diff-refs">' +
       '    <select id="diff-base" class="diff-ref" title="Base ref"></select>' +
       '    <span class="diff-refs-arrow">→</span>' +
@@ -25,15 +28,23 @@
       '<div class="diff-view"><pre id="diff-body" class="diff-body"><span class="muted">select a changed file</span></pre></div>';
     var listEl = document.getElementById("diff-list");
     var bodyEl = document.getElementById("diff-body");
+    var repoRow = document.getElementById("diff-repo-row");
+    var repoSel = document.getElementById("diff-repo");
     var baseSel = document.getElementById("diff-base");
     var targetSel = document.getElementById("diff-target");
     var resetBtn = document.getElementById("diff-reset");
 
-    // Ref-diff state: when both base & target are set we diff base..target;
-    // otherwise we show the working-tree changes (the original default).
+    // repo = which git repo within the workspace to operate on ("" = root).
+    // Refs: when both base & target are set we diff base..target; otherwise we
+    // show the working-tree changes (the original default).
+    var repo = "";
     var base = "", target = "";
     function refsActive() { return base !== "" && target !== ""; }
-    function refQuery() { return refsActive() ? "&base=" + encodeURIComponent(base) + "&target=" + encodeURIComponent(target) : ""; }
+    function refQuery() {
+      var q = repo ? "&repo=" + encodeURIComponent(repo) : "";
+      if (refsActive()) q += "&base=" + encodeURIComponent(base) + "&target=" + encodeURIComponent(target);
+      return q;
+    }
 
     // Colorize a unified diff into per-line spans.
     function renderDiff(text) {
@@ -139,6 +150,35 @@
       loadStatus();
     });
 
+    // A workspace can hold multiple repos (submodules, or sibling project dirs).
+    // Show a repo picker when there's more than one option; switching repos
+    // resets the ref selection and reloads that repo's refs + changes.
+    function loadRepos() {
+      fetch(api("/git/repos"), { credentials: "same-origin" })
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        .then(function (data) {
+          var repos = data.repos || [];
+          // Only surface the picker when there's a real choice to make.
+          if (repos.length <= 1) { repoRow.style.display = "none"; return; }
+          repoRow.style.display = "";
+          repoSel.innerHTML = repos.map(function (rp) { return opt(rp.path, rp.name); }).join("");
+          // Default to the root repo if present, else the first detected repo.
+          // If that isn't the root (""), the initial refs/status ran against the
+          // wrong repo, so reload them for the chosen one.
+          var def = data.rootIsRepo ? "" : repos[0].path;
+          repoSel.value = def;
+          if (def !== repo) { repo = def; loadRefs(); loadStatus(); }
+        })
+        .catch(function () { /* single-repo / non-repo: default view still works */ });
+    }
+    repoSel.addEventListener("change", function () {
+      repo = repoSel.value;
+      base = ""; target = "";           // refs are per-repo — reset the range
+      loadRefs();
+      loadStatus();
+    });
+
+    loadRepos();
     loadRefs();
     loadStatus();
   }
