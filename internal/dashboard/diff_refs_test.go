@@ -57,6 +57,23 @@ func TestValidRef(t *testing.T) {
 	}
 }
 
+func TestGitShow(t *testing.T) {
+	dir := initGitRepo(t)
+	// a.txt exists on both refs; b.txt only on feature (added there).
+	if got := gitShow(dir, "main", "a.txt"); got == "" {
+		t.Error("gitShow(main, a.txt) empty, expected content")
+	}
+	if got := gitShow(dir, "main", "b.txt"); got != "" {
+		t.Errorf("gitShow(main, b.txt) = %q, want empty (absent on main)", got)
+	}
+	if got := gitShow(dir, "feature", "b.txt"); got == "" {
+		t.Error("gitShow(feature, b.txt) empty, expected content")
+	}
+	if got := gitShow(dir, "no-such-ref", "a.txt"); got != "" {
+		t.Errorf("gitShow(bad ref) = %q, want empty", got)
+	}
+}
+
 func TestGitRefList(t *testing.T) {
 	dir := initGitRepo(t)
 	branches := gitRefList(dir, "refs/heads")

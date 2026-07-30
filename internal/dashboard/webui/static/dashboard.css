@@ -590,20 +590,37 @@ table.projects th, table.projects td {
 .diff-root { display: flex; height: 100%; min-height: 0; }
 /* Left column: ref pickers on top, changed-file list below. */
 .diff-side { flex: 0 0 300px; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--con-line); }
+.diff-repo {
+  flex: none; padding: 0.5rem 0.5rem 0;
+}
+.diff-repo .diff-ref { width: 100%; }
 .diff-refs {
-  flex: none; display: flex; align-items: center; gap: 0.3rem;
-  padding: 0.4rem; border-bottom: 1px solid var(--con-line);
+  flex: none; display: flex; align-items: center; gap: 0.35rem;
+  padding: 0.5rem; border-bottom: 1px solid var(--con-line);
 }
+/* Native selects ignore background/border on some platforms and render an
+   opaque black control — appearance:none + an explicit style + a drawn caret
+   makes them legible on the dark theme. */
 .diff-ref {
-  flex: 1 1 0; min-width: 0; background: var(--con-panel); color: var(--con-text);
-  border: 1px solid var(--con-line); border-radius: 5px; padding: 0.2rem 0.3rem; font-size: 0.75rem;
+  flex: 1 1 0; min-width: 0;
+  -webkit-appearance: none; appearance: none;
+  background-color: var(--con-panel-hi);
+  background-image: linear-gradient(45deg, transparent 50%, var(--con-muted) 50%), linear-gradient(135deg, var(--con-muted) 50%, transparent 50%);
+  background-position: calc(100% - 15px) center, calc(100% - 10px) center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  color: var(--con-text);
+  border: 1px solid var(--con-line); border-radius: 6px;
+  padding: 0.32rem 1.5rem 0.32rem 0.5rem; font-size: 0.78rem; cursor: pointer;
 }
-.diff-refs-arrow { flex: none; color: var(--con-muted); font-size: 0.8rem; }
+.diff-ref:hover { border-color: var(--con-muted); }
+.diff-ref:focus { outline: none; border-color: var(--con-working); box-shadow: 0 0 0 2px rgba(92,230,168,0.2); }
+.diff-refs-arrow { flex: none; color: var(--con-muted); font-size: 0.85rem; }
 #diff-reset {
-  flex: none; display: none; background: transparent; border: 1px solid var(--con-line);
-  color: var(--con-muted); border-radius: 5px; cursor: pointer; padding: 0.15rem 0.4rem; font-size: 0.75rem;
+  flex: none; display: none; background: var(--con-panel-hi); border: 1px solid var(--con-line);
+  color: var(--con-muted); border-radius: 6px; cursor: pointer; padding: 0.3rem 0.5rem; font-size: 0.78rem; line-height: 1;
 }
-#diff-reset:hover { background: var(--con-panel-hi); }
+#diff-reset:hover { background: var(--con-panel); color: var(--con-text); border-color: var(--con-muted); }
 .diff-list { flex: 1 1 auto; overflow: auto; padding: 0.4rem; }
 .diff-file {
   display: flex; align-items: baseline; gap: 0.5rem; padding: 0.35rem 0.5rem;
@@ -614,15 +631,41 @@ table.projects th, table.projects td {
 .d-status { flex: none; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--con-muted); }
 .d-path { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, monospace; }
 .d-stat { flex: none; font-family: ui-monospace, Menlo, monospace; font-size: 0.75rem; }
-.diff-view { flex: 1 1 auto; min-width: 0; overflow: auto; }
-.diff-body {
-  margin: 0; padding: 0.6rem 0.8rem; font-family: ui-monospace, Menlo, monospace;
-  font-size: 0.8rem; line-height: 1.45; white-space: pre; overflow-x: auto;
+.diff-view { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; display: flex; }
+/* diff-body hosts the CodeMirror diff editor (createDiff), which manages its own
+   scrolling — so it fills the pane rather than growing the page. */
+.diff-body { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; }
+.diff-body > .cm-editor { height: 100%; }
+/* Diff decorations build on CodeMirror's unifiedMergeView, which already gives
+   both sides the same subtle line-background wash and distinguishes them by a
+   gutter color (green = added/changed, red = deleted). Two adjustments:
+   1. Remove the word-level highlight — cm-changedText/cm-deletedText draw a 2px
+      bottom-gradient "underline" over changed words, the distracting bit.
+   2. Widen the change gutter and give it explicit theme colors so the edge bar
+      is actually visible on the dark background. */
+.diff-body .cm-changedText,
+.diff-body .cm-deletedChunk .cm-deletedText {
+  background: none !important;
 }
-.diff-body .d-add { color: var(--con-working); display: block; }
-.diff-body .d-del { color: #ff6b81; display: block; }
-.diff-body .d-hunk { color: #6ea8ff; display: block; }
-.diff-body .d-meta { color: var(--con-muted); display: block; }
+.diff-body .cm-changeGutter { width: 4px !important; }
+/* Green = added/changed, red = deleted. The changed-line gutter element also
+   carries cm-activeLineGutter, whose background was winning and leaving the bar
+   transparent — so target that combination explicitly, with a literal color
+   (a var() here was resolving to nothing on the changed side). */
+.diff-body .cm-changedLineGutter,
+.diff-body .cm-changedLineGutter.cm-activeLineGutter { background-color: #5ce6a8 !important; }
+.diff-body .cm-deletedLineGutter,
+.diff-body .cm-deletedLineGutter.cm-activeLineGutter { background-color: #ff6b81 !important; }
+.diff-body > span.muted, .diff-body > span.attention { display: block; padding: 0.8rem; }
+/* Plain-text fallback (only if the CM bundle is missing). */
+.diff-pre {
+  margin: 0; padding: 0.6rem 0.8rem; font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.8rem; line-height: 1.45; white-space: pre; overflow: auto; height: 100%;
+}
+.diff-pre .d-add { color: var(--con-working); display: block; }
+.diff-pre .d-del { color: #ff6b81; display: block; }
+.diff-pre .d-hunk { color: #6ea8ff; display: block; }
+.diff-pre .d-meta { color: var(--con-muted); display: block; }
 
 @media (max-width: 900px) {
   .project-layout { flex-direction: column; height: auto; }

@@ -453,8 +453,12 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleGitStatus(w, r, id)
 	case sub == "git/diff":
 		d.handleGitDiff(w, r, id)
+	case sub == "git/file":
+		d.handleGitFile(w, r, id)
 	case sub == "git/refs":
 		d.handleGitRefs(w, r, id)
+	case sub == "git/repos":
+		d.handleGitRepos(w, r, id)
 	case sub == "container/ws":
 		d.handleContainerWS(w, r, id)
 	case sub == "container" || sub == "container/":
