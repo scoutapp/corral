@@ -636,17 +636,23 @@ table.projects th, table.projects td {
    scrolling — so it fills the pane rather than growing the page. */
 .diff-body { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; }
 .diff-body > .cm-editor { height: 100%; }
-/* CodeMirror's merge view marks changed/removed WORDS with a 2px underline bar
-   (a bottom linear-gradient), which reads as a distracting underline. Override
-   it to a full highlighter-style background tint instead. */
+/* Keep only the change marker in the gutter (the colored bar at the edge) and
+   drop the in-text decorations: CodeMirror's default word underline
+   (cm-changedText's 2px bottom gradient) AND the full-line background tint were
+   both hard to read over syntax-highlighted code. The gutter bar alone marks
+   what changed without touching the code's own colors. */
 .diff-body .cm-changedText,
 .diff-body .cm-deletedChunk .cm-deletedText {
-  background: rgba(92, 230, 168, 0.28) !important; /* mint highlight for insertions/changes */
-  border-radius: 2px;
+  background: none !important;
 }
-.diff-body .cm-deletedChunk .cm-deletedText {
-  background: rgba(255, 107, 129, 0.28) !important; /* red highlight for deletions */
+.diff-body .cm-changedLine,
+.diff-body .cm-insertedLine,
+.diff-body .cm-deletedLine {
+  background: none !important;
 }
+/* Make the edge marker a clear solid bar (green = changed/added, red = deleted). */
+.diff-body .cm-changedLineGutter { background: var(--con-working) !important; }
+.diff-body .cm-deletedLineGutter { background: #ff6b81 !important; }
 .diff-body > span.muted, .diff-body > span.attention { display: block; padding: 0.8rem; }
 /* Plain-text fallback (only if the CM bundle is missing). */
 .diff-pre {
