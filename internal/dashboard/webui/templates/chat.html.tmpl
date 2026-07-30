@@ -61,12 +61,29 @@
     background: #EBE7DE; border-radius: 4px; padding: 1px 5px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em;
   }
-  .tool-chip {
-    display: inline-block; font-size: 11.5px; color: var(--muted);
-    background: var(--cream-hi); border: 1px solid var(--line);
-    border-radius: 999px; padding: 2px 9px; margin: 2px 0;
+  /* Tool call: a compact expandable card. Summary line shows name + key input;
+     click to reveal the full input and result. */
+  .tool { max-width: 760px; margin: 0 auto 10px; padding-left: 36px; }
+  .tool details {
+    background: var(--cream-hi); border: 1px solid var(--line); border-radius: 8px;
+    font-size: 12px; color: var(--muted);
   }
-  .tool-chip::before { content: "🔧 "; }
+  .tool summary {
+    cursor: pointer; padding: 5px 10px; list-style: none;
+    display: flex; align-items: center; gap: 6px; user-select: none;
+  }
+  .tool summary::-webkit-details-marker { display: none; }
+  .tool summary::before { content: "🔧"; }
+  .tool .tool-name { color: var(--ink); font-weight: 600; }
+  .tool .tool-arg { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tool .tool-body { padding: 0 10px 8px; }
+  .tool .tool-body .label { color: var(--clay); font-weight: 600; margin-top: 6px; }
+  .tool .tool-body pre {
+    margin: 3px 0 0; background: #EFEBE2; color: #2B2A27; border-radius: 6px;
+    padding: 7px 9px; overflow-x: auto; font-size: 11.5px; white-space: pre-wrap; word-break: break-word;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    max-height: 220px; overflow-y: auto;
+  }
   .meta { max-width: 760px; margin: -8px auto 18px; color: var(--muted); font-size: 11.5px; padding-left: 36px; }
   .meta.error { color: #B23; }
   .typing { color: var(--muted); font-style: italic; }
@@ -82,11 +99,16 @@
     flex: 1 1 auto; border: none; outline: none; resize: none; background: transparent;
     font: inherit; color: var(--ink); max-height: 160px; line-height: 1.5;
   }
-  #send {
+  #send, #stop {
     flex: 0 0 auto; width: 34px; height: 34px; border: none; border-radius: 10px;
-    background: var(--clay); color: #fff; font-size: 16px; cursor: pointer;
+    color: #fff; font-size: 16px; cursor: pointer;
   }
+  #send { background: var(--clay); }
   #send:disabled { opacity: 0.4; cursor: default; }
+  #stop { background: #7a2e1a; display: none; place-items: center; }
+  #stop::before { content: "■"; font-size: 13px; }
+  body.busy #send { display: none; }
+  body.busy #stop { display: grid; }
   .hint { max-width: 760px; margin: 6px auto 0; color: var(--muted); font-size: 11px; text-align: center; }
 </style>
 </head>
@@ -100,6 +122,7 @@
     <div class="composer-inner">
       <textarea id="input" rows="1" placeholder="Ask Claude about this project…" autofocus></textarea>
       <button id="send" type="button" title="Send (Enter)">↑</button>
+      <button id="stop" type="button" title="Stop the current turn"></button>
     </div>
     <div class="hint">Enter to send · Shift+Enter for newline · host claude in this workspace</div>
   </div>

@@ -10,6 +10,7 @@
   var log = document.getElementById("log");
   var input = document.getElementById("input");
   var send = document.getElementById("send");
+  var stop = document.getElementById("stop");
 
   // Read-only tools by default; the server validates ?tools= against a whitelist.
   var proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -18,21 +19,29 @@
   var busy = false;
   var curAssistant = null; // the assistant bubble accumulating this turn's text
   var curText = "";
+  var lastTool = null;     // the most recent tool card, so tool_result can fill it
 
   ws.onopen = function () { ready = true; updateSend(); };
-  ws.onclose = function () { ready = false; updateSend(); addMeta("disconnected — reload the panel to reconnect", true); };
+  ws.onclose = function () { ready = false; setBusy(false); updateSend(); addMeta("disconnected — reload the panel to reconnect", true); };
   ws.onmessage = function (ev) {
     var m;
     try { m = JSON.parse(ev.data); } catch (e) { return; }
     switch (m.type) {
       case "text":
+        removeTyping();
         curText += m.text;
         if (!curAssistant) curAssistant = addBubble("assistant", "");
         curAssistant.querySelector(".bubble").innerHTML = renderMarkdown(curText);
         scroll();
         break;
       case "tool_use":
-        addToolChip(m.tool);
+        // A new tool call starts a fresh assistant text block afterward.
+        curAssistant = null; curText = "";
+        removeTyping();
+        lastTool = addToolCard(m.tool, m.input);
+        break;
+      case "tool_result":
+        fillToolResult(lastTool, m.result);
         break;
       case "result":
         if (m.isError) addMeta("Claude reported an error for this turn.", true);
@@ -41,8 +50,11 @@
       case "error":
         addMeta(m.text || "error", true);
         break;
+      case "canceled":
+        addMeta("stopped", false);
+        break;
       case "turn_end":
-        busy = false; curAssistant = null; curText = "";
+        setBusy(false); curAssistant = null; curText = ""; lastTool = null;
         removeTyping();
         updateSend();
         input.focus();
@@ -50,6 +62,7 @@
     }
   };
 
+  function setBusy(v) { busy = v; document.body.classList.toggle("busy", v); }
   function updateSend() { send.disabled = !ready || busy || input.value.trim() === ""; }
 
   function submit() {
@@ -58,12 +71,18 @@
     addBubble("user", renderMarkdown(text));
     ws.send(JSON.stringify({ prompt: text }));
     input.value = ""; autoGrow();
-    busy = true; updateSend();
+    setBusy(true); updateSend();
     addTyping();
     scroll();
   }
 
+  function cancel() {
+    if (!ready || !busy) return;
+    ws.send(JSON.stringify({ action: "cancel" }));
+  }
+
   send.addEventListener("click", submit);
+  stop.addEventListener("click", cancel);
   input.addEventListener("keydown", function (e) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
   });
@@ -86,15 +105,52 @@
     scroll();
     return wrap;
   }
-  function addToolChip(name) {
-    var chip = document.createElement("div");
-    chip.className = "tool-chip";
-    chip.textContent = name || "tool";
-    var meta = document.createElement("div");
-    meta.className = "meta";
-    meta.appendChild(chip);
-    log.appendChild(meta);
+  // Build an expandable tool card: a summary line (name + key input) that opens
+  // to show the full input and, once it arrives, the result.
+  function addToolCard(name, inputJson) {
+    var wrap = document.createElement("div");
+    wrap.className = "tool";
+    var d = document.createElement("details");
+    var summary = document.createElement("summary");
+    var nameEl = document.createElement("span");
+    nameEl.className = "tool-name"; nameEl.textContent = name || "tool";
+    var argEl = document.createElement("span");
+    argEl.className = "tool-arg"; argEl.textContent = summarizeInput(inputJson);
+    summary.appendChild(nameEl); summary.appendChild(argEl);
+    var body = document.createElement("div");
+    body.className = "tool-body";
+    if (inputJson) body.appendChild(labeledPre("input", prettyJson(inputJson)));
+    d.appendChild(summary); d.appendChild(body);
+    wrap.appendChild(d);
+    log.appendChild(wrap);
     scroll();
+    return wrap;
+  }
+  function fillToolResult(card, result) {
+    if (!card || !result) return;
+    card.querySelector(".tool-body").appendChild(labeledPre("result", result));
+    scroll();
+  }
+  function labeledPre(label, text) {
+    var frag = document.createDocumentFragment();
+    var l = document.createElement("div"); l.className = "label"; l.textContent = label;
+    var pre = document.createElement("pre"); pre.textContent = text;
+    frag.appendChild(l); frag.appendChild(pre);
+    return frag;
+  }
+  // Compact one-liner for the summary: prefer a recognizable field, else short JSON.
+  function summarizeInput(inputJson) {
+    if (!inputJson) return "";
+    var o; try { o = JSON.parse(inputJson); } catch (e) { return ""; }
+    var keys = ["file_path", "path", "pattern", "command", "query", "url"];
+    for (var i = 0; i < keys.length; i++) {
+      if (o[keys[i]] != null) return String(o[keys[i]]);
+    }
+    var s = inputJson.replace(/\s+/g, " ");
+    return s.length > 80 ? s.slice(0, 79) + "…" : s;
+  }
+  function prettyJson(s) {
+    try { return JSON.stringify(JSON.parse(s), null, 2); } catch (e) { return s; }
   }
   function addMeta(text, isErr) {
     var meta = document.createElement("div");
