@@ -636,6 +636,17 @@ table.projects th, table.projects td {
    scrolling — so it fills the pane rather than growing the page. */
 .diff-body { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; }
 .diff-body > .cm-editor { height: 100%; }
+/* CodeMirror's merge view marks changed/removed WORDS with a 2px underline bar
+   (a bottom linear-gradient), which reads as a distracting underline. Override
+   it to a full highlighter-style background tint instead. */
+.diff-body .cm-changedText,
+.diff-body .cm-deletedChunk .cm-deletedText {
+  background: rgba(92, 230, 168, 0.28) !important; /* mint highlight for insertions/changes */
+  border-radius: 2px;
+}
+.diff-body .cm-deletedChunk .cm-deletedText {
+  background: rgba(255, 107, 129, 0.28) !important; /* red highlight for deletions */
+}
 .diff-body > span.muted, .diff-body > span.attention { display: block; padding: 0.8rem; }
 /* Plain-text fallback (only if the CM bundle is missing). */
 .diff-pre {
