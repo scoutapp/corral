@@ -60,6 +60,8 @@ node_modules/
 # so it does NOT also match the cmd/sandclaude/ source dir (an unanchored
 # `sandclaude` rule silently ignored the entrypoint package).
 /sandclaude
+# local dev builds of the CLI (e.g. `go build -o sandclaude-dev`)
+/sandclaude-dev
 # SQLite database files
 *.db
 *.db-shm
