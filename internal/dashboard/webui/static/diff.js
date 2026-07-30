@@ -122,10 +122,19 @@
     // (empty) so you can always drop back to the default view.
     function opt(v, label) { return '<option value="' + esc(v) + '">' + esc(label || v) + "</option>"; }
     function loadRefs() {
-      fetch(api("/git/refs"), { credentials: "same-origin" })
+      // Scope to the selected repo — without ?repo=, a non-repo workspace root
+      // returns repo:false and the ref dropdowns stay empty ("can't select
+      // anything"). refQuery() already carries repo (and base/target, harmless
+      // here since /git/refs ignores them).
+      var q = repo ? "?repo=" + encodeURIComponent(repo) : "";
+      fetch(api("/git/refs" + q), { credentials: "same-origin" })
         .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
         .then(function (data) {
-          if (!data.repo) return;
+          if (!data.repo) {
+            baseSel.innerHTML = '<option value="">— no git —</option>';
+            targetSel.innerHTML = baseSel.innerHTML;
+            return;
+          }
           var refs = (data.branches || []).concat(data.tags || []);
           var head = '<option value="">— working tree —</option>';
           var options = head + refs.map(function (rf) { return opt(rf); }).join("");
