@@ -109,4 +109,4 @@ GitHub Actions builds the binaries and the installer downloads them.
 
 ## License
 
-TBD.
+[MIT](LICENSE) © Scout Monitoring
