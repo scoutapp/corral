@@ -1,6 +1,40 @@
 package session
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestContainerNameForWorkspace(t *testing.T) {
+	// Two DIFFERENT workspaces sharing a basename must get DIFFERENT container
+	// names — the whole point of the hash suffix (ephemeral clones of one repo).
+	a := ContainerNameForWorkspace("/home/u/work/myapp")
+	b := ContainerNameForWorkspace("/home/u/projects/myapp")
+	if a == b {
+		t.Fatalf("same-basename workspaces collided: both %q", a)
+	}
+	// Deterministic: same path → same name (all callers must agree).
+	if a != ContainerNameForWorkspace("/home/u/work/myapp") {
+		t.Error("ContainerNameForWorkspace is not deterministic")
+	}
+	// Readable prefix retained.
+	if !strings.HasPrefix(a, "sandclaude_myapp_") {
+		t.Errorf("expected readable sandclaude_myapp_ prefix, got %q", a)
+	}
+	// Docker-safe: allowed set only.
+	for _, name := range []string{
+		ContainerNameForWorkspace("/tmp/my app (2)"),
+		ContainerNameForWorkspace("/tmp/weird:name.v2"),
+	} {
+		for _, r := range name {
+			ok := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+				(r >= '0' && r <= '9') || r == '_' || r == '.' || r == '-'
+			if !ok {
+				t.Errorf("container name %q has docker-invalid char %q", name, string(r))
+			}
+		}
+	}
+}
 
 func TestTmuxSessionNameForContainer(t *testing.T) {
 	cases := []struct {
