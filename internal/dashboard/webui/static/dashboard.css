@@ -631,15 +631,21 @@ table.projects th, table.projects td {
 .d-status { flex: none; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--con-muted); }
 .d-path { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, monospace; }
 .d-stat { flex: none; font-family: ui-monospace, Menlo, monospace; font-size: 0.75rem; }
-.diff-view { flex: 1 1 auto; min-width: 0; overflow: auto; }
-.diff-body {
+.diff-view { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; display: flex; }
+/* diff-body hosts the CodeMirror diff editor (createDiff), which manages its own
+   scrolling — so it fills the pane rather than growing the page. */
+.diff-body { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; }
+.diff-body > .cm-editor { height: 100%; }
+.diff-body > span.muted, .diff-body > span.attention { display: block; padding: 0.8rem; }
+/* Plain-text fallback (only if the CM bundle is missing). */
+.diff-pre {
   margin: 0; padding: 0.6rem 0.8rem; font-family: ui-monospace, Menlo, monospace;
-  font-size: 0.8rem; line-height: 1.45; white-space: pre; overflow-x: auto;
+  font-size: 0.8rem; line-height: 1.45; white-space: pre; overflow: auto; height: 100%;
 }
-.diff-body .d-add { color: var(--con-working); display: block; }
-.diff-body .d-del { color: #ff6b81; display: block; }
-.diff-body .d-hunk { color: #6ea8ff; display: block; }
-.diff-body .d-meta { color: var(--con-muted); display: block; }
+.diff-pre .d-add { color: var(--con-working); display: block; }
+.diff-pre .d-del { color: #ff6b81; display: block; }
+.diff-pre .d-hunk { color: #6ea8ff; display: block; }
+.diff-pre .d-meta { color: var(--con-muted); display: block; }
 
 @media (max-width: 900px) {
   .project-layout { flex-direction: column; height: auto; }

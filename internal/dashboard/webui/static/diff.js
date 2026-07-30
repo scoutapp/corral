@@ -25,9 +25,10 @@
       '  </div>' +
       '  <div class="diff-list" id="diff-list"><p class="muted">loading…</p></div>' +
       '</div>' +
-      '<div class="diff-view"><pre id="diff-body" class="diff-body"><span class="muted">select a changed file</span></pre></div>';
+      '<div class="diff-view" id="diff-view"><div id="diff-body" class="diff-body"><span class="muted">select a changed file</span></div></div>';
     var listEl = document.getElementById("diff-list");
     var bodyEl = document.getElementById("diff-body");
+    var diffEditor = null; // live CodeMirror diff view (destroyed on each load)
     var repoRow = document.getElementById("diff-repo-row");
     var repoSel = document.getElementById("diff-repo");
     var baseSel = document.getElementById("diff-base");
@@ -46,25 +47,58 @@
       return q;
     }
 
-    // Colorize a unified diff into per-line spans.
-    function renderDiff(text) {
-      if (!text.trim()) { bodyEl.innerHTML = '<span class="muted">no differences</span>'; return; }
-      var html = text.split("\n").map(function (line) {
-        var cls = "";
-        if (line[0] === "+" && line.slice(0, 3) !== "+++") cls = "d-add";
-        else if (line[0] === "-" && line.slice(0, 3) !== "---") cls = "d-del";
-        else if (line[0] === "@") cls = "d-hunk";
-        else if (line.slice(0, 4) === "diff" || line.slice(0, 3) === "+++" || line.slice(0, 3) === "---") cls = "d-meta";
-        return '<span class="' + cls + '">' + esc(line) + "</span>";
-      }).join("\n");
+    function destroyDiffEditor() {
+      if (diffEditor) { try { diffEditor.destroy(); } catch (e) {} diffEditor = null; }
+    }
+    function diffMessage(html) {
+      destroyDiffEditor();
       bodyEl.innerHTML = html;
     }
 
+    // Render a syntax-highlighted diff of one file using the bundled CodeMirror
+    // diff view (unifiedMergeView): the code is language-colored and changed
+    // lines/words carry inline add/remove decorations. Falls back to a plain
+    // colorized unified diff if the editor bundle isn't available.
     function loadDiff(path) {
-      bodyEl.innerHTML = '<span class="muted">loading diff…</span>';
+      diffMessage('<span class="muted">loading diff…</span>');
+      fetch(api("/git/file?path=" + encodeURIComponent(path) + refQuery()), { credentials: "same-origin" })
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        .then(function (data) {
+          if ((data.original || "") === (data.modified || "")) {
+            diffMessage('<span class="muted">no differences in this file</span>');
+            return;
+          }
+          if (!window.SandclaudeEditor || !window.SandclaudeEditor.createDiff) {
+            return loadDiffFallback(path); // no bundle — plain text diff
+          }
+          destroyDiffEditor();
+          bodyEl.innerHTML = "";
+          diffEditor = window.SandclaudeEditor.createDiff({
+            parent: bodyEl,
+            original: data.original || "",
+            modified: data.modified || "",
+            filename: data.filename || path,
+          });
+        })
+        .catch(function (err) { diffMessage('<span class="attention">diff error: ' + esc(err.message) + "</span>"); });
+    }
+
+    // Plain colorized unified-diff fallback (used only if the CM bundle is
+    // missing). Colorizes a unified diff into per-line spans.
+    function loadDiffFallback(path) {
       fetch(api("/git/diff?path=" + encodeURIComponent(path) + refQuery()), { credentials: "same-origin" })
         .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
-        .then(renderDiff)
+        .then(function (text) {
+          if (!text.trim()) { bodyEl.innerHTML = '<span class="muted">no differences</span>'; return; }
+          bodyEl.innerHTML = '<pre class="diff-pre">' + text.split("\n").map(function (line) {
+            var cls = "";
+            if (line[0] === "+" && line.slice(0, 3) !== "+++") cls = "d-add";
+            else if (line[0] === "-" && line.slice(0, 3) !== "---") cls = "d-del";
+            else if (line[0] === "@") cls = "d-hunk";
+            else if (line.slice(0, 4) === "diff" || line.slice(0, 3) === "+++" || line.slice(0, 3) === "---") cls = "d-meta";
+            return '<span class="' + cls + '">' + esc(line) + "</span>";
+          }).join("\n") + "</pre>";
+        })
         .catch(function (err) { bodyEl.innerHTML = '<span class="attention">diff error: ' + esc(err.message) + "</span>"; });
     }
 
