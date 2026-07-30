@@ -92,9 +92,9 @@ func (d *dashboardServer) handleChatWS(w http.ResponseWriter, r *http.Request, i
 		http.NotFound(w, r)
 		return
 	}
-	claudeBin, err := exec.LookPath("claude")
+	claudeBin, err := resolveClaudeBin()
 	if err != nil {
-		http.Error(w, "the `claude` CLI was not found on the host PATH — install Claude Code to use the chat panel", http.StatusBadGateway)
+		http.Error(w, "the `claude` CLI could not be located — install Claude Code and restart the dashboard", http.StatusBadGateway)
 		return
 	}
 	tools := parseChatTools(r.URL.Query().Get("tools"))
@@ -126,6 +126,20 @@ func (d *dashboardServer) handleChatWS(w http.ResponseWriter, r *http.Request, i
 		sessionID = d.runChatTurn(r.Context(), claudeBin, workspace, tools, msg.Prompt, sessionID, send)
 		_ = send(chatServerMsg{Type: "turn_end"})
 	}
+}
+
+// resolveClaudeBin finds the host `claude` executable. It prefers the absolute
+// path captured at daemon-launch time in SANDCLAUDE_CLAUDE_BIN (the launcher
+// runs in the user's interactive terminal env with their real PATH, incl.
+// nvm/asdf dirs the detached daemon's stripped PATH usually omits), and falls
+// back to a plain PATH lookup.
+func resolveClaudeBin() (string, error) {
+	if p := os.Getenv("SANDCLAUDE_CLAUDE_BIN"); p != "" {
+		if _, err := os.Stat(p); err == nil {
+			return p, nil
+		}
+	}
+	return exec.LookPath("claude")
 }
 
 // runChatTurn spawns one `claude -p` invocation and streams its parsed events to

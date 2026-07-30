@@ -1027,6 +1027,15 @@ func EnsureDashboardRunning() (*DashboardState, bool, error) {
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	// Resolve `claude` here — this launcher runs in the user's interactive
+	// terminal environment (their real PATH, incl. nvm/asdf/etc.), whereas the
+	// detached daemon inherits a stripped PATH that often omits it. Pass the
+	// absolute path to the daemon so the chat panel can spawn it. (The daemon
+	// falls back to its own PATH lookup if this is unset.)
+	cmd.Env = os.Environ()
+	if claudeBin, err := exec.LookPath("claude"); err == nil {
+		cmd.Env = append(cmd.Env, "SANDCLAUDE_CLAUDE_BIN="+claudeBin)
+	}
 	if err := cmd.Start(); err != nil {
 		return nil, false, fmt.Errorf("failed to start dashboard server: %w", err)
 	}

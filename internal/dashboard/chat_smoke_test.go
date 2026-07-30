@@ -59,7 +59,10 @@ func TestChatSmoke(t *testing.T) {
 		t.Errorf("unauth chat page status = %d, want 403", r.StatusCode)
 	}
 
-	// 3. WS upgrade spawns claude. Skip if the host has no claude binary.
+	// 3. WS upgrade spawns claude. Skip if the host has no claude binary. (The
+	// test process has the user's full PATH; the daemon-PATH problem the handler
+	// guards against with SANDCLAUDE_CLAUDE_BIN is specific to the detached
+	// daemon, not this in-process test.)
 	if _, err := exec.LookPath("claude"); err != nil {
 		t.Skip("claude not installed on host; skipping WS spawn check")
 	}
