@@ -24,8 +24,8 @@ const maxEditableBytes = 2 << 20 // 2 MiB
 
 // dirsToSkip are never listed in the file tree (noise / not project source).
 var dirsToSkip = map[string]bool{
-	".git":        true,
-	".sandclaude": true,
+	".git":         true,
+	".sandclaude":  true,
 	"node_modules": true,
 }
 
@@ -285,8 +285,10 @@ type gitChange struct {
 	Removed int    `json:"removed"`
 }
 
-// handleGitStatus reports the working-tree changes for the workspace.
-// GET /p/<id>/git/status
+// handleGitStatus reports the changed files for the workspace. Default mode is
+// the working tree vs HEAD. With valid base & target ref query params it instead
+// reports the changes between those two refs (base..target).
+// GET /p/<id>/git/status[?base=<ref>&target=<ref>]
 func (d *dashboardServer) handleGitStatus(w http.ResponseWriter, r *http.Request, id string) {
 	workspace, err := lookupWorkspaceByID(id)
 	if err != nil {
@@ -296,6 +298,13 @@ func (d *dashboardServer) handleGitStatus(w http.ResponseWriter, r *http.Request
 	// Is this a git repo at all?
 	if out, gerr := gitCmd(workspace, "rev-parse", "--is-inside-work-tree"); gerr != nil || strings.TrimSpace(out) != "true" {
 		writeFilesJSON(w, map[string]any{"repo": false})
+		return
+	}
+
+	base := r.URL.Query().Get("base")
+	target := r.URL.Query().Get("target")
+	if base != "" || target != "" {
+		d.gitStatusRefs(w, workspace, base, target)
 		return
 	}
 
@@ -334,7 +343,57 @@ func (d *dashboardServer) handleGitStatus(w http.ResponseWriter, r *http.Request
 		changes = append(changes, gitChange{Path: p, Status: xy, Added: n[0], Removed: n[1]})
 	}
 	sort.Slice(changes, func(i, j int) bool { return changes[i].Path < changes[j].Path })
-	writeFilesJSON(w, map[string]any{"repo": true, "changes": changes})
+	writeFilesJSON(w, map[string]any{"repo": true, "mode": "worktree", "changes": changes})
+}
+
+// gitStatusRefs reports the changed files between two refs (base..target). Both
+// must validate; base defaults to HEAD if only target is given (and vice versa).
+func (d *dashboardServer) gitStatusRefs(w http.ResponseWriter, workspace, base, target string) {
+	if base == "" {
+		base = "HEAD"
+	}
+	if target == "" {
+		target = "HEAD"
+	}
+	if !validRef(workspace, base) || !validRef(workspace, target) {
+		http.Error(w, "unknown git ref", http.StatusBadRequest)
+		return
+	}
+	rangeArg := base + ".." + target
+
+	// name-status for the change kind (A/M/D/R), numstat for line counts.
+	nums := map[string][2]int{}
+	if numstat, nerr := gitCmd(workspace, "diff", "--numstat", rangeArg); nerr == nil {
+		for _, line := range strings.Split(numstat, "\n") {
+			f := strings.Fields(line)
+			if len(f) < 3 {
+				continue
+			}
+			a, _ := strconv.Atoi(f[0])
+			rm, _ := strconv.Atoi(f[1])
+			nums[f[2]] = [2]int{a, rm}
+		}
+	}
+	nameStatus, err := gitCmd(workspace, "diff", "--name-status", rangeArg)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	changes := make([]gitChange, 0)
+	for _, line := range strings.Split(nameStatus, "\n") {
+		f := strings.Split(strings.TrimSpace(line), "\t")
+		if len(f) < 2 {
+			continue
+		}
+		code := f[0]
+		p := f[len(f)-1] // rename rows are "R100\told\tnew" — take the new path
+		n := nums[p]
+		// Present the kind as a porcelain-ish XY the frontend's statusLabel reads.
+		xy := " " + string(code[0])
+		changes = append(changes, gitChange{Path: p, Status: xy, Added: n[0], Removed: n[1]})
+	}
+	sort.Slice(changes, func(i, j int) bool { return changes[i].Path < changes[j].Path })
+	writeFilesJSON(w, map[string]any{"repo": true, "mode": "refs", "base": base, "target": target, "changes": changes})
 }
 
 // handleGitDiff returns the unified diff for one path (working tree vs HEAD).
@@ -350,6 +409,32 @@ func (d *dashboardServer) handleGitDiff(w http.ResponseWriter, r *http.Request, 
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
 	}
+
+	// Ref-diff mode: with valid base/target, show that file's diff across the two
+	// refs. Otherwise fall through to the working-tree-vs-HEAD default.
+	base := r.URL.Query().Get("base")
+	target := r.URL.Query().Get("target")
+	if base != "" || target != "" {
+		if base == "" {
+			base = "HEAD"
+		}
+		if target == "" {
+			target = "HEAD"
+		}
+		if !validRef(workspace, base) || !validRef(workspace, target) {
+			http.Error(w, "unknown git ref", http.StatusBadRequest)
+			return
+		}
+		diff, derr := gitCmd(workspace, "diff", base+".."+target, "--", rel)
+		if derr != nil {
+			http.Error(w, derr.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		fmt.Fprint(w, diff)
+		return
+	}
+
 	// `git diff HEAD -- <path>` shows staged+unstaged changes vs the last commit.
 	// For an untracked file (no HEAD blob) git diff prints nothing, so fall back
 	// to diffing against /dev/null to show the whole file as added.
@@ -389,6 +474,60 @@ func gitCmd(workspace string, args ...string) (string, error) {
 func writeFilesJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(v)
+}
+
+// validRef confirms a ref string names a real git object in the workspace before
+// we splice it into a git command. This is the injection guard: refs come from
+// the client, so we never pass an unverified string to git. Empty is allowed by
+// callers that treat it as "working tree" / default.
+func validRef(workspace, ref string) bool {
+	if ref == "" {
+		return false
+	}
+	// rev-parse --verify resolves branches, tags, and SHAs; ^{commit} ensures it's
+	// a commit-ish. Reject anything that doesn't resolve.
+	if _, err := gitCmd(workspace, "rev-parse", "--verify", "--quiet", ref+"^{commit}"); err != nil {
+		return false
+	}
+	return true
+}
+
+// handleGitRefs lists the refs available for the diff picker: local branches,
+// the current HEAD, and tags. GET /p/<id>/git/refs
+func (d *dashboardServer) handleGitRefs(w http.ResponseWriter, r *http.Request, id string) {
+	workspace, err := lookupWorkspaceByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if out, gerr := gitCmd(workspace, "rev-parse", "--is-inside-work-tree"); gerr != nil || strings.TrimSpace(out) != "true" {
+		writeFilesJSON(w, map[string]any{"repo": false})
+		return
+	}
+	current := ""
+	if c, cerr := gitCmd(workspace, "rev-parse", "--abbrev-ref", "HEAD"); cerr == nil {
+		current = strings.TrimSpace(c)
+	}
+	branches := gitRefList(workspace, "refs/heads")
+	tags := gitRefList(workspace, "refs/tags")
+	writeFilesJSON(w, map[string]any{
+		"repo": true, "current": current, "branches": branches, "tags": tags,
+	})
+}
+
+// gitRefList returns the short names under a ref namespace (e.g. refs/heads).
+func gitRefList(workspace, namespace string) []string {
+	out, err := gitCmd(workspace, "for-each-ref", "--format=%(refname:short)", "--sort=-committerdate", namespace)
+	names := make([]string, 0)
+	if err != nil {
+		return names
+	}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if s := strings.TrimSpace(line); s != "" {
+			names = append(names, s)
+		}
+	}
+	return names
 }
 
 // readAllLimited reads the request body, erroring if it exceeds max bytes (so a
