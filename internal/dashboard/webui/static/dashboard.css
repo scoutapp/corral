@@ -648,8 +648,14 @@ table.projects th, table.projects td {
   background: none !important;
 }
 .diff-body .cm-changeGutter { width: 4px !important; }
-.diff-body .cm-changedLineGutter { background: var(--con-working) !important; } /* green: added/changed */
-.diff-body .cm-deletedLineGutter { background: #ff6b81 !important; }            /* red: deleted */
+/* Green = added/changed, red = deleted. The changed-line gutter element also
+   carries cm-activeLineGutter, whose background was winning and leaving the bar
+   transparent — so target that combination explicitly, with a literal color
+   (a var() here was resolving to nothing on the changed side). */
+.diff-body .cm-changedLineGutter,
+.diff-body .cm-changedLineGutter.cm-activeLineGutter { background-color: #5ce6a8 !important; }
+.diff-body .cm-deletedLineGutter,
+.diff-body .cm-deletedLineGutter.cm-activeLineGutter { background-color: #ff6b81 !important; }
 .diff-body > span.muted, .diff-body > span.attention { display: block; padding: 0.8rem; }
 /* Plain-text fallback (only if the CM bundle is missing). */
 .diff-pre {
