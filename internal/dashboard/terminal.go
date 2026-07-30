@@ -137,11 +137,14 @@ func (d *dashboardServer) handleContainerWS(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "container is not running for this project", http.StatusBadGateway)
 		return
 	}
-	// -it: interactive + TTY so bash behaves like a real shell. Prefer bash, fall
-	// back to sh (some minimal inner images lack bash — though the sandbox image
-	// has it). exec via sh -c so the fallback works in one command.
+	// -it: interactive + TTY so bash behaves like a real shell. `bash -i` is what
+	// gives a usable prompt: the sandbox user's ~/.bashrc sets a colored
+	// user@host:cwd$ PS1, but it's guarded by `case $- in *i*)` and only runs for
+	// INTERACTIVE shells — a bare `exec bash` starts non-interactive, so .bashrc
+	// returns early and PS1 is empty (the "I don't realize I'm in a shell"
+	// symptom). Fall back to `sh -i` on minimal images without bash.
 	cmd := exec.Command("docker", "exec", "-it", containerName,
-		"sh", "-c", "exec bash 2>/dev/null || exec sh")
+		"sh", "-c", "exec bash -i 2>/dev/null || exec sh -i")
 	d.bridgePTY(w, r, cmd)
 }
 
