@@ -2,13 +2,13 @@ package cli
 
 import (
 	"bufio"
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"github.com/jackrothrock/sandclaude/internal/config"
 	"github.com/jackrothrock/sandclaude/internal/container"
 	"github.com/jackrothrock/sandclaude/internal/creds"
 	"github.com/jackrothrock/sandclaude/internal/dashboard"
+	"github.com/jackrothrock/sandclaude/internal/project"
 	"github.com/jackrothrock/sandclaude/internal/proxy"
 	"github.com/jackrothrock/sandclaude/internal/session"
 	"log"
@@ -138,22 +138,13 @@ func cmdInit() error {
 		return fmt.Errorf("project already initialized at %s\n   To update config run: sandclaude update\n   To remove it run:     sandclaude remove", projectDir)
 	}
 
-	if err := os.MkdirAll(projectDir, 0700); err != nil {
-		return fmt.Errorf("failed to create project dir: %w", err)
-	}
-
-	log.Printf("Initializing project at: %s\n", projectDir)
 	log.Println()
 
-	cfg := &config.ProjectConfig{
-		CreatedAt: time.Now().UTC().Format(time.RFC3339),
-	}
-
-	log.Println()
+	var opts project.InitOptions
 
 	// Credential proxy
 	if config.AskYesNo("RECOMMENDED: Enable credential proxy (hides secrets from Claude)?") {
-		cfg.ProxyEnabled = true
+		opts.ProxyEnabled = true
 		log.Println("✅ Proxy mode enabled")
 		log.Println()
 		log.Println("⚠️  IMPORTANT: You must configure real credentials before starting!")
@@ -166,7 +157,7 @@ func cmdInit() error {
 
 	// tmux
 	if config.AskYesNo("Launch with tmux?") {
-		cfg.LaunchTmux = true
+		opts.LaunchTmux = true
 		log.Println("✅ tmux launch enabled")
 	}
 
@@ -174,7 +165,7 @@ func cmdInit() error {
 
 	// Docker-in-Docker
 	if config.AskYesNo("Enable Docker-in-Docker (inner containers, Claude-accessible)?") {
-		cfg.DindEnabled = true
+		opts.DindEnabled = true
 		log.Println("Docker-in-Docker enabled — Claude can start inner containers")
 		log.Println()
 		log.Println("   Inner containers' network egress goes through the allowlist proxy")
@@ -184,11 +175,10 @@ func cmdInit() error {
 		portsInput, _ := reader2.ReadString('\n')
 		portsInput = strings.TrimSpace(portsInput)
 		if portsInput != "" {
-			ports := strings.FieldsFunc(portsInput, func(r rune) bool {
+			opts.DindPorts = strings.FieldsFunc(portsInput, func(r rune) bool {
 				return r == ',' || r == ' '
 			})
-			cfg.DindPorts = ports
-			log.Printf("   Port mappings: %s\n", strings.Join(ports, ", "))
+			log.Printf("   Port mappings: %s\n", strings.Join(opts.DindPorts, ", "))
 		} else {
 			log.Println("   No host port mappings — inner containers accessible to Claude only")
 		}
@@ -201,89 +191,25 @@ func cmdInit() error {
 	// Workspace directory. sandclaude now runs from the project root itself (not from
 	// an embedded .devcontainer), so the workspace defaults to the current directory.
 	cwd, _ := os.Getwd()
-	defaultWorkspace := cwd
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("Workspace directory (default: %s): ", defaultWorkspace)
+	fmt.Printf("Workspace directory (default: %s): ", cwd)
 	workspaceInput, _ := reader.ReadString('\n')
 	workspace := strings.TrimSpace(workspaceInput)
 	if workspace == "" {
-		workspace = defaultWorkspace
-	}
-	cfg.Workspace = workspace
-
-	if _, err := os.Stat(workspace); os.IsNotExist(err) {
-		if config.AskYesNo("Workspace doesn't exist. Create it?") {
-			os.MkdirAll(workspace, 0755)
-			log.Printf("Created workspace: %s\n", workspace)
-		}
+		workspace = cwd
 	}
 
-	if err := config.WriteConfig(projectDir, cfg); err != nil {
-		return fmt.Errorf("failed to write config: %w", err)
-	}
-
-	// Generate encryption key for allowlist
-	keyPath := filepath.Join(projectDir, ".allowlist-key")
-	keyData := make([]byte, 32)
-	if _, err := rand.Read(keyData); err != nil {
-		return fmt.Errorf("failed to generate encryption key: %w", err)
-	}
-	// Store as hex string
-	keyHex := fmt.Sprintf("%x", keyData)
-	if err := os.WriteFile(keyPath, []byte(keyHex), 0600); err != nil {
-		return fmt.Errorf("failed to write encryption key: %w", err)
-	}
-	log.Println("✅ Encryption key generated")
-
-	// Credentials are global now — no per-project template is created during init.
-	// Populate them with: sandclaude populate-proxy-credentials
-	// (or, for a project-specific override: sandclaude populate-proxy-credentials --project)
-
-	// Seed the project allowlist from the shipped defaults, then encrypt it.
-	log.Println()
-	log.Println("Encrypting allowlist...")
-	seedPath := filepath.Join(config.AssetsDir(), "allowlist-proxy", "allowed-domains.txt")
-	plaintextPath := filepath.Join(config.SandclaudeDir(), "allowed-domains.txt")
-	encPath := filepath.Join(config.SandclaudeDir(), "allowed-domains.txt.enc")
-
-	// Copy the seed into the project if the project doesn't already have one.
-	if _, err := os.Stat(plaintextPath); os.IsNotExist(err) {
-		seed, err := os.ReadFile(seedPath)
-		if err != nil {
-			return fmt.Errorf("read allowlist seed %s: %w\n\nIs sandclaude installed? Run install.sh", seedPath, err)
-		}
-		if err := os.WriteFile(plaintextPath, seed, 0644); err != nil {
-			return fmt.Errorf("write %s: %w", plaintextPath, err)
-		}
-		log.Printf("✅ Allowlist seeded at: %s\n", plaintextPath)
-	} else {
-		log.Printf("✅ Allowlist already exists at: %s (not overwriting)\n", plaintextPath)
-	}
-
-	plaintext, err := os.ReadFile(plaintextPath)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", plaintextPath, err)
-	}
-
-	key, err := creds.AllowlistDeriveKey(keyHex)
+	// InitProject does the non-interactive work (config, key, allowlist) and is
+	// shared with the dashboard's create-project flow.
+	cfg, err := project.InitProject(workspace, opts)
 	if err != nil {
 		return err
 	}
 
-	ciphertext, err := creds.AllowlistEncrypt(key, plaintext)
-	if err != nil {
-		return fmt.Errorf("encrypt: %w", err)
-	}
-
-	if err := os.WriteFile(encPath, ciphertext, 0644); err != nil {
-		return fmt.Errorf("write %s: %w", encPath, err)
-	}
+	log.Println("✅ Encryption key generated")
 	log.Printf("✅ Allowlist encrypted\n")
-
 	log.Println()
-	log.Printf("✅ Project initialized at: %s\n", projectDir)
-	log.Printf("   Config: %s/config.json\n", projectDir)
-	log.Printf("   Encryption key: %s/.allowlist-key (DO NOT commit)\n", projectDir)
+	log.Printf("✅ Project initialized at: %s\n", config.ProjectDirFor(workspace))
 	log.Println()
 	log.Println("Next steps:")
 	if cfg.ProxyEnabled {
