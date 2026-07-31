@@ -14,7 +14,11 @@ Here's what that boundary does and doesn't cover.
   (`gh auth token`, `gh auth status --show-token`). `gh`/`git` still work; neither
   Claude nor a shell command can extract the real token.
 - **Outbound network** — all egress (outer container *and* inner DinD containers)
-  is forced through the allowlist proxy; non-allowlisted domains get `403`.
+  is forced through the allowlist proxy; non-allowlisted domains get `403`. This
+  containment is unchanged by the capture preset below — *which* allowed traffic
+  is decrypted (MITM'd) for inspection/credential-injection defaults to **minimal
+  (Claude + GitHub)**; other allowed hosts still pass but are direct-dialed (not
+  decrypted). Change it per project (Config → Capture): minimal / all / none / custom.
 - **Filesystem** — only the project workspace is mounted, not your home/SSH keys.
 - **Dashboard** — binds `127.0.0.1` only, every route requires a per-launch token.
 

@@ -35,6 +35,7 @@ import (
 type configEdit struct {
 	AllowedHosts *[]string `json:"allowed_hosts,omitempty"`
 	MonitorHosts *[]string `json:"monitor_hosts,omitempty"`
+	MitmPreset   *string   `json:"mitm_preset,omitempty"` // minimal|all|none|custom
 	MitmPorts    *[]string `json:"mitm_ports,omitempty"`
 
 	// Credential mutations, explicit so a masked read-back is never mistaken for
@@ -109,6 +110,23 @@ func (d *dashboardServer) handleConfigApply(w http.ResponseWriter, r *http.Reque
 			fail("firewall-reload", err)
 		} else {
 			okMsg("allowlist updated + proxy reloaded")
+		}
+	}
+
+	// Mitm capture preset: persist it to config, then resolve to the effective
+	// monitor-host list and apply it live via the same clear+add path below.
+	if edit.MitmPreset != nil {
+		if cfg, cerr := readConfigForWorkspace(workspace); cerr == nil {
+			cfg.MitmPreset = *edit.MitmPreset
+			if werr := config.WriteConfig(projectDirForWorkspace(workspace), cfg); werr != nil {
+				fail("save mitm preset", werr)
+			} else {
+				resolved := cfg.ResolveMonitorHosts()
+				edit.MonitorHosts = &resolved // drive the live apply below
+				okMsg("mitm capture preset: " + *edit.MitmPreset)
+			}
+		} else {
+			fail("read config for preset", cerr)
 		}
 	}
 

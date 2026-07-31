@@ -43,6 +43,7 @@ type configView struct {
 	AllowedHosts []string   `json:"allowed_hosts"`
 	MonitorHosts []string   `json:"monitor_hosts"` // empty = monitor all
 	MonitorAll   bool       `json:"monitor_all"`
+	MitmPreset   string     `json:"mitm_preset"` // minimal|all|none|custom
 	MitmPorts    []string   `json:"mitm_ports"`
 	Credentials  []credView `json:"credentials"`
 
@@ -75,6 +76,7 @@ func (d *dashboardServer) handleConfigRead(w http.ResponseWriter, r *http.Reques
 		Workspace:    workspace,
 		MonitorHosts: cfg.MonitorHosts,
 		MonitorAll:   len(cfg.MonitorHosts) == 0,
+		MitmPreset:   cfg.MitmPresetOrDefault(),
 		MitmPorts:    cfg.MitmPortsOrDefault(),
 		ProxyEnabled: cfg.ProxyEnabled,
 		DindEnabled:  cfg.DindEnabled,

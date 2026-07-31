@@ -887,3 +887,11 @@ table.projects th, table.projects td {
 .toast-sub { color: var(--con-muted); font-size: 0.75rem; }
 .toast-x { flex: none; background: transparent; border: none; color: var(--con-muted); cursor: pointer; font-size: 0.85rem; padding: 0 0.2rem; }
 .toast-x:hover { color: #fff; }
+
+/* Config-tab select (mitm preset). */
+.cfg-select {
+  background: var(--con-panel-hi); color: var(--con-text);
+  border: 1px solid var(--con-line); border-radius: 6px; padding: 0.35rem 0.5rem;
+  font-size: 0.85rem; min-width: 260px;
+}
+.cfg-select:focus { outline: none; border-color: var(--con-working); box-shadow: 0 0 0 2px rgba(92,230,168,0.2); }

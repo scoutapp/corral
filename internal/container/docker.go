@@ -295,9 +295,12 @@ func (sc *SandClaude) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) 
 	//    config => no file mounted => proxy monitors all allowed hosts (default).
 	//  - mitm-ports: passed as an env var the entrypoint forwards to --mitm-ports.
 	if cfg, err := config.ReadConfig(config.GetProjectDir()); err == nil {
-		if len(cfg.MonitorHosts) > 0 {
+		// Resolve the capture preset (minimal/all/none/custom) to the effective
+		// monitor-host list. "all" -> empty -> no file -> proxy monitors everything.
+		monitorHosts := cfg.ResolveMonitorHosts()
+		if len(monitorHosts) > 0 {
 			monitorPath := proxy.MonitorHostsPath()
-			if err := config.WriteMonitorHostsFile(monitorPath, cfg.MonitorHosts); err != nil {
+			if err := config.WriteMonitorHostsFile(monitorPath, monitorHosts); err != nil {
 				return fmt.Errorf("failed to write monitor-hosts file: %w", err)
 			}
 			args = append(args, "-v", fmt.Sprintf("%s:/home/claude/monitor-hosts.txt:rw", monitorPath))
