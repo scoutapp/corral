@@ -48,6 +48,7 @@ type configEdit struct {
 	DindEnabled  *bool     `json:"dind_enabled,omitempty"`
 	DindPorts    *[]string `json:"dind_ports,omitempty"`
 	LaunchTmux   *bool     `json:"launch_tmux,omitempty"`
+	SeccompMode  *string   `json:"seccomp_mode,omitempty"`
 }
 
 type credSet struct {
@@ -294,6 +295,9 @@ func computeDiff(edit configEdit, cur *config.ProjectConfig, curAllowed []string
 	if edit.LaunchTmux != nil && *edit.LaunchTmux != cur.LaunchTmux {
 		out = append(out, diffEntry{Field: "launch_tmux", Change: fmt.Sprintf("~ %v → %v", cur.LaunchTmux, *edit.LaunchTmux), Restart: true})
 	}
+	if edit.SeccompMode != nil && *edit.SeccompMode != cur.SeccompMode {
+		out = append(out, diffEntry{Field: "seccomp_mode", Change: fmt.Sprintf("~ %q → %q", cur.SeccompMode, *edit.SeccompMode), Restart: true})
+	}
 	return out
 }
 
@@ -339,6 +343,9 @@ func applyRestartFields(workspace string, edit configEdit) error {
 	}
 	if edit.LaunchTmux != nil {
 		cfg.LaunchTmux = *edit.LaunchTmux
+	}
+	if edit.SeccompMode != nil {
+		cfg.SeccompMode = *edit.SeccompMode
 	}
 	return config.WriteConfig(projectDirForWorkspace(workspace), cfg)
 }

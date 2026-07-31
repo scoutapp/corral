@@ -200,6 +200,7 @@ func (sc *SandClaude) Run(keepDevfiles bool) error {
 		sc.dindEnabled = true
 		sc.dindPorts = cfg.DindPorts
 	}
+	sc.seccompMode = cfg.SeccompMode
 
 	// Re-encrypt the allowlist from plaintext so the mounted .enc always reflects
 	// the current allowed-domains.txt. Without this, editing the plaintext and then

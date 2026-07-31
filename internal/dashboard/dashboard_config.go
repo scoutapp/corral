@@ -52,6 +52,7 @@ type configView struct {
 	DindEnabled  bool     `json:"dind_enabled"`
 	DindPorts    []string `json:"dind_ports"`
 	LaunchTmux   bool     `json:"launch_tmux"`
+	SeccompMode  string   `json:"seccomp_mode"` // "" default | unconfined | <path>
 
 	// Live status, so the panel can show whether a reload will actually reach a
 	// running proxy or is just being saved for next start.
@@ -82,6 +83,7 @@ func (d *dashboardServer) handleConfigRead(w http.ResponseWriter, r *http.Reques
 		DindEnabled:  cfg.DindEnabled,
 		DindPorts:    cfg.DindPorts,
 		LaunchTmux:   cfg.LaunchTmux,
+		SeccompMode:  cfg.SeccompMode,
 		ContainerUp:  session.DockerContainerRunning(session.ContainerNameForWorkspace(workspace)),
 	}
 

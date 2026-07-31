@@ -71,6 +71,12 @@ function startConfig(projectId) {
         field("Docker-in-Docker", toggle("cfg-dind", cfg.dind_enabled)) +
         field("Published ports", linesToList("cfg-dindports", cfg.dind_ports)) +
         field("Launch tmux", toggle("cfg-tmux", cfg.launch_tmux)) +
+        field("Seccomp",
+              '<select id="cfg-seccomp" class="cfg-select">' +
+                seccompOption("", "Default (Docker profile)", cfg.seccomp_mode) +
+                seccompOption("unconfined", "Unconfined — no filtering", cfg.seccomp_mode) +
+              "</select>" +
+              '<div class="muted cfg-note">unconfined allows syscalls the default profile blocks (e.g. Erlang/BEAM). No effect with Docker-in-Docker (already privileged).</div>') +
         '<div class="cfg-actions">' +
           '<button id="cfg-restart" class="cfg-btn cfg-btn-danger">Restart project now</button>' +
           '<span class="muted"> — interrupts the running session in this project</span>' +
@@ -92,6 +98,11 @@ function startConfig(projectId) {
   }
   function presetOption(val, label, current) {
     return '<option value="' + val + '"' + (current === val ? " selected" : "") + ">" + esc(label) + "</option>";
+  }
+  function seccompOption(val, label, current) {
+    // treat "default" and "" as the same selected state
+    var cur = current === "default" ? "" : (current || "");
+    return '<option value="' + val + '"' + (cur === val ? " selected" : "") + ">" + esc(label) + "</option>";
   }
 
   function credEditor(creds) {
@@ -136,6 +147,7 @@ function startConfig(projectId) {
       dind_enabled: document.getElementById("cfg-dind").checked,
       dind_ports: textareaLines("cfg-dindports") || [],
       launch_tmux: document.getElementById("cfg-tmux").checked,
+      seccomp_mode: document.getElementById("cfg-seccomp").value,
     };
   }
 

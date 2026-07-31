@@ -24,6 +24,15 @@ type ProjectConfig struct {
 	// port (ssh, SOCKS, …) is direct-dialed. Empty = default 80,443.
 	MitmPorts []string `json:"mitm_ports,omitempty"`
 
+	// SeccompMode selects the container's seccomp profile:
+	//   "" / "default"    — Docker's default seccomp profile
+	//   "unconfined"      — no seccomp filtering (needed for some runtimes, e.g.
+	//                       Erlang/BEAM, that make syscalls the default blocks)
+	//   "<path>"          — a custom profile JSON on the host
+	// Note: with DinD (--privileged) seccomp is already disabled, so this only
+	// takes effect when DinD is off.
+	SeccompMode string `json:"seccomp_mode,omitempty"`
+
 	// MitmPreset is a friendly capture policy that resolves to MonitorHosts:
 	//   "minimal" (default) — MITM only Claude + GitHub hosts
 	//   "all"               — MITM every allowed host (MonitorHosts empty)

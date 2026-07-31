@@ -41,6 +41,14 @@ func (sc *SandClaude) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) 
 		args = append(args, "--privileged")
 	} else {
 		args = append(args, "--cap-add=NET_ADMIN", "--cap-add=NET_RAW")
+		// Seccomp only bites without --privileged (DinD's --privileged already
+		// disables it). "" / "default" -> Docker's default profile (omit the flag);
+		// "unconfined" or a custom profile path -> pass --security-opt seccomp=…
+		// (e.g. Erlang/BEAM needs syscalls the default profile blocks).
+		if m := sc.seccompMode; m != "" && m != "default" {
+			args = append(args, "--security-opt", "seccomp="+m)
+			log.Printf("seccomp: %s", m)
+		}
 	}
 
 	if sc.DisableFirewall {
