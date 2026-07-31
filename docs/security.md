@@ -21,16 +21,17 @@ Here's what that boundary does and doesn't cover.
 ## What "host privileges" means
 
 **TL;DR:** container escape = root in the Docker VM on **macOS**, root on the
-**actual machine** on **Linux**. Either way, the host-side pieces (dashboard, host
-shell, host `claude`) always run as your user with full privileges.
+**actual machine** on **Linux**.
 
 - **macOS** — Docker runs in a Linux VM, so escape is root *in the VM*, not on
   macOS. Caveat: mounted paths (the workspace) are still reachable.
 - **Linux** — the container shares the host kernel, so escape ≈ real root on your
   machine.
 
-So the *container* is better contained on macOS (VM boundary) than Linux (shared
-kernel); the *host-side* trust model is identical on both.
+So the container is better contained on macOS (VM boundary) than Linux (shared
+kernel). (The host-side shell / host `claude` are a separate matter — they run
+*as you* with full privileges by design; dashboard access-gating is covered
+under residual risks below.)
 
 ## Residual risks
 
