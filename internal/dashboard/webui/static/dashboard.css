@@ -849,3 +849,12 @@ table.projects th, table.projects td {
 }
 .mode-tabs button:hover { background: var(--con-panel-hi); }
 .mode-tabs button.active { background: var(--con-panel-hi); color: #fff; border-color: var(--con-working); }
+
+/* Keyboard-shortcuts help overlay (Ctrl-/). */
+.hotkey-help { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; background: rgba(0,0,0,0.45); }
+.hotkey-help .hk-card { background: #1e1e1e; border: 1px solid var(--con-line); border-radius: 10px; padding: 1rem 1.2rem; min-width: 280px; box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+.hotkey-help .hk-title { font-weight: 600; margin-bottom: 0.7rem; color: var(--con-text); }
+.hotkey-help .hk-row { display: flex; align-items: center; gap: 0.9rem; padding: 0.28rem 0; font-size: 0.85rem; }
+.hotkey-help .hk-row kbd { flex: 0 0 auto; min-width: 3.4rem; text-align: center; font-family: ui-monospace, Menlo, monospace; font-size: 0.75rem; background: var(--con-panel-hi); border: 1px solid var(--con-line); border-radius: 5px; padding: 2px 6px; color: var(--con-text); }
+.hotkey-help .hk-row span { color: var(--con-muted); }
+.hotkey-help .hk-hint { margin-top: 0.7rem; font-size: 0.72rem; color: var(--con-muted); text-align: center; }

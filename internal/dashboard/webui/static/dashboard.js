@@ -111,10 +111,7 @@
 
   if (hostToggle) hostToggle.addEventListener("click", function () { showHost(!hostVisible()); });
   if (hostClose) hostClose.addEventListener("click", function () { showHost(false); });
-  // Ctrl-` toggles, like VS Code.
-  document.addEventListener("keydown", function (e) {
-    if (e.ctrlKey && e.key === "`") { e.preventDefault(); showHost(!hostVisible()); }
-  });
+  // (Ctrl-` toggle is registered in the global hotkey layer near the end.)
 
   // Drag the top handle to resize.
   if (hostHandle && overlay) {
@@ -179,10 +176,7 @@
     try { localStorage.setItem(CHAT_DOCK_KEY, side); } catch (e) {}
     applyChatDock();
   });
-  // Ctrl-J toggles the chat panel.
-  document.addEventListener("keydown", function (e) {
-    if (e.ctrlKey && (e.key === "j" || e.key === "J")) { e.preventDefault(); showChat(!chatVisible()); }
-  });
+  // (Ctrl-J toggle is registered in the global hotkey layer near the end.)
 
   // Drag the inner-edge handle to resize the panel width.
   if (chatHandle && chat) {
@@ -204,6 +198,66 @@
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
     });
+  }
+
+  // ---- Global hotkeys -------------------------------------------------------
+  // A small keyboard layer for the project page. Existing per-panel toggles
+  // (Ctrl-` host shell, Ctrl-J chat) are folded in here so they share one guard
+  // and don't fire while you're typing into a field or the terminal.
+  function toggleClaudeDock() {
+    var collapsed = layout && layout.classList.contains("dock-collapsed");
+    var next = !collapsed; // collapsed -> expand, expanded -> collapse
+    try { localStorage.setItem(DOCK_KEY, next ? "1" : "0"); } catch (e) {}
+    applyDock(next);
+  }
+
+  // Don't hijack keys while the user is typing (inputs, textareas, the xterm
+  // canvas, or anything contenteditable). Panel iframes capture their own keys.
+  function typingTarget() {
+    var el = document.activeElement;
+    if (!el) return false;
+    var tag = (el.tagName || "").toLowerCase();
+    return tag === "input" || tag === "textarea" || el.isContentEditable ||
+      el.classList.contains("xterm-helper-textarea") || tag === "iframe";
+  }
+
+  var HOTKEYS = [
+    { combo: "Ctrl-`", key: "`", label: "Toggle host shell", run: function () { showHost(!hostVisible()); } },
+    { combo: "Ctrl-J", key: "j", label: "Toggle Ask Claude", run: function () { showChat(!chatVisible()); } },
+    { combo: "Ctrl-;", key: ";", label: "Toggle Claude terminal", run: toggleClaudeDock },
+    { combo: "Ctrl-.", key: ".", label: "Clear notifications", run: function () {
+        // Cross-project toasts (a later feature) listen for this event.
+        document.dispatchEvent(new CustomEvent("sandclaude:clear-notifications"));
+      } },
+    { combo: "Ctrl-/", key: "/", label: "Show shortcuts", run: showHotkeyHelp },
+  ];
+
+  document.addEventListener("keydown", function (e) {
+    if (!e.ctrlKey || e.metaKey || e.altKey) return;
+    if (typingTarget()) return;
+    var k = (e.key || "").toLowerCase();
+    for (var i = 0; i < HOTKEYS.length; i++) {
+      if (HOTKEYS[i].key === k) { e.preventDefault(); HOTKEYS[i].run(); return; }
+    }
+  });
+
+  // A dismissible overlay listing the shortcuts.
+  function showHotkeyHelp() {
+    var existing = document.getElementById("hotkey-help");
+    if (existing) { existing.remove(); return; } // toggle off
+    var ov = document.createElement("div");
+    ov.id = "hotkey-help";
+    ov.className = "hotkey-help";
+    var rows = HOTKEYS.map(function (h) {
+      return '<div class="hk-row"><kbd>' + h.combo + "</kbd><span>" + h.label + "</span></div>";
+    }).join("");
+    ov.innerHTML = '<div class="hk-card"><div class="hk-title">Keyboard shortcuts</div>' + rows +
+      '<div class="hk-hint">Esc or Ctrl-/ to close</div></div>';
+    ov.addEventListener("click", function () { ov.remove(); });
+    document.addEventListener("keydown", function esc(ev) {
+      if (ev.key === "Escape") { ov.remove(); document.removeEventListener("keydown", esc); }
+    });
+    document.body.appendChild(ov);
   }
 
   // Activate the initially-selected tab on load.
