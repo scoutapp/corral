@@ -722,14 +722,63 @@ table.projects th, table.projects td {
 .chat-panel-bar button:hover { background: rgba(255,255,255,0.1); }
 .chat-panel-iframe { flex: 1 1 auto; width: 100%; border: none; background: #1e1e1e; }
 
-/* ---- Landing page: repos list + new-project modal ------------------------ */
-.header-link.primary { background: var(--con-working); color: #06281c; font-weight: 600; }
-.header-link.primary:hover { filter: brightness(1.08); }
+/* ---- Landing page: sidebar shell + repos + new-project modal ------------- */
+.app-shell { display: flex; min-height: calc(100vh - 46px); }
 
-.repos { max-width: 1100px; margin: 1rem auto 0; padding: 0 1rem; }
-.repos-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
-.repos-head h2 { font-size: 0.9rem; color: var(--con-muted); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; margin: 0; }
-.repos-list { display: flex; flex-direction: column; gap: 0.4rem; }
+/* Left sidebar nav */
+.sidebar {
+  flex: 0 0 210px; display: flex; flex-direction: column; gap: 0.25rem;
+  padding: 1.1rem 0.8rem; border-right: 1px solid var(--con-line); background: var(--con-panel);
+}
+.sidebar .brand { padding: 0 0.5rem 1rem; }
+.sidebar-spacer { flex: 1 1 auto; }
+.nav-item {
+  display: flex; align-items: center; gap: 0.55rem; width: 100%; text-align: left;
+  background: transparent; border: 1px solid transparent; border-radius: 7px;
+  padding: 0.5rem 0.6rem; font: inherit; font-size: 0.88rem; color: var(--con-text);
+  cursor: pointer; text-decoration: none;
+}
+.nav-item:hover { background: var(--con-panel-hi); }
+.nav-item.active { background: var(--con-panel-hi); border-color: var(--con-line); color: #fff; }
+.nav-item.active .nav-ico { color: var(--con-working); }
+.nav-ico { color: var(--con-muted); font-size: 0.9rem; width: 1.1em; text-align: center; }
+.nav-link { color: var(--con-muted); font-size: 0.82rem; }
+.sidebar-cta {
+  width: 100%; text-align: center; background: var(--con-working); color: #06281c;
+  border: none; border-radius: 7px; padding: 0.55rem; font: inherit; font-weight: 700;
+  font-size: 0.86rem; cursor: pointer; margin-bottom: 0.4rem;
+}
+.sidebar-cta:hover { filter: brightness(1.08); }
+
+/* Content area */
+.content { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.content-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 1.1rem 1.6rem; border-bottom: 1px solid var(--con-line);
+}
+.content-head h1 { font-size: 1.1rem; margin: 0; font-weight: 600; }
+.head-right { display: flex; align-items: center; gap: 1.2rem; }
+.section { padding: 1.2rem 1.6rem; }
+.section[hidden] { display: none; }
+.section-toolbar { display: flex; justify-content: flex-end; margin-bottom: 0.8rem; }
+
+/* Shared button system — readable text + clear clickable hover. */
+.btn {
+  display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer;
+  background: var(--con-panel-hi); color: var(--con-text);
+  border: 1px solid var(--con-line); border-radius: 6px;
+  padding: 0.32rem 0.7rem; font: inherit; font-size: 0.8rem; line-height: 1.2;
+  transition: background 0.12s, border-color 0.12s;
+}
+.btn:hover { background: #2b3242; border-color: var(--con-muted); color: #fff; }
+.btn:active { transform: translateY(0.5px); }
+.btn.primary { background: var(--con-working); color: #06281c; border-color: var(--con-working); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.1); background: var(--con-working); color: #06281c; }
+/* Mute toggle uses the shared button now (was grey-on-grey + no hover). */
+.mute-all { cursor: pointer; }
+.mute-all[aria-pressed="true"] { color: var(--con-muted); background: var(--con-panel); }
+
+.repos-list { display: flex; flex-direction: column; gap: 0.4rem; max-width: 900px; }
 .repo-row {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
   background: var(--con-panel); border: 1px solid var(--con-line); border-radius: 8px; padding: 0.55rem 0.8rem;
@@ -739,19 +788,14 @@ table.projects th, table.projects td {
 .repo-src { color: var(--con-muted); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, monospace; }
 .repo-badge { flex: none; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--con-waiting); border: 1px solid var(--con-waiting); border-radius: 999px; padding: 0 0.4rem; }
 .repo-actions { display: flex; gap: 0.3rem; flex: none; }
-.repo-btn {
-  background: var(--con-panel-hi); color: var(--con-text); border: 1px solid var(--con-line);
-  border-radius: 6px; padding: 0.28rem 0.6rem; font-size: 0.78rem; cursor: pointer;
-}
-.repo-btn:hover { border-color: var(--con-muted); }
-.repo-btn.primary { background: var(--con-working); color: #06281c; border-color: var(--con-working); font-weight: 600; }
 
 /* Modal */
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: grid; place-items: center; z-index: 60; }
 .modal-backdrop[hidden] { display: none; }
-.modal { width: min(520px, 92vw); background: #1e1e1e; border: 1px solid var(--con-line); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+.modal { width: min(560px, 92vw); background: #1e1e1e; border: 1px solid var(--con-line); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--con-line); color: var(--con-text); font-weight: 600; }
 .modal-head button { background: transparent; border: none; color: var(--con-muted); font-size: 1rem; cursor: pointer; }
+.modal-head button:hover { color: #fff; }
 .modal-body { padding: 0.9rem; }
 
 .sc-form { display: flex; flex-direction: column; gap: 0.7rem; }
@@ -766,9 +810,42 @@ table.projects th, table.projects td {
 .form-status { font-size: 0.8rem; color: var(--con-muted); }
 .form-status.error { color: #ff6b81; }
 
+/* Multi-repo rows */
+.repo-rows { display: flex; flex-direction: column; gap: 0.4rem; }
+.repo-input-row { display: flex; gap: 0.4rem; align-items: flex-start; }
+.row-rm { flex: 0 0 auto; padding: 0.3rem 0.55rem; margin-top: 1px; }
+.add-row { align-self: flex-start; }
+.ta-loading { color: var(--con-muted); font-size: 0.8rem; padding: 0.2rem 0; }
+.ta-loading::before { content: "⟳ "; display: inline-block; animation: ta-spin 1s linear infinite; }
+@keyframes ta-spin { to { transform: rotate(360deg); } }
+
+/* Typeahead: a text input with a filtered dropdown rendered below it. */
+.ta { position: relative; }
+.ta.repo-input, .repo-input-row > .ta:first-of-type { flex: 1 1 auto; min-width: 0; }
+.ta.branch-input, .repo-input-row > .ta:nth-of-type(2) { flex: 0 0 130px; }
+.ta-input, .repo-input, .branch-input {
+  width: 100%; background: var(--con-panel-hi); color: var(--con-text);
+  border: 1px solid var(--con-line); border-radius: 6px; padding: 0.4rem 0.5rem; font-size: 0.85rem;
+}
+.ta-input:focus { outline: none; border-color: var(--con-working); box-shadow: 0 0 0 2px rgba(92,230,168,0.2); }
+.ta-menu {
+  position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 2px);
+  max-height: 240px; overflow-y: auto; background: #1b202b; border: 1px solid var(--con-line);
+  border-radius: 7px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); padding: 3px;
+}
+.ta-menu[hidden] { display: none; }
+.ta-opt {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem;
+  padding: 0.35rem 0.5rem; border-radius: 5px; cursor: pointer; font-size: 0.82rem;
+}
+.ta-opt:hover, .ta-opt.active { background: var(--con-panel-hi); }
+.ta-val { color: var(--con-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ta-hint { flex: none; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--con-waiting); }
+
 .mode-tabs { display: flex; gap: 0.3rem; margin-bottom: 0.8rem; }
 .mode-tabs button {
-  flex: 1 1 0; background: var(--con-panel); color: var(--con-muted); border: 1px solid var(--con-line);
-  border-radius: 6px; padding: 0.35rem; font-size: 0.78rem; cursor: pointer;
+  flex: 1 1 0; background: var(--con-panel); color: var(--con-text); border: 1px solid var(--con-line);
+  border-radius: 6px; padding: 0.4rem; font: inherit; font-size: 0.8rem; cursor: pointer;
 }
-.mode-tabs button.active { background: var(--con-panel-hi); color: var(--con-text); border-color: var(--con-working); }
+.mode-tabs button:hover { background: var(--con-panel-hi); }
+.mode-tabs button.active { background: var(--con-panel-hi); color: #fff; border-color: var(--con-working); }

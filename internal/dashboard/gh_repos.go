@@ -80,6 +80,56 @@ func ghRepoList(ghBin, owner string) ([]ghRepo, error) {
 	return repos, nil
 }
 
+// handleGhBranches lists the branches of a repo for the create-project branch
+// typeahead. GET /gh/branches?repo=<owner/name>. Uses `gh api
+// repos/<owner/name>/branches`. Returns {available:false} on any failure so the
+// UI can fall back to free-text branch entry.
+func (d *dashboardServer) handleGhBranches(w http.ResponseWriter, r *http.Request) {
+	repo := r.URL.Query().Get("repo")
+	// Accept only "owner/name" so nothing arbitrary is spliced into the gh path.
+	if !validOwnerName(repo) {
+		writeFilesJSON(w, map[string]any{"available": false, "reason": "invalid repo"})
+		return
+	}
+	ghBin, err := exec.LookPath("gh")
+	if err != nil {
+		writeFilesJSON(w, map[string]any{"available": false})
+		return
+	}
+	out, err := exec.Command(ghBin, "api",
+		"repos/"+repo+"/branches", "--paginate", "--jq", ".[].name").Output()
+	if err != nil {
+		writeFilesJSON(w, map[string]any{"available": false})
+		return
+	}
+	branches := strings.Fields(string(out))
+	sort.Strings(branches)
+	writeFilesJSON(w, map[string]any{"available": true, "branches": branches})
+}
+
+// validOwnerName reports whether s is a safe "owner/name" GitHub slug (the only
+// shape we splice into a gh api path). Rejects empty, path traversal, extra
+// segments, and anything outside GitHub's allowed characters.
+func validOwnerName(s string) bool {
+	parts := strings.Split(s, "/")
+	if len(parts) != 2 {
+		return false
+	}
+	for _, p := range parts {
+		if p == "" {
+			return false
+		}
+		for _, c := range p {
+			ok := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+				(c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.'
+			if !ok {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // ghUserOrgs returns the login names of orgs the authenticated user belongs to.
 // Best-effort: returns nil on any failure (the picker still shows own repos).
 func ghUserOrgs(ghBin string) []string {
