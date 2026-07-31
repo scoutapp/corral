@@ -34,9 +34,10 @@ barrier — assume the container can read (and effectively write) anything mount
 including the workspace. Don't mount secrets you don't want it to see.
 
 So the container is better contained on macOS (VM boundary) than Linux (shared
-kernel). (The host-side shell / host `claude` are a separate matter — they run
-*as you* with full privileges by design; dashboard access-gating is covered
-under residual risks below.)
+kernel). (The host-side pieces — host shell, and the host-`claude` chat panel —
+are a separate matter covered under residual risks below. The chat panel notably
+runs the host `claude` **read-only by default**: `Read`/`Grep`/`Glob` only, unless
+you explicitly grant it write/Bash tools.)
 
 ## Residual risks
 
