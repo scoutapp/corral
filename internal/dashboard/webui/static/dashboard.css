@@ -812,12 +812,35 @@ table.projects th, table.projects td {
 
 /* Multi-repo rows */
 .repo-rows { display: flex; flex-direction: column; gap: 0.4rem; }
-.repo-input-row { display: flex; gap: 0.4rem; align-items: center; }
-.repo-input { flex: 1 1 auto; min-width: 0; background: var(--con-panel-hi); color: var(--con-text); border: 1px solid var(--con-line); border-radius: 6px; padding: 0.4rem 0.5rem; font-size: 0.85rem; }
-.branch-input { flex: 0 0 110px; background: var(--con-panel-hi); color: var(--con-text); border: 1px solid var(--con-line); border-radius: 6px; padding: 0.4rem 0.5rem; font-size: 0.85rem; }
-.repo-input:focus, .branch-input:focus { outline: none; border-color: var(--con-working); box-shadow: 0 0 0 2px rgba(92,230,168,0.2); }
-.row-rm { flex: 0 0 auto; padding: 0.3rem 0.55rem; }
+.repo-input-row { display: flex; gap: 0.4rem; align-items: flex-start; }
+.row-rm { flex: 0 0 auto; padding: 0.3rem 0.55rem; margin-top: 1px; }
 .add-row { align-self: flex-start; }
+.ta-loading { color: var(--con-muted); font-size: 0.8rem; padding: 0.2rem 0; }
+.ta-loading::before { content: "⟳ "; display: inline-block; animation: ta-spin 1s linear infinite; }
+@keyframes ta-spin { to { transform: rotate(360deg); } }
+
+/* Typeahead: a text input with a filtered dropdown rendered below it. */
+.ta { position: relative; }
+.ta.repo-input, .repo-input-row > .ta:first-of-type { flex: 1 1 auto; min-width: 0; }
+.ta.branch-input, .repo-input-row > .ta:nth-of-type(2) { flex: 0 0 130px; }
+.ta-input, .repo-input, .branch-input {
+  width: 100%; background: var(--con-panel-hi); color: var(--con-text);
+  border: 1px solid var(--con-line); border-radius: 6px; padding: 0.4rem 0.5rem; font-size: 0.85rem;
+}
+.ta-input:focus { outline: none; border-color: var(--con-working); box-shadow: 0 0 0 2px rgba(92,230,168,0.2); }
+.ta-menu {
+  position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 2px);
+  max-height: 240px; overflow-y: auto; background: #1b202b; border: 1px solid var(--con-line);
+  border-radius: 7px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); padding: 3px;
+}
+.ta-menu[hidden] { display: none; }
+.ta-opt {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem;
+  padding: 0.35rem 0.5rem; border-radius: 5px; cursor: pointer; font-size: 0.82rem;
+}
+.ta-opt:hover, .ta-opt.active { background: var(--con-panel-hi); }
+.ta-val { color: var(--con-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ta-hint { flex: none; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--con-waiting); }
 
 .mode-tabs { display: flex; gap: 0.3rem; margin-bottom: 0.8rem; }
 .mode-tabs button {

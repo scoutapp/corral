@@ -423,6 +423,10 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleGhRepos(w, r)
 		return
 	}
+	if path == "/gh/branches" {
+		d.handleGhBranches(w, r)
+		return
+	}
 
 	if !strings.HasPrefix(path, "/p/") {
 		http.NotFound(w, r)
