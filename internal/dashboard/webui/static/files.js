@@ -123,6 +123,10 @@
           openFile(childRel);
         });
       }
+      li.querySelector(".ftree-label").addEventListener("contextmenu", function (ev) {
+        ev.preventDefault(); ev.stopPropagation();
+        openContextMenu(ev.clientX, ev.clientY, childRel, !!e.dir);
+      });
       return li;
     }
 
@@ -166,6 +170,80 @@
           }
         });
     }
+
+    // ---- Filesystem ops (create / mkdir / rename / delete) ------------------
+    function fpost(path) { return fetch(api(path), { method: "POST", credentials: "same-origin" }); }
+    function opThen(promise, okMsg) {
+      return promise.then(function (r) {
+        if (!r.ok) return r.text().then(function (t) { throw new Error(t || ("HTTP " + r.status)); });
+        refreshTree();
+      }).catch(function (e) { alert((okMsg || "operation") + " failed: " + e.message); });
+    }
+    // parentRel of "a/b/c" -> "a/b"; "" for a top-level name.
+    function parentOf(rel) { var i = rel.lastIndexOf("/"); return i < 0 ? "" : rel.slice(0, i); }
+    function join(dir, name) { return dir ? dir + "/" + name : name; }
+
+    function doNewFile(dirRel) {
+      var name = window.prompt("New file name:");
+      if (!name) return;
+      opThen(fpost("/files/new?path=" + encodeURIComponent(join(dirRel, name))), "create file")
+        .then(function () { openFile(join(dirRel, name)); });
+    }
+    function doNewFolder(dirRel) {
+      var name = window.prompt("New folder name:");
+      if (!name) return;
+      opThen(fpost("/files/mkdir?path=" + encodeURIComponent(join(dirRel, name))), "create folder");
+    }
+    function doRename(rel) {
+      var base = rel.split("/").pop();
+      var name = window.prompt("Rename to:", base);
+      if (!name || name === base) return;
+      var to = join(parentOf(rel), name);
+      opThen(fpost("/files/rename?from=" + encodeURIComponent(rel) + "&to=" + encodeURIComponent(to)), "rename");
+    }
+    function doDelete(rel, isDir) {
+      if (!window.confirm("Delete " + (isDir ? "folder" : "file") + " '" + rel + "'?" + (isDir ? " (recursive)" : ""))) return;
+      opThen(fetch(api("/files?path=" + encodeURIComponent(rel)), { method: "DELETE", credentials: "same-origin" }), "delete");
+    }
+
+    // ---- Right-click context menu -------------------------------------------
+    var ctxMenu = null;
+    function closeContextMenu() { if (ctxMenu) { ctxMenu.remove(); ctxMenu = null; } }
+    document.addEventListener("click", closeContextMenu);
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeContextMenu(); });
+
+    // rel="" + isDir=true means the tree root (create at workspace top level).
+    function openContextMenu(x, y, rel, isDir) {
+      closeContextMenu();
+      var items = [];
+      if (isDir) {
+        items.push(["New file", function () { doNewFile(rel); }]);
+        items.push(["New folder", function () { doNewFolder(rel); }]);
+      }
+      if (rel !== "") { // can't rename/delete the workspace root
+        items.push(["Rename", function () { doRename(rel); }]);
+        items.push(["Delete", function () { doDelete(rel, isDir); }]);
+      }
+      if (!items.length) return;
+      var menu = document.createElement("div");
+      menu.className = "ctx-menu";
+      items.forEach(function (it) {
+        var el = document.createElement("div");
+        el.className = "ctx-item";
+        el.textContent = it[0];
+        el.addEventListener("click", function (ev) { ev.stopPropagation(); closeContextMenu(); it[1](); });
+        menu.appendChild(el);
+      });
+      menu.style.left = x + "px"; menu.style.top = y + "px";
+      document.body.appendChild(menu);
+      ctxMenu = menu;
+    }
+    // Right-clicking the empty tree area = operate on the workspace root.
+    treeEl.addEventListener("contextmenu", function (ev) {
+      if (ev.target.closest(".ftree-label")) return; // handled per-row
+      ev.preventDefault();
+      openContextMenu(ev.clientX, ev.clientY, "", true);
+    });
 
     // Re-read every currently-expanded directory (plus the root) so the tree
     // tracks Claude's filesystem changes without a manual collapse/expand.
