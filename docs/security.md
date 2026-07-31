@@ -20,13 +20,18 @@ Here's what that boundary does and doesn't cover.
 
 ## What "host privileges" means
 
-A container escape stays inside Docker's throwaway Linux **VM on macOS** (it does
-**not** reach your Mac), but is root on the machine itself on **Linux** (shared
-kernel, no VM).
+With DinD on, the container runs **`--privileged`** and `claude` is in the
+`docker` group — near-root, so escape is a low bar. **`--disable-dind` drops
+`--privileged`** (the container then gets only `NET_ADMIN`/`NET_RAW` for the
+firewall) — a much smaller footprint; use it when you don't need inner containers.
 
-Either way, mounted paths are within reach: `claude` is near-root (docker group),
-so `:ro` mounts aren't a barrier — assume it can read/write anything mounted,
-including the workspace. Don't mount secrets you don't want it to see.
+An escape stays inside Docker's throwaway Linux **VM on macOS** (it does **not**
+reach your Mac), but is root on the machine itself on **Linux** (shared kernel,
+no VM).
+
+Either way, mounted paths are within reach: given that near-root access, `:ro`
+mounts aren't a barrier — assume it can read/write anything mounted, including the
+workspace. Don't mount secrets you don't want it to see.
 
 (The host shell and the host-`claude` chat panel are separate — see residual
 risks. The chat panel is read-only by default.)
