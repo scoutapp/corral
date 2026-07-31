@@ -45,10 +45,14 @@ function startConfig(projectId) {
 
       '<section class="cfg-zone"><h3>Live <span class="muted">— hot-reloaded, no restart</span></h3>' +
         field("Allowed hosts", linesToList("cfg-allowed", cfg.allowed_hosts)) +
-        field("Monitored hosts",
-              '<label class="cfg-inline"><input type="checkbox" id="cfg-monitor-all" ' +
-                (cfg.monitor_all ? "checked" : "") + "> monitor all allowed hosts</label>" +
-              '<div id="cfg-monitor-wrap" style="' + (cfg.monitor_all ? "display:none" : "") + '">' +
+        field("Capture (mitm)",
+              '<select id="cfg-mitm-preset" class="cfg-select">' +
+                presetOption("minimal", "Minimal — Claude + GitHub only", cfg.mitm_preset) +
+                presetOption("all", "All — every allowed host", cfg.mitm_preset) +
+                presetOption("none", "None — decrypt nothing", cfg.mitm_preset) +
+                presetOption("custom", "Custom — the host list below", cfg.mitm_preset) +
+              "</select>" +
+              '<div id="cfg-monitor-wrap" style="' + (cfg.mitm_preset === "custom" ? "" : "display:none") + '">' +
                 linesToList("cfg-monitor", cfg.monitor_hosts) +
                 '<div class="muted cfg-note">only these hosts are decrypted; others allowed+logged but direct-dialed</div>' +
               "</div>") +
@@ -86,6 +90,9 @@ function startConfig(projectId) {
     return '<label class="cfg-inline"><input type="checkbox" id="' + id + '" ' +
       (on ? "checked" : "") + "> enabled</label>";
   }
+  function presetOption(val, label, current) {
+    return '<option value="' + val + '"' + (current === val ? " selected" : "") + ">" + esc(label) + "</option>";
+  }
 
   function credEditor(creds) {
     var rows = (creds || []).map(function (c) {
@@ -109,8 +116,10 @@ function startConfig(projectId) {
     var allowed = textareaLines("cfg-allowed");
     if (allowed) edit.allowed_hosts = allowed;
 
-    var monitorAll = document.getElementById("cfg-monitor-all").checked;
-    edit.monitor_hosts = monitorAll ? [] : (textareaLines("cfg-monitor") || []);
+    var preset = document.getElementById("cfg-mitm-preset").value;
+    edit.mitm_preset = preset;
+    // In custom mode the host list is authoritative; the backend applies it.
+    if (preset === "custom") edit.monitor_hosts = textareaLines("cfg-monitor") || [];
 
     var ports = textareaLines("cfg-ports");
     if (ports) edit.mitm_ports = ports;
@@ -205,8 +214,8 @@ function startConfig(projectId) {
   }
 
   function wire() {
-    document.getElementById("cfg-monitor-all").addEventListener("change", function () {
-      document.getElementById("cfg-monitor-wrap").style.display = this.checked ? "none" : "";
+    document.getElementById("cfg-mitm-preset").addEventListener("change", function () {
+      document.getElementById("cfg-monitor-wrap").style.display = this.value === "custom" ? "" : "none";
     });
     document.getElementById("cfg-review").addEventListener("click", reviewAndApply);
     document.getElementById("cfg-restart").addEventListener("click", doRestart);
