@@ -34,6 +34,12 @@ const INNER_DOCKER = 'unix:///var/run/dind/docker.sock';
 const ARTIFACTS_DIR = path.join(__dirname, '..', '.artifacts');
 
 test.describe.serial('sandclaude DinD chain', () => {
+  // When the base image (node:20-slim) can't be pulled from Docker Hub through
+  // the mitmproxy — a transient CI-network/TLS flake, not a code defect — the
+  // build test skips. The downstream tests depend on the image it builds, so
+  // they must skip TOGETHER rather than fail trying to pull it themselves.
+  let baseImageUnavailable = false;
+
   test('inner image builds inside DinD', async () => {
     // Copy the fixture into the outer container's filesystem so the inner
     // `docker build` (running inside the same outer container) can use it as a
@@ -105,7 +111,8 @@ test.describe.serial('sandclaude DinD chain', () => {
     // SKIP rather than fail — this test exercises the DinD build chain, not the
     // reliability of Docker Hub through a CI proxy. A real build error (below)
     // still fails; only an un-pullable base image after 8 tries is skipped.
-    test.skip(!pulled && TRANSIENT.test(lastPull.stderr),
+    if (!pulled && TRANSIENT.test(lastPull.stderr)) baseImageUnavailable = true;
+    test.skip(baseImageUnavailable,
       `base image node:20-slim not pullable through the proxy after retries (transient CI network):\n${lastPull.stderr}`);
     expect(pulled, `docker pull node:20-slim failed (non-transient)\nSTDERR:\n${lastPull.stderr}`).toBe(true);
 
@@ -129,6 +136,9 @@ test.describe.serial('sandclaude DinD chain', () => {
   });
 
   test('host reaches inner app through the full DinD port chain', async () => {
+    // Depends on the image the build test produces; skip together if that test
+    // skipped because the base image wasn't pullable through the proxy.
+    test.skip(baseImageUnavailable, 'base image was not pullable (transient CI network)');
     // Remove any prior instance, then run the freshly-built image detached with
     // its port published on the inner DinD bridge gateway (APP_PORT:APP_PORT).
     await innerDocker(['rm', '-f', CONTAINER], { timeoutMs: 30_000 });
@@ -179,11 +189,22 @@ test.describe.serial('sandclaude DinD chain', () => {
     // With DinD on, the entrypoint writes dockerd.log inside the container. The
     // inner dockerd is already proven up (global-setup waited on `docker info`),
     // and cert-injector.log exists because proxy mode places /etc/proxy-ca.crt
-    // and the entrypoint starts the injector.
-    const certLog = await readInnerLog('cert-injector.log');
+    // and the entrypoint starts the injector. The injector logs asynchronously
+    // AFTER dockerd is up, so on a slow/degraded CI startup the file can still be
+    // empty the instant we read it — poll briefly rather than reading once.
+    const readLogWithRetry = async (name: string, tries = 15): Promise<string> => {
+      let out = '';
+      for (let i = 0; i < tries; i++) {
+        out = await readInnerLog(name);
+        if (out.trim() !== '') return out;
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+      return out;
+    };
+    const certLog = await readLogWithRetry('cert-injector.log');
     expect(certLog, 'cert-injector.log should exist (proxy mode + DinD)').not.toBe('');
 
-    const dockerdLog = await readInnerLog('dockerd.log');
+    const dockerdLog = await readLogWithRetry('dockerd.log');
     expect(dockerdLog, 'dockerd.log should exist (DinD enabled)').not.toBe('');
 
     // Proxy mode also produces proxy.log inside the container (the allowlist proxy)

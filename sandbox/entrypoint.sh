@@ -287,6 +287,21 @@ DAEMONCFG
                 | grep -q "mitmproxy"; then
             sudo sh -c "cat '$MITM_CRT' >> /etc/ssl/certs/ca-certificates.crt"
         fi
+
+        # dockerd's OWN registry pulls go through the allowlist proxy, which MITMs
+        # the (allowlisted) docker.io registry hosts — so dockerd must trust the
+        # mitmproxy CA for those hosts. Relying only on the system trust store is
+        # racy on some setups (the system-CA refresh vs. dockerd start ordering,
+        # and Go's cert cache), which shows up as intermittent
+        # "x509: certificate signed by unknown authority" on the FROM/pull. The
+        # canonical, deterministic fix is dockerd's per-registry CA directory
+        # (/etc/docker/certs.d/<host>/ca.crt), read specifically for registry TLS
+        # independent of the system store. Install it for every docker.io host a
+        # Hub pull touches, BEFORE dockerd starts.
+        for reg in registry-1.docker.io auth.docker.io index.docker.io registry.hub.docker.com; do
+            sudo mkdir -p "/etc/docker/certs.d/${reg}"
+            sudo cp "$MITM_CRT" "/etc/docker/certs.d/${reg}/ca.crt"
+        done
     fi
 
     # Launch dockerd with HTTP(S)_PROXY in ITS environment so the daemon's own
