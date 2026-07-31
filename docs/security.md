@@ -20,24 +20,16 @@ Here's what that boundary does and doesn't cover.
 
 ## What "host privileges" means
 
-**TL;DR:** on **macOS**, a container escape stays inside Docker's throwaway Linux
-VM — it does **not** reach your Mac. On **Linux**, the container shares the host
-kernel, so an escape is closer to root on the machine itself.
+A container escape stays inside Docker's throwaway Linux **VM on macOS** (it does
+**not** reach your Mac), but is root on the machine itself on **Linux** (shared
+kernel, no VM).
 
-- **macOS** — Docker runs everything in a Linux VM, so the VM is the boundary: an
-  escape gets root *in that VM*, not on macOS.
-- **Linux** — no VM in between; treat an escape as root on your machine.
-
-Either way, whatever you **mount** into the container is within reach: `claude` is
-in the `docker` group / near-root, so read-only (`:ro`) mounts are not a real
-barrier — assume the container can read (and effectively write) anything mounted,
+Either way, mounted paths are within reach: `claude` is near-root (docker group),
+so `:ro` mounts aren't a barrier — assume it can read/write anything mounted,
 including the workspace. Don't mount secrets you don't want it to see.
 
-So the container is better contained on macOS (VM boundary) than Linux (shared
-kernel). (The host-side pieces — host shell, and the host-`claude` chat panel —
-are a separate matter covered under residual risks below. The chat panel notably
-runs the host `claude` **read-only by default**: `Read`/`Grep`/`Glob` only, unless
-you explicitly grant it write/Bash tools.)
+(The host shell and the host-`claude` chat panel are separate — see residual
+risks. The chat panel is read-only by default.)
 
 ## Residual risks
 
