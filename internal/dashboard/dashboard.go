@@ -405,6 +405,17 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Repos list (cross-project). /repos (GET list, POST add) and
+	// /repos/<id>[/fetch] (DELETE remove, POST fetch).
+	if path == "/repos" {
+		d.handleRepos(w, r)
+		return
+	}
+	if strings.HasPrefix(path, "/repos/") {
+		d.handleRepoItem(w, r, strings.TrimPrefix(path, "/repos/"))
+		return
+	}
+
 	if !strings.HasPrefix(path, "/p/") {
 		http.NotFound(w, r)
 		return
