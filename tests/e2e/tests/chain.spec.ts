@@ -189,11 +189,22 @@ test.describe.serial('sandclaude DinD chain', () => {
     // With DinD on, the entrypoint writes dockerd.log inside the container. The
     // inner dockerd is already proven up (global-setup waited on `docker info`),
     // and cert-injector.log exists because proxy mode places /etc/proxy-ca.crt
-    // and the entrypoint starts the injector.
-    const certLog = await readInnerLog('cert-injector.log');
+    // and the entrypoint starts the injector. The injector logs asynchronously
+    // AFTER dockerd is up, so on a slow/degraded CI startup the file can still be
+    // empty the instant we read it — poll briefly rather than reading once.
+    const readLogWithRetry = async (name: string, tries = 15): Promise<string> => {
+      let out = '';
+      for (let i = 0; i < tries; i++) {
+        out = await readInnerLog(name);
+        if (out.trim() !== '') return out;
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+      return out;
+    };
+    const certLog = await readLogWithRetry('cert-injector.log');
     expect(certLog, 'cert-injector.log should exist (proxy mode + DinD)').not.toBe('');
 
-    const dockerdLog = await readInnerLog('dockerd.log');
+    const dockerdLog = await readLogWithRetry('dockerd.log');
     expect(dockerdLog, 'dockerd.log should exist (DinD enabled)').not.toBe('');
 
     // Proxy mode also produces proxy.log inside the container (the allowlist proxy)
