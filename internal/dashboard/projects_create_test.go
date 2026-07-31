@@ -92,19 +92,40 @@ func TestCreateProject(t *testing.T) {
 	if repoID == "" {
 		t.Fatalf("repo add failed: %v", radd)
 	}
+	// Single-repo clone (legacy repoId): repo lands in a SUBDIR of the parent
+	// workspace (parent-dir layout), which is the container's workspace.
 	resp, out = post("/projects/create", `{"mode":"clone","repoId":"`+repoID+`","proxy":false}`)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("clone: status %d (%v)", resp.StatusCode, out)
 	}
 	cloneWs, _ := out["workspace"].(string)
-	// The clone has the origin's file AND its own independent .git.
-	if _, err := os.Stat(filepath.Join(cloneWs, "f.txt")); err != nil {
-		t.Errorf("clone: expected origin file f.txt: %v", err)
+	if _, err := os.Stat(filepath.Join(cloneWs, "cloneme", "f.txt")); err != nil {
+		t.Errorf("clone: expected origin file in subdir cloneme/f.txt: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(cloneWs, ".git")); err != nil {
-		t.Errorf("clone: expected own .git: %v", err)
+	if _, err := os.Stat(filepath.Join(cloneWs, "cloneme", ".git")); err != nil {
+		t.Errorf("clone: subdir should have its own .git: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(cloneWs, ".sandclaude", "project", "config.json")); err != nil {
-		t.Errorf("clone: config not written: %v", err)
+		t.Errorf("clone: config not written at parent: %v", err)
+	}
+
+	// Multi-repo clone: two repos into two subdirs of one parent workspace.
+	o2 := t.TempDir()
+	gitInit(t, o2)
+	_, r2 := post("/repos", `{"url":"`+o2+`","name":"second"}`)
+	rid2, _ := (r2["repo"].(map[string]any))["id"].(string)
+	resp, out = post("/projects/create",
+		`{"mode":"clone","name":"multi","proxy":false,"repos":[{"repoId":"`+repoID+`"},{"repoId":"`+rid2+`"}]}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("multi clone: status %d (%v)", resp.StatusCode, out)
+	}
+	multiWs, _ := out["workspace"].(string)
+	for _, sub := range []string{"cloneme", "second"} {
+		if _, err := os.Stat(filepath.Join(multiWs, sub, ".git")); err != nil {
+			t.Errorf("multi: expected subdir %s with its own .git: %v", sub, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(multiWs, ".sandclaude", "project", "config.json")); err != nil {
+		t.Errorf("multi: config not written at parent: %v", err)
 	}
 }
