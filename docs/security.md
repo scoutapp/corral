@@ -68,8 +68,7 @@ risks. The chat panel is read-only by default.)
    dashboard, outside the sandbox. Dependencies are exact-pinned (lockfile
    authoritative) and no npm runs at install/deploy time (the frozen bundle is the
    shipped artifact), so the supply-chain exposure is at *build* time, not deploy
-   time. One grammar (`codemirror-lang-elixir`) is from a now-archived upstream,
-   frozen at a pinned version. Rebuild deliberately and review the bundle diff.
+   time. Rebuild deliberately and review the bundle diff.
 6. **Passthrough / `--disable-firewall`** turn off egress containment (for
    bootstrapping an allowlist); no network protection while active.
 7. **Dangerous mode** — no per-action approval; the container + firewall are the
