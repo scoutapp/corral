@@ -20,13 +20,14 @@ Here's what that boundary does and doesn't cover.
 
 ## What "host privileges" means
 
-**TL;DR:** container escape = root in the Docker VM on **macOS**, root on the
-**actual machine** on **Linux**.
+**TL;DR:** on **macOS**, a container escape stays inside Docker's throwaway Linux
+VM — it does **not** reach your Mac. On **Linux**, the container shares the host
+kernel, so an escape is closer to root on the machine itself.
 
-- **macOS** — Docker runs in a Linux VM, so escape is root *in the VM*, not on
-  macOS. Caveat: mounted paths (the workspace) are still reachable.
-- **Linux** — the container shares the host kernel, so escape ≈ real root on your
-  machine.
+- **macOS** — Docker runs everything in a Linux VM, so the VM is the boundary: an
+  escape gets root *in that VM*, not on macOS. (It can still read paths you mount,
+  like the workspace.)
+- **Linux** — no VM in between; treat an escape as root on your machine.
 
 So the container is better contained on macOS (VM boundary) than Linux (shared
 kernel). (The host-side shell / host `claude` are a separate matter — they run
