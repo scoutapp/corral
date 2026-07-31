@@ -482,6 +482,8 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleHostWS(w, r, id)
 	case sub == "host" || sub == "host/":
 		d.handleHostPage(w, r, id)
+	case sub == "start":
+		d.handleStartProject(w, r, id)
 	case sub == "chat/ws":
 		d.handleChatWS(w, r, id)
 	case sub == "chat" || sub == "chat/":
