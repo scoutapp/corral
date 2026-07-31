@@ -468,6 +468,14 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleFilesRead(w, r, id)
 	case sub == "files/write":
 		d.handleFilesWrite(w, r, id)
+	case sub == "files/new":
+		d.handleFilesNew(w, r, id)
+	case sub == "files/mkdir":
+		d.handleFilesMkdir(w, r, id)
+	case sub == "files/rename":
+		d.handleFilesRename(w, r, id)
+	case sub == "files" || sub == "files/":
+		d.handleFilesDelete(w, r, id)
 	case sub == "files/find":
 		d.handleFilesFind(w, r, id)
 	case sub == "files/grep":

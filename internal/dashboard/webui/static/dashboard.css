@@ -858,3 +858,15 @@ table.projects th, table.projects td {
 .hotkey-help .hk-row kbd { flex: 0 0 auto; min-width: 3.4rem; text-align: center; font-family: ui-monospace, Menlo, monospace; font-size: 0.75rem; background: var(--con-panel-hi); border: 1px solid var(--con-line); border-radius: 5px; padding: 2px 6px; color: var(--con-text); }
 .hotkey-help .hk-row span { color: var(--con-muted); }
 .hotkey-help .hk-hint { margin-top: 0.7rem; font-size: 0.72rem; color: var(--con-muted); text-align: center; }
+
+/* Files tree right-click context menu. */
+.ctx-menu {
+  position: fixed; z-index: 80; min-width: 130px;
+  background: #1b202b; border: 1px solid var(--con-line); border-radius: 7px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5); padding: 3px;
+}
+.ctx-item {
+  padding: 0.35rem 0.7rem; border-radius: 5px; cursor: pointer;
+  font-size: 0.82rem; color: var(--con-text);
+}
+.ctx-item:hover { background: var(--con-panel-hi); }
