@@ -82,9 +82,16 @@ export function sandclaude(args: string[], opts: Parameters<typeof run>[2] = {})
   return run(SANDCLAUDE_BIN, args, opts);
 }
 
-/** The outer container name sandclaude derives for a workspace: sandclaude_<basename>. */
+/**
+ * The outer container name sandclaude derives for a workspace. MUST match Go's
+ * session.ContainerNameForWorkspace: "sandclaude_" + sanitized basename + "_" +
+ * first 4 bytes (8 hex chars) of sha256(workspace). The hash suffix makes the
+ * name unique per workspace path so same-basename workspaces don't collide.
+ */
 export function outerContainerName(workspace = WORKSPACE): string {
-  return 'sandclaude_' + path.basename(workspace);
+  const base = path.basename(workspace).replace(/[^a-zA-Z0-9_.-]/g, '_') || 'ws';
+  const h = createHash('sha256').update(workspace).digest('hex').slice(0, 8);
+  return `sandclaude_${base}_${h}`;
 }
 
 /**

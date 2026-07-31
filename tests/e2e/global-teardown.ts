@@ -9,7 +9,6 @@
 // Host-side logs under <workspace>/.sandclaude/logs and tests/e2e/.artifacts are
 // left intact for artifact upload. This function never throws.
 
-import * as path from 'node:path';
 import {
   REPO_ROOT,
   WORKSPACE,
@@ -26,7 +25,7 @@ function log(msg: string) {
 
 export default async function globalTeardown() {
   const name = outerContainerName();
-  const session = `sandclaude_${path.basename(WORKSPACE)}`;
+  const session = name; // tmux session is derived from the (tmux-safe) container name
 
   // Stop any inner containers gracefully first (best-effort), then nuke the outer.
   await run(
