@@ -25,9 +25,13 @@ VM — it does **not** reach your Mac. On **Linux**, the container shares the ho
 kernel, so an escape is closer to root on the machine itself.
 
 - **macOS** — Docker runs everything in a Linux VM, so the VM is the boundary: an
-  escape gets root *in that VM*, not on macOS. (It can still read paths you mount,
-  like the workspace.)
+  escape gets root *in that VM*, not on macOS.
 - **Linux** — no VM in between; treat an escape as root on your machine.
+
+Either way, whatever you **mount** into the container is within reach: `claude` is
+in the `docker` group / near-root, so read-only (`:ro`) mounts are not a real
+barrier — assume the container can read (and effectively write) anything mounted,
+including the workspace. Don't mount secrets you don't want it to see.
 
 So the container is better contained on macOS (VM boundary) than Linux (shared
 kernel). (The host-side shell / host `claude` are a separate matter — they run
