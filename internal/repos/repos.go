@@ -262,6 +262,43 @@ func Remove(id string) error {
 	return nil
 }
 
+// CloneLocal fetches the repo's cache mirror (so the base is fresh) and then
+// `git clone --local` from it into dest — dest gets its own .git + index with
+// objects hardlinked from the cache (fast, disk-cheap, no shared-index locking).
+// If branch is non-empty it is checked out. dest must not already exist.
+func CloneLocal(id, dest, branch string) error {
+	repo, err := Get(id)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(dest); err == nil {
+		return fmt.Errorf("destination already exists: %s", dest)
+	}
+	// Refresh the mirror so the new workspace starts from the latest base. Best
+	// effort: a fetch failure (e.g. offline) shouldn't block cloning what we have.
+	_ = Fetch(id)
+
+	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+		return err
+	}
+	if _, err := gitRunner("", "clone", "--local", repo.CachePath, dest); err != nil {
+		os.RemoveAll(dest)
+		return err
+	}
+	if branch != "" {
+		if _, err := gitRunner(dest, "checkout", branch); err != nil {
+			os.RemoveAll(dest)
+			return fmt.Errorf("checkout %s: %w", branch, err)
+		}
+	}
+	// The clone's origin points at the local cache; repoint it at the real remote
+	// (if this repo has one) so the workspace can push/pull upstream normally.
+	if repo.URL != "" {
+		_, _ = gitRunner(dest, "remote", "set-url", "origin", repo.URL)
+	}
+	return nil
+}
+
 // detectDefaultBranch reads the mirror's HEAD to find its default branch;
 // returns "" if it can't be determined.
 func detectDefaultBranch(cachePath string) string {

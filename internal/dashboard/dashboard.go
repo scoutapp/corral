@@ -415,6 +415,10 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleRepoItem(w, r, strings.TrimPrefix(path, "/repos/"))
 		return
 	}
+	if path == "/projects/create" {
+		d.handleCreateProject(w, r)
+		return
+	}
 
 	if !strings.HasPrefix(path, "/p/") {
 		http.NotFound(w, r)
