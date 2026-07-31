@@ -180,7 +180,8 @@ export default async function globalSetup() {
 // on CI where we can't poke around interactively.
 async function dumpDiagnostics() {
   const name = outerContainerName();
-  const session = `sandclaude_${path.basename(WORKSPACE)}`;
+  // tmux session name is derived from the (tmux-safe) container name.
+  const session = name;
   // What does docker see? (created / running / exited-with-code)
   await run('docker', ['ps', '-a', '--filter', `name=${name}`, '--format',
     'table {{.Names}}\t{{.Status}}\t{{.Ports}}'], { cwd: REPO_ROOT, timeoutMs: 15_000 })
@@ -200,7 +201,7 @@ async function dumpDiagnostics() {
 async function bestEffortTeardown() {
   const name = outerContainerName();
   await run('docker', ['rm', '-f', name], { cwd: REPO_ROOT, timeoutMs: 30_000 }).catch(() => {});
-  await run('tmux', ['kill-session', '-t', `sandclaude_${path.basename(WORKSPACE)}`], {
+  await run('tmux', ['kill-session', '-t', name], {
     cwd: REPO_ROOT,
     timeoutMs: 10_000,
   }).catch(() => {});
