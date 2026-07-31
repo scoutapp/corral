@@ -77,6 +77,10 @@ risks. The chat panel is read-only by default.)
    bootstrapping an allowlist); no network protection while active.
 7. **Dangerous mode** — no per-action approval; the container + firewall are the
    only guardrails.
+8. **Seccomp `unconfined`** (Config → Seccomp) removes syscall filtering — needed
+   by some runtimes (e.g. Erlang/BEAM) but it widens the container's attack
+   surface. Default keeps Docker's profile. (No effect with DinD, which is already
+   privileged/unfiltered.)
 
 ## Guidance
 

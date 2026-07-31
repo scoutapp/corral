@@ -25,6 +25,7 @@ type SandClaude struct {
 	DisableDind                 bool
 	dindEnabled                 bool
 	dindPorts                   []string
+	seccompMode                 string // "" default | "unconfined" | custom profile path
 	DevMode                     bool   // set by `dev`: launch detached in tmux for closed-loop development
 	detachedSession             string // non-empty when container launched in background tmux session
 	mergedCredsFile             string // non-empty when a merged temp creds file was written (cleaned up on stop)
