@@ -19,14 +19,23 @@
       <span class="legend-item"><i class="dot waiting"></i>waiting on you</span>
       <span class="legend-item"><i class="dot off"></i>idle</span>
     </div>
+    <button id="new-project" type="button" class="header-link primary" title="Create a new project">+ New project</button>
     <button id="mute-all" type="button" class="header-link mute-all" aria-pressed="false" title="Mute all alerts">🔔 alerts</button>
     <a href="/global" class="header-link">Global settings</a>
   </div>
 </header>
 
+<section class="repos" id="repos-section">
+  <div class="repos-head">
+    <h2>Repositories</h2>
+    <button id="add-repo" type="button" class="header-link" title="Add a repository">+ Add repo</button>
+  </div>
+  <div class="repos-list" id="repos-list"><p class="muted">loading repos…</p></div>
+</section>
+
 <main id="panes" class="panes">
   {{if not .Projects}}
-  <p class="empty">No projects yet. Run <code>sandclaude dev</code> in a project directory, then reload.</p>
+  <p class="empty" id="no-projects">No projects yet. Add a repo above and create one, or run <code>sandclaude dev</code> in a project directory.</p>
   {{end}}
 </main>
 
@@ -34,6 +43,16 @@
   <span id="summary" class="muted">connecting…</span>
 </footer>
 
+<!-- New-project / add-repo modal (hidden until opened). -->
+<div class="modal-backdrop" id="modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-head"><span id="modal-title">New project</span>
+      <button id="modal-close" type="button" title="Close">✕</button></div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
 <script src="/static/panes.js"></script>
+<script src="/static/projects-ui.js"></script>
 </body>
 </html>

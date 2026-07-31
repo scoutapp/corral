@@ -28,6 +28,12 @@ Here's what that boundary does and doesn't cover.
    per-launch token is what prevents access — treat the dashboard URL as a secret.
 3. **Dashboard grants shells + writes.** It can open a container shell, a *host*
    shell, and edit workspace files — gated only by loopback + token.
+   The dashboard can also **create projects host-side**: cloning repos (private
+   ones use your ambient host git/`gh` credentials — no tokens are stored) into
+   `~/.sandclaude/workspaces/`, and **starting** a project's container by running
+   `sandclaude dev` on the host. These run with the operator's full host
+   privileges (same loopback + token trust basis as the host shell). Adding a repo
+   clones an operator-supplied URL — an outbound host action by design.
 4. **"Ask Claude" chat panel is NOT sandboxed.** The dashboard chat panel runs
    the operator's *own host* `claude` (real credentials/subscription — not the
    Anthropic API, not the sandboxed container instance), started in the project
