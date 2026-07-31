@@ -111,7 +111,7 @@
 
   if (hostToggle) hostToggle.addEventListener("click", function () { showHost(!hostVisible()); });
   if (hostClose) hostClose.addEventListener("click", function () { showHost(false); });
-  // (Ctrl-` toggle is registered in the global hotkey layer near the end.)
+  // (host-terminal toggle is registered in the global hotkey layer near the end.)
 
   // Drag the top handle to resize.
   if (hostHandle && overlay) {
@@ -176,7 +176,7 @@
     try { localStorage.setItem(CHAT_DOCK_KEY, side); } catch (e) {}
     applyChatDock();
   });
-  // (Ctrl-J toggle is registered in the global hotkey layer near the end.)
+  // (Ask-Claude toggle is registered in the global hotkey layer near the end.)
 
   // Drag the inner-edge handle to resize the panel width.
   if (chatHandle && chat) {
@@ -202,7 +202,7 @@
 
   // ---- Global hotkeys -------------------------------------------------------
   // A small keyboard layer for the project page. Existing per-panel toggles
-  // (Ctrl-` host shell, Ctrl-J chat) are folded in here so they share one guard
+  // (host shell, Ask Claude, etc.) are folded in here so they share one guard
   // and don't fire while you're typing into a field or the terminal.
   function toggleClaudeDock() {
     var collapsed = layout && layout.classList.contains("dock-collapsed");
@@ -221,19 +221,24 @@
       el.classList.contains("xterm-helper-textarea") || tag === "iframe";
   }
 
+  // Cmd on macOS, Ctrl elsewhere — the combo label adapts; both modifiers are
+  // accepted so the same binding works cross-platform.
+  var isMac = /mac/i.test(navigator.platform || navigator.userAgent || "");
+  var MOD = isMac ? "Cmd" : "Ctrl";
   var HOTKEYS = [
-    { combo: "Ctrl-`", key: "`", label: "Toggle host shell", run: function () { showHost(!hostVisible()); } },
-    { combo: "Ctrl-J", key: "j", label: "Toggle Ask Claude", run: function () { showChat(!chatVisible()); } },
-    { combo: "Ctrl-;", key: ";", label: "Toggle Claude terminal", run: toggleClaudeDock },
-    { combo: "Ctrl-.", key: ".", label: "Clear notifications", run: function () {
+    { combo: MOD + "-J", key: "j", label: "Toggle host terminal", run: function () { showHost(!hostVisible()); } },
+    { combo: MOD + "-K", key: "k", label: "Toggle Ask Claude", run: function () { showChat(!chatVisible()); } },
+    { combo: MOD + "-;", key: ";", label: "Toggle Claude terminal", run: toggleClaudeDock },
+    { combo: MOD + "-.", key: ".", label: "Clear notifications", run: function () {
         // Cross-project toasts (a later feature) listen for this event.
         document.dispatchEvent(new CustomEvent("sandclaude:clear-notifications"));
       } },
-    { combo: "Ctrl-/", key: "/", label: "Show shortcuts", run: showHotkeyHelp },
+    { combo: MOD + "-/", key: "/", label: "Show shortcuts", run: showHotkeyHelp },
   ];
 
   document.addEventListener("keydown", function (e) {
-    if (!e.ctrlKey || e.metaKey || e.altKey) return;
+    // Accept Cmd (metaKey) OR Ctrl, but not both other modifiers.
+    if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
     if (typingTarget()) return;
     var k = (e.key || "").toLowerCase();
     for (var i = 0; i < HOTKEYS.length; i++) {
