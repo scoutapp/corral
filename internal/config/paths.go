@@ -116,6 +116,21 @@ func GetLogsDir() string {
 	return filepath.Join(SandclaudeDir(), "logs")
 }
 
+// The following resolve the same per-project paths but under an EXPLICIT
+// workspace rather than the current directory. The CLI runs from inside the
+// workspace (cwd == workspace) and uses the cwd-based helpers above; the
+// dashboard creates projects in arbitrary workspaces and uses these.
+
+// SandclaudeDirFor returns <workspace>/.sandclaude.
+func SandclaudeDirFor(workspace string) string {
+	return filepath.Join(workspace, ".sandclaude")
+}
+
+// ProjectDirFor returns <workspace>/.sandclaude/project/.
+func ProjectDirFor(workspace string) string {
+	return filepath.Join(SandclaudeDirFor(workspace), "project")
+}
+
 // EnsureGitignored adds entry to <cwd>/.gitignore if not already present.
 func EnsureGitignored(entry string) {
 	cwd, err := os.Getwd()
