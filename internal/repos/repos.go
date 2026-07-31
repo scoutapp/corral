@@ -299,6 +299,39 @@ func CloneLocal(id, dest, branch string) error {
 	return nil
 }
 
+// CloneURLInto clones an ad-hoc source (URL or local path) directly into dest —
+// for repos not in the list. Private URLs rely on the host's ambient git/gh auth.
+// dest must not already exist.
+func CloneURLInto(source, dest, branch string) error {
+	if strings.TrimSpace(source) == "" {
+		return fmt.Errorf("source is required")
+	}
+	if _, err := os.Stat(dest); err == nil {
+		return fmt.Errorf("destination already exists: %s", dest)
+	}
+	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+		return err
+	}
+	args := []string{"clone", source, dest}
+	if _, err := gitRunner("", args...); err != nil {
+		os.RemoveAll(dest)
+		return err
+	}
+	if branch != "" {
+		if _, err := gitRunner(dest, "checkout", branch); err != nil {
+			os.RemoveAll(dest)
+			return fmt.Errorf("checkout %s: %w", branch, err)
+		}
+	}
+	return nil
+}
+
+// DefaultDirName derives a sensible directory name for a clone from a source
+// (URL or path): the repo basename without .git.
+func DefaultDirName(source string) string {
+	return nameFromURL(source)
+}
+
 // detectDefaultBranch reads the mirror's HEAD to find its default branch;
 // returns "" if it can't be determined.
 func detectDefaultBranch(cachePath string) string {
