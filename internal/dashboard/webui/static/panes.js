@@ -121,6 +121,15 @@
       ' title="' + (m ? "Unmute alerts for this project" : "Mute alerts for this project") + '"' +
       ' aria-pressed="' + (m ? "true" : "false") + '">' + (m ? "🔇" : "🔔") + "</button>";
 
+    // Start (idle) / Stop (running) — a power toggle for the project's container,
+    // right on the pane. Both live inside the pane's <a>, so the delegated handler
+    // stops navigation. Start may 409 if ssh keys need loading (see the handler).
+    var power = p.container_up
+      ? '<button class="power-btn stop" type="button" data-id="' + esc(p.id) + '"' +
+        ' data-name="' + esc(p.name) + '" title="Stop this project\'s container">■</button>'
+      : '<button class="power-btn start" type="button" data-id="' + esc(p.id) + '"' +
+        ' data-name="' + esc(p.name) + '" title="Start this project\'s container">▶</button>';
+
     // Remove is offered only for idle projects (nothing running to disrupt). It
     // unregisters the project from the dashboard list; on-disk config is kept.
     var remove = act === "off"
@@ -134,7 +143,7 @@
           '<span class="pane-name">' + esc(p.name) + "</span>" +
           '<span class="pane-state state-' + act + '">' +
             '<i class="beacon"></i>' + activityLabel(act) +
-            bell + remove +
+            power + bell + remove +
           "</span>" +
         "</div>" +
         '<div class="pane-peek"><span class="peek-caret">&gt;</span> ' + peek + "</div>" +
@@ -206,6 +215,46 @@
       ev.stopPropagation();
       toggleMute(mb.getAttribute("data-id"));
       if (lastProjects) render(lastProjects.slice()); // flip the icon immediately
+      return;
+    }
+
+    var pb = ev.target.closest(".power-btn");
+    if (pb) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      var pid = pb.getAttribute("data-id");
+      var pname = pb.getAttribute("data-name") || "this project";
+      var stopping = pb.classList.contains("stop");
+      pb.disabled = true;
+      pb.textContent = stopping ? "…" : "…";
+      fetch("/p/" + encodeURIComponent(pid) + "/" + (stopping ? "stop" : "start"),
+            { method: "POST", credentials: "same-origin" })
+        .then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (b) {
+            return { status: r.status, body: b };
+          });
+        })
+        .then(function (res) {
+          // Start may 409 if ssh keys aren't loaded — the passphrase PTY lives on
+          // the project's Config tab (Config → SSH keys → Load), so send the user
+          // into the project to do that.
+          if (!stopping && res.status === 409 && res.body && res.body.ssh_keys_pending) {
+            summaryEl.textContent = '"' + pname + '" needs SSH keys loaded first — open it, then Config → SSH keys → Load.';
+            summaryEl.className = "attention";
+            location.href = "/p/" + encodeURIComponent(pid);
+            return;
+          }
+          if (res.status >= 400) throw new Error((res.body && res.body.message) || ("HTTP " + res.status));
+          // Let the next /status poll reflect the new state (it polls every ~2s).
+          summaryEl.textContent = (stopping ? "stopping " : "starting ") + pname + "…";
+          summaryEl.className = "";
+        })
+        .catch(function (err) {
+          pb.disabled = false;
+          pb.textContent = stopping ? "■" : "▶";
+          summaryEl.textContent = (stopping ? "stop" : "start") + " failed: " + err.message;
+          summaryEl.className = "attention";
+        });
       return;
     }
 

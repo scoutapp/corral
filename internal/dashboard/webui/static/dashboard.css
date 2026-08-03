@@ -110,17 +110,21 @@ body.console {
 .state-working .beacon { animation: beacon-pulse 1.6s ease-in-out infinite; }
 .state-waiting .beacon { animation: beacon-blink 1s steps(1) infinite; }
 
-/* Per-pane controls (mute bell, remove ✕). They live inside the pane's <a>, so
-   panes.js stops their clicks from navigating. Kept quiet until hover. */
-.mute-btn, .remove-btn {
+/* Per-pane controls (start/stop, mute bell, remove ✕). They live inside the
+   pane's <a>, so panes.js stops their clicks from navigating. Quiet until hover. */
+.mute-btn, .remove-btn, .power-btn {
   border: none; background: transparent; cursor: pointer; padding: 0 0.15rem;
   font-size: 0.85rem; line-height: 1; color: inherit; opacity: 0.55;
   border-radius: 4px; flex: none;
 }
-.mute-btn:hover, .remove-btn:hover { opacity: 1; background: rgba(255, 255, 255, 0.08); }
+.mute-btn:hover, .remove-btn:hover, .power-btn:hover { opacity: 1; background: rgba(255, 255, 255, 0.08); }
 .mute-btn[aria-pressed="true"] { opacity: 0.9; }
 .remove-btn { color: var(--con-muted); font-weight: 700; }
 .remove-btn:hover { color: var(--con-waiting); }
+.power-btn:disabled { opacity: 0.4; cursor: default; }
+.power-btn.start { color: var(--con-working); }   /* ▶ green — go */
+.power-btn.stop  { color: var(--con-muted); }
+.power-btn.stop:hover { color: var(--con-waiting); } /* ■ amber on hover — attention */
 
 .mute-all {
   cursor: pointer; font: inherit; font-size: 0.8rem;
