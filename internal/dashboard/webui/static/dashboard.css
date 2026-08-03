@@ -126,6 +126,21 @@ body.console {
 .power-btn.stop  { color: var(--con-muted); }
 .power-btn.stop:hover { color: var(--con-waiting); } /* ■ amber on hover — attention */
 
+/* Shared SSH-load modal (ssh-load.js) — usable on any page (landing + project). */
+.sshload-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex; align-items: center; justify-content: center;
+}
+.sshload-box {
+  background: var(--con-panel, #12161F); border: 1px solid var(--con-line, #232A38);
+  border-radius: 10px; padding: 1.2rem; width: min(680px, 92vw);
+  color: var(--con-text, #C7CDD9);
+}
+.sshload-box h3 { margin: 0 0 0.5rem; }
+.sshload-term { height: 240px; background: #0B0E14; border-radius: 6px; overflow: hidden; }
+.sshload-actions { margin-top: 1rem; display: flex; justify-content: flex-end; }
+
 .mute-all {
   cursor: pointer; font: inherit; font-size: 0.8rem;
 }
