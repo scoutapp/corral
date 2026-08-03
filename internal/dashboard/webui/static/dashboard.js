@@ -268,4 +268,67 @@
   // Activate the initially-selected tab on load.
   var initial = document.querySelector(".tab-btn.active") || buttons[0];
   if (initial) activate(initial.dataset.tab);
+
+  // ---- Container power toggle (▶ Start / ■ Stop) in the header ---------------
+  var powerBtn = document.getElementById("power-toggle");
+  if (powerBtn) {
+    var powerUp = powerBtn.dataset.up === "true";
+
+    function paintPower() {
+      powerBtn.textContent = powerUp ? "■ Stop" : "▶ Start";
+      powerBtn.classList.toggle("is-up", powerUp);
+    }
+    paintPower();
+
+    function doPower() {
+      var stopping = powerUp;
+      powerBtn.disabled = true;
+      powerBtn.textContent = stopping ? "stopping…" : "starting…";
+      fetch("/p/" + projectId + "/" + (stopping ? "stop" : "start"),
+            { method: "POST", credentials: "same-origin" })
+        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (b) { return { status: r.status, body: b }; }); })
+        .then(function (res) {
+          // Start may 409 when SSH keys aren't loaded — load them inline via the
+          // shared host-shell modal, then start.
+          if (!stopping && res.status === 409 && res.body && res.body.ssh_keys_pending) {
+            powerBtn.disabled = false; paintPower();
+            if (typeof window.openSSHLoadModal === "function") {
+              window.openSSHLoadModal(projectId, function (loaded) {
+                if (loaded) doPowerStart();
+              });
+            }
+            return;
+          }
+          if (res.status >= 400) throw new Error((res.body && res.body.message) || ("HTTP " + res.status));
+          // Optimistically flip; the poll will correct if it didn't take.
+          powerUp = !stopping;
+          setTimeout(function () { powerBtn.disabled = false; paintPower(); }, 800);
+        })
+        .catch(function (err) {
+          powerBtn.disabled = false; paintPower();
+          alert((stopping ? "stop" : "start") + " failed: " + err.message);
+        });
+    }
+    // Direct start (keys already loaded) — used after the inline load modal.
+    function doPowerStart() {
+      fetch("/p/" + projectId + "/start", { method: "POST", credentials: "same-origin" })
+        .then(function () { powerUp = true; setTimeout(paintPower, 800); })
+        .catch(function () {});
+    }
+
+    powerBtn.addEventListener("click", doPower);
+
+    // Keep the label in sync with reality (someone may start/stop elsewhere, or
+    // the container may exit). Light poll of /status.
+    setInterval(function () {
+      fetch("/status", { credentials: "same-origin" })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (s) {
+          if (!s || !s.projects) return;
+          var me = s.projects.filter(function (p) { return p.id === projectId; })[0];
+          if (me && !powerBtn.disabled) { powerUp = !!me.container_up; paintPower(); }
+        })
+        .catch(function () {});
+    }, 4000);
+  }
 })();

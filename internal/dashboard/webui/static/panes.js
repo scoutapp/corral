@@ -52,6 +52,23 @@
     if (muted[id]) delete muted[id]; else muted[id] = true;
     saveMutes(muted);
   }
+
+  // POST /start for a project by id (used after inline key-load). Standalone so it
+  // doesn't depend on a pane button element, which the /status poll may have
+  // re-rendered away by the time we call this. The next poll reflects the state.
+  function startProjectById(id, name) {
+    fetch("/p/" + encodeURIComponent(id) + "/start", { method: "POST", credentials: "same-origin" })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (b) { return { status: r.status, body: b }; }); })
+      .then(function (res) {
+        if (res.status >= 400) throw new Error((res.body && res.body.message) || ("HTTP " + res.status));
+        summaryEl.textContent = "starting " + (name || id) + "…";
+        summaryEl.className = "";
+      })
+      .catch(function (err) {
+        summaryEl.textContent = "start failed: " + err.message;
+        summaryEl.className = "attention";
+      });
+  }
   function toggleMuteAll() {
     mutedAll = !mutedAll;
     try { localStorage.setItem(GLOBAL_KEY, mutedAll ? "1" : "0"); } catch (e) {}
@@ -246,9 +263,11 @@
             if (typeof openSSHLoadModal === "function") {
               openSSHLoadModal(pid, function (loaded) {
                 if (loaded) {
-                  summaryEl.textContent = "keys loaded — starting " + pname + "…";
-                  summaryEl.className = "";
-                  pb.click(); // re-trigger start; keys are now loaded
+                  // Re-POST /start directly. We must NOT re-click `pb`: the /status
+                  // poll re-renders the panes every ~2s, so by the time the modal
+                  // closes `pb` is usually a DETACHED element and a click does
+                  // nothing (this was the "clicked Continue, nothing started" bug).
+                  startProjectById(pid, pname);
                 } else {
                   summaryEl.textContent = '"' + pname + '" — keys not loaded; start canceled.';
                   summaryEl.className = "attention";

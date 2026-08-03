@@ -343,6 +343,19 @@ function startConfig(projectId) {
     restartRequest(collectRestartEdit(), btn);
   }
 
+  // Start an idle project after its keys were just loaded (from the Config tab's
+  // Load button). Keys are loaded now, so /start won't 409. The status poll /
+  // a reload will show it come up.
+  function startProjectAfterLoad() {
+    setMsg("keys loaded — starting project…", false);
+    fetch("/p/" + projectId + "/start", { method: "POST", credentials: "same-origin" })
+      .then(function (r) { return r.json().catch(function () { return {}; }); })
+      .then(function (b) {
+        setMsg(b.message || "starting… reload the page in a few seconds to see it.", false);
+      })
+      .catch(function (err) { setMsg("start failed: " + err.message, true); });
+  }
+
   // POST the restart. If the server replies 409 with ssh_keys_pending, the project
   // has keys that aren't loaded yet — open the Load-keys PTY modal (type the
   // passphrase), then retry the restart once loaded. Otherwise show the result.
@@ -390,7 +403,15 @@ function startConfig(projectId) {
     document.getElementById("cfg-restart").addEventListener("click", doRestart);
 
     var sshLoad = document.getElementById("cfg-ssh-load-btn");
-    if (sshLoad) sshLoad.addEventListener("click", openSSHLoadModal);
+    if (sshLoad) sshLoad.addEventListener("click", function () {
+      openSSHLoadModal(function (loaded) {
+        // If the container isn't running and keys just loaded, offer to start it
+        // right away — otherwise loading keys here would appear to "do nothing".
+        if (loaded && current && !current.container_up) {
+          startProjectAfterLoad();
+        }
+      });
+    });
     var addPath = document.getElementById("cfg-ssh-addpath");
     if (addPath) addPath.addEventListener("click", addSSHOtherPath);
     fillSSHKeyPicker(); // paints the checklist async, then wires it + effective preview
