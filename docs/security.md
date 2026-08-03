@@ -79,8 +79,10 @@ risks. The chat panel is read-only by default.)
    only guardrails.
 8. **Seccomp `unconfined`** (Config → Seccomp) removes syscall filtering — needed
    by some runtimes (e.g. Erlang/BEAM) but it widens the container's attack
-   surface. Default keeps Docker's profile. (No effect with DinD, which is already
-   privileged/unfiltered.)
+   surface. Same platform split as above: syscalls hit your **real kernel on
+   Linux** (so `unconfined` genuinely widens host exposure), but only the **Docker
+   VM's kernel on macOS** (contained by the VM). Default keeps Docker's profile.
+   No effect with DinD (`--privileged` already disables seccomp).
 
 ## Guidance
 
