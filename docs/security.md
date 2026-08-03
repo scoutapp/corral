@@ -20,6 +20,13 @@ Here's what that boundary does and doesn't cover.
   (Claude + GitHub)**; other allowed hosts still pass but are direct-dialed (not
   decrypted). Change it per project (Config → Capture): minimal / all / none / custom.
 - **Filesystem** — only the project workspace is mounted, not your home/SSH keys.
+- **SSH keys** — opt-in per project. When configured, sandclaude runs a *scoped*
+  ssh-agent holding **only the keys you chose** and bind-mounts just its **socket**
+  (not any key file). The container can *use* the keys (sign, push) but never sees
+  the private-key bytes — the agent protocol has no "export key" operation, so
+  this is `:ro`-proof (there's no file to read). Your real host agent (and any
+  keys in it you didn't choose) is never forwarded. Keys live only in the agent's
+  memory and are torn down with the container. See "SSH residual risk" below.
 - **Dashboard** — binds `127.0.0.1` only, every route requires a per-launch token.
 
 ## What "host privileges" means
@@ -83,6 +90,20 @@ risks. The chat panel is read-only by default.)
    Linux** (so `unconfined` genuinely widens host exposure), but only the **Docker
    VM's kernel on macOS** (contained by the VM). Default keeps Docker's profile.
    No effect with DinD (`--privileged` already disables seccomp).
+9. **SSH scoped-agent — `use`, not `steal`, and a DinD cross-project window.**
+   The container can *use* a chosen key while it's running (push, auth anywhere
+   that key is trusted) — that's the point. It can't copy the key out (socket
+   only, no bytes). Two bounded caveats:
+   - **Usage window.** While the container is up, anything in it (including a shell
+     you open) can use the chosen keys. Only load keys the project needs; they're
+     torn down when the container stops.
+   - **DinD cross-project (macOS).** The agent sockets live under `~/.sandclaude`
+     (a Docker-shared path). With **DinD on** (`--privileged`), a container escape
+     into the Docker VM can reach *another* running project's scoped agent socket
+     and *use* its keys — still no byte theft, still confined to the VM (your Mac's
+     real agent/keys are across the VM boundary, untouched). Bounded by
+     container-lifetime teardown (an idle project has no live agent) and closed by
+     `--disable-dind`. Linux (escape hits the real host) is out of scope for now.
 
 ## Guidance
 
@@ -90,3 +111,5 @@ risks. The chat panel is read-only by default.)
 - Treat the dashboard URL/token as a secret.
 - Use `--disable-dind` when you don't need inner containers.
 - Don't mount a workspace holding secrets you don't want Claude to read.
+- Give each project only the SSH keys it needs (Config → SSH keys); avoid running
+  multiple key-bearing projects under DinD at the same time.
