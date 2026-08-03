@@ -2,7 +2,9 @@ package dashboard
 
 import (
 	"net/http"
+	"os"
 	"os/exec"
+	"strings"
 
 	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
 )
@@ -75,9 +77,14 @@ func (d *dashboardServer) handleSSHKeysStatus(w http.ResponseWriter, r *http.Req
 	writeFilesJSON(w, st)
 }
 
-// handleSSHKeysLoadWS bridges a browser terminal to `ssh-add <keys>` for the
-// project's scoped agent, so the user types passphrases in a real PTY. On
-// success the agent holds the keys and a subsequent start adopts it.
+// handleSSHKeysLoadWS bridges a browser terminal to a real interactive login
+// shell ON THE HOST that runs `ssh-add <keys>` for the project's scoped agent,
+// then drops to a prompt. Running it inside `$SHELL -i` (rather than exec'ing
+// ssh-add bare) gives the familiar user@host:cwd$ prompt and makes clear this is
+// a genuine host shell, not a sandboxed one — the same treatment the container
+// shell got. The passphrase is typed into the real PTY and read by ssh-add
+// directly; it never becomes a request value. On success the scoped agent holds
+// the keys and a subsequent start adopts it.
 func (d *dashboardServer) handleSSHKeysLoadWS(w http.ResponseWriter, r *http.Request, id string) {
 	workspace, err := lookupWorkspaceByID(id)
 	if err != nil {
@@ -100,8 +107,36 @@ func (d *dashboardServer) handleSSHKeysLoadWS(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	argv, env := agent.LoadKeysCommand()
-	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.Env = env
+	// Build the ssh-add invocation as a single shell command. Each key path is
+	// single-quoted (paths are host-resolved from config; quoting guards spaces).
+	var quoted []string
+	for _, k := range agent.Keys {
+		quoted = append(quoted, shellSingleQuote(k))
+	}
+	addCmd := "ssh-add " + strings.Join(quoted, " ")
+
+	// A short banner (so it's unmistakably a host shell), then run ssh-add, then
+	// exec an interactive login shell so the prompt (user@host:cwd$) appears and
+	// the user can see the result / retry. `exec` replaces the launcher so there's
+	// one clean process. SSH_AUTH_SOCK targets the scoped agent.
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/bash"
+	}
+	banner := "── sandclaude · HOST shell (NOT sandboxed) · loading SSH keys into the scoped agent for this project ──"
+	script := "echo " + shellSingleQuote(banner) + "; " +
+		addCmd + "; exec " + shell + " -i"
+
+	cmd := exec.Command(shell, "-lc", script)
+	cmd.Env = append(os.Environ(), "SSH_AUTH_SOCK="+agent.SocketPath)
+	if _, serr := os.Stat(workspace); serr == nil {
+		cmd.Dir = workspace // land in the project so the prompt's cwd is meaningful
+	}
 	d.bridgePTY(w, r, cmd)
+}
+
+// shellSingleQuote wraps s in single quotes for safe use in a /bin/sh command,
+// escaping embedded single quotes via the '\” idiom.
+func shellSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

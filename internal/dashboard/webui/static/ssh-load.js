@@ -24,12 +24,15 @@
     overlay.className = "sshload-overlay";
     overlay.innerHTML =
       '<div class="sshload-box">' +
-        "<h3>Load SSH keys</h3>" +
-        '<p class="muted">Type each key\'s passphrase below. Keys load into this ' +
-        "project's scoped agent; they are never stored.</p>" +
+        '<h3>Load SSH keys <span class="sshload-hostbadge">host shell</span></h3>' +
+        '<p class="muted">This is a real shell <strong>on your host machine</strong> ' +
+        "(not sandboxed). It runs <code>ssh-add</code> for this project's scoped " +
+        "agent — type each key's passphrase at the prompt. The passphrase goes " +
+        "straight to <code>ssh-add</code> in the terminal; it's never stored or " +
+        "sent as data.</p>" +
         '<div class="sshload-term"></div>' +
         '<div class="sshload-actions">' +
-          '<button class="cfg-btn sshload-done">Done</button>' +
+          '<button class="cfg-btn cfg-btn-ghost sshload-done">Cancel</button>' +
         "</div>" +
       "</div>";
     document.body.appendChild(overlay);
@@ -55,50 +58,50 @@
     ws.onmessage = function (ev) {
       term.write(typeof ev.data === "string" ? ev.data : decoder.decode(new Uint8Array(ev.data)));
     };
-    // When ssh-add exits the WS closes. Check whether the keys actually loaded:
-    //   loaded -> auto-close the modal and report success (caller auto-starts).
-    //   not    -> keep it open (e.g. wrong passphrase), offer Retry / Cancel.
-    ws.onclose = function () {
+    // The PTY now runs a persistent interactive host shell (ssh-add, then a live
+    // prompt), so the WS does NOT close when ssh-add finishes. Instead POLL the
+    // load status: once the scoped agent holds the keys, reveal a "Continue"
+    // button (and highlight it) so the user confirms the close on their terms.
+    var poll = setInterval(function () {
       fetch("/p/" + encodeURIComponent(projectId) + "/sshkeys/status", { credentials: "same-origin" })
         .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (s) {
-          if (s && s.loaded) {
-            term.write("\r\n\x1b[32m[keys loaded — starting]\x1b[0m\r\n");
-            finish(true); // auto-close on success
-          } else {
-            term.write("\r\n\x1b[33m[keys not loaded — check the passphrase and retry]\x1b[0m\r\n");
-            showRetry();
-          }
-        })
-        .catch(function () { showRetry(); });
+        .then(function (s) { if (s && s.loaded) onLoaded(); })
+        .catch(function () {});
+    }, 1500);
+    ws.onclose = function () {
+      // Shell exited (user typed `exit`, or it died). Report whatever state we're
+      // in based on the last poll.
+      finish(loadedSeen);
     };
     term.onData(function (d) { if (ws.readyState === WebSocket.OPEN) ws.send(new TextEncoder().encode(d)); });
 
     var done = false;
+    var loadedSeen = false;
     function finish(loaded) {
       if (done) return;
       done = true;
+      clearInterval(poll);
       try { ws.close(); } catch (e) {}
       try { term.dispose(); } catch (e) {}
       overlay.remove();
       if (typeof onDone === "function") onDone(loaded);
     }
 
-    // On failure, swap the (now stale) Done button for Retry + Cancel.
-    function showRetry() {
+    // Keys detected as loaded: swap the actions for a highlighted Continue (which
+    // proceeds — e.g. auto-starts the project). Fires once.
+    function onLoaded() {
+      if (loadedSeen) return;
+      loadedSeen = true;
+      term.write("\r\n\x1b[32m✓ keys loaded — click Continue to proceed\x1b[0m\r\n");
       var actions = overlay.querySelector(".sshload-actions");
-      if (!actions) return;
-      actions.innerHTML =
-        '<button class="cfg-btn sshload-retry">Retry</button>' +
-        '<button class="cfg-btn cfg-btn-ghost sshload-cancel">Cancel</button>';
-      actions.querySelector(".sshload-retry").onclick = function () {
-        finish(false);                       // tear down this modal…
-        openSSHLoadModal(projectId, onDone); // …and reopen a fresh one to try again
-      };
-      actions.querySelector(".sshload-cancel").onclick = function () { finish(false); };
+      if (actions) {
+        actions.innerHTML = '<button class="cfg-btn sshload-continue">Continue ▶</button>';
+        actions.querySelector(".sshload-continue").onclick = function () { finish(true); };
+      }
     }
 
-    // Before ssh-add finishes, the only button is Done — it cancels the load.
+    // Cancel closes without loading (the shell is still live; user changed mind
+    // or the passphrase was wrong — they can just click ▶ Start again later).
     overlay.querySelector(".sshload-done").onclick = function () { finish(false); };
     // Click outside the box cancels too.
     overlay.addEventListener("click", function (e) { if (e.target === overlay) finish(false); });
