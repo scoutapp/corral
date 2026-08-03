@@ -235,13 +235,26 @@
           });
         })
         .then(function (res) {
-          // Start may 409 if ssh keys aren't loaded — the passphrase PTY lives on
-          // the project's Config tab (Config → SSH keys → Load), so send the user
-          // into the project to do that.
+          // Start may 409 if ssh keys aren't loaded. Load them RIGHT HERE via the
+          // shared PTY modal (type the passphrase), then auto-retry the start —
+          // no navigating away from the dashboard home.
           if (!stopping && res.status === 409 && res.body && res.body.ssh_keys_pending) {
-            summaryEl.textContent = '"' + pname + '" needs SSH keys loaded first — open it, then Config → SSH keys → Load.';
+            summaryEl.textContent = '"' + pname + '" needs SSH keys — load them to start.';
             summaryEl.className = "attention";
-            location.href = "/p/" + encodeURIComponent(pid);
+            pb.disabled = false;
+            pb.textContent = "▶";
+            if (typeof openSSHLoadModal === "function") {
+              openSSHLoadModal(pid, function (loaded) {
+                if (loaded) {
+                  summaryEl.textContent = "keys loaded — starting " + pname + "…";
+                  summaryEl.className = "";
+                  pb.click(); // re-trigger start; keys are now loaded
+                } else {
+                  summaryEl.textContent = '"' + pname + '" — keys not loaded; start canceled.';
+                  summaryEl.className = "attention";
+                }
+              });
+            }
             return;
           }
           if (res.status >= 400) throw new Error((res.body && res.body.message) || ("HTTP " + res.status));
