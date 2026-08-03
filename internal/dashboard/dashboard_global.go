@@ -6,6 +6,7 @@ import (
 	"github.com/jackrothrock/sandclaude/internal/config"
 	"github.com/jackrothrock/sandclaude/internal/creds"
 	"github.com/jackrothrock/sandclaude/internal/session"
+	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
 	"net/http"
 	"os"
 	"os/exec"
@@ -86,6 +87,12 @@ type globalView struct {
 	MonitorHosts []string         `json:"monitor_hosts"`
 	MitmPorts    []string         `json:"mitm_ports"`
 	CredsPath    string           `json:"creds_path"`
+
+	// SSH default key set (~/.sandclaude/ssh-keys.json) — the always-on base for
+	// every project. AvailableSSHKeys lets the picker render checkboxes.
+	SSHKeys         []string                `json:"ssh_keys"`
+	SSHKeysPath     string                  `json:"ssh_keys_path"`
+	AvailableSSHKey []sshagent.AvailableKey `json:"available_ssh_keys"`
 }
 
 // handleGlobalPage serves the Global config page shell (data loaded via JS).
@@ -118,6 +125,10 @@ func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Reques
 		view.MitmPorts = []string{"80", "443"}
 	}
 
+	view.SSHKeys = config.GlobalSSHKeys()
+	view.SSHKeysPath = config.GlobalSSHKeysPath()
+	view.AvailableSSHKey = sshagent.AvailableKeys()
+
 	writeJSON(w, view)
 }
 
@@ -135,6 +146,7 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 		UnsetCreds   []string  `json:"unset_creds,omitempty"`
 		MonitorHosts *[]string `json:"monitor_hosts,omitempty"`
 		MitmPorts    *[]string `json:"mitm_ports,omitempty"`
+		SSHKeys      *[]string `json:"ssh_keys,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&edit); err != nil {
 		http.Error(w, "bad payload: "+err.Error(), http.StatusBadRequest)
@@ -182,6 +194,14 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		results = append(results, "✓ defaults saved (new projects inherit these at init)")
+	}
+
+	if edit.SSHKeys != nil {
+		if err := config.WriteGlobalSSHKeys(*edit.SSHKeys); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		results = append(results, fmt.Sprintf("✓ %d global ssh key(s) saved (loaded by every project on next start)", len(*edit.SSHKeys)))
 	}
 
 	writeJSON(w, map[string]any{"results": results})

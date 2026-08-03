@@ -51,7 +51,7 @@ func TestExpandSSHKeyPath(t *testing.T) {
 func TestResolveSSHKeys_InheritGlobalWhenNil(t *testing.T) {
 	withHome(t, func(home string) {
 		writeGlobalKeys(t, `["github_key", "~/other"]`)
-		cfg := &ProjectConfig{} // SSHKeys nil → inherit global
+		cfg := &ProjectConfig{} // no project extras → just the global default
 		got := cfg.ResolveSSHKeys()
 		want := []string{
 			filepath.Join(home, ".ssh", "github_key"),
@@ -63,24 +63,46 @@ func TestResolveSSHKeys_InheritGlobalWhenNil(t *testing.T) {
 	})
 }
 
-func TestResolveSSHKeys_ExplicitEmptyOverridesGlobal(t *testing.T) {
-	withHome(t, func(_ string) {
+func TestResolveSSHKeys_EmptyProjectStillLoadsGlobal(t *testing.T) {
+	withHome(t, func(home string) {
 		writeGlobalKeys(t, `["github_key"]`)
-		cfg := &ProjectConfig{SSHKeys: []string{}} // explicit empty → NO keys
-		if got := cfg.ResolveSSHKeys(); len(got) != 0 {
-			t.Errorf("explicit empty should yield no keys, got %v", got)
+		cfg := &ProjectConfig{SSHKeys: []string{}} // no extras → global still loads
+		got := cfg.ResolveSSHKeys()
+		want := []string{filepath.Join(home, ".ssh", "github_key")}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("empty project extras should still load global: got %v, want %v", got, want)
 		}
 	})
 }
 
-func TestResolveSSHKeys_ProjectReplacesGlobal(t *testing.T) {
+func TestResolveSSHKeys_ProjectUnionsWithGlobal(t *testing.T) {
 	withHome(t, func(home string) {
 		writeGlobalKeys(t, `["global_key"]`)
 		cfg := &ProjectConfig{SSHKeys: []string{"project_key"}}
 		got := cfg.ResolveSSHKeys()
-		want := []string{filepath.Join(home, ".ssh", "project_key")}
+		// Union: global first (always-on base), then project extras.
+		want := []string{
+			filepath.Join(home, ".ssh", "global_key"),
+			filepath.Join(home, ".ssh", "project_key"),
+		}
 		if !reflect.DeepEqual(got, want) {
-			t.Errorf("project should replace global: got %v, want %v", got, want)
+			t.Errorf("project should union with global: got %v, want %v", got, want)
+		}
+	})
+}
+
+func TestResolveSSHKeys_UnionDedupsAcrossLayers(t *testing.T) {
+	withHome(t, func(home string) {
+		writeGlobalKeys(t, `["shared_key"]`)
+		cfg := &ProjectConfig{SSHKeys: []string{"shared_key", "extra_key"}}
+		got := cfg.ResolveSSHKeys()
+		// shared_key appears in both layers → loaded once (from the global slot).
+		want := []string{
+			filepath.Join(home, ".ssh", "shared_key"),
+			filepath.Join(home, ".ssh", "extra_key"),
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("union should dedup across layers: got %v, want %v", got, want)
 		}
 	})
 }
@@ -101,29 +123,6 @@ func TestResolveSSHKeys_NoGlobalNoProject(t *testing.T) {
 		cfg := &ProjectConfig{} // nil, and no global file
 		if got := cfg.ResolveSSHKeys(); len(got) != 0 {
 			t.Errorf("expected no keys, got %v", got)
-		}
-	})
-}
-
-// The nil-vs-empty distinction must survive a JSON round-trip through the config
-// file, since that's the whole reason ssh_keys has no omitempty.
-func TestSSHKeys_JSONRoundTripPreservesEmptyVsAbsent(t *testing.T) {
-	withHome(t, func(_ string) {
-		dir := t.TempDir()
-
-		// explicit empty
-		if err := WriteConfig(dir, &ProjectConfig{Workspace: "/w", SSHKeys: []string{}}); err != nil {
-			t.Fatal(err)
-		}
-		got, err := ReadConfig(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got.SSHKeys == nil {
-			t.Error("explicit empty ssh_keys became nil after round-trip (would wrongly inherit global)")
-		}
-		if len(got.SSHKeys) != 0 {
-			t.Errorf("explicit empty ssh_keys gained entries: %v", got.SSHKeys)
 		}
 	})
 }

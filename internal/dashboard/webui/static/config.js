@@ -106,31 +106,130 @@ function startConfig(projectId) {
     return '<option value="' + val + '"' + (cur === val ? " selected" : "") + ">" + esc(label) + "</option>";
   }
 
-  // SSH scoped-agent editor. Shows an "inherit global default" toggle; when off,
-  // an editable list of key paths (one per line). Below: the effective list that
-  // will actually be loaded, a load-status line, and a Load button that opens a
-  // PTY modal so passphrases can be typed. Restart-required (baked at start).
+  // SSH scoped-agent editor (union model: global default ∪ project extras).
+  // A checklist seeded from ~/.ssh — check the keys to add for THIS project. Keys
+  // already in the global default show pre-checked + locked ("from global"),
+  // managed in global settings. Renders a placeholder; fillSSHKeyPicker() fetches
+  // ~/.ssh and paints the list async. A "+ other path" adds keys outside ~/.ssh.
   function sshKeysEditor(cfg) {
-    var inherit = cfg.ssh_keys_inherited;
-    var own = cfg.ssh_keys || [];
-    var eff = cfg.ssh_keys_effective || [];
-    var effLine = eff.length
-      ? '<div class="muted cfg-note">will load: ' + eff.map(esc).join(", ") + "</div>"
-      : '<div class="muted cfg-note">no keys — no ssh-agent is mounted</div>';
     return (
-      '<label class="cfg-inline"><input type="checkbox" id="cfg-ssh-inherit" ' +
-        (inherit ? "checked" : "") + "> inherit global default (~/.sandclaude/ssh-keys.json)</label>" +
-      '<div id="cfg-ssh-own-wrap" style="' + (inherit ? "display:none" : "") + '">' +
-        linesToList("cfg-ssh-keys", own) +
-        '<div class="muted cfg-note">one key path per line; ~ and bare names (resolved under ~/.ssh) are OK</div>' +
+      '<div id="cfg-ssh-picker"><span class="muted">loading keys…</span></div>' +
+      '<div class="cfg-ssh-extra-add">' +
+        '<input id="cfg-ssh-otherpath" placeholder="other key path (~/.ssh/... or /abs/path)">' +
+        '<button id="cfg-ssh-addpath" class="cfg-btn cfg-btn-ghost" type="button">+ add path</button>' +
       "</div>" +
-      effLine +
+      '<div id="cfg-ssh-eff" class="muted cfg-note"></div>' +
       '<div class="cfg-ssh-load">' +
         '<span id="cfg-ssh-status" class="muted">checking…</span> ' +
-        '<button id="cfg-ssh-load-btn" class="cfg-btn" ' + (eff.length ? "" : "disabled") + ">Load keys…</button>" +
+        '<button id="cfg-ssh-load-btn" class="cfg-btn" type="button">Load keys…</button>' +
       "</div>" +
       '<div id="cfg-ssh-modal" class="cfg-modal" style="display:none"></div>'
     );
+  }
+
+  // Normalize a key reference for comparison: basename without a dir, so
+  // "~/.ssh/github", "github", and "/Users/x/.ssh/github" match. Global keys and
+  // project extras are compared on this so we don't double-list.
+  function sshKeyBasename(p) {
+    return String(p).replace(/^.*\//, "");
+  }
+
+  // Fetches ~/.ssh keys + the current global/project sets, then paints the
+  // checklist. Called after render(). `current` holds the last-loaded config.
+  function fillSSHKeyPicker() {
+    var host = document.getElementById("cfg-ssh-picker");
+    if (!host || !current) return;
+    var globalSet = {};
+    (current.ssh_keys_global || []).forEach(function (k) { globalSet[sshKeyBasename(k)] = true; });
+    var projSet = {};
+    (current.ssh_keys || []).forEach(function (k) { projSet[sshKeyBasename(k)] = true; });
+
+    fetch("/p/" + projectId + "/sshkeys/available", { credentials: "same-origin" })
+      .then(function (r) { return r.ok ? r.json() : { keys: [] }; })
+      .then(function (res) {
+        var avail = res.keys || [];
+        var seen = {};
+        var rows = avail.map(function (k) {
+          seen[k.name] = true;
+          var inGlobal = globalSet[k.name];
+          var inProj = projSet[k.name];
+          var meta = [k.type, k.comment].filter(Boolean).join("  ");
+          return sshKeyRow(k.name, inGlobal, inGlobal || inProj, meta);
+        });
+        // Project extras that point outside ~/.ssh (no matching available key):
+        // still show them as checked rows so they can be seen/removed.
+        (current.ssh_keys || []).forEach(function (p) {
+          var b = sshKeyBasename(p);
+          if (!seen[b]) rows.push(sshKeyRow(p, false, true, "custom path"));
+        });
+        host.innerHTML = rows.length
+          ? '<div class="cfg-ssh-list">' + rows.join("") + "</div>"
+          : '<div class="muted cfg-note">no keys found under ~/.ssh</div>';
+        updateSSHEffective();
+        wireSSHPicker();
+      })
+      .catch(function () { host.innerHTML = '<div class="s-4xx">failed to list ~/.ssh keys</div>'; });
+  }
+
+  // One checklist row. locked = it's a global key (checked, disabled, labeled).
+  function sshKeyRow(value, locked, checked, meta) {
+    return (
+      '<label class="cfg-ssh-item' + (locked ? " locked" : "") + '">' +
+        '<input type="checkbox" class="cfg-ssh-key" value="' + esc(value) + '"' +
+          (checked ? " checked" : "") + (locked ? " disabled" : "") + "> " +
+        '<span class="cfg-ssh-name">' + esc(sshKeyBasename(value)) + "</span> " +
+        (meta ? '<span class="muted cfg-ssh-meta">' + esc(meta) + "</span>" : "") +
+        (locked ? '<span class="cfg-ssh-badge">from global</span>' : "") +
+      "</label>"
+    );
+  }
+
+  // Collect the project EXTRAS = checked, non-locked keys (locked = global,
+  // managed elsewhere, never written to the project list).
+  function collectSSHExtras() {
+    var out = [];
+    Array.prototype.forEach.call(document.querySelectorAll(".cfg-ssh-key"), function (cb) {
+      if (cb.checked && !cb.disabled) out.push(cb.value);
+    });
+    return out;
+  }
+
+  // Effective preview = global (locked) + checked extras, deduped by basename.
+  function updateSSHEffective() {
+    var el = document.getElementById("cfg-ssh-eff");
+    if (!el) return;
+    var names = {};
+    (current.ssh_keys_global || []).forEach(function (k) { names[sshKeyBasename(k)] = true; });
+    collectSSHExtras().forEach(function (k) { names[sshKeyBasename(k)] = true; });
+    var list = Object.keys(names);
+    el.textContent = list.length ? "will load: " + list.join(", ") : "no keys — no ssh-agent is mounted";
+  }
+
+  // Re-run the effective preview whenever a checkbox toggles.
+  function wireSSHPicker() {
+    Array.prototype.forEach.call(document.querySelectorAll(".cfg-ssh-key"), function (cb) {
+      cb.addEventListener("change", updateSSHEffective);
+    });
+  }
+
+  // Add a key by explicit path (outside ~/.ssh). Appends a checked, editable row
+  // to the list and clears the input.
+  function addSSHOtherPath() {
+    var input = document.getElementById("cfg-ssh-otherpath");
+    var val = input.value.trim();
+    if (!val) return;
+    var list = document.querySelector(".cfg-ssh-list");
+    if (!list) {
+      var host = document.getElementById("cfg-ssh-picker");
+      host.innerHTML = '<div class="cfg-ssh-list"></div>';
+      list = host.querySelector(".cfg-ssh-list");
+    }
+    var tmp = document.createElement("div");
+    tmp.innerHTML = sshKeyRow(val, false, true, "custom path");
+    list.appendChild(tmp.firstChild);
+    input.value = "";
+    wireSSHPicker();
+    updateSSHEffective();
   }
 
   function credEditor(creds) {
@@ -177,13 +276,9 @@ function startConfig(projectId) {
       launch_tmux: document.getElementById("cfg-tmux").checked,
       seccomp_mode: document.getElementById("cfg-seccomp").value,
     };
-    // SSH keys tri-state: inherit clears the project list; otherwise send the
-    // explicit list ([] = no keys). textareaLines returns [] for an empty box.
-    if (document.getElementById("cfg-ssh-inherit").checked) {
-      edit.ssh_keys_inherit = true;
-    } else {
-      edit.ssh_keys = textareaLines("cfg-ssh-keys") || [];
-    }
+    // SSH project extras = checked, non-locked keys (global keys are locked and
+    // managed in global settings, never written to the project list).
+    edit.ssh_keys = collectSSHExtras();
     return edit;
   }
 
@@ -268,14 +363,11 @@ function startConfig(projectId) {
     document.getElementById("cfg-review").addEventListener("click", reviewAndApply);
     document.getElementById("cfg-restart").addEventListener("click", doRestart);
 
-    var sshInherit = document.getElementById("cfg-ssh-inherit");
-    if (sshInherit) {
-      sshInherit.addEventListener("change", function () {
-        document.getElementById("cfg-ssh-own-wrap").style.display = this.checked ? "none" : "";
-      });
-    }
     var sshLoad = document.getElementById("cfg-ssh-load-btn");
     if (sshLoad) sshLoad.addEventListener("click", openSSHLoadModal);
+    var addPath = document.getElementById("cfg-ssh-addpath");
+    if (addPath) addPath.addEventListener("click", addSSHOtherPath);
+    fillSSHKeyPicker(); // paints the checklist async, then wires it + effective preview
     refreshSSHStatus();
 
     document.getElementById("nc-add").addEventListener("click", function () {
