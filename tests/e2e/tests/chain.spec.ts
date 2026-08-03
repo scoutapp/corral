@@ -189,9 +189,13 @@ test.describe.serial('sandclaude DinD chain', () => {
     // With DinD on, the entrypoint writes dockerd.log inside the container. The
     // inner dockerd is already proven up (global-setup waited on `docker info`),
     // and cert-injector.log exists because proxy mode places /etc/proxy-ca.crt
-    // and the entrypoint starts the injector. The injector logs asynchronously
-    // AFTER dockerd is up, so on a slow/degraded CI startup the file can still be
-    // empty the instant we read it — poll briefly rather than reading once.
+    // and the entrypoint starts the injector (which writes its banner to the log
+    // synchronously on startup). The historical flake was NOT slow logging: on a
+    // slow CI boot the host mitmproxy hadn't written its CA cert yet when the
+    // entrypoint checked, so /etc/proxy-ca.crt was never created and the injector
+    // never started — a file no test-side retry can conjure. That's fixed in the
+    // entrypoint (it now waits for the CA before the gate). The short retry here
+    // stays only to absorb ordinary read-timing jitter.
     const readLogWithRetry = async (name: string, tries = 15): Promise<string> => {
       let out = '';
       for (let i = 0; i < tries; i++) {
