@@ -105,12 +105,18 @@ func Ensure(projectID string, keys []string) (*Agent, error) {
 		_ = os.RemoveAll(dir)
 	}
 
-	// 0700: only this user should reach the socket dir. (Not a defense against a
-	// privileged container escape — see docs/security.md — but keeps it off-limits
-	// to normal other-user processes on the host.)
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	// The socket is bind-mounted into the container, whose `claude` user has a
+	// DIFFERENT uid than the host user that owns it. ssh-agent creates the dir-
+	// traversal + socket as owner-only (0700 dir / 0600 socket), so the container
+	// user gets "Permission denied" connecting to the agent. Open up both so the
+	// container can reach it: 0711 dir (traverse-only, contents not listable) and
+	// 0666 socket below. This only grants the ability to USE the loaded keys (the
+	// signing-oracle we intend to give the container); no key bytes are exposed,
+	// and it all lives under the user-private ~/.sandclaude.
+	if err := os.MkdirAll(dir, 0711); err != nil {
 		return nil, fmt.Errorf("create agent dir %s: %w", dir, err)
 	}
+	_ = os.Chmod(dir, 0711) // MkdirAll honors umask; force it
 
 	// `ssh-agent -a <sock>` binds our own socket (vs. letting ssh-agent pick one),
 	// so the path is known and lives under the Docker-shared dir. It prints
@@ -123,6 +129,11 @@ func Ensure(projectID string, keys []string) (*Agent, error) {
 	if pid == 0 {
 		stopAt(sock)
 		return nil, fmt.Errorf("could not parse ssh-agent pid from: %q", string(out))
+	}
+
+	// Make the socket connectable by the container user (see the dir note above).
+	if err := os.Chmod(sock, 0666); err != nil {
+		config.Debugf("warning: could not chmod agent socket %s: %v", sock, err)
 	}
 
 	return &Agent{SocketPath: sock, Keys: append([]string(nil), keys...), pid: pid, dir: dir}, nil
