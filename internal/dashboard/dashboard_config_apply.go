@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/jackrothrock/sandclaude/internal/config"
 	"github.com/jackrothrock/sandclaude/internal/session"
+	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
 	"net/http"
 	"os"
 	"os/exec"
@@ -218,6 +219,23 @@ func (d *dashboardServer) handleConfigRestart(w http.ResponseWriter, r *http.Req
 	if err := applyRestartFields(workspace, edit); err != nil {
 		http.Error(w, "failed to save config: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// SSH pre-load gate: the relaunched `sandclaude dev` runs detached (no TTY), so
+	// if this project has ssh keys configured but not loaded into its scoped agent,
+	// the child would fail on the passphrase prompt and the container would never
+	// come back. Detect that BEFORE tearing anything down, and tell the browser to
+	// run the Load-keys PTY flow first, then retry the restart (design: pre-load,
+	// then start). A running container is left untouched in this case.
+	if keys := resolveProjectSSHKeys(workspace); len(keys) > 0 {
+		if _, loaded := sshagent.Probe(ProjectID(workspace)); !loaded {
+			w.WriteHeader(http.StatusConflict)
+			writeJSON(w, map[string]any{
+				"ssh_keys_pending": true,
+				"results":          []string{"ssh keys need loading before restart — load them, then restart again"},
+			})
+			return
+		}
 	}
 
 	exe, err := os.Executable()
