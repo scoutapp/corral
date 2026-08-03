@@ -9,6 +9,11 @@
 <header>
   <a href="/" class="back">&larr; All projects</a>
   <h1>{{.Workspace}}</h1>
+  <!-- Container power toggle: Start when idle, Stop when running. data-up seeds
+       the initial state; dashboard.js keeps it in sync via the status poll. -->
+  <button id="power-toggle" class="dock-toggle power-toggle" type="button"
+          data-up="{{.ContainerUp}}"
+          title="Start or stop this project's container">{{if .ContainerUp}}■ Stop{{else}}▶ Start{{end}}</button>
   <button id="dock-toggle" class="dock-toggle" type="button" title="Show/hide the Claude terminal">⌨ Terminal</button>
   <button id="host-toggle" class="dock-toggle" type="button" title="Show/hide a host shell (⌃`)">▂ Host shell</button>
   <button id="chat-toggle" class="dock-toggle" type="button" title="Ask Claude — a host claude chat (⌃J)">💬 Ask Claude</button>
