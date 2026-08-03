@@ -542,10 +542,21 @@ table.projects th, table.projects td {
 }
 .dock-toggle.on { border-color: var(--con-working); color: var(--con-working); }
 
-/* Container power toggle: green ▶ Start when idle, amber ■ Stop when running. */
-.power-toggle { color: var(--con-working); border-color: var(--con-working); }
-.power-toggle.is-up { color: var(--con-waiting); border-color: var(--con-waiting); }
-.power-toggle:disabled { opacity: 0.5; cursor: default; }
+/* Container power toggle: prominent, so start/stop is obvious. Idle = a filled
+   green "Start"; running = a filled amber "Stop" (a clearly destructive action).
+   margin-right pushes it slightly apart from the view-toggle group beside it. */
+.power-toggle {
+  font-weight: 600; letter-spacing: 0.01em; padding: 0.32rem 0.8rem;
+  margin-right: 0.4rem;
+}
+.power-toggle:not(.is-up) {                 /* ▶ Start */
+  color: #0B0E14; background: var(--con-working); border-color: var(--con-working);
+}
+.power-toggle.is-up {                        /* ■ Stop */
+  color: #0B0E14; background: var(--con-waiting); border-color: var(--con-waiting);
+}
+.power-toggle:not(:disabled):hover { filter: brightness(1.1); }
+.power-toggle:disabled { opacity: 0.55; cursor: default; }
 
 .project-layout { display: flex; gap: 0; height: calc(100vh - 64px); }
 .tab-area { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
