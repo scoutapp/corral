@@ -21,10 +21,10 @@ func TestParseAgentPID(t *testing.T) {
 	}
 }
 
-// Start with an empty key list is a no-op: no agent, no error, no socket.
-func TestStart_NoKeysIsNoop(t *testing.T) {
+// Ensure with an empty key list is a no-op: no agent, no error, no socket.
+func TestEnsure_NoKeysIsNoop(t *testing.T) {
 	t.Setenv("SANDCLAUDE_HOME", filepath.Join(t.TempDir(), ".sandclaude"))
-	a, err := Start("abc123", nil)
+	a, err := Ensure("abc123", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

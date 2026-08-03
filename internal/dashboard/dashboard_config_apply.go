@@ -49,6 +49,13 @@ type configEdit struct {
 	DindPorts    *[]string `json:"dind_ports,omitempty"`
 	LaunchTmux   *bool     `json:"launch_tmux,omitempty"`
 	SeccompMode  *string   `json:"seccomp_mode,omitempty"`
+
+	// SSH scoped-agent key list (restart-required — baked at container start).
+	// Tri-state: SSHKeysInherit=true means "clear the project list, inherit the
+	// global default" (project SSHKeys -> nil). Otherwise SSHKeys, when present,
+	// sets the project's own list ([] = explicitly no keys). Both absent = no edit.
+	SSHKeys        *[]string `json:"ssh_keys,omitempty"`
+	SSHKeysInherit *bool     `json:"ssh_keys_inherit,omitempty"`
 }
 
 type credSet struct {
@@ -298,6 +305,13 @@ func computeDiff(edit configEdit, cur *config.ProjectConfig, curAllowed []string
 	if edit.SeccompMode != nil && *edit.SeccompMode != cur.SeccompMode {
 		out = append(out, diffEntry{Field: "seccomp_mode", Change: fmt.Sprintf("~ %q → %q", cur.SeccompMode, *edit.SeccompMode), Restart: true})
 	}
+	if edit.SSHKeysInherit != nil && *edit.SSHKeysInherit {
+		if cur.SSHKeys != nil { // was project-specific, now inheriting
+			out = append(out, diffEntry{Field: "ssh_keys", Change: "~ project list → inherit global default", Restart: true})
+		}
+	} else if edit.SSHKeys != nil {
+		out = append(out, listDiff("ssh key", cur.SSHKeys, *edit.SSHKeys, true)...)
+	}
 	return out
 }
 
@@ -346,6 +360,13 @@ func applyRestartFields(workspace string, edit configEdit) error {
 	}
 	if edit.SeccompMode != nil {
 		cfg.SeccompMode = *edit.SeccompMode
+	}
+	// SSH keys tri-state: inherit clears the project list (nil); otherwise a
+	// present list is set verbatim ([] = explicit no-keys). See configEdit.SSHKeys.
+	if edit.SSHKeysInherit != nil && *edit.SSHKeysInherit {
+		cfg.SSHKeys = nil
+	} else if edit.SSHKeys != nil {
+		cfg.SSHKeys = *edit.SSHKeys
 	}
 	return config.WriteConfig(projectDirForWorkspace(workspace), cfg)
 }

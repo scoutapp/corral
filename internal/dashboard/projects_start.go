@@ -7,6 +7,7 @@ import (
 	"os/exec"
 
 	"github.com/jackrothrock/sandclaude/internal/session"
+	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
 )
 
 // handleStartProject cold-starts a project's container from the dashboard.
@@ -37,6 +38,22 @@ func (d *dashboardServer) handleStartProject(w http.ResponseWriter, r *http.Requ
 	if session.DockerContainerRunning(session.ContainerNameForWorkspace(workspace)) {
 		writeFilesJSON(w, map[string]any{"ok": true, "already": true})
 		return
+	}
+
+	// Pre-load gate: the child `sandclaude dev` runs detached (no TTY), so if this
+	// project has ssh keys configured but they aren't loaded into the scoped agent
+	// yet, the child would fail fast. Surface that here so the caller can send the
+	// user to the Config tab's "Load keys" flow first (design: pre-load, then start).
+	if keys := resolveProjectSSHKeys(workspace); len(keys) > 0 {
+		if _, loaded := sshagent.Probe(ProjectID(workspace)); !loaded {
+			w.WriteHeader(http.StatusConflict)
+			writeFilesJSON(w, map[string]any{
+				"ok":               false,
+				"ssh_keys_pending": true,
+				"message":          "ssh keys need loading first — use Config → SSH keys → Load keys, then start",
+			})
+			return
+		}
 	}
 
 	exe, err := os.Executable()
