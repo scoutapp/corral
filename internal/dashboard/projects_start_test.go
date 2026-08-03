@@ -27,17 +27,25 @@ func TestStartProjectRouting(t *testing.T) {
 		return resp.StatusCode
 	}
 
-	// Unknown project id → 404 (lookupWorkspaceByID fails before any start).
-	if got := req("POST", "/p/deadbeef/start"); got != http.StatusNotFound {
-		t.Errorf("unknown id POST /start = %d, want 404", got)
+	// Unknown project id → 404 (lookupWorkspaceByID fails before any start/stop).
+	for _, action := range []string{"start", "stop"} {
+		if got := req("POST", "/p/deadbeef/"+action); got != http.StatusNotFound {
+			t.Errorf("unknown id POST /%s = %d, want 404", action, got)
+		}
+		// GET is rejected (both require POST).
+		if got := req("GET", "/p/deadbeef/"+action); got == http.StatusOK {
+			t.Errorf("GET /%s should not be 200", action)
+		}
 	}
-	// Unauthenticated → 403 (auth gate).
-	r, _ := http.NewRequest("POST", srv.URL+"/p/deadbeef/start", nil)
-	resp, _ := http.DefaultClient.Do(r)
-	if resp != nil {
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusForbidden {
-			t.Errorf("unauth POST /start = %d, want 403", resp.StatusCode)
+	// Unauthenticated → 403 (auth gate) for both.
+	for _, action := range []string{"start", "stop"} {
+		r, _ := http.NewRequest("POST", srv.URL+"/p/deadbeef/"+action, nil)
+		resp, _ := http.DefaultClient.Do(r)
+		if resp != nil {
+			resp.Body.Close()
+			if resp.StatusCode != http.StatusForbidden {
+				t.Errorf("unauth POST /%s = %d, want 403", action, resp.StatusCode)
+			}
 		}
 	}
 }
