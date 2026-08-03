@@ -270,6 +270,12 @@ table.projects th, table.projects td {
 
 .tab-panel { min-height: 70vh; }
 
+/* The Config tab can grow taller than the fixed-height .tab-area (SSH keys,
+   credentials, seccomp, etc.), but .tab-area is overflow:hidden — so give the
+   config panel its own vertical scroll instead of clipping its bottom. Scoped to
+   config so the other tabs keep managing their own scroll. */
+#tab-config { overflow-y: scroll; max-height: 100%; min-height: 0; }
+
 .muted { color: var(--muted); }
 
 .mitm-toolbar {
