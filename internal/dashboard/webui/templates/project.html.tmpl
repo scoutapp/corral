@@ -41,15 +41,15 @@
       <div id="diff-root" class="diff-root"><p class="muted">loading changes…</p></div>
     </div>
 
+    <!-- Always render the iframe (no server-side up/down gate): the iframe's own
+         page reflects the CURRENT container state each time the tab is opened, so
+         starting the container later just works on the next tab activation —
+         instead of being frozen at page-load state. -->
     <div class="tab-panel" id="tab-container" style="display:none">
-      {{if .ContainerUp}}
-        <div class="screen-frame">
-          <div class="screen-bar"><i class="screen-dot"></i>container shell · {{.Workspace}}</div>
-          <iframe class="screen-iframe" data-src="/p/{{.ID}}/container/"></iframe>
-        </div>
-      {{else}}
-        <p class="empty">The container isn't running — start it with <code>sandclaude start</code>.</p>
-      {{end}}
+      <div class="screen-frame">
+        <div class="screen-bar"><i class="screen-dot"></i>container shell · {{.Workspace}}</div>
+        <iframe class="screen-iframe" data-src="/p/{{.ID}}/container/"></iframe>
+      </div>
     </div>
 
     <div class="tab-panel" id="tab-mitm" style="display:none">

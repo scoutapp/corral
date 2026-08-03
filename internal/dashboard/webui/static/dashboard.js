@@ -22,6 +22,24 @@
     }
   }
 
+  // The Container tab's iframe reflects container up/down at ITS load time. If it
+  // loaded while the container was down (showing "not running"), re-point its src
+  // when the tab is reopened so it picks up a container that has since started.
+  // A LIVE shell iframe (session up) is left alone so we don't kill the session.
+  function refreshContainerIfDown() {
+    var panel = panels.container;
+    var iframe = panel && panel.querySelector("iframe.screen-iframe");
+    if (!iframe || !iframe.dataset.src) return;
+    if (!iframe.getAttribute("src")) { lazySrc(panel); return; } // first open
+    var down = true;
+    try {
+      var doc = iframe.contentDocument;
+      // container.html.tmpl sets data-session-up on <body>; "true" => live shell.
+      down = !doc || doc.body.getAttribute("data-session-up") !== "true";
+    } catch (e) { down = false; } // cross-origin shouldn't happen; be conservative
+    if (down) iframe.setAttribute("src", iframe.dataset.src + "?t=" + Date.now());
+  }
+
   function activate(tab) {
     buttons.forEach(function (b) {
       b.classList.toggle("active", b.dataset.tab === tab);
@@ -30,7 +48,8 @@
       if (panels[key]) panels[key].style.display = key === tab ? "block" : "none";
     });
 
-    lazySrc(panels[tab]); // container tab uses an iframe like the terminal did
+    if (tab === "container") refreshContainerIfDown();
+    else lazySrc(panels[tab]); // other screen tabs: first-open lazy src
 
     if (started[tab]) return;
     if (tab === "files" && typeof startFiles === "function") { started.files = true; startFiles(projectId); }
