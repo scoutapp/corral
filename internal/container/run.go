@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/jackrothrock/sandclaude/internal/config"
 	"github.com/jackrothrock/sandclaude/internal/creds"
@@ -230,15 +231,25 @@ func (sc *SandClaude) startSSHAgent(cfg *config.ProjectConfig) error {
 	return nil
 }
 
-// isInteractive reports whether stdin is a terminal — i.e. we can prompt for an
-// ssh key passphrase. False for the dashboard's detached start (cmd.Start with no
-// TTY), true for a foreground `sandclaude dev` in a real terminal.
+// isInteractive reports whether stdin is a REAL terminal — i.e. we can prompt for
+// an ssh key passphrase. False for the dashboard's detached start (which runs with
+// stdin = /dev/null), true for a foreground `sandclaude dev` in a terminal.
+//
+// We must NOT use the os.ModeCharDevice check here: /dev/null is itself a
+// character device, so a detached child with stdin redirected to /dev/null would
+// wrongly look "interactive", try to ssh-add, and die when ssh-add can't read a
+// passphrase — exactly the "restart never comes back" bug. Instead do the real
+// tty test: TIOCGETA (fetch termios) succeeds only on an actual terminal.
 func isInteractive() bool {
-	fi, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return fi.Mode()&os.ModeCharDevice != 0
+	var termios syscall.Termios
+	_, _, errno := syscall.Syscall6(
+		syscall.SYS_IOCTL,
+		os.Stdin.Fd(),
+		uintptr(ioctlReadTermios),
+		uintptr(unsafe.Pointer(&termios)),
+		0, 0, 0,
+	)
+	return errno == 0
 }
 
 // stopSSHAgent tears down the scoped ssh-agent (kills the process, removes the

@@ -340,12 +340,38 @@ function startConfig(projectId) {
     var btn = document.getElementById("cfg-restart");
     btn.disabled = true;
     btn.textContent = "restarting…";
-    post("/config/restart", collectRestartEdit()).then(function (r) {
-      setMsg((r.results || []).join("  •  "), false);
+    restartRequest(collectRestartEdit(), btn);
+  }
+
+  // POST the restart. If the server replies 409 with ssh_keys_pending, the project
+  // has keys that aren't loaded yet — open the Load-keys PTY modal (type the
+  // passphrase), then retry the restart once loaded. Otherwise show the result.
+  function restartRequest(edit, btn) {
+    fetch("/p/" + projectId + "/config/restart", {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify(edit),
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (body) {
+        return { status: r.status, body: body };
+      });
+    }).then(function (res) {
+      if (res.status === 409 && res.body && res.body.ssh_keys_pending) {
+        setMsg("load SSH keys to continue the restart…", false);
+        openSSHLoadModal(function () {
+          // After the load modal closes, retry once keys should be loaded.
+          setMsg("keys loaded — restarting…", false);
+          restartRequest(edit, btn);
+        });
+        return;
+      }
+      if (res.status >= 400) {
+        throw new Error((res.body && res.body.error) || ("HTTP " + res.status));
+      }
+      setMsg(((res.body && res.body.results) || []).join("  •  "), false);
+      if (btn) { btn.disabled = false; btn.textContent = "Restart project now"; }
     }).catch(function (err) {
       setMsg("restart failed: " + err.message, true);
-      btn.disabled = false;
-      btn.textContent = "Restart project now";
+      if (btn) { btn.disabled = false; btn.textContent = "Restart project now"; }
     });
   }
 
@@ -423,7 +449,7 @@ function startConfig(projectId) {
   // Load modal: an inline xterm bridged to /sshkeys/ws, which runs `ssh-add` for
   // the scoped agent so passphrase prompts appear in a real PTY. When ssh-add
   // exits the WS closes; we re-check status. Keys never leave the PTY.
-  function openSSHLoadModal() {
+  function openSSHLoadModal(onDone) {
     var m = document.getElementById("cfg-ssh-modal");
     if (!m || typeof Terminal === "undefined") {
       setMsg("terminal unavailable", true);
@@ -470,6 +496,7 @@ function startConfig(projectId) {
       try { term.dispose(); } catch (e) {}
       m.style.display = "none";
       refreshSSHStatus();
+      if (typeof onDone === "function") onDone();
     }
     document.getElementById("cfg-ssh-done").onclick = close;
   }
