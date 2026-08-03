@@ -137,9 +137,14 @@ body.console {
   border-radius: 10px; padding: 1.2rem; width: min(680px, 92vw);
   color: var(--con-text, #C7CDD9);
 }
-.sshload-box h3 { margin: 0 0 0.5rem; }
+.sshload-box h3 { margin: 0 0 0.5rem; display: flex; align-items: center; gap: 0.6rem; }
+.sshload-hostbadge {
+  font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--con-waiting, #FFB454); border: 1px solid var(--con-waiting, #FFB454);
+  border-radius: 4px; padding: 1px 6px; font-weight: 600;
+}
 .sshload-term { height: 240px; background: #0B0E14; border-radius: 6px; overflow: hidden; }
-.sshload-actions { margin-top: 1rem; display: flex; justify-content: flex-end; }
+.sshload-actions { margin-top: 1rem; display: flex; justify-content: flex-end; gap: 0.5rem; }
 
 .mute-all {
   cursor: pointer; font: inherit; font-size: 0.8rem;
