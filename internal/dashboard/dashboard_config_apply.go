@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"time"
 )
 
 // ----------------------------------------------------------------------------
@@ -225,19 +226,49 @@ func (d *dashboardServer) handleConfigRestart(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Stop then start via the CLI, in the workspace. `remove`-style teardown is
-	// avoided; we kill the container and re-start dev so the session comes back.
+	// Tear down BOTH the container and the stale tmux session, then relaunch `dev`.
+	//
+	// Two bugs this fixes:
+	//   1. `docker kill` removes the --rm container but leaves the detached tmux
+	//      session `sandclaude_<name>` alive with a dead pane (remain-on-exit on).
+	//      The relaunch's `tmux new-session -s <sameName>` then fails ("duplicate
+	//      session") and the container never comes back — and the terminal tab is
+	//      still attached to the OLD dead-pane session. So kill the session too.
+	//   2. The relaunch must go through a LOGIN SHELL. The dashboard daemon runs
+	//      with a stripped PATH (docker/tmux/version-manager dirs missing); a bare
+	//      exec.Command(exe, "dev") can't find docker/tmux and silently fails. This
+	//      mirrors handleStartProject, which already learned this.
 	container := session.ContainerNameForWorkspace(workspace)
-	_ = exec.Command("docker", "kill", container).Run() // best-effort; may already be down
+	tmuxSession := session.TmuxSessionNameForWorkspace(workspace)
+	// `rm -f` (not `kill`): kill on a --rm container triggers ASYNC removal, so an
+	// immediate relaunch races it and `docker run --name <same>` fails with "name
+	// already in use". rm -f stops AND removes synchronously, so the name is free
+	// when we relaunch. Then wait briefly for the name to actually clear.
+	_ = exec.Command("docker", "rm", "-f", container).Run()           // best-effort; may already be gone
+	_ = exec.Command("tmux", "kill-session", "-t", tmuxSession).Run() // best-effort; may not exist
+	for i := 0; i < 20; i++ {
+		if !session.DockerContainerRunning(container) {
+			// also ensure the name isn't held by a stopped-but-not-removed container
+			if out, _ := exec.Command("docker", "ps", "-aq", "--filter", "name=^/"+container+"$").Output(); len(out) == 0 {
+				break
+			}
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 
-	startCmd := exec.Command(exe, "dev")
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/bash"
+	}
+	startCmd := exec.Command(shell, "-lc", `exec "$0" dev`, exe)
 	startCmd.Dir = workspace
 	if err := startCmd.Start(); err != nil {
 		http.Error(w, "restart failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	go func() { _ = startCmd.Wait() }() // detach; the status poll shows it come back
 
-	writeJSON(w, map[string]any{"results": []string{"✓ project restarting (container killed, `sandclaude dev` relaunched)"}})
+	writeJSON(w, map[string]any{"results": []string{"✓ project restarting (container + tmux session killed, `sandclaude dev` relaunched)"}})
 }
 
 // ----------------------------------------------------------------------------
