@@ -43,6 +43,18 @@ func resolveProjectSSHKeys(workspace string) []string {
 	return cfg.ResolveSSHKeys()
 }
 
+// handleSSHKeysAvailable lists the SSH keys found under ~/.ssh (name/type/comment)
+// so the picker can render labeled checkboxes instead of asking the user to type
+// key paths. Host-wide data (same for every project); the project id only gates
+// auth. Public metadata only — never key bytes.
+func (d *dashboardServer) handleSSHKeysAvailable(w http.ResponseWriter, r *http.Request, id string) {
+	if _, err := lookupWorkspaceByID(id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	writeFilesJSON(w, map[string]any{"keys": sshagent.AvailableKeys()})
+}
+
 func (d *dashboardServer) handleSSHKeysStatus(w http.ResponseWriter, r *http.Request, id string) {
 	workspace, err := lookupWorkspaceByID(id)
 	if err != nil {

@@ -33,19 +33,13 @@ type ProjectConfig struct {
 	// takes effect when DinD is off.
 	SeccompMode string `json:"seccomp_mode,omitempty"`
 
-	// SSHKeys is the per-project list of private-key paths loaded into this
-	// project's scoped ssh-agent (see internal/ssh). When set, it REPLACES the
-	// global default (~/.sandclaude/ssh-keys.json) for this project; when unset
-	// (nil), the project inherits the global default. An explicit empty list
-	// (non-nil, len 0) means "no keys" — no agent is started. Paths may use ~ and
-	// are resolved against ~/.ssh when not absolute. See ResolveSSHKeys.
-	//
-	// No omitempty: an explicit empty list must round-trip as `[]` ("no keys,
-	// don't inherit global"), distinct from an absent field (nil = "inherit
-	// global"). omitempty would collapse both to absent. On unmarshal, a missing
-	// field yields nil and `[]` yields a non-nil empty slice — the distinction we
-	// rely on in ResolveSSHKeys.
-	SSHKeys []string `json:"ssh_keys"`
+	// SSHKeys is the per-project list of EXTRA private-key paths, added on top of
+	// the global default (~/.sandclaude/ssh-keys.json). The effective set loaded
+	// into the scoped ssh-agent is the union global ∪ project (see ResolveSSHKeys)
+	// — the project list adds to the global, it does not replace it. Empty/absent
+	// = no extras (the global default still loads). Paths may use ~ and are
+	// resolved against ~/.ssh when not absolute.
+	SSHKeys []string `json:"ssh_keys,omitempty"`
 
 	// MitmPreset is a friendly capture policy that resolves to MonitorHosts:
 	//   "minimal" (default) — MITM only Claude + GitHub hosts
@@ -121,6 +115,29 @@ func GlobalSSHKeysPath() string {
 	return filepath.Join(SandclaudeHome(), "ssh-keys.json")
 }
 
+// GlobalSSHKeys reads the global default key list (raw, unexpanded paths).
+// Missing file / parse error → nil. Exported so the dashboard can show the
+// global set in the picker (pre-checked/locked) and edit it in global settings.
+func GlobalSSHKeys() []string { return globalSSHKeys() }
+
+// WriteGlobalSSHKeys persists the global default key list to
+// ~/.sandclaude/ssh-keys.json (0600). Paths are stored as given (may be bare
+// names / ~-relative); resolution happens at load time. Passing an empty slice
+// clears the global default.
+func WriteGlobalSSHKeys(keys []string) error {
+	if keys == nil {
+		keys = []string{}
+	}
+	data, err := json.MarshalIndent(keys, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(SandclaudeHome(), 0700); err != nil {
+		return err
+	}
+	return os.WriteFile(GlobalSSHKeysPath(), data, 0600)
+}
+
 // globalSSHKeys reads the global default key list. Missing file / parse error →
 // nil (no global default), which is a normal "no keys configured" state, not an
 // error we want to fail a container start over.
@@ -137,28 +154,30 @@ func globalSSHKeys() []string {
 }
 
 // ResolveSSHKeys returns the effective list of ABSOLUTE private-key paths for
-// this project, applying the global-default + per-project-override policy:
-//   - c.SSHKeys nil (field absent)        → inherit the global default
-//   - c.SSHKeys non-nil (incl. empty [])  → use it verbatim, replacing the global
+// this project as the UNION of the global default and the project's own extras:
 //
-// Each entry is expanded: ~ → home, and a bare name/relative path → ~/.ssh/<p>.
-// The result is deduplicated (stable order) so a key listed in both layers — or
-// twice — is only loaded once.
+//	effective = globalSSHKeys() ∪ c.SSHKeys
+//
+// Global keys always load; the project list ADDS to them (it does not replace).
+// This is what "use the global default and add a couple project-specific keys"
+// requires. Global entries come first (they're the always-on base), project
+// extras after, deduplicated in stable order so a key in both — or listed twice —
+// loads once. Each entry is expanded: ~ → home, bare name/relative → ~/.ssh/<p>.
 func (c *ProjectConfig) ResolveSSHKeys() []string {
-	raw := c.SSHKeys
-	if raw == nil {
-		raw = globalSSHKeys()
-	}
 	seen := map[string]bool{}
-	out := make([]string, 0, len(raw))
-	for _, p := range raw {
-		abs := ExpandSSHKeyPath(p)
-		if abs == "" || seen[abs] {
-			continue
+	out := make([]string, 0, len(c.SSHKeys)+2)
+	add := func(list []string) {
+		for _, p := range list {
+			abs := ExpandSSHKeyPath(p)
+			if abs == "" || seen[abs] {
+				continue
+			}
+			seen[abs] = true
+			out = append(out, abs)
 		}
-		seen[abs] = true
-		out = append(out, abs)
 	}
+	add(globalSSHKeys()) // always-on base
+	add(c.SSHKeys)       // project extras
 	return out
 }
 
