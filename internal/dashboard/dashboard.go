@@ -435,6 +435,10 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleGhIssueCreate(w, r)
 		return
 	}
+	if path == "/gh/issues/draft" {
+		d.handleGhIssueDraftWS(w, r)
+		return
+	}
 
 	if !strings.HasPrefix(path, "/p/") {
 		http.NotFound(w, r)

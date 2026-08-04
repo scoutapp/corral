@@ -912,6 +912,25 @@ table.projects th, table.projects td {
 }
 .sc-form textarea:focus { outline: none; border-color: var(--con-working); box-shadow: 0 0 0 2px rgba(92,230,168,0.2); }
 
+/* AI-draft section in the New-issue modal. */
+.ai-draft {
+  border: 1px solid var(--con-line); border-radius: 8px; padding: 0.6rem 0.7rem;
+  display: flex; flex-direction: column; gap: 0.45rem; background: rgba(92,230,168,0.03);
+}
+.ai-draft-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.ai-draft-title { color: var(--con-text); font-weight: 600; font-size: 0.85rem; }
+.ai-warn {
+  font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--con-waiting);
+  border: 1px solid var(--con-waiting); border-radius: 4px; padding: 1px 6px; white-space: nowrap;
+}
+.ai-draft-status { font-size: 0.78rem; }
+.ai-draft-log {
+  margin: 0; max-height: 180px; overflow: auto; background: #0B0E14; color: var(--con-muted);
+  border: 1px solid var(--con-line); border-radius: 6px; padding: 0.5rem;
+  font-family: ui-monospace, Menlo, monospace; font-size: 0.72rem; white-space: pre-wrap; line-height: 1.4;
+}
+.ai-draft-log[hidden] { display: none; }
+
 /* Modal */
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: grid; place-items: center; z-index: 60; }
 .modal-backdrop[hidden] { display: none; }

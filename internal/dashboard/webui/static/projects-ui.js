@@ -221,22 +221,69 @@
     return panel;
   }
 
-  // openNewIssue: a modal to file a new issue on the repo (title + body ->
-  // gh issue create), then onCreated() refreshes the list.
+  // openNewIssue: a modal to file a new issue on the repo. You can write the
+  // title/body yourself, OR use "Draft with AI" — which runs the HOST claude
+  // (read-only, not sandboxed) in a temp checkout of the repo to research and
+  // draft the title+body, streaming its progress. Drafting NEVER creates the
+  // issue: you review the fields and click Create.
   function openNewIssue(rp, ownerName, onCreated) {
     var f = el("form", { class: "sc-form" });
     f.innerHTML =
+      // AI draft section
+      '<div class="ai-draft">' +
+        '<div class="ai-draft-head">' +
+          '<span class="ai-draft-title">✨ Draft with AI</span>' +
+          '<span class="ai-warn" title="Runs your host machine\'s claude, not the sandbox">host claude · not sandboxed · read-only</span>' +
+        "</div>" +
+        '<textarea name="intent" rows="2" placeholder="describe what you want in plain words — the AI researches the repo and drafts the issue"></textarea>' +
+        '<div class="form-actions"><button type="button" class="btn ai-draft-btn">Draft with AI</button>' +
+          '<span class="ai-draft-status muted"></span></div>' +
+        '<pre class="ai-draft-log" hidden></pre>' +
+      "</div>" +
+      // Manual / editable fields (filled by AI, or type your own)
       '<label>Title <input name="title" type="text" placeholder="issue title" autocomplete="off"></label>' +
-      '<label>Body <textarea name="body" rows="5" placeholder="describe the issue (optional)"></textarea></label>' +
+      '<label>Body <textarea name="body" rows="6" placeholder="describe the issue (optional)"></textarea></label>' +
       '<div class="form-actions"><button type="submit" class="btn primary">Create issue</button>' +
       '<span class="form-status"></span></div>';
+
+    var draftBtn = f.querySelector(".ai-draft-btn");
+    var draftStatus = f.querySelector(".ai-draft-status");
+    var log = f.querySelector(".ai-draft-log");
+    var draftWS = null;
+
+    draftBtn.addEventListener("click", function () {
+      var intent = f.intent.value.trim();
+      if (!intent) { draftStatus.textContent = "describe what you want first"; return; }
+      if (draftWS) { try { draftWS.close(); } catch (e) {} }
+      draftBtn.disabled = true; draftBtn.textContent = "researching…";
+      draftStatus.textContent = ""; log.hidden = false; log.textContent = "";
+
+      var proto = location.protocol === "https:" ? "wss:" : "ws:";
+      var ws = new WebSocket(proto + "//" + location.host + "/gh/issues/draft?repoId=" + encodeURIComponent(rp.id));
+      draftWS = ws;
+      ws.onopen = function () { ws.send(JSON.stringify({ description: intent })); };
+      ws.onmessage = function (ev) {
+        var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+        if (m.type === "text") { log.textContent += m.text; log.scrollTop = log.scrollHeight; }
+        else if (m.type === "tool_use") { log.textContent += "› " + m.tool + "\n"; log.scrollTop = log.scrollHeight; }
+        else if (m.type === "error") { draftStatus.textContent = "AI error: " + (m.text || ""); }
+        else if (m.type === "draft") {
+          if (m.text) f.title.value = m.text;      // title
+          if (m.result) f.body.value = m.result;   // body
+          draftStatus.textContent = "✓ drafted — review + edit, then Create";
+        }
+      };
+      ws.onclose = function () { draftBtn.disabled = false; draftBtn.textContent = "Draft with AI"; draftWS = null; };
+      ws.onerror = function () { draftStatus.textContent = "draft connection failed"; };
+    });
+
     f.addEventListener("submit", function (e) {
       e.preventDefault();
       var title = f.title.value.trim();
-      if (!title) { status(f, "title is required", true); return; }
+      if (!title) { status(f, "title is required (write one or use Draft with AI)", true); return; }
       status(f, "creating…", false);
       jfetch("/gh/issues/create", { method: "POST", body: { repo: ownerName, title: title, body: f.body.value } })
-        .then(function (res) { closeModal(); if (onCreated) onCreated(); })
+        .then(function (res) { if (draftWS) { try { draftWS.close(); } catch (e) {} } closeModal(); if (onCreated) onCreated(); })
         .catch(function (err) { status(f, err.message, true); });
     });
     openModal("New issue · " + ownerName, f);
