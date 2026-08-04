@@ -138,25 +138,56 @@
   // ---- add repo -----------------------------------------------------------
   function openAddRepo() {
     var f = el("form", { class: "sc-form" });
-    f.innerHTML =
-      '<label>Repository URL <input name="url" type="text" placeholder="https://github.com/org/repo (or a local path)" autocomplete="off"></label>' +
-      '<label>Name (optional) <input name="name" type="text" placeholder="defaults from the URL" autocomplete="off"></label>' +
+
+    // Repo picker: a typeahead seeded from the user's GitHub repos (via gh), so
+    // you can search-and-pick instead of pasting a URL. Free-text still works —
+    // paste a URL or a local /path for anything gh doesn't list. Mirrors the
+    // New-project modal's repo picker.
+    var repoTa = typeahead({
+      class: "repo-input",
+      placeholder: "search your GitHub repos, or paste a URL / local path",
+      items: [],
+      onPick: function (val) {
+        // A picked gh repo owner/name is cloned with auth — default Private on.
+        var g = (ghReposCache || []).filter(function (r) { return r.nameWithOwner === val; })[0];
+        if (g) f.priv.checked = !!g.isPrivate;
+      },
+    });
+
+    var picker = el("label", {}, "Repository");
+    picker.appendChild(repoTa);
+    f.appendChild(picker);
+
+    var rest = el("div");
+    rest.innerHTML =
+      '<label>Name (optional) <input name="name" type="text" placeholder="defaults from the repo" autocomplete="off"></label>' +
       '<label class="row"><input name="priv" type="checkbox"> Private (clone with your host git/gh auth)</label>' +
       '<div class="form-actions"><button type="submit" class="btn primary">Add</button>' +
       '<span class="form-status"></span></div>';
+    f.appendChild(rest);
+
+    // Backfill the picker once the user's gh repos load (async). Non-blocking:
+    // the form is usable immediately for a pasted URL even if gh is slow/absent.
+    loadGhRepos().then(function () { repoTa.setItems(repoItems(ghReposCache || [])); });
+
     f.addEventListener("submit", function (e) {
       e.preventDefault();
-      var url = f.url.value.trim();
-      if (!url) { status(f, "a URL or local path is required", true); return; }
+      var val = repoTa.value().trim();
+      if (!val) { status(f, "pick a repo, or paste a URL / local path", true); return; }
       status(f, "cloning cache mirror…", false);
-      var isLocal = url.indexOf("://") < 0 && url.charAt(0) === "/";
+      // A gh pick is "owner/name" (no scheme, not an absolute path). Turn it into
+      // a github URL; a real URL or a local /path is passed through as-is.
+      var isLocal = val.indexOf("://") < 0 && val.charAt(0) === "/";
+      var isGh = !isLocal && val.indexOf("://") < 0 && val.indexOf("/") > 0;
       var body = { name: f.name.value.trim(), isPrivate: f.priv.checked };
-      body[isLocal ? "localPath" : "url"] = url;
+      if (isLocal) body.localPath = val;
+      else body.url = isGh ? ("https://github.com/" + val) : val;
       jfetch("/repos", { method: "POST", body: body })
         .then(function () { closeModal(); loadRepos(); })
         .catch(function (err) { status(f, err.message, true); });
     });
     openModal("Add repository", f);
+    setTimeout(function () { repoTa.focus(); }, 0);
   }
 
   // ---- typeahead widget ---------------------------------------------------
