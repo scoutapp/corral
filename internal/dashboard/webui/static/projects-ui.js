@@ -75,12 +75,37 @@
   }
 
   // ---- repos list ---------------------------------------------------------
+  var reposCache = []; // last-loaded repos, so the search box filters without refetching
+
   function loadRepos() {
     if (!reposList) return;
     jfetch("/repos").then(function (data) {
-      var repos = data.repos || [];
-      if (!repos.length) { reposList.innerHTML = '<p class="muted">No repos cached yet. Add one to spin projects off it quickly.</p>'; return; }
-      reposList.innerHTML = "";
+      reposCache = data.repos || [];
+      renderRepos();
+    }).catch(function (e) { reposList.innerHTML = '<p class="attention">repos error: ' + esc(e.message) + "</p>"; });
+  }
+
+  // renderRepos paints reposCache, filtered by the search box (name/url/path,
+  // case-insensitive). Called on load and on every keystroke in #repos-search.
+  function renderRepos() {
+    if (!reposList) return;
+    if (!reposCache.length) {
+      reposList.innerHTML = '<p class="muted">No repos cached yet. Add one to spin projects off it quickly.</p>';
+      return;
+    }
+    var searchEl = document.getElementById("repos-search");
+    var q = (searchEl && searchEl.value.trim().toLowerCase()) || "";
+    var repos = !q ? reposCache : reposCache.filter(function (rp) {
+      return (rp.name || "").toLowerCase().indexOf(q) >= 0 ||
+             (rp.url || "").toLowerCase().indexOf(q) >= 0 ||
+             (rp.local_path || "").toLowerCase().indexOf(q) >= 0;
+    });
+    if (!repos.length) {
+      reposList.innerHTML = '<p class="muted">No repos match “' + esc(q) + '”.</p>';
+      return;
+    }
+    reposList.innerHTML = "";
+    {
       repos.forEach(function (rp) {
         var row = el("div", { class: "repo-row" });
         var meta = el("div", { class: "repo-meta" });
@@ -107,7 +132,7 @@
         row.appendChild(actions);
         reposList.appendChild(row);
       });
-    }).catch(function (e) { reposList.innerHTML = '<p class="attention">repos error: ' + esc(e.message) + "</p>"; });
+    }
   }
 
   // ---- add repo -----------------------------------------------------------
@@ -347,6 +372,10 @@
   if (addRepoBtn) addRepoBtn.addEventListener("click", openAddRepo);
   var np = document.getElementById("new-project");
   if (np) np.addEventListener("click", function () { openNewProject(null); });
+
+  // Live-filter the repos list as you type (renders from the cache, no refetch).
+  var reposSearch = document.getElementById("repos-search");
+  if (reposSearch) reposSearch.addEventListener("input", renderRepos);
 
   loadRepos();
 })();
