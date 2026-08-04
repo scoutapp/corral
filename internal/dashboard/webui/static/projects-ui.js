@@ -116,6 +116,17 @@
         var actions = el("div", { class: "repo-actions" });
         var create = el("button", { type: "button", class: "btn primary" }, "Create project");
         create.addEventListener("click", function () { openNewProject({ repoId: rp.id, name: rp.name }); });
+        // Issues: only for repos with a github URL (need owner/name for gh).
+        var ownerName = ghOwnerName(rp.url);
+        var issuesPanel = null;
+        var issuesBtn = el("button", { type: "button", class: "btn", title: "Browse this repo's GitHub issues" }, "Issues");
+        if (!ownerName) issuesBtn.disabled = true;
+        issuesBtn.addEventListener("click", function () {
+          if (issuesPanel) { issuesPanel.remove(); issuesPanel = null; issuesBtn.classList.remove("on"); return; }
+          issuesBtn.classList.add("on");
+          issuesPanel = renderIssuesPanel(rp, ownerName);
+          row.appendChild(issuesPanel);
+        });
         var refresh = el("button", { type: "button", class: "btn", title: "Refresh cache" }, "⟳");
         refresh.addEventListener("click", function () {
           refresh.disabled = true;
@@ -128,11 +139,75 @@
           jfetch("/repos/" + encodeURIComponent(rp.id), { method: "DELETE" }).then(loadRepos)
             .catch(function (e) { alert("remove failed: " + e.message); });
         });
-        actions.appendChild(create); actions.appendChild(refresh); actions.appendChild(del);
+        actions.appendChild(create); actions.appendChild(issuesBtn); actions.appendChild(refresh); actions.appendChild(del);
         row.appendChild(actions);
         reposList.appendChild(row);
       });
     }
+  }
+
+  // ---- issues (spawn a project off a GitHub issue) ------------------------
+  // Derive "owner/name" from a github URL; null if it isn't a github repo URL.
+  function ghOwnerName(url) {
+    if (!url) return null;
+    var m = String(url).match(/github\.com[:/]+([^/]+)\/([^/]+?)(?:\.git)?\/?$/);
+    return m ? (m[1] + "/" + m[2]) : null;
+  }
+
+  // renderIssuesPanel returns an inline panel (appended under a repo row) that
+  // lists the repo's open issues, each with a "Spawn project" button.
+  function renderIssuesPanel(rp, ownerName) {
+    var panel = el("div", { class: "issues-panel" });
+    panel.appendChild(el("div", { class: "ta-loading" }, "loading issues…"));
+    jfetch("/gh/issues?repo=" + encodeURIComponent(ownerName)).then(function (d) {
+      panel.innerHTML = "";
+      if (!d || !d.available) {
+        panel.appendChild(el("div", { class: "muted" }, "couldn't load issues (" + esc((d && d.reason) || "gh error") + ")"));
+        return;
+      }
+      var issues = d.issues || [];
+      if (!issues.length) { panel.appendChild(el("div", { class: "muted" }, "no open issues")); return; }
+      issues.forEach(function (iss) {
+        var it = el("div", { class: "issue-row" });
+        var meta = el("div", { class: "issue-meta" });
+        meta.appendChild(el("span", { class: "issue-num" }, "#" + iss.number));
+        meta.appendChild(el("span", { class: "issue-title" }, iss.title));
+        it.appendChild(meta);
+        var spawn = el("button", { type: "button", class: "btn primary" }, "Spawn project");
+        spawn.addEventListener("click", function () {
+          spawn.disabled = true; spawn.textContent = "spawning…";
+          spawnFromIssue(rp, ownerName, iss, spawn);
+        });
+        it.appendChild(spawn);
+        panel.appendChild(it);
+      });
+    }).catch(function (e) {
+      panel.innerHTML = "";
+      panel.appendChild(el("div", { class: "attention" }, "issues error: " + esc(e.message)));
+    });
+    return panel;
+  }
+
+  // Spawn a project off an issue: create (with issue seed) -> start -> populate
+  // the prompt into Claude -> navigate to the project.
+  function spawnFromIssue(rp, ownerName, iss, btn) {
+    var body = {
+      mode: "clone",
+      repos: [{ repoId: rp.id }],
+      name: rp.name + "-" + iss.number,
+      issue: { number: iss.number, title: iss.title, body: iss.body || "", url: iss.url, repo: ownerName },
+    };
+    jfetch("/projects/create", { method: "POST", body: body }).then(function (res) {
+      var id = res.id, prompt = res.issue_prompt || "";
+      // Auto-start the container, then ask the server to type the prompt into
+      // Claude once its session is up (populate, not submit).
+      jfetch("/p/" + id + "/start", { method: "POST" }).catch(function () {});
+      if (prompt) jfetch("/p/" + id + "/populate-prompt", { method: "POST", body: { prompt: prompt } }).catch(function () {});
+      window.location.href = "/p/" + id + "/";
+    }).catch(function (e) {
+      btn.disabled = false; btn.textContent = "Spawn project";
+      alert("spawn failed: " + e.message);
+    });
   }
 
   // ---- add repo -----------------------------------------------------------

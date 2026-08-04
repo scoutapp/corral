@@ -107,6 +107,44 @@ func (d *dashboardServer) handleGhBranches(w http.ResponseWriter, r *http.Reques
 	writeFilesJSON(w, map[string]any{"available": true, "branches": branches})
 }
 
+// ghIssue is one entry from `gh issue list`.
+type ghIssue struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	URL    string `json:"url"`
+	Body   string `json:"body"`
+}
+
+// handleGhIssues lists a repo's OPEN GitHub issues, for the "spawn a project off
+// an issue" flow. GET /gh/issues?repo=<owner/name>. Runs host-side with the
+// operator's gh auth. Returns {available:false} on any failure so the UI can
+// degrade gracefully.
+func (d *dashboardServer) handleGhIssues(w http.ResponseWriter, r *http.Request) {
+	repo := r.URL.Query().Get("repo")
+	if !validOwnerName(repo) {
+		writeFilesJSON(w, map[string]any{"available": false, "reason": "invalid repo"})
+		return
+	}
+	ghBin, err := exec.LookPath("gh")
+	if err != nil {
+		writeFilesJSON(w, map[string]any{"available": false, "reason": "gh CLI not found on PATH"})
+		return
+	}
+	out, err := exec.Command(ghBin, "issue", "list",
+		"--repo", repo, "--state", "open", "--limit", "100",
+		"--json", "number,title,url,body").Output()
+	if err != nil {
+		writeFilesJSON(w, map[string]any{"available": false, "reason": "gh issue list failed"})
+		return
+	}
+	var issues []ghIssue
+	if err := json.Unmarshal(out, &issues); err != nil {
+		writeFilesJSON(w, map[string]any{"available": false, "reason": "parse error"})
+		return
+	}
+	writeFilesJSON(w, map[string]any{"available": true, "issues": issues})
+}
+
 // validOwnerName reports whether s is a safe "owner/name" GitHub slug (the only
 // shape we splice into a gh api path). Rejects empty, path traversal, extra
 // segments, and anything outside GitHub's allowed characters.

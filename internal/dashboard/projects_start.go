@@ -1,10 +1,12 @@
 package dashboard
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
+	"time"
 
 	"github.com/jackrothrock/sandclaude/internal/session"
 	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
@@ -116,4 +118,53 @@ func (d *dashboardServer) handleStopProject(w http.ResponseWriter, r *http.Reque
 	_ = exec.Command("tmux", "kill-session", "-t", tmuxSession).Run()
 
 	writeFilesJSON(w, map[string]any{"ok": true, "message": fmt.Sprintf("stopping %s", container)})
+}
+
+// handlePopulatePrompt types a prompt INTO the project's Claude input without
+// submitting it (tmux send-keys, no Enter), once the container's dev session is
+// up. Used after spawning a project off a GitHub issue: the user reviews the
+// pre-typed prompt and presses Enter themselves.
+//
+//	POST /p/<id>/populate-prompt   { "prompt": "..." }
+//
+// The session may not exist yet (the container is still booting), so we poll in
+// the background and return immediately; the prompt lands whenever Claude's
+// session appears, or gives up after a bounded wait.
+func (d *dashboardServer) handlePopulatePrompt(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	workspace, err := lookupWorkspaceByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	var body struct {
+		Prompt string `json:"prompt"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Prompt == "" {
+		http.Error(w, "prompt is required", http.StatusBadRequest)
+		return
+	}
+
+	sess := session.TmuxSessionNameForWorkspace(workspace)
+	prompt := body.Prompt
+	go func() {
+		// Wait up to ~2 min for the dev session to appear (cold boot + image build
+		// can be slow), then give Claude a moment to render its input before typing.
+		for i := 0; i < 120; i++ {
+			if session.TmuxSessionExists(sess) {
+				time.Sleep(3 * time.Second) // let Claude's TUI finish drawing its input
+				// Type the prompt WITHOUT Enter — it sits in Claude's input for the
+				// user to review + submit. (A trailing Enter in the same send-keys is a
+				// literal newline in Claude's TUI, so omitting it leaves it unsubmitted.)
+				_ = exec.Command("tmux", "send-keys", "-t", sess, "--", prompt).Run()
+				return
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}()
+
+	writeFilesJSON(w, map[string]any{"ok": true, "message": "prompt will be typed into Claude when the session is up"})
 }

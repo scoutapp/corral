@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -36,6 +37,17 @@ func uniqueWorkspacePath(name string) string {
 		}
 		dir = filepath.Join(managedWorkspacesDir(), fmt.Sprintf("%s-%d", base, i))
 	}
+}
+
+// issueSeed carries a GitHub issue to seed a spawned project with. The frontend
+// fills it from `gh issue list`; the backend uses it to create an issue branch,
+// write ISSUE.md, and build the pre-populate prompt.
+type issueSeed struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	Body   string `json:"body"`
+	URL    string `json:"url"`
+	Repo   string `json:"repo"` // owner/name, for the ISSUE.md header
 }
 
 // repoSpec is one repo to clone into a multi-repo project. Exactly one source
@@ -75,6 +87,9 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 		RepoID string     `json:"repoId"` // legacy single-repo shorthand
 		Branch string     `json:"branch"`
 		Repos  []repoSpec `json:"repos"`
+		// Issue: when spawning a project off a GitHub issue, seed the workspace
+		// with a branch + ISSUE.md, and record a prompt to pre-populate into Claude.
+		Issue *issueSeed `json:"issue"`
 		// Init options; proxy defaults ON (the recommended/init default).
 		Proxy *bool    `json:"proxy"`
 		Dind  bool     `json:"dind"`
@@ -96,6 +111,14 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Issue seeding: create an issue branch in the cloned repo + write ISSUE.md at
+	// the workspace root. Best-effort — a seeding hiccup shouldn't fail the whole
+	// create (the project is already cloned). Returns the prompt to pre-populate.
+	var issuePrompt string
+	if body.Issue != nil && body.Issue.Number > 0 {
+		issuePrompt = seedIssue(workspace, body.Repos, body.Issue)
+	}
+
 	// Initialize the project config, unless "existing" already has one.
 	proxy := true
 	if body.Proxy != nil {
@@ -113,7 +136,57 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 		http.Error(w, "register: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeFilesJSON(w, map[string]any{"id": ProjectID(workspace), "workspace": workspace})
+	writeFilesJSON(w, map[string]any{
+		"id": ProjectID(workspace), "workspace": workspace,
+		"issue_prompt": issuePrompt, // "" unless spawned from an issue
+	})
+}
+
+// issueBranchSlug builds a git-branch-safe "issue-<n>-<title-slug>" name.
+func issueBranchSlug(number int, title string) string {
+	slug := strings.ToLower(wsSlugRe.ReplaceAllString(title, "-"))
+	slug = strings.Trim(slug, "-.")
+	if len(slug) > 40 {
+		slug = strings.Trim(slug[:40], "-.")
+	}
+	if slug == "" {
+		return fmt.Sprintf("issue-%d", number)
+	}
+	return fmt.Sprintf("issue-%d-%s", number, slug)
+}
+
+// seedIssue prepares a spawned project to work on a GitHub issue:
+//   - create + checkout an `issue-<n>-<slug>` branch in the (single) cloned repo,
+//   - write ISSUE.md at the workspace root with the full issue context,
+//
+// and returns a prompt to pre-populate into Claude. All best-effort: the clone
+// already succeeded, so a failed branch/file step is logged (via the returned
+// prompt still being useful) but never fails the create.
+func seedIssue(workspace string, specs []repoSpec, iss *issueSeed) string {
+	// The repo landed in a subdir of the workspace (see cloneMultiRepoWorkspace).
+	// Seed the first repo (issue-spawn is single-repo in the UI).
+	repoDir := workspace
+	if len(specs) >= 1 {
+		dir := specs[0].Dir
+		if dir == "" {
+			dir = specDirName(specs[0])
+		}
+		repoDir = filepath.Join(workspace, dir)
+	}
+
+	branch := issueBranchSlug(iss.Number, iss.Title)
+	// `git checkout -b <branch>` in the repo dir; ignore errors (e.g. non-git dir).
+	if fi, err := os.Stat(filepath.Join(repoDir, ".git")); err == nil && fi.IsDir() {
+		_ = exec.Command("git", "-C", repoDir, "checkout", "-b", branch).Run()
+	}
+
+	// ISSUE.md at the workspace root (visible to Claude, above the repo subdir).
+	md := fmt.Sprintf("# %s #%d: %s\n\n%s\n\n---\nIssue: %s\nBranch: `%s`\n",
+		iss.Repo, iss.Number, iss.Title, strings.TrimSpace(iss.Body), iss.URL, branch)
+	_ = os.WriteFile(filepath.Join(workspace, "ISSUE.md"), []byte(md), 0644)
+
+	return fmt.Sprintf("Work on %s issue #%d: %s. The full description is in ISSUE.md at the workspace root. You're on branch %s.",
+		iss.Repo, iss.Number, iss.Title, branch)
 }
 
 // resolveNewWorkspace produces the workspace path for each create mode, doing

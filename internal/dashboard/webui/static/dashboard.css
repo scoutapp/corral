@@ -866,7 +866,7 @@ table.projects th, table.projects td {
 
 .repos-list { display: flex; flex-direction: column; gap: 0.4rem; max-width: 900px; }
 .repo-row {
-  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
   background: var(--con-panel); border: 1px solid var(--con-line); border-radius: 8px; padding: 0.55rem 0.8rem;
 }
 .repo-meta { display: flex; align-items: baseline; gap: 0.6rem; min-width: 0; }
@@ -874,6 +874,21 @@ table.projects th, table.projects td {
 .repo-src { color: var(--con-muted); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, monospace; }
 .repo-badge { flex: none; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--con-waiting); border: 1px solid var(--con-waiting); border-radius: 999px; padding: 0 0.4rem; }
 .repo-actions { display: flex; gap: 0.3rem; flex: none; }
+.btn.on { border-color: var(--con-working); color: var(--con-working); }
+
+/* Issues panel: expands under a repo row, full-width; one row per open issue. */
+.issues-panel {
+  flex-basis: 100%; margin-top: 0.5rem; padding-top: 0.5rem;
+  border-top: 1px solid var(--con-line); display: flex; flex-direction: column; gap: 0.3rem;
+}
+.issue-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.8rem;
+  padding: 0.35rem 0.5rem; border-radius: 6px;
+}
+.issue-row:hover { background: var(--con-panel-hi); }
+.issue-meta { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; }
+.issue-num { color: var(--con-muted); font-family: ui-monospace, Menlo, monospace; font-size: 0.8rem; flex: none; }
+.issue-title { color: var(--con-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Modal */
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: grid; place-items: center; z-index: 60; }
