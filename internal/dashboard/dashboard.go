@@ -569,24 +569,35 @@ func (d *dashboardServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows := make([]statusRow, 0, len(reg.Projects))
-	for _, p := range reg.Projects {
-		st := projectLiveStatus(p.Workspace)
-		row := statusRow{
-			ID:            ProjectID(p.Workspace),
-			Name:          filepath.Base(p.Workspace),
-			Workspace:     p.Workspace,
-			ContainerUp:   st.ContainerUp,
-			TmuxUp:        st.TmuxUp,
-			MitmUp:        st.MitmUp,
-			Activity:      st.Activity,
-			AnthropicHits: st.AnthropicHits,
-		}
-		if st.TmuxUp {
-			row.Peek = tmuxLastLine(st.Session)
-		}
-		rows = append(rows, row)
+	// Compute each project's live status CONCURRENTLY. projectLiveStatus shells
+	// out to docker + tmux and reads a log — ~250-300ms each — so doing N projects
+	// serially made /status take seconds (e.g. ~2.4s for 7 projects), and it's
+	// polled every few seconds. Fan out one goroutine per project; results go into
+	// a pre-sized slice by index so order is preserved without a mutex.
+	rows := make([]statusRow, len(reg.Projects))
+	var wg sync.WaitGroup
+	for i, p := range reg.Projects {
+		wg.Add(1)
+		go func(i int, workspace string) {
+			defer wg.Done()
+			st := projectLiveStatus(workspace)
+			row := statusRow{
+				ID:            ProjectID(workspace),
+				Name:          filepath.Base(workspace),
+				Workspace:     workspace,
+				ContainerUp:   st.ContainerUp,
+				TmuxUp:        st.TmuxUp,
+				MitmUp:        st.MitmUp,
+				Activity:      st.Activity,
+				AnthropicHits: st.AnthropicHits,
+			}
+			if st.TmuxUp {
+				row.Peek = tmuxLastLine(st.Session)
+			}
+			rows[i] = row
+		}(i, p.Workspace)
 	}
+	wg.Wait()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"projects": rows, "boot_id": d.bootID})
