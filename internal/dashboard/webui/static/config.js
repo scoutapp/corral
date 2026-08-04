@@ -122,8 +122,8 @@ function startConfig(projectId) {
       '<div class="cfg-ssh-load">' +
         '<span id="cfg-ssh-status" class="muted">checking…</span> ' +
         '<button id="cfg-ssh-load-btn" class="cfg-btn" type="button">Load keys…</button>' +
-      "</div>" +
-      '<div id="cfg-ssh-modal" class="cfg-modal" style="display:none"></div>'
+      "</div>"
+      // (the load modal is a shared overlay from ssh-load.js; no inline element)
     );
   }
 
@@ -343,6 +343,19 @@ function startConfig(projectId) {
     restartRequest(collectRestartEdit(), btn);
   }
 
+  // Start an idle project after its keys were just loaded (from the Config tab's
+  // Load button). Keys are loaded now, so /start won't 409. The status poll /
+  // a reload will show it come up.
+  function startProjectAfterLoad() {
+    setMsg("keys loaded — starting project…", false);
+    fetch("/p/" + projectId + "/start", { method: "POST", credentials: "same-origin" })
+      .then(function (r) { return r.json().catch(function () { return {}; }); })
+      .then(function (b) {
+        setMsg(b.message || "starting… reload the page in a few seconds to see it.", false);
+      })
+      .catch(function (err) { setMsg("start failed: " + err.message, true); });
+  }
+
   // POST the restart. If the server replies 409 with ssh_keys_pending, the project
   // has keys that aren't loaded yet — open the Load-keys PTY modal (type the
   // passphrase), then retry the restart once loaded. Otherwise show the result.
@@ -390,7 +403,15 @@ function startConfig(projectId) {
     document.getElementById("cfg-restart").addEventListener("click", doRestart);
 
     var sshLoad = document.getElementById("cfg-ssh-load-btn");
-    if (sshLoad) sshLoad.addEventListener("click", openSSHLoadModal);
+    if (sshLoad) sshLoad.addEventListener("click", function () {
+      openSSHLoadModal(function (loaded) {
+        // If the container isn't running and keys just loaded, offer to start it
+        // right away — otherwise loading keys here would appear to "do nothing".
+        if (loaded && current && !current.container_up) {
+          startProjectAfterLoad();
+        }
+      });
+    });
     var addPath = document.getElementById("cfg-ssh-addpath");
     if (addPath) addPath.addEventListener("click", addSSHOtherPath);
     fillSSHKeyPicker(); // paints the checklist async, then wires it + effective preview
@@ -446,59 +467,18 @@ function startConfig(projectId) {
       .catch(function () { if (el) el.textContent = ""; });
   }
 
-  // Load modal: an inline xterm bridged to /sshkeys/ws, which runs `ssh-add` for
-  // the scoped agent so passphrase prompts appear in a real PTY. When ssh-add
-  // exits the WS closes; we re-check status. Keys never leave the PTY.
+  // Delegate to the shared SSH-load modal (ssh-load.js) — a terminal-in-a-modal
+  // that runs ssh-add over a real PTY, auto-closes on success, and offers Retry
+  // on failure. Same component the landing-page Start button uses.
   function openSSHLoadModal(onDone) {
-    var m = document.getElementById("cfg-ssh-modal");
-    if (!m || typeof Terminal === "undefined") {
+    if (typeof window.openSSHLoadModal !== "function") {
       setMsg("terminal unavailable", true);
       return;
     }
-    m.innerHTML =
-      '<div class="cfg-modal-box"><h3>Load SSH keys</h3>' +
-        '<p class="muted">Type each key\'s passphrase below. Keys load into this project\'s scoped agent; they are never stored.</p>' +
-        '<div id="cfg-ssh-term" style="height:220px;background:#0B0E14;border-radius:6px;overflow:hidden"></div>' +
-        '<div class="cfg-modal-actions">' +
-          '<button id="cfg-ssh-done" class="cfg-btn">Done</button>' +
-        "</div></div>";
-    m.style.display = "block";
-
-    var term = new Terminal({
-      cursorBlink: true,
-      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-      fontSize: 13, theme: { background: "#0B0E14" }, scrollback: 1000,
+    window.openSSHLoadModal(projectId, function (loaded) {
+      refreshSSHStatus();
+      if (typeof onDone === "function") onDone(loaded);
     });
-    var fit = new FitAddon.FitAddon();
-    term.loadAddon(fit);
-    term.open(document.getElementById("cfg-ssh-term"));
-    fit.fit();
-
-    var proto = location.protocol === "https:" ? "wss:" : "ws:";
-    var ws = new WebSocket(proto + "//" + location.host + "/p/" + projectId + "/sshkeys/ws");
-    ws.binaryType = "arraybuffer";
-    var decoder = new TextDecoder();
-    ws.onopen = function () {
-      ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
-      term.focus();
-    };
-    ws.onmessage = function (ev) {
-      term.write(typeof ev.data === "string" ? ev.data : decoder.decode(new Uint8Array(ev.data)));
-    };
-    ws.onclose = function () {
-      term.write("\r\n\x1b[90m[ssh-add finished — click Done]\x1b[0m\r\n");
-      refreshSSHStatus();
-    };
-    term.onData(function (d) { if (ws.readyState === WebSocket.OPEN) ws.send(new TextEncoder().encode(d)); });
-
-    function close() {
-      try { ws.close(); } catch (e) {}
-      try { term.dispose(); } catch (e) {}
-      m.style.display = "none";
-      refreshSSHStatus();
-      if (typeof onDone === "function") onDone();
-    }
-    document.getElementById("cfg-ssh-done").onclick = close;
   }
 
   function reload() {

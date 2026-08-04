@@ -22,6 +22,24 @@
     }
   }
 
+  // The Container tab's iframe reflects container up/down at ITS load time. If it
+  // loaded while the container was down (showing "not running"), re-point its src
+  // when the tab is reopened so it picks up a container that has since started.
+  // A LIVE shell iframe (session up) is left alone so we don't kill the session.
+  function refreshContainerIfDown() {
+    var panel = panels.container;
+    var iframe = panel && panel.querySelector("iframe.screen-iframe");
+    if (!iframe || !iframe.dataset.src) return;
+    if (!iframe.getAttribute("src")) { lazySrc(panel); return; } // first open
+    var down = true;
+    try {
+      var doc = iframe.contentDocument;
+      // container.html.tmpl sets data-session-up on <body>; "true" => live shell.
+      down = !doc || doc.body.getAttribute("data-session-up") !== "true";
+    } catch (e) { down = false; } // cross-origin shouldn't happen; be conservative
+    if (down) iframe.setAttribute("src", iframe.dataset.src + "?t=" + Date.now());
+  }
+
   function activate(tab) {
     buttons.forEach(function (b) {
       b.classList.toggle("active", b.dataset.tab === tab);
@@ -30,7 +48,8 @@
       if (panels[key]) panels[key].style.display = key === tab ? "block" : "none";
     });
 
-    lazySrc(panels[tab]); // container tab uses an iframe like the terminal did
+    if (tab === "container") refreshContainerIfDown();
+    else lazySrc(panels[tab]); // other screen tabs: first-open lazy src
 
     if (started[tab]) return;
     if (tab === "files" && typeof startFiles === "function") { started.files = true; startFiles(projectId); }
@@ -268,4 +287,104 @@
   // Activate the initially-selected tab on load.
   var initial = document.querySelector(".tab-btn.active") || buttons[0];
   if (initial) activate(initial.dataset.tab);
+
+  // ---- Container power toggle (▶ Start / ■ Stop) in the header ---------------
+  var powerBtn = document.getElementById("power-toggle");
+  if (powerBtn) {
+    var powerUp = powerBtn.dataset.up === "true";
+
+    // pending is "" when idle, or "starting"/"stopping" while a transition is in
+    // flight. A start/stop takes several seconds, so we spin until the /status
+    // poll confirms the container ACTUALLY reached the target state — rather than
+    // flipping back after a fixed timer (which looked like nothing happened).
+    var pending = "";
+
+    function paintPower() {
+      if (pending) {
+        powerBtn.disabled = true;
+        powerBtn.classList.add("busy");
+        powerBtn.classList.toggle("is-up", pending === "stopping");
+        // Leading spinner glyph + label; CSS animates .power-spin.
+        powerBtn.innerHTML = '<span class="power-spin">↻</span> ' +
+          (pending === "starting" ? "starting…" : "stopping…");
+        return;
+      }
+      powerBtn.disabled = false;
+      powerBtn.classList.remove("busy");
+      powerBtn.textContent = powerUp ? "■ Stop" : "▶ Start";
+      powerBtn.classList.toggle("is-up", powerUp);
+    }
+    paintPower();
+
+    function beginPending(kind) { pending = kind; paintPower(); }
+    function endPending(nowUp) { pending = ""; powerUp = nowUp; paintPower(); }
+
+    function doPower() {
+      var stopping = powerUp;
+      beginPending(stopping ? "stopping" : "starting");
+      fetch("/p/" + projectId + "/" + (stopping ? "stop" : "start"),
+            { method: "POST", credentials: "same-origin" })
+        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (b) { return { status: r.status, body: b }; }); })
+        .then(function (res) {
+          // Start may 409 when SSH keys aren't loaded — load them inline via the
+          // shared host-shell modal, then start.
+          if (!stopping && res.status === 409 && res.body && res.body.ssh_keys_pending) {
+            endPending(false); // back to ▶ Start while the modal is open
+            if (typeof window.openSSHLoadModal === "function") {
+              window.openSSHLoadModal(projectId, function (loaded) {
+                if (loaded) doPowerStart();
+              });
+            }
+            return;
+          }
+          if (res.status >= 400) throw new Error((res.body && res.body.message) || ("HTTP " + res.status));
+          // Stay in the pending/spinner state; the /status poll clears it once the
+          // container actually reaches the target state (or the safety timeout).
+          armPendingTimeout(stopping ? false : true);
+        })
+        .catch(function (err) {
+          endPending(powerUp); // revert to the real state
+          alert((stopping ? "stop" : "start") + " failed: " + err.message);
+        });
+    }
+    // Direct start (keys already loaded) — used after the inline load modal.
+    function doPowerStart() {
+      beginPending("starting");
+      fetch("/p/" + projectId + "/start", { method: "POST", credentials: "same-origin" })
+        .then(function () { armPendingTimeout(true); })
+        .catch(function () { endPending(powerUp); });
+    }
+
+    // Safety net: if the container never reaches the target state (e.g. a failed
+    // start), stop spinning after a while so the button isn't stuck forever.
+    var pendingTimer = null;
+    function armPendingTimeout(target) {
+      if (pendingTimer) clearTimeout(pendingTimer);
+      pendingTimer = setTimeout(function () {
+        if (pending) endPending(target); // assume it worked; poll will correct
+      }, 60000);
+    }
+
+    powerBtn.addEventListener("click", doPower);
+
+    // Poll /status: keep the label in sync AND clear the pending spinner the
+    // moment the container actually reaches the state we're waiting for.
+    setInterval(function () {
+      fetch("/status", { credentials: "same-origin" })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (s) {
+          if (!s || !s.projects) return;
+          var me = s.projects.filter(function (p) { return p.id === projectId; })[0];
+          if (!me) return;
+          var up = !!me.container_up;
+          if (pending) {
+            var want = pending === "starting";
+            if (up === want) endPending(up); // reached target -> stop spinning
+          } else {
+            powerUp = up; paintPower(); // external start/stop / container exit
+          }
+        })
+        .catch(function () {});
+    }, 4000);
+  }
 })();

@@ -80,3 +80,40 @@ func (d *dashboardServer) handleStartProject(w http.ResponseWriter, r *http.Requ
 
 	writeFilesJSON(w, map[string]any{"ok": true, "message": fmt.Sprintf("starting %s", session.ContainerNameForWorkspace(workspace))})
 }
+
+// handleStopProject stops a running project's container from the dashboard.
+//
+//	POST /p/<id>/stop
+//
+// Tears down the container and its detached tmux session (the inverse of start).
+// `docker rm -f` (not `kill`) stops AND removes synchronously so a subsequent
+// start doesn't race the async --rm cleanup on the container name; kill-session
+// clears the tmux session so a later start's `new-session` doesn't collide with a
+// dead pane. Idempotent — a project that's already down reports success. The
+// scoped ssh-agent is left as-is (a later start re-adopts or re-prompts).
+func (d *dashboardServer) handleStopProject(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	workspace, err := lookupWorkspaceByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	container := session.ContainerNameForWorkspace(workspace)
+	tmuxSession := session.TmuxSessionNameForWorkspace(workspace)
+
+	if !session.DockerContainerRunning(container) {
+		// Still clear any lingering dead-pane session so the pane goes fully idle.
+		_ = exec.Command("tmux", "kill-session", "-t", tmuxSession).Run()
+		writeFilesJSON(w, map[string]any{"ok": true, "already": true})
+		return
+	}
+
+	_ = exec.Command("docker", "rm", "-f", container).Run()
+	_ = exec.Command("tmux", "kill-session", "-t", tmuxSession).Run()
+
+	writeFilesJSON(w, map[string]any{"ok": true, "message": fmt.Sprintf("stopping %s", container)})
+}

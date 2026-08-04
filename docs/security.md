@@ -99,6 +99,13 @@ risks. The chat panel is read-only by default.)
    - **Usage window.** While the container is up, anything in it (including a shell
      you open) can use the chosen keys. Only load keys the project needs; they're
      torn down when the container stops.
+   - **World-accessible socket (by necessity).** The container runs as a different
+     uid than the host user that owns the agent socket, so the socket is made
+     connectable (dir `0711`, socket `0666`) — otherwise the container couldn't use
+     the keys at all. This means any *local* process on your machine can also use a
+     loaded key while its agent is alive (a single-user-Mac assumption). Still a
+     signing oracle: no key bytes are exposed, it lives under the user-private
+     `~/.sandclaude`, and it's torn down with the container.
    - **DinD cross-project (macOS).** The agent sockets live under `~/.sandclaude`
      (a Docker-shared path). With **DinD on** (`--privileged`), a container escape
      into the Docker VM can reach *another* running project's scoped agent socket

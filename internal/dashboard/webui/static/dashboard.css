@@ -110,17 +110,41 @@ body.console {
 .state-working .beacon { animation: beacon-pulse 1.6s ease-in-out infinite; }
 .state-waiting .beacon { animation: beacon-blink 1s steps(1) infinite; }
 
-/* Per-pane controls (mute bell, remove ✕). They live inside the pane's <a>, so
-   panes.js stops their clicks from navigating. Kept quiet until hover. */
-.mute-btn, .remove-btn {
+/* Per-pane controls (start/stop, mute bell, remove ✕). They live inside the
+   pane's <a>, so panes.js stops their clicks from navigating. Quiet until hover. */
+.mute-btn, .remove-btn, .power-btn {
   border: none; background: transparent; cursor: pointer; padding: 0 0.15rem;
   font-size: 0.85rem; line-height: 1; color: inherit; opacity: 0.55;
   border-radius: 4px; flex: none;
 }
-.mute-btn:hover, .remove-btn:hover { opacity: 1; background: rgba(255, 255, 255, 0.08); }
+.mute-btn:hover, .remove-btn:hover, .power-btn:hover { opacity: 1; background: rgba(255, 255, 255, 0.08); }
 .mute-btn[aria-pressed="true"] { opacity: 0.9; }
 .remove-btn { color: var(--con-muted); font-weight: 700; }
 .remove-btn:hover { color: var(--con-waiting); }
+.power-btn:disabled { opacity: 0.4; cursor: default; }
+.power-btn.start { color: var(--con-working); }   /* ▶ green — go */
+.power-btn.stop  { color: var(--con-muted); }
+.power-btn.stop:hover { color: var(--con-waiting); } /* ■ amber on hover — attention */
+
+/* Shared SSH-load modal (ssh-load.js) — usable on any page (landing + project). */
+.sshload-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex; align-items: center; justify-content: center;
+}
+.sshload-box {
+  background: var(--con-panel, #12161F); border: 1px solid var(--con-line, #232A38);
+  border-radius: 10px; padding: 1.2rem; width: min(680px, 92vw);
+  color: var(--con-text, #C7CDD9);
+}
+.sshload-box h3 { margin: 0 0 0.5rem; display: flex; align-items: center; gap: 0.6rem; }
+.sshload-hostbadge {
+  font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--con-waiting, #FFB454); border: 1px solid var(--con-waiting, #FFB454);
+  border-radius: 4px; padding: 1px 6px; font-weight: 600;
+}
+.sshload-term { height: 240px; background: #0B0E14; border-radius: 6px; overflow: hidden; }
+.sshload-actions { margin-top: 1rem; display: flex; justify-content: flex-end; gap: 0.5rem; }
 
 .mute-all {
   cursor: pointer; font: inherit; font-size: 0.8rem;
@@ -517,6 +541,31 @@ table.projects th, table.projects td {
   font-size: 0.8rem; cursor: pointer;
 }
 .dock-toggle.on { border-color: var(--con-working); color: var(--con-working); }
+
+/* Container power toggle: prominent, so start/stop is obvious. Idle = a filled
+   green "Start"; running = a filled amber "Stop" (a clearly destructive action).
+   margin-right pushes it slightly apart from the view-toggle group beside it. */
+.power-toggle {
+  font-weight: 600; letter-spacing: 0.01em; padding: 0.32rem 0.8rem;
+  margin-right: 0.4rem;
+}
+/* Use the :root vars (--up/--warn), NOT the console-only --con-* vars: those are
+   defined under body.console (landing page) and are UNDEFINED on the project page,
+   which left the button with no background and near-black text on a dark bg —
+   i.e. invisible. --up/--warn are the same colors and exist everywhere. */
+.power-toggle:not(.is-up) {                 /* ▶ Start */
+  color: #0B0E14; background: var(--up); border-color: var(--up);
+}
+.power-toggle.is-up {                        /* ■ Stop */
+  color: #0B0E14; background: var(--warn); border-color: var(--warn);
+}
+.power-toggle:not(:disabled):hover { filter: brightness(1.1); }
+.power-toggle:disabled { opacity: 0.55; cursor: default; }
+/* While a start/stop is in flight: keep it colored (not greyed) and spin the ↻.
+   .power-spin animates anywhere it appears (header button + landing panes). */
+.power-toggle.busy { opacity: 1; cursor: progress; }
+.power-spin { display: inline-block; animation: power-spin 0.9s linear infinite; }
+@keyframes power-spin { to { transform: rotate(360deg); } }
 
 .project-layout { display: flex; gap: 0; height: calc(100vh - 64px); }
 .tab-area { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
