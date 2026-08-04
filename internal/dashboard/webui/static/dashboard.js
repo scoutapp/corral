@@ -293,16 +293,35 @@
   if (powerBtn) {
     var powerUp = powerBtn.dataset.up === "true";
 
+    // pending is "" when idle, or "starting"/"stopping" while a transition is in
+    // flight. A start/stop takes several seconds, so we spin until the /status
+    // poll confirms the container ACTUALLY reached the target state — rather than
+    // flipping back after a fixed timer (which looked like nothing happened).
+    var pending = "";
+
     function paintPower() {
+      if (pending) {
+        powerBtn.disabled = true;
+        powerBtn.classList.add("busy");
+        powerBtn.classList.toggle("is-up", pending === "stopping");
+        // Leading spinner glyph + label; CSS animates .power-spin.
+        powerBtn.innerHTML = '<span class="power-spin">↻</span> ' +
+          (pending === "starting" ? "starting…" : "stopping…");
+        return;
+      }
+      powerBtn.disabled = false;
+      powerBtn.classList.remove("busy");
       powerBtn.textContent = powerUp ? "■ Stop" : "▶ Start";
       powerBtn.classList.toggle("is-up", powerUp);
     }
     paintPower();
 
+    function beginPending(kind) { pending = kind; paintPower(); }
+    function endPending(nowUp) { pending = ""; powerUp = nowUp; paintPower(); }
+
     function doPower() {
       var stopping = powerUp;
-      powerBtn.disabled = true;
-      powerBtn.textContent = stopping ? "stopping…" : "starting…";
+      beginPending(stopping ? "stopping" : "starting");
       fetch("/p/" + projectId + "/" + (stopping ? "stop" : "start"),
             { method: "POST", credentials: "same-origin" })
         .then(function (r) { return r.json().catch(function () { return {}; }).then(function (b) { return { status: r.status, body: b }; }); })
@@ -310,7 +329,7 @@
           // Start may 409 when SSH keys aren't loaded — load them inline via the
           // shared host-shell modal, then start.
           if (!stopping && res.status === 409 && res.body && res.body.ssh_keys_pending) {
-            powerBtn.disabled = false; paintPower();
+            endPending(false); // back to ▶ Start while the modal is open
             if (typeof window.openSSHLoadModal === "function") {
               window.openSSHLoadModal(projectId, function (loaded) {
                 if (loaded) doPowerStart();
@@ -319,33 +338,51 @@
             return;
           }
           if (res.status >= 400) throw new Error((res.body && res.body.message) || ("HTTP " + res.status));
-          // Optimistically flip; the poll will correct if it didn't take.
-          powerUp = !stopping;
-          setTimeout(function () { powerBtn.disabled = false; paintPower(); }, 800);
+          // Stay in the pending/spinner state; the /status poll clears it once the
+          // container actually reaches the target state (or the safety timeout).
+          armPendingTimeout(stopping ? false : true);
         })
         .catch(function (err) {
-          powerBtn.disabled = false; paintPower();
+          endPending(powerUp); // revert to the real state
           alert((stopping ? "stop" : "start") + " failed: " + err.message);
         });
     }
     // Direct start (keys already loaded) — used after the inline load modal.
     function doPowerStart() {
+      beginPending("starting");
       fetch("/p/" + projectId + "/start", { method: "POST", credentials: "same-origin" })
-        .then(function () { powerUp = true; setTimeout(paintPower, 800); })
-        .catch(function () {});
+        .then(function () { armPendingTimeout(true); })
+        .catch(function () { endPending(powerUp); });
+    }
+
+    // Safety net: if the container never reaches the target state (e.g. a failed
+    // start), stop spinning after a while so the button isn't stuck forever.
+    var pendingTimer = null;
+    function armPendingTimeout(target) {
+      if (pendingTimer) clearTimeout(pendingTimer);
+      pendingTimer = setTimeout(function () {
+        if (pending) endPending(target); // assume it worked; poll will correct
+      }, 60000);
     }
 
     powerBtn.addEventListener("click", doPower);
 
-    // Keep the label in sync with reality (someone may start/stop elsewhere, or
-    // the container may exit). Light poll of /status.
+    // Poll /status: keep the label in sync AND clear the pending spinner the
+    // moment the container actually reaches the state we're waiting for.
     setInterval(function () {
       fetch("/status", { credentials: "same-origin" })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (s) {
           if (!s || !s.projects) return;
           var me = s.projects.filter(function (p) { return p.id === projectId; })[0];
-          if (me && !powerBtn.disabled) { powerUp = !!me.container_up; paintPower(); }
+          if (!me) return;
+          var up = !!me.container_up;
+          if (pending) {
+            var want = pending === "starting";
+            if (up === want) endPending(up); // reached target -> stop spinning
+          } else {
+            powerUp = up; paintPower(); // external start/stop / container exit
+          }
         })
         .catch(function () {});
     }, 4000);

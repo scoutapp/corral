@@ -243,7 +243,7 @@
       var pname = pb.getAttribute("data-name") || "this project";
       var stopping = pb.classList.contains("stop");
       pb.disabled = true;
-      pb.textContent = stopping ? "…" : "…";
+      pb.innerHTML = '<span class="power-spin">↻</span>'; // spin while in flight
       fetch("/p/" + encodeURIComponent(pid) + "/" + (stopping ? "stop" : "start"),
             { method: "POST", credentials: "same-origin" })
         .then(function (r) {
