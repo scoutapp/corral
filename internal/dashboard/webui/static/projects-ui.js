@@ -158,6 +158,12 @@
     picker.appendChild(repoTa);
     f.appendChild(picker);
 
+    // Spinner while `gh repo list` runs (can take a couple seconds). Reuses the
+    // .ta-loading spinner the New-project modal uses; hidden once repos load.
+    var loading = el("div", { class: "ta-loading" }, "loading your GitHub repos…");
+    if (ghReposCache) loading.style.display = "none"; // already cached from a prior open
+    f.appendChild(loading);
+
     var rest = el("div");
     rest.innerHTML =
       '<label>Name (optional) <input name="name" type="text" placeholder="defaults from the repo" autocomplete="off"></label>' +
@@ -168,7 +174,17 @@
 
     // Backfill the picker once the user's gh repos load (async). Non-blocking:
     // the form is usable immediately for a pasted URL even if gh is slow/absent.
-    loadGhRepos().then(function () { repoTa.setItems(repoItems(ghReposCache || [])); });
+    loadGhRepos().then(function () {
+      repoTa.setItems(repoItems(ghReposCache || []));
+      loading.style.display = "none";
+      if (!(ghReposCache || []).length) {
+        // gh unavailable / not authed / no repos — say so, but the URL/path path
+        // still works.
+        loading.className = "muted";
+        loading.textContent = "no GitHub repos found (paste a URL or local path instead)";
+        loading.style.display = "";
+      }
+    });
 
     f.addEventListener("submit", function (e) {
       e.preventDefault();
