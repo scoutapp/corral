@@ -837,7 +837,16 @@ table.projects th, table.projects td {
 .head-right { display: flex; align-items: center; gap: 1.2rem; }
 .section { padding: 1.2rem 1.6rem; }
 .section[hidden] { display: none; }
-.section-toolbar { display: flex; justify-content: flex-end; margin-bottom: 0.8rem; }
+.section-toolbar { display: flex; align-items: center; gap: 0.6rem; justify-content: flex-end; margin-bottom: 0.8rem; }
+/* Live-filter box for a section list (repos). Grows to fill, button stays right. */
+.section-search {
+  flex: 1 1 auto; min-width: 0; font: inherit; font-size: 0.85rem;
+  padding: 0.35rem 0.6rem; border-radius: 6px;
+  border: 1px solid var(--con-line, var(--border)); background: var(--con-panel, var(--panel));
+  color: var(--con-text, var(--fg));
+}
+.section-search::placeholder { color: var(--con-muted, var(--muted)); }
+.section-search:focus { outline: none; border-color: var(--con-working, var(--up)); }
 
 /* Shared button system — readable text + clear clickable hover. */
 .btn {
