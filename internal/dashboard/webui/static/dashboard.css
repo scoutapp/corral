@@ -549,11 +549,15 @@ table.projects th, table.projects td {
   font-weight: 600; letter-spacing: 0.01em; padding: 0.32rem 0.8rem;
   margin-right: 0.4rem;
 }
+/* Use the :root vars (--up/--warn), NOT the console-only --con-* vars: those are
+   defined under body.console (landing page) and are UNDEFINED on the project page,
+   which left the button with no background and near-black text on a dark bg —
+   i.e. invisible. --up/--warn are the same colors and exist everywhere. */
 .power-toggle:not(.is-up) {                 /* ▶ Start */
-  color: #0B0E14; background: var(--con-working); border-color: var(--con-working);
+  color: #0B0E14; background: var(--up); border-color: var(--up);
 }
 .power-toggle.is-up {                        /* ■ Stop */
-  color: #0B0E14; background: var(--con-waiting); border-color: var(--con-waiting);
+  color: #0B0E14; background: var(--warn); border-color: var(--warn);
 }
 .power-toggle:not(:disabled):hover { filter: brightness(1.1); }
 .power-toggle:disabled { opacity: 0.55; cursor: default; }
