@@ -54,13 +54,14 @@ type configView struct {
 	LaunchTmux   bool     `json:"launch_tmux"`
 	SeccompMode  string   `json:"seccomp_mode"` // "" default | unconfined | <path>
 
-	// SSH scoped-agent. SSHKeys is the project's own list (nil = inherit global).
-	// SSHKeysEffective is the resolved list actually loaded (global + expansion),
-	// shown read-only so the user sees what will be loaded. SSHKeysInherited is
-	// true when the project has no own list and is using the global default.
+	// SSH scoped-agent (union model). The effective set is global ∪ project extras.
+	//   SSHKeys          — this project's EXTRA key paths (added on top of global)
+	//   SSHKeysGlobal     — the global default paths (always-on; shown pre-checked
+	//                       + locked in the picker — managed in global settings)
+	//   SSHKeysEffective  — the resolved union actually loaded (absolute paths)
 	SSHKeys          []string `json:"ssh_keys"`
+	SSHKeysGlobal    []string `json:"ssh_keys_global"`
 	SSHKeysEffective []string `json:"ssh_keys_effective"`
-	SSHKeysInherited bool     `json:"ssh_keys_inherited"`
 
 	// Live status, so the panel can show whether a reload will actually reach a
 	// running proxy or is just being saved for next start.
@@ -95,8 +96,8 @@ func (d *dashboardServer) handleConfigRead(w http.ResponseWriter, r *http.Reques
 		ContainerUp:  session.DockerContainerRunning(session.ContainerNameForWorkspace(workspace)),
 
 		SSHKeys:          cfg.SSHKeys,
+		SSHKeysGlobal:    config.GlobalSSHKeys(),
 		SSHKeysEffective: cfg.ResolveSSHKeys(),
-		SSHKeysInherited: cfg.SSHKeys == nil,
 	}
 
 	view.AllowedHosts = readAllowedHostsForWorkspace(workspace)

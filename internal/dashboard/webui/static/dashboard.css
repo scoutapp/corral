@@ -392,6 +392,28 @@ table.projects th, table.projects td {
   border: none; background: none; color: #cf222e; text-decoration: underline;
 }
 
+/* SSH keys picker (union model): a checklist seeded from ~/.ssh. Locked rows are
+   the global default keys (checked + disabled + "from global" badge). */
+.cfg-ssh-list { display: flex; flex-direction: column; gap: 2px; margin: 0.35rem 0; }
+.cfg-ssh-item {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 4px 6px; border-radius: 5px; font-size: 12px;
+}
+.cfg-ssh-item:hover { background: var(--panel); }
+.cfg-ssh-item.locked { opacity: 0.85; }
+.cfg-ssh-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.cfg-ssh-meta { font-size: 11px; }
+.cfg-ssh-badge {
+  margin-left: auto; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px;
+}
+.cfg-ssh-extra-add { display: flex; gap: 0.4rem; margin: 0.35rem 0; }
+.cfg-ssh-extra-add input {
+  flex: 1 1 auto; font: inherit; font-size: 12px; padding: 3px 6px;
+  border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--fg);
+}
+.cfg-ssh-load { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.4rem; }
+
 .cfg-modal {
   position: fixed; inset: 0; background: rgba(0,0,0,0.5);
   display: flex; align-items: center; justify-content: center; z-index: 10;

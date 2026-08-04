@@ -500,6 +500,8 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleHostPage(w, r, id)
 	case sub == "start":
 		d.handleStartProject(w, r, id)
+	case sub == "sshkeys/available":
+		d.handleSSHKeysAvailable(w, r, id)
 	case sub == "sshkeys/status":
 		d.handleSSHKeysStatus(w, r, id)
 	case sub == "sshkeys/ws":

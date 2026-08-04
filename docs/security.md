@@ -20,13 +20,15 @@ Here's what that boundary does and doesn't cover.
   (Claude + GitHub)**; other allowed hosts still pass but are direct-dialed (not
   decrypted). Change it per project (Config → Capture): minimal / all / none / custom.
 - **Filesystem** — only the project workspace is mounted, not your home/SSH keys.
-- **SSH keys** — opt-in per project. When configured, sandclaude runs a *scoped*
-  ssh-agent holding **only the keys you chose** and bind-mounts just its **socket**
-  (not any key file). The container can *use* the keys (sign, push) but never sees
-  the private-key bytes — the agent protocol has no "export key" operation, so
-  this is `:ro`-proof (there's no file to read). Your real host agent (and any
-  keys in it you didn't choose) is never forwarded. Keys live only in the agent's
-  memory and are torn down with the container. See "SSH residual risk" below.
+- **SSH keys** — opt-in. You choose keys with a checklist (a global default set
+  in Global settings, plus per-project extras in each project's Config tab; the
+  effective set is the union). When any are chosen, sandclaude runs a *scoped*
+  ssh-agent holding **only those keys** and bind-mounts just its **socket** (not
+  any key file). The container can *use* the keys (sign, push) but never sees the
+  private-key bytes — the agent protocol has no "export key" operation, so this is
+  `:ro`-proof (there's no file to read). Your real host agent (and any keys in it
+  you didn't choose) is never forwarded. Keys live only in the agent's memory and
+  are torn down with the container. See "SSH residual risk" below.
 - **Dashboard** — binds `127.0.0.1` only, every route requires a per-launch token.
 
 ## What "host privileges" means

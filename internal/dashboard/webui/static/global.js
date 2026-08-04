@@ -60,6 +60,12 @@
           '<textarea class="cfg-edit" id="g-ports" rows="2" spellcheck="false">' + esc((g.mitm_ports || []).join("\n")) + "</textarea>") +
       "</section>" +
 
+      '<section class="cfg-zone"><h3>Default SSH keys <span class="muted">— loaded by EVERY project\'s scoped agent</span></h3>' +
+        '<div class="muted global-path">' + esc(g.ssh_keys_path) + "</div>" +
+        field("Keys", sshGlobalPicker(g)) +
+        '<div class="muted cfg-note">The container can USE these keys (sign/push) but never reads the key bytes — only the agent socket is mounted. Projects can add more in their Config tab.</div>' +
+      "</section>" +
+
       '<div class="cfg-actions">' +
         '<button id="g-apply" class="cfg-btn">Apply</button>' +
         '<span id="g-msg" class="cfg-msg"></span>' +
@@ -71,6 +77,54 @@
   function field(label, valueHTML) {
     return '<div class="cfg-field"><div class="cfg-label">' + esc(label) +
       '</div><div class="cfg-value">' + valueHTML + "</div></div>";
+  }
+
+  function sshBasename(p) { return String(p).replace(/^.*\//, ""); }
+
+  // Global SSH picker: a checklist from ~/.ssh, pre-checking the keys already in
+  // the global default set. Selecting = adding to the always-on set for all
+  // projects. An "other path" input covers keys outside ~/.ssh.
+  function sshGlobalPicker(g) {
+    var avail = g.available_ssh_keys || [];
+    var chosen = {};
+    (g.ssh_keys || []).forEach(function (k) { chosen[sshBasename(k)] = true; });
+    var seen = {};
+    var rows = avail.map(function (k) {
+      seen[k.name] = true;
+      var meta = [k.type, k.comment].filter(Boolean).join("  ");
+      return sshRow(k.name, chosen[k.name], meta);
+    });
+    // Global keys pointing outside ~/.ssh (no matching available key): show them.
+    (g.ssh_keys || []).forEach(function (p) {
+      if (!seen[sshBasename(p)]) rows.push(sshRow(p, true, "custom path"));
+    });
+    return (
+      (rows.length
+        ? '<div class="cfg-ssh-list" id="g-ssh-list">' + rows.join("") + "</div>"
+        : '<div class="muted cfg-note" id="g-ssh-list">no keys found under ~/.ssh</div>') +
+      '<div class="cfg-ssh-extra-add">' +
+        '<input id="g-ssh-otherpath" placeholder="other key path (~/.ssh/... or /abs/path)">' +
+        '<button id="g-ssh-addpath" class="cfg-btn cfg-btn-ghost" type="button">+ add path</button>' +
+      "</div>"
+    );
+  }
+
+  function sshRow(value, checked, meta) {
+    return (
+      '<label class="cfg-ssh-item">' +
+        '<input type="checkbox" class="g-ssh-key" value="' + esc(value) + '"' + (checked ? " checked" : "") + "> " +
+        '<span class="cfg-ssh-name">' + esc(sshBasename(value)) + "</span> " +
+        (meta ? '<span class="muted cfg-ssh-meta">' + esc(meta) + "</span>" : "") +
+      "</label>"
+    );
+  }
+
+  function collectGlobalSSHKeys() {
+    var out = [];
+    Array.prototype.forEach.call(document.querySelectorAll(".g-ssh-key"), function (cb) {
+      if (cb.checked) out.push(cb.value);
+    });
+    return out;
   }
 
   function setMsg(text, isErr) {
@@ -95,6 +149,7 @@
     if (unset.length) edit.unset_creds = unset;
     edit.monitor_hosts = textareaLines("g-monitor") || [];
     edit.mitm_ports = textareaLines("g-ports") || [];
+    edit.ssh_keys = collectGlobalSSHKeys();
 
     document.getElementById("g-apply").disabled = true;
     post("/global/apply", edit).then(function (r) {
@@ -123,6 +178,23 @@
   function wire() {
     document.getElementById("g-apply").addEventListener("click", apply);
     document.getElementById("g-populate").addEventListener("click", populate);
+
+    var gAddPath = document.getElementById("g-ssh-addpath");
+    if (gAddPath) gAddPath.addEventListener("click", function () {
+      var input = document.getElementById("g-ssh-otherpath");
+      var val = input.value.trim();
+      if (!val) return;
+      var list = document.getElementById("g-ssh-list");
+      if (list && list.classList.contains("cfg-ssh-list")) {
+        var tmp = document.createElement("div");
+        tmp.innerHTML = sshRow(val, true, "custom path");
+        list.appendChild(tmp.firstChild);
+      } else if (list) {
+        // was the "no keys" placeholder — replace with a real list
+        list.outerHTML = '<div class="cfg-ssh-list" id="g-ssh-list">' + sshRow(val, true, "custom path") + "</div>";
+      }
+      input.value = "";
+    });
 
     document.getElementById("gnc-add").addEventListener("click", function () {
       var host = document.getElementById("gnc-host").value.trim().toLowerCase();
