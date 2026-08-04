@@ -16,6 +16,18 @@ cleanup_dind() {
 }
 trap cleanup_dind EXIT
 
+# Scoped ssh-agent socket: when the host mounts one at /ssh-agent.sock, macOS
+# Docker Desktop's VirtioFS remaps it to root:root 0660 REGARDLESS of the host
+# perms — so the non-root `claude` user gets "Permission denied" connecting to
+# the agent. Host-side chmod can't fix this (VirtioFS overrides it); the socket
+# must be chmod'd from INSIDE the container, as root. Do it here (claude has
+# passwordless sudo) so ssh-add / git-over-ssh work for the claude user.
+if [ -S /ssh-agent.sock ]; then
+    sudo chmod 0666 /ssh-agent.sock 2>/dev/null \
+        && echo "✅ ssh-agent socket made accessible to claude" \
+        || echo "⚠️  could not chmod /ssh-agent.sock"
+fi
+
 # Configure mitmproxy CA certificate if proxy is enabled
 echo "🔒 Proxy configuration:"
 echo "   HTTP_PROXY=${HTTP_PROXY:-not set}"
