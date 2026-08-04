@@ -39,6 +39,7 @@ import {
   waitFor,
   outerRunning,
   innerDockerdUp,
+  readInnerLog,
 } from './lib/sandclaude';
 
 const execFileAsync = promisify(execFile);
@@ -169,7 +170,24 @@ export default async function globalSetup() {
     },
   );
 
-  banner('sandbox is up: outer container running, inner dockerd ready.');
+  // `docker info` succeeding is NOT full-boot: the entrypoint starts the
+  // cert-injector AFTER dockerd (and after waiting for the host mitmproxy CA to
+  // land at /etc/proxy-ca.crt). Tests that assert on cert-injector.log therefore
+  // race the boot — the historical `cert-injector.log should exist` flake. Gate
+  // on the injector's log existing here so "sandbox is up" means fully booted,
+  // not just dockerd-up. Proxy-mode + DinD only (the log doesn't exist otherwise);
+  // this whole suite runs with both on.
+  banner('waiting for cert-injector to start (full boot evidence)…');
+  await waitFor(
+    'certInjectorUp',
+    async () => (await readInnerLog('cert-injector.log')).trim() !== '',
+    { timeoutMs: 90_000, intervalMs: 2_000 },
+  ).catch(async (e) => {
+    await dumpDiagnostics();
+    throw e;
+  });
+
+  banner('sandbox is up: outer container running, inner dockerd ready, cert-injector started.');
 }
 
 // Capture everything useful for debugging a failed boot. The container is

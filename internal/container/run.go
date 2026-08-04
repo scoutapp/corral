@@ -126,8 +126,29 @@ func (sc *SandClaude) startProxy(workspace string) error {
 		config.Debugf("Warning: failed to write proxy runtime state: %v", err)
 	}
 
-	// Give proxy time to start
-	time.Sleep(2 * time.Second)
+	// Give proxy time to start, THEN wait for the CA cert to actually exist on the
+	// host. mitmproxy generates ~/.mitmproxy/mitmproxy-ca-cert.pem on first startup;
+	// on a slow/cold runner that can take well over the old fixed 2s. startDocker
+	// only mounts the CA into the container `if os.Stat(certPath) == nil` — so if we
+	// proceed before the file exists, the mount is silently skipped, the container
+	// never trusts the proxy, and (with DinD) the cert-injector never starts. This
+	// was the ~20% e2e flake ("cert-injector.log should exist"). Block on the file.
+	time.Sleep(1 * time.Second)
+	if home, herr := os.UserHomeDir(); herr == nil {
+		caPath := filepath.Join(home, ".mitmproxy", "mitmproxy-ca-cert.pem")
+		deadline := time.Now().Add(30 * time.Second)
+		for {
+			if _, err := os.Stat(caPath); err == nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				log.Printf("Warning: mitmproxy CA cert not present at %s after 30s; "+
+					"the container may not trust the proxy (cert-injection may be skipped)", caPath)
+				break
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
 
 	return nil
 }
