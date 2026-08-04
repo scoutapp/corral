@@ -65,31 +65,46 @@ func agentDir(projectID string) string {
 	return filepath.Join(AgentsRoot(), projectID)
 }
 
-// Start creates a fresh scoped ssh-agent for the given project holding (once the
-// caller loads them) the given keys. It does NOT load the keys — loading is
-// interactive (passphrases) and happens through a PTY the caller controls. A
-// pre-existing agent for this project is torn down first so start is idempotent.
+// socketPathFor returns the (dir, socket) for a project, validating the socket
+// path against the macOS Unix-socket length limit.
+func socketPathFor(projectID string) (dir, sock string, err error) {
+	dir = agentDir(projectID)
+	sock = filepath.Join(dir, "agent.sock")
+	if len(sock) > maxUnixSocketPath {
+		return "", "", fmt.Errorf("ssh-agent socket path too long (%d > %d): %s\n"+
+			"set SANDCLAUDE_HOME to a shorter directory", len(sock), maxUnixSocketPath, sock)
+	}
+	return dir, sock, nil
+}
+
+// Ensure returns a scoped ssh-agent for the project, ADOPTING an already-running
+// one when its socket is live (so a dashboard pre-load survives the subsequent
+// `sandclaude dev`), or creating a fresh agent otherwise. It never tears down a
+// live agent — that's Stop()'s job. It does NOT load keys (loading is interactive
+// via a PTY the caller owns).
 //
 // Returns nil, nil when keys is empty: no keys chosen means no agent (and the
 // caller should not mount a socket or set SSH_AUTH_SOCK).
-func Start(projectID string, keys []string) (*Agent, error) {
+func Ensure(projectID string, keys []string) (*Agent, error) {
 	if len(keys) == 0 {
 		return nil, nil
 	}
-
-	dir := agentDir(projectID)
-	sock := filepath.Join(dir, "agent.sock")
-	if len(sock) > maxUnixSocketPath {
-		return nil, fmt.Errorf("ssh-agent socket path too long (%d > %d): %s\n"+
-			"set SANDCLAUDE_HOME to a shorter directory", len(sock), maxUnixSocketPath, sock)
+	dir, sock, err := socketPathFor(projectID)
+	if err != nil {
+		return nil, err
 	}
 
-	// Tear down any stale agent/socket from a previous run so `ssh-agent -a` won't
-	// fail on an existing socket file.
-	stopAt(sock)
-	if err := os.RemoveAll(dir); err != nil {
-		return nil, fmt.Errorf("clear stale agent dir %s: %w", dir, err)
+	// Adopt a live agent if the socket exists AND responds (a bind-mounted socket
+	// from a previous run whose agent died leaves a stale file; probe before trust).
+	if _, statErr := os.Stat(sock); statErr == nil {
+		if socketResponds(sock) {
+			return &Agent{SocketPath: sock, Keys: append([]string(nil), keys...), dir: dir}, nil
+		}
+		// Stale socket (agent gone). Clear it so `ssh-agent -a` can rebind.
+		stopAt(sock)
+		_ = os.RemoveAll(dir)
 	}
+
 	// 0700: only this user should reach the socket dir. (Not a defense against a
 	// privileged container escape — see docs/security.md — but keeps it off-limits
 	// to normal other-user processes on the host.)
@@ -106,13 +121,50 @@ func Start(projectID string, keys []string) (*Agent, error) {
 	}
 	pid := parseAgentPID(string(out))
 	if pid == 0 {
-		// Agent may have started but we couldn't parse the pid — try to clean up by
-		// socket so we don't leak a process.
 		stopAt(sock)
 		return nil, fmt.Errorf("could not parse ssh-agent pid from: %q", string(out))
 	}
 
 	return &Agent{SocketPath: sock, Keys: append([]string(nil), keys...), pid: pid, dir: dir}, nil
+}
+
+// Probe reports, WITHOUT creating anything, how many identities the project's
+// scoped agent currently holds. Returns (0, false) when no live agent exists —
+// used by the dashboard status endpoint so a mere status poll never spawns an
+// agent. loaded is true iff a live agent holds ≥1 identity.
+func Probe(projectID string) (count int, loaded bool) {
+	_, sock, err := socketPathFor(projectID)
+	if err != nil {
+		return 0, false
+	}
+	if _, statErr := os.Stat(sock); statErr != nil {
+		return 0, false
+	}
+	if !socketResponds(sock) {
+		return 0, false
+	}
+	a := &Agent{SocketPath: sock}
+	fps, _ := a.LoadedFingerprints()
+	return len(fps), len(fps) > 0
+}
+
+// socketResponds reports whether a live ssh-agent is answering on sock (via a
+// cheap `ssh-add -l`, which returns 0 with keys or 1 for "no identities" — both
+// mean the agent is alive; only a connection failure means it's dead/stale).
+func socketResponds(sock string) bool {
+	cmd := exec.Command("ssh-add", "-l")
+	cmd.Env = append(os.Environ(), "SSH_AUTH_SOCK="+sock)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return true // exit 0: agent alive, has identities
+	}
+	// exit 1 with "no identities" = alive but empty; any "connect"/"communication"
+	// failure = dead. Distinguish by message.
+	s := string(out)
+	if strings.Contains(s, "no identities") {
+		return true
+	}
+	return false
 }
 
 // LoadKeysCommand returns the argv for loading this agent's keys, to be run in a

@@ -191,10 +191,16 @@ func (sc *SandClaude) stopProxy() {
 // Project config (project/config.json)
 // ----------------------------------------------------------------------------
 
-// startSSHAgent starts a per-project scoped ssh-agent and loads the project's
-// chosen keys into it via the foreground shell (so passphrases can be typed).
-// No-op when no keys are configured. The started agent is recorded on sc so
-// startDocker mounts its socket and stopSSHAgent tears it down.
+// startSSHAgent ensures a per-project scoped ssh-agent holding the project's
+// chosen keys, so startDocker can mount its socket. No-op when no keys are
+// configured. Two paths, by whether we have a controlling TTY:
+//
+//   - Interactive (foreground `sandclaude dev`/`start` in a terminal): load the
+//     keys here via the foreground shell, prompting for passphrases on the TTY.
+//   - Detached (dashboard start / restart — no TTY): DON'T prompt (there's
+//     nowhere to type). Adopt an agent the dashboard pre-loaded; if the keys
+//     aren't loaded yet, fail fast with a clear message pointing at the dashboard
+//     "Load SSH keys" flow (or an interactive `sandclaude dev`).
 func (sc *SandClaude) startSSHAgent(cfg *config.ProjectConfig) error {
 	keys := cfg.ResolveSSHKeys()
 	if len(keys) == 0 {
@@ -202,16 +208,31 @@ func (sc *SandClaude) startSSHAgent(cfg *config.ProjectConfig) error {
 	}
 
 	projectID := dashboard.ProjectID(cfg.Workspace)
-	agent, err := sshagent.Start(projectID, keys)
+	agent, err := sshagent.Ensure(projectID, keys)
 	if err != nil {
-		return fmt.Errorf("start scoped ssh-agent: %w", err)
+		return fmt.Errorf("ensure scoped ssh-agent: %w", err)
 	}
 	if agent == nil {
 		return nil
 	}
 	sc.sshAgent = agent
 
-	// Load keys interactively in the foreground shell. ssh-add prompts for each
+	// Already loaded (e.g. dashboard pre-load, or a prior interactive load whose
+	// agent we just adopted)? Nothing to do — mount and go.
+	if fps, _ := agent.LoadedFingerprints(); len(fps) > 0 {
+		log.Printf("Scoped ssh-agent already holds %d key(s); reusing.", len(fps))
+		return nil
+	}
+
+	// No TTY → can't prompt. Defer to the dashboard pre-load flow.
+	if !isInteractive() {
+		agent.Stop()
+		sc.sshAgent = nil
+		return fmt.Errorf("this project has ssh keys configured but they aren't loaded, and there is no terminal to prompt for passphrases here.\n" +
+			"Load them from the dashboard (Config → SSH keys → Load), or run `sandclaude dev` in a terminal to be prompted.")
+	}
+
+	// Interactive: load keys via the foreground shell. ssh-add prompts for each
 	// passphrase on the controlling TTY; wire our std{in,out,err} straight through.
 	argv, env := agent.LoadKeysCommand()
 	log.Printf("Loading %d ssh key(s) into scoped agent (you may be prompted for passphrases)...", len(keys))
@@ -228,6 +249,17 @@ func (sc *SandClaude) startSSHAgent(cfg *config.ProjectConfig) error {
 		return fmt.Errorf("load ssh keys into scoped agent: %w", err)
 	}
 	return nil
+}
+
+// isInteractive reports whether stdin is a terminal — i.e. we can prompt for an
+// ssh key passphrase. False for the dashboard's detached start (cmd.Start with no
+// TTY), true for a foreground `sandclaude dev` in a real terminal.
+func isInteractive() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
 }
 
 // stopSSHAgent tears down the scoped ssh-agent (kills the process, removes the

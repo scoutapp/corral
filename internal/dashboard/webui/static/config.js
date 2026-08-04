@@ -77,6 +77,7 @@ function startConfig(projectId) {
                 seccompOption("unconfined", "Unconfined — no filtering", cfg.seccomp_mode) +
               "</select>" +
               '<div class="muted cfg-note">unconfined allows syscalls the default profile blocks (e.g. Erlang/BEAM). No effect with Docker-in-Docker (already privileged).</div>') +
+      field("SSH keys", sshKeysEditor(cfg)) +
         '<div class="cfg-actions">' +
           '<button id="cfg-restart" class="cfg-btn cfg-btn-danger">Restart project now</button>' +
           '<span class="muted"> — interrupts the running session in this project</span>' +
@@ -103,6 +104,33 @@ function startConfig(projectId) {
     // treat "default" and "" as the same selected state
     var cur = current === "default" ? "" : (current || "");
     return '<option value="' + val + '"' + (cur === val ? " selected" : "") + ">" + esc(label) + "</option>";
+  }
+
+  // SSH scoped-agent editor. Shows an "inherit global default" toggle; when off,
+  // an editable list of key paths (one per line). Below: the effective list that
+  // will actually be loaded, a load-status line, and a Load button that opens a
+  // PTY modal so passphrases can be typed. Restart-required (baked at start).
+  function sshKeysEditor(cfg) {
+    var inherit = cfg.ssh_keys_inherited;
+    var own = cfg.ssh_keys || [];
+    var eff = cfg.ssh_keys_effective || [];
+    var effLine = eff.length
+      ? '<div class="muted cfg-note">will load: ' + eff.map(esc).join(", ") + "</div>"
+      : '<div class="muted cfg-note">no keys — no ssh-agent is mounted</div>';
+    return (
+      '<label class="cfg-inline"><input type="checkbox" id="cfg-ssh-inherit" ' +
+        (inherit ? "checked" : "") + "> inherit global default (~/.sandclaude/ssh-keys.json)</label>" +
+      '<div id="cfg-ssh-own-wrap" style="' + (inherit ? "display:none" : "") + '">' +
+        linesToList("cfg-ssh-keys", own) +
+        '<div class="muted cfg-note">one key path per line; ~ and bare names (resolved under ~/.ssh) are OK</div>' +
+      "</div>" +
+      effLine +
+      '<div class="cfg-ssh-load">' +
+        '<span id="cfg-ssh-status" class="muted">checking…</span> ' +
+        '<button id="cfg-ssh-load-btn" class="cfg-btn" ' + (eff.length ? "" : "disabled") + ">Load keys…</button>" +
+      "</div>" +
+      '<div id="cfg-ssh-modal" class="cfg-modal" style="display:none"></div>'
+    );
   }
 
   function credEditor(creds) {
@@ -142,13 +170,21 @@ function startConfig(projectId) {
   }
 
   function collectRestartEdit() {
-    return {
+    var edit = {
       proxy_enabled: document.getElementById("cfg-proxy").checked,
       dind_enabled: document.getElementById("cfg-dind").checked,
       dind_ports: textareaLines("cfg-dindports") || [],
       launch_tmux: document.getElementById("cfg-tmux").checked,
       seccomp_mode: document.getElementById("cfg-seccomp").value,
     };
+    // SSH keys tri-state: inherit clears the project list; otherwise send the
+    // explicit list ([] = no keys). textareaLines returns [] for an empty box.
+    if (document.getElementById("cfg-ssh-inherit").checked) {
+      edit.ssh_keys_inherit = true;
+    } else {
+      edit.ssh_keys = textareaLines("cfg-ssh-keys") || [];
+    }
+    return edit;
   }
 
   function post(path, body) {
@@ -232,6 +268,16 @@ function startConfig(projectId) {
     document.getElementById("cfg-review").addEventListener("click", reviewAndApply);
     document.getElementById("cfg-restart").addEventListener("click", doRestart);
 
+    var sshInherit = document.getElementById("cfg-ssh-inherit");
+    if (sshInherit) {
+      sshInherit.addEventListener("change", function () {
+        document.getElementById("cfg-ssh-own-wrap").style.display = this.checked ? "none" : "";
+      });
+    }
+    var sshLoad = document.getElementById("cfg-ssh-load-btn");
+    if (sshLoad) sshLoad.addEventListener("click", openSSHLoadModal);
+    refreshSSHStatus();
+
     document.getElementById("nc-add").addEventListener("click", function () {
       var host = document.getElementById("nc-host").value.trim().toLowerCase();
       var kind = document.getElementById("nc-kind").value;
@@ -259,6 +305,81 @@ function startConfig(projectId) {
         setMsg("credential " + host + " queued for removal — Review to apply", false);
       });
     });
+  }
+
+  // Poll the scoped-agent status so the user sees whether keys are already loaded
+  // (and won't be re-prompted on start) vs. need loading.
+  function refreshSSHStatus() {
+    var el = document.getElementById("cfg-ssh-status");
+    if (!el) return;
+    fetch("/p/" + projectId + "/sshkeys/status", { credentials: "same-origin" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (s) {
+        if (!s) { el.textContent = ""; return; }
+        if (!s.configured) { el.textContent = "no keys configured"; el.className = "muted"; return; }
+        if (s.loaded) {
+          el.textContent = "✓ " + s.count + " key(s) loaded — start won't prompt";
+          el.className = "s-2xx";
+        } else {
+          el.textContent = "not loaded — start will need passphrases";
+          el.className = "muted";
+        }
+      })
+      .catch(function () { if (el) el.textContent = ""; });
+  }
+
+  // Load modal: an inline xterm bridged to /sshkeys/ws, which runs `ssh-add` for
+  // the scoped agent so passphrase prompts appear in a real PTY. When ssh-add
+  // exits the WS closes; we re-check status. Keys never leave the PTY.
+  function openSSHLoadModal() {
+    var m = document.getElementById("cfg-ssh-modal");
+    if (!m || typeof Terminal === "undefined") {
+      setMsg("terminal unavailable", true);
+      return;
+    }
+    m.innerHTML =
+      '<div class="cfg-modal-box"><h3>Load SSH keys</h3>' +
+        '<p class="muted">Type each key\'s passphrase below. Keys load into this project\'s scoped agent; they are never stored.</p>' +
+        '<div id="cfg-ssh-term" style="height:220px;background:#0B0E14;border-radius:6px;overflow:hidden"></div>' +
+        '<div class="cfg-modal-actions">' +
+          '<button id="cfg-ssh-done" class="cfg-btn">Done</button>' +
+        "</div></div>";
+    m.style.display = "block";
+
+    var term = new Terminal({
+      cursorBlink: true,
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+      fontSize: 13, theme: { background: "#0B0E14" }, scrollback: 1000,
+    });
+    var fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(document.getElementById("cfg-ssh-term"));
+    fit.fit();
+
+    var proto = location.protocol === "https:" ? "wss:" : "ws:";
+    var ws = new WebSocket(proto + "//" + location.host + "/p/" + projectId + "/sshkeys/ws");
+    ws.binaryType = "arraybuffer";
+    var decoder = new TextDecoder();
+    ws.onopen = function () {
+      ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+      term.focus();
+    };
+    ws.onmessage = function (ev) {
+      term.write(typeof ev.data === "string" ? ev.data : decoder.decode(new Uint8Array(ev.data)));
+    };
+    ws.onclose = function () {
+      term.write("\r\n\x1b[90m[ssh-add finished — click Done]\x1b[0m\r\n");
+      refreshSSHStatus();
+    };
+    term.onData(function (d) { if (ws.readyState === WebSocket.OPEN) ws.send(new TextEncoder().encode(d)); });
+
+    function close() {
+      try { ws.close(); } catch (e) {}
+      try { term.dispose(); } catch (e) {}
+      m.style.display = "none";
+      refreshSSHStatus();
+    }
+    document.getElementById("cfg-ssh-done").onclick = close;
   }
 
   function reload() {
