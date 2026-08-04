@@ -33,6 +33,20 @@ type ProjectConfig struct {
 	// takes effect when DinD is off.
 	SeccompMode string `json:"seccomp_mode,omitempty"`
 
+	// SSHKeys is the per-project list of private-key paths loaded into this
+	// project's scoped ssh-agent (see internal/ssh). When set, it REPLACES the
+	// global default (~/.sandclaude/ssh-keys.json) for this project; when unset
+	// (nil), the project inherits the global default. An explicit empty list
+	// (non-nil, len 0) means "no keys" — no agent is started. Paths may use ~ and
+	// are resolved against ~/.ssh when not absolute. See ResolveSSHKeys.
+	//
+	// No omitempty: an explicit empty list must round-trip as `[]` ("no keys,
+	// don't inherit global"), distinct from an absent field (nil = "inherit
+	// global"). omitempty would collapse both to absent. On unmarshal, a missing
+	// field yields nil and `[]` yields a non-nil empty slice — the distinction we
+	// rely on in ResolveSSHKeys.
+	SSHKeys []string `json:"ssh_keys"`
+
 	// MitmPreset is a friendly capture policy that resolves to MonitorHosts:
 	//   "minimal" (default) — MITM only Claude + GitHub hosts
 	//   "all"               — MITM every allowed host (MonitorHosts empty)
@@ -99,6 +113,78 @@ func (c *ProjectConfig) MitmPortsOrDefault() []string {
 		return []string{"80", "443"}
 	}
 	return c.MitmPorts
+}
+
+// GlobalSSHKeysPath is ~/.sandclaude/ssh-keys.json — the cross-project default
+// key list, mirroring the global proxy-credentials.json pattern.
+func GlobalSSHKeysPath() string {
+	return filepath.Join(SandclaudeHome(), "ssh-keys.json")
+}
+
+// globalSSHKeys reads the global default key list. Missing file / parse error →
+// nil (no global default), which is a normal "no keys configured" state, not an
+// error we want to fail a container start over.
+func globalSSHKeys() []string {
+	data, err := os.ReadFile(GlobalSSHKeysPath())
+	if err != nil {
+		return nil
+	}
+	var keys []string
+	if err := json.Unmarshal(data, &keys); err != nil {
+		return nil
+	}
+	return keys
+}
+
+// ResolveSSHKeys returns the effective list of ABSOLUTE private-key paths for
+// this project, applying the global-default + per-project-override policy:
+//   - c.SSHKeys nil (field absent)        → inherit the global default
+//   - c.SSHKeys non-nil (incl. empty [])  → use it verbatim, replacing the global
+//
+// Each entry is expanded: ~ → home, and a bare name/relative path → ~/.ssh/<p>.
+// The result is deduplicated (stable order) so a key listed in both layers — or
+// twice — is only loaded once.
+func (c *ProjectConfig) ResolveSSHKeys() []string {
+	raw := c.SSHKeys
+	if raw == nil {
+		raw = globalSSHKeys()
+	}
+	seen := map[string]bool{}
+	out := make([]string, 0, len(raw))
+	for _, p := range raw {
+		abs := ExpandSSHKeyPath(p)
+		if abs == "" || seen[abs] {
+			continue
+		}
+		seen[abs] = true
+		out = append(out, abs)
+	}
+	return out
+}
+
+// ExpandSSHKeyPath resolves a configured key entry to an absolute path:
+//   - "" → ""
+//   - "~/x" or "~" → under the home dir
+//   - absolute → as-is
+//   - anything else (bare name or relative) → under ~/.ssh
+//
+// It does NOT check existence — callers surface a clear error when loading.
+func ExpandSSHKeyPath(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
+	}
+	home, _ := os.UserHomeDir()
+	if p == "~" {
+		return home
+	}
+	if strings.HasPrefix(p, "~/") {
+		return filepath.Join(home, p[2:])
+	}
+	if filepath.IsAbs(p) {
+		return filepath.Clean(p)
+	}
+	return filepath.Join(home, ".ssh", p)
 }
 
 func ReadConfig(projectDir string) (*ProjectConfig, error) {

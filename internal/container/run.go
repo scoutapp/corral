@@ -14,6 +14,7 @@ import (
 	"github.com/jackrothrock/sandclaude/internal/config"
 	"github.com/jackrothrock/sandclaude/internal/creds"
 	"github.com/jackrothrock/sandclaude/internal/dashboard"
+	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
 )
 
 // startProxy starts the mitmweb proxy process
@@ -190,6 +191,62 @@ func (sc *SandClaude) stopProxy() {
 // Project config (project/config.json)
 // ----------------------------------------------------------------------------
 
+// startSSHAgent starts a per-project scoped ssh-agent and loads the project's
+// chosen keys into it via the foreground shell (so passphrases can be typed).
+// No-op when no keys are configured. The started agent is recorded on sc so
+// startDocker mounts its socket and stopSSHAgent tears it down.
+func (sc *SandClaude) startSSHAgent(cfg *config.ProjectConfig) error {
+	keys := cfg.ResolveSSHKeys()
+	if len(keys) == 0 {
+		return nil
+	}
+
+	projectID := dashboard.ProjectID(cfg.Workspace)
+	agent, err := sshagent.Start(projectID, keys)
+	if err != nil {
+		return fmt.Errorf("start scoped ssh-agent: %w", err)
+	}
+	if agent == nil {
+		return nil
+	}
+	sc.sshAgent = agent
+
+	// Load keys interactively in the foreground shell. ssh-add prompts for each
+	// passphrase on the controlling TTY; wire our std{in,out,err} straight through.
+	argv, env := agent.LoadKeysCommand()
+	log.Printf("Loading %d ssh key(s) into scoped agent (you may be prompted for passphrases)...", len(keys))
+	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd.Env = env
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		// Loading failed (wrong passphrase, missing key, user Ctrl-C). Tear down the
+		// agent so we don't leak a process, and fail the start.
+		agent.Stop()
+		sc.sshAgent = nil
+		return fmt.Errorf("load ssh keys into scoped agent: %w", err)
+	}
+	return nil
+}
+
+// stopSSHAgent tears down the scoped ssh-agent (kills the process, removes the
+// socket). Skipped for the detached path (`dev` / `start` default), where the
+// container keeps running after Run() returns and still needs the agent — the
+// agent is then left alongside the still-running mitmproxy and cleaned up when
+// the container stops. Safe to call when no agent was started.
+func (sc *SandClaude) stopSSHAgent() {
+	if sc.sshAgent == nil {
+		return
+	}
+	if sc.detachedSession != "" {
+		log.Printf("Note: scoped ssh-agent is still running alongside the detached container. It is removed when the container stops.")
+		return
+	}
+	sc.sshAgent.Stop()
+	sc.sshAgent = nil
+}
+
 // Run starts the full sandclaude environment
 func (sc *SandClaude) Run(keepDevfiles bool) error {
 	log.Println("SandClaude - Secure Claude Code Environment")
@@ -222,6 +279,18 @@ func (sc *SandClaude) Run(keepDevfiles bool) error {
 		sc.dindPorts = cfg.DindPorts
 	}
 	sc.seccompMode = cfg.SeccompMode
+
+	// Scoped ssh-agent (CLI path): if keys are chosen for this project, start a
+	// per-project agent and load them via the FOREGROUND shell so the user can
+	// type each passphrase here. The socket is mounted into the container by
+	// startDocker; the agent is torn down when the run ends (see the deferred
+	// stopSSHAgent below). A failure to load keys is fatal — starting the
+	// container without the ssh access the user configured would silently break
+	// their git workflow.
+	if err := sc.startSSHAgent(cfg); err != nil {
+		return err
+	}
+	defer sc.stopSSHAgent()
 
 	// Re-encrypt the allowlist from plaintext so the mounted .enc always reflects
 	// the current allowed-domains.txt. Without this, editing the plaintext and then

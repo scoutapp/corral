@@ -12,6 +12,7 @@ import (
 	"github.com/jackrothrock/sandclaude/internal/config"
 	"github.com/jackrothrock/sandclaude/internal/proxy"
 	"github.com/jackrothrock/sandclaude/internal/session"
+	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
 )
 
 // startDocker starts the Docker container with Claude Code
@@ -121,6 +122,17 @@ func (sc *SandClaude) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) 
 		"-v", fmt.Sprintf("%s:%s", workspace, workspace),
 		"-w", workspace,
 	)
+
+	// Scoped ssh-agent: when a per-project agent was started (keys chosen for this
+	// project), bind-mount ONLY its socket and point SSH_AUTH_SOCK at it. No key
+	// file is ever mounted — the container can sign via the agent but cannot read
+	// the key bytes. See internal/ssh and docs/security.md.
+	if sc.sshAgent != nil {
+		args = append(args,
+			"-v", fmt.Sprintf("%s:%s", sc.sshAgent.SocketPath, sshagent.ContainerSocketPath),
+			"-e", "SSH_AUTH_SOCK="+sshagent.ContainerSocketPath,
+		)
+	}
 
 	// Mount host ~/.claude.json (Claude Code config file) ONLY if it exists as a
 	// file. Docker auto-creates a missing bind source as a DIRECTORY, which then

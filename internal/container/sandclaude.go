@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackrothrock/sandclaude/internal/config"
 	"github.com/jackrothrock/sandclaude/internal/creds"
+	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
 )
 
 const (
@@ -25,11 +26,12 @@ type SandClaude struct {
 	DisableDind                 bool
 	dindEnabled                 bool
 	dindPorts                   []string
-	seccompMode                 string // "" default | "unconfined" | custom profile path
-	DevMode                     bool   // set by `dev`: launch detached in tmux for closed-loop development
-	detachedSession             string // non-empty when container launched in background tmux session
-	mergedCredsFile             string // non-empty when a merged temp creds file was written (cleaned up on stop)
-	workspace                   string // project workspace path; set by startProxy so stopProxy can clean up the workspace-relative runtime.json
+	seccompMode                 string          // "" default | "unconfined" | custom profile path
+	DevMode                     bool            // set by `dev`: launch detached in tmux for closed-loop development
+	detachedSession             string          // non-empty when container launched in background tmux session
+	mergedCredsFile             string          // non-empty when a merged temp creds file was written (cleaned up on stop)
+	workspace                   string          // project workspace path; set by startProxy so stopProxy can clean up the workspace-relative runtime.json
+	sshAgent                    *sshagent.Agent // non-nil when a scoped ssh-agent was started for this run (mounted + torn down on stop)
 }
 
 func NewSandClaude() (*SandClaude, error) {
