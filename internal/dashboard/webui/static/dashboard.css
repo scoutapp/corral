@@ -561,6 +561,11 @@ table.projects th, table.projects td {
 }
 .power-toggle:not(:disabled):hover { filter: brightness(1.1); }
 .power-toggle:disabled { opacity: 0.55; cursor: default; }
+/* While a start/stop is in flight: keep it colored (not greyed) and spin the ↻.
+   .power-spin animates anywhere it appears (header button + landing panes). */
+.power-toggle.busy { opacity: 1; cursor: progress; }
+.power-spin { display: inline-block; animation: power-spin 0.9s linear infinite; }
+@keyframes power-spin { to { transform: rotate(360deg); } }
 
 .project-layout { display: flex; gap: 0; height: calc(100vh - 64px); }
 .tab-area { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
