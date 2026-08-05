@@ -27,38 +27,14 @@ func TestChatSmoke(t *testing.T) {
 	srv := httptest.NewServer(newDashboardServer("tok").routes())
 	defer srv.Close()
 
-	client := &http.Client{}
-	authGet := func(path string) *http.Response {
-		req, _ := http.NewRequest("GET", srv.URL+path, nil)
-		req.AddCookie(&http.Cookie{Name: "sc_dash_token", Value: "tok"})
-		resp, err := client.Do(req)
-		if err != nil {
-			t.Fatalf("GET %s: %v", path, err)
-		}
-		return resp
+	// The chat UI is now a React component in the SPA (no server-rendered chat
+	// page); the meaningful contract to smoke-test is the /chat/ws pipeline. Assert
+	// the WS is still auth-gated, then exercise the full spawn/stream below.
+	if r, _ := http.Get(srv.URL + "/p/" + id + "/chat/ws"); r != nil && r.StatusCode != http.StatusForbidden {
+		t.Errorf("unauth chat WS status = %d, want 403", r.StatusCode)
 	}
 
-	// 1. Chat page renders and carries the "not sandboxed" warning + ws path.
-	resp := authGet("/p/" + id + "/chat/")
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("chat page status = %d, want 200", resp.StatusCode)
-	}
-	body := make([]byte, 8192)
-	n, _ := resp.Body.Read(body)
-	resp.Body.Close()
-	page := string(body[:n])
-	for _, want := range []string{"Not sandboxed", "/static/chat.js", "id=\"composer\""} {
-		if !strings.Contains(page, want) {
-			t.Errorf("chat page missing %q", want)
-		}
-	}
-
-	// 2. Unauthenticated request is rejected (auth gate still applies).
-	if r, _ := http.Get(srv.URL + "/p/" + id + "/chat/"); r != nil && r.StatusCode != http.StatusForbidden {
-		t.Errorf("unauth chat page status = %d, want 403", r.StatusCode)
-	}
-
-	// 3. WS upgrade spawns claude. Skip only if the handler's own resolver can't
+	// WS upgrade spawns claude. Skip only if the handler's own resolver can't
 	// find claude — using resolveClaudeBin (not a bare PATH lookup) means this
 	// also exercises the known-location fallback under a stripped PATH, the exact
 	// scenario the resolver exists for.

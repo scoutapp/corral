@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"github.com/jackrothrock/sandclaude/internal/config"
 	"github.com/jackrothrock/sandclaude/internal/session"
-	"html/template"
 	"io"
 	"io/fs"
 	"log"
@@ -266,13 +265,11 @@ func projectLiveStatus(workspace string) ProjectStatus {
 
 // all:webui/static recurses into the built React app under static/app/
 // (static/app/index.html + static/app/assets/*), which a bare webui/static/*
-// glob would not reach. The templates embed stays for the legacy embedded
-// iframe pages until they're fully removed.
+// glob would not reach. The whole UI is now the React SPA served from
+// static/app; there are no server-rendered templates anymore.
 //
-//go:embed webui/templates/*.tmpl all:webui/static
+//go:embed all:webui/static
 var webuiFS embed.FS
-
-var dashboardTemplates = template.Must(template.ParseFS(webuiFS, "webui/templates/*.tmpl"))
 
 const dashboardCookieName = "sc_dash_token"
 
@@ -487,8 +484,6 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.serveSPA(w, r)
 	case sub == "terminal/ws":
 		d.handleTerminalWS(w, r, id)
-	case sub == "terminal" || sub == "terminal/":
-		d.handleTerminalPage(w, r, id)
 	case sub == "config":
 		d.handleConfigRead(w, r, id)
 	case sub == "config/diff":
@@ -529,12 +524,8 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleGitRepos(w, r, id)
 	case sub == "container/ws":
 		d.handleContainerWS(w, r, id)
-	case sub == "container" || sub == "container/":
-		d.handleContainerPage(w, r, id)
 	case sub == "host/ws":
 		d.handleHostWS(w, r, id)
-	case sub == "host" || sub == "host/":
-		d.handleHostPage(w, r, id)
 	case sub == "start":
 		d.handleStartProject(w, r, id)
 	case sub == "stop":
@@ -551,8 +542,6 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleSSHKeysLoadWS(w, r, id)
 	case sub == "chat/ws":
 		d.handleChatWS(w, r, id)
-	case sub == "chat" || sub == "chat/":
-		d.handleChatPage(w, r, id)
 	case sub == "mitm/flows":
 		d.handleMitmFlows(w, r, id)
 	case sub == "mitm/direct":
@@ -566,29 +555,6 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-type projectRow struct {
-	ID string
-	ProjectStatus
-}
-
-func (d *dashboardServer) handleIndex(w http.ResponseWriter, r *http.Request) {
-	reg, err := readRegistry()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	rows := make([]projectRow, 0, len(reg.Projects))
-	for _, p := range reg.Projects {
-		rows = append(rows, projectRow{ID: ProjectID(p.Workspace), ProjectStatus: projectLiveStatus(p.Workspace)})
-	}
-
-	data := struct{ Projects []projectRow }{Projects: rows}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := dashboardTemplates.ExecuteTemplate(w, "index.html.tmpl", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
 
 // statusRow is the per-project JSON the landing page polls for live pane updates.
 type statusRow struct {
@@ -709,24 +675,6 @@ func tmuxLastLine(session string) string {
 		return s
 	}
 	return ""
-}
-
-func (d *dashboardServer) handleProject(w http.ResponseWriter, r *http.Request, id string) {
-	workspace, err := lookupWorkspaceByID(id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	data := struct {
-		ID string
-		ProjectStatus
-	}{ID: id, ProjectStatus: projectLiveStatus(workspace)}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := dashboardTemplates.ExecuteTemplate(w, "project.html.tmpl", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
 }
 
 // shutdown closes every live browser-terminal PTY (see terminal.go). It never

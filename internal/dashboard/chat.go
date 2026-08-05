@@ -417,20 +417,3 @@ func formatUSD(v float64) string {
 	return fmt.Sprintf("$%.2f", v)
 }
 
-// handleChatPage serves the chat panel page for the iframe. The page's chat.js
-// opens a WebSocket to /chat/ws and renders bubbles from the typed frames.
-func (d *dashboardServer) handleChatPage(w http.ResponseWriter, r *http.Request, id string) {
-	workspace, err := lookupWorkspaceByID(id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	data := struct {
-		ID        string
-		Workspace string
-	}{ID: id, Workspace: workspace}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := dashboardTemplates.ExecuteTemplate(w, "chat.html.tmpl", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}

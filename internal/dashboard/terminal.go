@@ -60,31 +60,6 @@ type terminalResize struct {
 	Rows uint16 `json:"rows"`
 }
 
-// handleTerminalPage serves the xterm.js host page for a project's Terminal tab.
-// The page itself opens the WebSocket (see webui/static/terminal.js); this only
-// needs to confirm the project exists and that a tmux dev session is present so
-// we can render an actionable message instead of a blank terminal that never
-// connects.
-func (d *dashboardServer) handleTerminalPage(w http.ResponseWriter, r *http.Request, id string) {
-	workspace, err := lookupWorkspaceByID(id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	sessionName := session.TmuxSessionNameForWorkspace(workspace)
-	data := struct {
-		ID        string
-		Session   string
-		SessionUp bool
-	}{ID: id, Session: sessionName, SessionUp: session.TmuxSessionExists(sessionName)}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := dashboardTemplates.ExecuteTemplate(w, "terminal.html.tmpl", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
 // handleTerminalWS upgrades to a WebSocket and bridges it to a PTY running
 // `tmux attach-session`. Attaching (rather than spawning a fresh shell) is what
 // makes the browser terminal show the same live session as `sandclaude dev` and
@@ -99,27 +74,6 @@ func (d *dashboardServer) handleTerminalWS(w http.ResponseWriter, r *http.Reques
 
 	d.bridgeSessionWS(w, r, session.TmuxSessionNameForWorkspace(workspace),
 		"no tmux dev session for this project — start it with `sandclaude dev`")
-}
-
-// handleContainerPage serves the xterm host page for the Container Shell tab.
-// Mirrors handleTerminalPage but gates on the container running and points the
-// client at /container/ws (via data-ws-path in container.html.tmpl).
-func (d *dashboardServer) handleContainerPage(w http.ResponseWriter, r *http.Request, id string) {
-	workspace, err := lookupWorkspaceByID(id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	containerName := session.ContainerNameForWorkspace(workspace)
-	data := struct {
-		ID          string
-		ContainerUp bool
-	}{ID: id, ContainerUp: session.DockerContainerRunning(containerName)}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := dashboardTemplates.ExecuteTemplate(w, "container.html.tmpl", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
 }
 
 // handleContainerWS bridges a browser terminal to an interactive shell INSIDE
@@ -174,21 +128,6 @@ func (d *dashboardServer) handleHostWS(w http.ResponseWriter, r *http.Request, i
 		cmd.Dir = workspace // land in the project on the host
 	}
 	d.bridgePTY(w, r, cmd)
-}
-
-// handleHostPage serves the xterm host page for the host-terminal overlay.
-func (d *dashboardServer) handleHostPage(w http.ResponseWriter, r *http.Request, id string) {
-	if _, err := lookupWorkspaceByID(id); err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	data := struct {
-		ID string
-	}{ID: id}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := dashboardTemplates.ExecuteTemplate(w, "host.html.tmpl", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
 }
 
 // handleSessionWS bridges a browser terminal to a named tmux session directly
