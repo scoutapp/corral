@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 
 	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
@@ -109,11 +110,18 @@ func (d *dashboardServer) handleSSHKeysLoadWS(w http.ResponseWriter, r *http.Req
 
 	// Build the ssh-add invocation as a single shell command. Each key path is
 	// single-quoted (paths are host-resolved from config; quoting guards spaces).
+	// On macOS add --apple-use-keychain so the passphrase you type ONCE here is
+	// stored in the login Keychain and reused silently on later loads (the "type
+	// once, reuse" behavior). Apple-specific flag — omitted on Linux.
+	sshAddFlags := ""
+	if runtime.GOOS == "darwin" {
+		sshAddFlags = "--apple-use-keychain "
+	}
 	var quoted []string
 	for _, k := range agent.Keys {
 		quoted = append(quoted, shellSingleQuote(k))
 	}
-	addCmd := "ssh-add " + strings.Join(quoted, " ")
+	addCmd := "ssh-add " + sshAddFlags + strings.Join(quoted, " ")
 
 	// A short banner (so it's unmistakably a host shell), then run ssh-add, then
 	// exec an interactive login shell so the prompt (user@host:cwd$) appears and
