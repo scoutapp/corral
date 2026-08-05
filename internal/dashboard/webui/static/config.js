@@ -451,7 +451,10 @@ function startConfig(projectId) {
   }
 
   // Poll the scoped-agent status so the user sees whether keys are already loaded
-  // (and won't be re-prompted on start) vs. need loading.
+  // (and won't be re-prompted on start) vs. need loading — and, crucially, whether
+  // a RUNNING container is stuck on a stale socket mount (keys on the host but the
+  // container can't reach them). The latter is the trap that makes "Load keys"
+  // look like it worked while git-over-ssh still fails inside the sandbox.
   function refreshSSHStatus() {
     var el = document.getElementById("cfg-ssh-status");
     if (!el) return;
@@ -459,7 +462,26 @@ function startConfig(projectId) {
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (s) {
         if (!s) { el.textContent = ""; return; }
+        el.innerHTML = ""; // reset (we may inject a button below)
         if (!s.configured) { el.textContent = "no keys configured"; el.className = "muted"; return; }
+        if (s.container_stale) {
+          // Host has the keys, but the live container is pinned to a dead socket.
+          // Loading again won't help — only a container restart re-mounts it.
+          el.className = "attention";
+          el.appendChild(document.createTextNode(
+            "⚠ keys loaded on host, but the running container can't reach them — restart it to use SSH. "));
+          var b = document.createElement("button");
+          b.className = "cfg-btn cfg-btn-danger";
+          b.type = "button";
+          b.textContent = "Restart container";
+          b.addEventListener("click", function () {
+            if (!window.confirm("Restart this project's container? This kills any running session in it.")) return;
+            b.disabled = true; b.textContent = "restarting…";
+            restartRequest(collectRestartEdit(), b);
+          });
+          el.appendChild(b);
+          return;
+        }
         if (s.loaded) {
           el.textContent = "✓ " + s.count + " key(s) loaded — start won't prompt";
           el.className = "s-2xx";

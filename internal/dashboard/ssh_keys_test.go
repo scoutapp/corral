@@ -100,7 +100,7 @@ func TestSSHKeysStatusShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{"configured", "loaded", "keys", "count"} {
+	for _, field := range []string{"configured", "loaded", "keys", "count", "container_stale"} {
 		if !strings.Contains(string(b), `"`+field+`"`) {
 			t.Errorf("status JSON missing %q field: %s", field, b)
 		}

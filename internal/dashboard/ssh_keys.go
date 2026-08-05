@@ -1,14 +1,17 @@
 package dashboard
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/jackrothrock/sandclaude/internal/session"
 	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
 )
 
@@ -34,9 +37,47 @@ import (
 
 type sshKeysStatus struct {
 	Configured bool     `json:"configured"` // any keys resolved for this project
-	Loaded     bool     `json:"loaded"`     // scoped agent currently holds identities
+	Loaded     bool     `json:"loaded"`     // scoped agent (on the HOST) holds all keys
 	Keys       []string `json:"keys"`       // absolute key paths (not secret)
-	Count      int      `json:"count"`      // number of loaded identities
+	Count      int      `json:"count"`      // number of loaded identities (host)
+	// ContainerStale is true when the host agent holds the keys but the RUNNING
+	// container can't reach the mounted socket — i.e. the container is pinned to a
+	// now-dead socket object and only a container restart will re-mount the live
+	// one. Docker Desktop's file-sharing latches a bind-mounted unix socket to the
+	// socket object present when the container started; if the scoped agent was
+	// later recreated at the same path, the container keeps proxying to the old,
+	// dead one. Loading keys (which acts on the HOST socket) can't fix that — hence
+	// this flag drives a "restart the container" hint instead of a bare "✓ loaded".
+	ContainerStale bool `json:"container_stale"`
+}
+
+// containerCanReachAgent probes, from INSIDE the running container, whether it
+// can connect to the mounted ssh-agent socket (`ssh-add -l` over
+// ContainerSocketPath). Returns false if the container isn't running, docker
+// isn't reachable, or the probe times out. This is the ground truth for "will
+// git-over-ssh work in the sandbox" — the host being able to reach the socket
+// says nothing about the container's (possibly stale) mount.
+func containerCanReachAgent(workspace string) bool {
+	name := session.ContainerNameForWorkspace(workspace)
+	if name == "" || !session.DockerContainerRunning(name) {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	// `ssh-add -l` exits 0 with identities, 1 for "no identities" (agent alive but
+	// empty), 2 for a connection failure. We only care that the agent ANSWERS, so
+	// treat 0 and 1 as reachable and 2 (or timeout) as stale.
+	cmd := exec.CommandContext(ctx, "docker", "exec",
+		"-e", "SSH_AUTH_SOCK="+sshagent.ContainerSocketPath,
+		name, "ssh-add", "-l")
+	err := cmd.Run()
+	if err == nil {
+		return true // exit 0: reachable, has identities
+	}
+	if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() == 1 {
+		return true // exit 1: agent answered "no identities" — still reachable
+	}
+	return false // exit 2 (connection refused) / timeout / docker error
 }
 
 // resolveProjectSSHKeys returns the effective key list for a project workspace.
@@ -77,6 +118,15 @@ func (d *dashboardServer) handleSSHKeysStatus(w http.ResponseWriter, r *http.Req
 		if count, live := sshagent.Probe(ProjectID(workspace)); live {
 			st.Count = count
 			st.Loaded = count >= len(keys)
+		}
+		// The host having the keys doesn't mean the RUNNING container can use them:
+		// a stale bind-mount leaves the container pinned to a dead socket object.
+		// Only check when the host is fully loaded (nothing to reconcile otherwise)
+		// and the container is up — and only flag stale when the container genuinely
+		// can't reach the agent the host can.
+		if st.Loaded && !containerCanReachAgent(workspace) &&
+			session.DockerContainerRunning(session.ContainerNameForWorkspace(workspace)) {
+			st.ContainerStale = true
 		}
 	}
 	writeFilesJSON(w, st)
