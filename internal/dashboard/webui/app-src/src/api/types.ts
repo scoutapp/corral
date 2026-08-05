@@ -190,6 +190,46 @@ export interface GitFileResponse {
   filename?: string;
 }
 
+// GET /repos -> { repos: CachedRepo[] }
+export interface CachedRepo {
+  id: string;
+  name: string;
+  url?: string;
+  local_path?: string;
+  is_private?: boolean;
+}
+
+// GET /gh/repos -> { available: bool, repos: GhRepo[] }
+export interface GhRepo {
+  nameWithOwner: string;
+  url: string;
+  isPrivate?: boolean;
+}
+
+// GET /gh/issues?repo=owner/name -> { available, issues: GhIssue[], reason? }
+export interface GhIssue {
+  number: number;
+  title: string;
+  body?: string;
+  url?: string;
+  createdAt?: string;
+  author?: { login?: string };
+}
+
+// POST /projects/create -> { id, issue_prompt? }
+export interface CreateProjectResponse {
+  id: string;
+  issue_prompt?: string;
+}
+
+// A repo spec sent to /projects/create (one of url|localPath|repoId, + branch).
+export interface RepoSpec {
+  url?: string;
+  localPath?: string;
+  repoId?: string;
+  branch?: string;
+}
+
 // mitmweb's raw flow JSON (GET /p/<id>/mitm/flows returns an array of these).
 export interface MitmMessage {
   headers?: [string, string][];

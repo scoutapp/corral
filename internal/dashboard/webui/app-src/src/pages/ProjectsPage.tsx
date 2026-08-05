@@ -7,6 +7,8 @@ import { useToasts } from "../components/Toasts";
 import { SSHLoadModal } from "../components/SSHLoadModal";
 import { postRaw } from "../api/client";
 import type { StatusRow } from "../api/types";
+import { ReposSection } from "./ReposSection";
+import { NewProjectModal, AddRepoModal } from "./ReposModals";
 
 // Landing page: live "panes into work". Polls /status, renders one pane per
 // project sorted by urgency (waiting-on-you, then working, then idle), chimes on
@@ -50,6 +52,13 @@ export function ProjectsPage() {
   const [summaryAttn, setSummaryAttn] = useState(false);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [sshFor, setSshFor] = useState<{ id: string; name: string } | null>(null);
+
+  // Sections + landing-page modals (Repos, New project, Add repo).
+  const [section, setSection] = useState<"projects" | "repos">("projects");
+  const [reposSearch, setReposSearch] = useState("");
+  const [reposReload, setReposReload] = useState(0);
+  const [newProject, setNewProject] = useState(false);
+  const [addRepo, setAddRepo] = useState(false);
 
   // Edge-detection memory for the chime + toasts (seeded on first poll so we
   // don't fire for projects already waiting at load).
@@ -148,8 +157,15 @@ export function ProjectsPage() {
           <span className="brand-mark">◇</span>
           <span className="brand-name">sandclaude</span>
         </div>
-        <button type="button" className="nav-item active" data-section="projects">
+        <button type="button" className={`nav-item${section === "projects" ? " active" : ""}`} onClick={() => setSection("projects")}>
           <span className="nav-ico">▤</span> Projects
+        </button>
+        <button type="button" className={`nav-item${section === "repos" ? " active" : ""}`} onClick={() => setSection("repos")}>
+          <span className="nav-ico">◧</span> Repos
+        </button>
+        <div className="sidebar-spacer" />
+        <button type="button" className="sidebar-cta" title="Create a new project" onClick={() => setNewProject(true)}>
+          + New project
         </button>
         <Link to="/global" className="nav-item nav-link">
           ⚙ Global settings
@@ -158,7 +174,7 @@ export function ProjectsPage() {
 
       <div className="content">
         <header className="content-head">
-          <h1 id="section-title">Projects</h1>
+          <h1 id="section-title">{section === "repos" ? "Repos" : "Projects"}</h1>
           <div className="head-right">
             <div className="legend">
               <span className="legend-item">
@@ -186,7 +202,27 @@ export function ProjectsPage() {
           </div>
         </header>
 
-        <section className="section active">
+        {section === "repos" && (
+          <section className="section active">
+            <div className="section-toolbar">
+              <input
+                className="section-search"
+                type="search"
+                placeholder="Filter repos…"
+                autoComplete="off"
+                spellCheck={false}
+                value={reposSearch}
+                onChange={(e) => setReposSearch(e.target.value)}
+              />
+              <button type="button" className="btn primary" title="Add a repository" onClick={() => setAddRepo(true)}>
+                + Add repo
+              </button>
+            </div>
+            <ReposSection search={reposSearch} reloadKey={reposReload} />
+          </section>
+        )}
+
+        <section className="section active" style={{ display: section === "projects" ? "" : "none" }}>
           <main className="panes">
             {sorted.length === 0 && (
               <p className="empty">
@@ -284,6 +320,17 @@ export function ProjectsPage() {
               setSummary(`"${name}" — keys not loaded; start canceled.`);
               setSummaryAttn(true);
             }
+          }}
+        />
+      )}
+
+      {newProject && <NewProjectModal onClose={() => setNewProject(false)} />}
+      {addRepo && (
+        <AddRepoModal
+          onClose={() => setAddRepo(false)}
+          onAdded={() => {
+            setSection("repos");
+            setReposReload((n) => n + 1);
           }}
         />
       )}
