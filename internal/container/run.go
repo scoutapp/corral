@@ -335,6 +335,13 @@ func (sc *SandClaude) Run(keepDevfiles bool) error {
 	}
 	sc.seccompMode = cfg.SeccompMode
 
+	// Passthrough firewall is a savable per-project mode. Honor it from config
+	// (the CLI --passthrough-firewall-and-write flag, if passed, already set this
+	// and stays honored). Only meaningful with the proxy on.
+	if cfg.PassthroughFirewall && cfg.ProxyEnabled {
+		sc.PassthroughFirewallAndWrite = true
+	}
+
 	// Scoped ssh-agent (CLI path): if keys are chosen for this project, start a
 	// per-project agent and load them via the FOREGROUND shell so the user can
 	// type each passphrase here. The socket is mounted into the container by

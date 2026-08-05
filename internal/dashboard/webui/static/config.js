@@ -67,7 +67,10 @@ function startConfig(projectId) {
 
       '<section class="cfg-zone"><h3>Restart required <span class="muted">— needs a project restart</span></h3>' +
         field("Workspace", "<code>" + esc(cfg.workspace) + "</code>") +
-        field("Proxy enabled", toggle("cfg-proxy", cfg.proxy_enabled)) +
+        field("Network protection", toggle("cfg-proxy", cfg.proxy_enabled) +
+              '<div class="muted cfg-note">On: traffic goes through the proxy — MITM inspection, credential injection, and the allowlist firewall. Off: fully open network (no proxy, no firewall).</div>') +
+        field("Passthrough firewall", toggle("cfg-passthrough", cfg.passthrough_firewall) +
+              '<div class="muted cfg-note">Keeps the proxy on (inspection + credentials) but ALLOWS + logs unknown domains instead of blocking, and permits direct TCP so <code>git</code> over SSH works. Needs Network protection on.</div>') +
         field("Docker-in-Docker", toggle("cfg-dind", cfg.dind_enabled)) +
         field("Published ports", linesToList("cfg-dindports", cfg.dind_ports)) +
         field("Launch tmux", toggle("cfg-tmux", cfg.launch_tmux)) +
@@ -271,6 +274,7 @@ function startConfig(projectId) {
   function collectRestartEdit() {
     var edit = {
       proxy_enabled: document.getElementById("cfg-proxy").checked,
+      passthrough_firewall: document.getElementById("cfg-passthrough").checked,
       dind_enabled: document.getElementById("cfg-dind").checked,
       dind_ports: textareaLines("cfg-dindports") || [],
       launch_tmux: document.getElementById("cfg-tmux").checked,

@@ -19,10 +19,11 @@ import (
 // InitOptions carries the non-interactive settings for a new project. The CLI
 // gathers these from prompts; the dashboard sets them from a request.
 type InitOptions struct {
-	ProxyEnabled bool
-	LaunchTmux   bool
-	DindEnabled  bool
-	DindPorts    []string
+	ProxyEnabled        bool
+	LaunchTmux          bool
+	DindEnabled         bool
+	DindPorts           []string
+	PassthroughFirewall bool // "permissive but observed" mode (proxy on, allow+log, direct TCP ok)
 }
 
 // InitProject creates a project's on-disk state under <workspace>/.sandclaude:
@@ -49,12 +50,13 @@ func InitProject(workspace string, opts InitOptions) (*config.ProjectConfig, err
 	}
 
 	cfg := &config.ProjectConfig{
-		Workspace:    workspace,
-		ProxyEnabled: opts.ProxyEnabled,
-		LaunchTmux:   opts.LaunchTmux,
-		DindEnabled:  opts.DindEnabled,
-		DindPorts:    opts.DindPorts,
-		CreatedAt:    time.Now().UTC().Format(time.RFC3339),
+		Workspace:           workspace,
+		ProxyEnabled:        opts.ProxyEnabled,
+		LaunchTmux:          opts.LaunchTmux,
+		DindEnabled:         opts.DindEnabled,
+		DindPorts:           opts.DindPorts,
+		PassthroughFirewall: opts.PassthroughFirewall,
+		CreatedAt:           time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := config.WriteConfig(projectDir, cfg); err != nil {
 		return nil, fmt.Errorf("write config: %w", err)
