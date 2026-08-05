@@ -4,6 +4,7 @@ import { useStatus } from "../hooks/useStatus";
 import { postRaw } from "../api/client";
 import { SSHLoadModal } from "../components/SSHLoadModal";
 import { XtermPane } from "../components/XtermPane";
+import { ChatPanel } from "../components/ChatPanel";
 import { FilesTab } from "../tabs/FilesTab";
 import { DiffTab } from "../tabs/DiffTab";
 import { ConfigTab } from "../tabs/ConfigTab";
@@ -283,9 +284,7 @@ export function ProjectPage({ id }: { id: string }) {
             </span>
           </div>
           <div className="chat-panel-iframe">
-            <p className="empty" style={{ padding: "1rem" }}>
-              Ask Claude is being ported to React (coming in a later commit).
-            </p>
+            <ChatPanel projectId={id} />
           </div>
         </div>
       )}

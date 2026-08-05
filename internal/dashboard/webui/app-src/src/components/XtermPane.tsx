@@ -8,8 +8,11 @@ import { wsURL } from "../api/client";
 // Port of terminal.js, reused by the Claude dock, container shell, and host
 // shell (each just passes a different wsPath). The connection opens on mount and
 // closes on unmount, so a pane that isn't rendered spawns no PTY.
-export function XtermPane({ projectId, wsPath }: { projectId: string; wsPath: string }) {
+// Provide either (projectId + wsPath) for a project-scoped endpoint, or fullPath
+// for an absolute one (e.g. the global populate-creds terminal).
+export function XtermPane({ projectId, wsPath, fullPath }: { projectId?: string; wsPath?: string; fullPath?: string }) {
   const host = useRef<HTMLDivElement | null>(null);
+  const path = fullPath ?? `/p/${projectId}${wsPath}`;
 
   useEffect(() => {
     const term = new Terminal({
@@ -26,7 +29,7 @@ export function XtermPane({ projectId, wsPath }: { projectId: string; wsPath: st
       fit.fit();
     }
 
-    const ws = new WebSocket(wsURL(`/p/${projectId}${wsPath}`));
+    const ws = new WebSocket(wsURL(path));
     ws.binaryType = "arraybuffer";
     const decoder = new TextDecoder();
 
@@ -74,7 +77,7 @@ export function XtermPane({ projectId, wsPath }: { projectId: string; wsPath: st
       }
       term.dispose();
     };
-  }, [projectId, wsPath]);
+  }, [path]);
 
   return <div className="term-fill" ref={host} style={{ width: "100%", height: "100%" }} />;
 }

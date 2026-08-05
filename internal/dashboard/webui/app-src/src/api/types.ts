@@ -100,6 +100,24 @@ export interface SSHAvailableKey {
   comment?: string;
 }
 
+// GET /global/config -> global settings view.
+export interface GlobalView {
+  creds_path: string;
+  ssh_keys_path: string;
+  credentials: CredView[];
+  monitor_hosts: string[];
+  mitm_ports: string[];
+  ssh_keys: string[];
+  available_ssh_keys: SSHAvailableKey[];
+}
+export interface GlobalEdit {
+  set_creds?: CredSet[];
+  unset_creds?: string[];
+  monitor_hosts?: string[];
+  mitm_ports?: string[];
+  ssh_keys?: string[];
+}
+
 // GET /p/<id>/git/repos -> { repos: GitRepo[], rootIsRepo: bool }
 export interface GitRepo {
   path: string;
