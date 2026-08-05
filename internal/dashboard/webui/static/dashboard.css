@@ -405,6 +405,9 @@ table.projects th, table.projects td {
 .cfg-btn-ghost { background: transparent; color: var(--accent); }
 .cfg-btn-danger { background: #cf222e; border-color: #cf222e; }
 .cfg-msg { font-size: 12px; }
+/* success / error coloring for config + global apply messages. */
+.cfg-msg.s-2xx { color: var(--up, #5CE6A8); }
+.cfg-msg.s-4xx { color: #ff6b81; }
 .cfg-cred-add { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
 .cfg-cred-add input, .cfg-cred-add select {
   font: inherit; font-size: 12px; padding: 3px 6px;

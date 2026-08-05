@@ -325,8 +325,8 @@ function startConfig(projectId) {
         this.textContent = "applying…";
         post("/config/apply", edit).then(function (r) {
           hideModal();
-          setMsg((r.results || []).join("  •  "), false);
-          reload(); // refresh to reflect applied state
+          // Pass the success message through reload so render() doesn't wipe it.
+          reload((r.results || []).join("  •  ") || "✓ applied");
         }).catch(function (err) {
           hideModal();
           setMsg("apply failed: " + err.message, true);
@@ -481,10 +481,12 @@ function startConfig(projectId) {
     });
   }
 
-  function reload() {
+  // reload(okMsg?) refetches + re-renders; okMsg is shown AFTER render so a
+  // post-apply success message survives the DOM rebuild (render remakes #cfg-msg).
+  function reload(okMsg) {
     fetch("/p/" + projectId + "/config", { credentials: "same-origin" })
       .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-      .then(render)
+      .then(function (cfg) { render(cfg); if (okMsg) setMsg(okMsg, false); })
       .catch(function (err) {
         root.innerHTML = '<p class="s-4xx">failed to load config: ' + esc(err.message) + "</p>";
       });

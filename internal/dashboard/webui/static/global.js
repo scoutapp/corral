@@ -151,13 +151,16 @@
     edit.mitm_ports = textareaLines("g-ports") || [];
     edit.ssh_keys = collectGlobalSSHKeys();
 
-    document.getElementById("g-apply").disabled = true;
+    var btn = document.getElementById("g-apply");
+    btn.disabled = true; btn.textContent = "Applying…";
     post("/global/apply", edit).then(function (r) {
-      setMsg((r.results || []).join("  •  "), false);
-      reload();
+      var msg = (r.results || []).join("  •  ") || "✓ saved";
+      // reload() rebuilds the panel (new empty #g-msg), so pass the message through
+      // to be set AFTER render — otherwise the success text is instantly wiped.
+      reload(msg);
     }).catch(function (err) {
       setMsg("apply failed: " + err.message, true);
-      document.getElementById("g-apply").disabled = false;
+      btn.disabled = false; btn.textContent = "Apply";
     });
   }
 
@@ -222,10 +225,13 @@
     });
   }
 
-  function reload() {
+  // reload(okMsg?) refetches + re-renders the panel. okMsg (optional) is shown in
+  // the freshly-rendered #g-msg AFTER render, so a post-apply success message
+  // survives the DOM rebuild instead of being wiped by it.
+  function reload(okMsg) {
     fetch("/global/config", { credentials: "same-origin" })
       .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-      .then(render)
+      .then(function (g) { render(g); if (okMsg) setMsg(okMsg, false); })
       .catch(function (err) { root.innerHTML = '<p class="s-4xx">failed to load: ' + esc(err.message) + "</p>"; });
   }
 
