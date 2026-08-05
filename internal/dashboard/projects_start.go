@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/jackrothrock/sandclaude/internal/session"
@@ -120,6 +121,16 @@ func (d *dashboardServer) handleStopProject(w http.ResponseWriter, r *http.Reque
 	writeFilesJSON(w, map[string]any{"ok": true, "message": fmt.Sprintf("stopping %s", container)})
 }
 
+// claudeReady reports whether a captured tmux pane shows Claude's input prompt
+// ready to accept text. Claude's TUI draws a `❯` prompt line and a "bypass
+// permissions" footer once it's up; either is a reliable "ready" signal and both
+// only appear after boot completes (so we won't type into the boot log).
+func claudeReady(pane string) bool {
+	return strings.Contains(pane, "❯") ||
+		strings.Contains(pane, "bypass permissions") ||
+		strings.Contains(pane, "shift+tab to cycle")
+}
+
 // handlePopulatePrompt types a prompt INTO the project's Claude input without
 // submitting it (tmux send-keys, no Enter), once the container's dev session is
 // up. Used after spawning a project off a GitHub issue: the user reviews the
@@ -151,20 +162,27 @@ func (d *dashboardServer) handlePopulatePrompt(w http.ResponseWriter, r *http.Re
 	sess := session.TmuxSessionNameForWorkspace(workspace)
 	prompt := body.Prompt
 	go func() {
-		// Wait up to ~2 min for the dev session to appear (cold boot + image build
-		// can be slow), then give Claude a moment to render its input before typing.
-		for i := 0; i < 120; i++ {
-			if session.TmuxSessionExists(sess) {
-				time.Sleep(3 * time.Second) // let Claude's TUI finish drawing its input
-				// Type the prompt WITHOUT Enter — it sits in Claude's input for the
-				// user to review + submit. (A trailing Enter in the same send-keys is a
-				// literal newline in Claude's TUI, so omitting it leaves it unsubmitted.)
+		// The session existing is NOT enough: it's created by `docker run` in tmux,
+		// but the container then boots (proxy, dockerd, launcher) for a while before
+		// Claude's TUI actually appears and can accept input. Typing during that
+		// window is lost. So poll the PANE CONTENT until Claude's input prompt is
+		// drawn (its `❯` prompt / "bypass permissions" footer), then type.
+		//
+		// Up to ~5 min (cold boot + image build can be slow). Once ready, a short
+		// settle, then send-keys WITHOUT Enter so the prompt sits unsubmitted.
+		for i := 0; i < 300; i++ {
+			time.Sleep(1 * time.Second)
+			if !session.TmuxSessionExists(sess) {
+				continue
+			}
+			out, _ := exec.Command("tmux", "capture-pane", "-t", sess, "-p").Output()
+			if claudeReady(string(out)) {
+				time.Sleep(1500 * time.Millisecond) // let the input line settle
 				_ = exec.Command("tmux", "send-keys", "-t", sess, "--", prompt).Run()
 				return
 			}
-			time.Sleep(1 * time.Second)
 		}
 	}()
 
-	writeFilesJSON(w, map[string]any{"ok": true, "message": "prompt will be typed into Claude when the session is up"})
+	writeFilesJSON(w, map[string]any{"ok": true, "message": "prompt will be typed into Claude once its input is ready"})
 }
