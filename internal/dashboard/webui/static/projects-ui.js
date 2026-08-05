@@ -340,12 +340,49 @@
       };
       jfetch("/projects/create", { method: "POST", body: body }).then(function (res) {
         var id = res.id, prompt = res.issue_prompt || "";
-        jfetch("/p/" + id + "/start", { method: "POST" }).catch(function () {});
-        if (prompt) jfetch("/p/" + id + "/populate-prompt", { method: "POST", body: { prompt: prompt } }).catch(function () {});
-        window.location.href = "/p/" + id + "/";
+        // Start the container. If it needs SSH keys loaded first (409), open the
+        // load modal (type the passphrase), then start + navigate. Otherwise go now.
+        startSpawnedProject(id, prompt, rp.name + "-" + iss.number, form);
       }).catch(function (err) { go.disabled = false; status(form, err.message, true); });
     });
     openModal("Spawn project · #" + iss.number, form);
+  }
+
+  // startSpawnedProject: POST /start for a just-created project. If it 409s with
+  // ssh_keys_pending (the project inherited SSH keys that aren't loaded), open the
+  // shared SSH-load modal (type the passphrase), then start once loaded. On
+  // success, fire the prompt populate and navigate to the project.
+  function startSpawnedProject(id, prompt, name, form) {
+    function go() {
+      if (prompt) jfetch("/p/" + id + "/populate-prompt", { method: "POST", body: { prompt: prompt } }).catch(function () {});
+      window.location.href = "/p/" + id + "/";
+    }
+    fetch("/p/" + id + "/start", { method: "POST", credentials: "same-origin" })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (b) { return { status: r.status, body: b }; }); })
+      .then(function (res) {
+        if (res.status === 409 && res.body && res.body.ssh_keys_pending) {
+          if (form) status(form, "load SSH keys to start this project…", false);
+          if (typeof window.openSSHLoadModal === "function") {
+            // The load modal appends its own overlay; the spawn modal stays behind.
+            window.openSSHLoadModal(id, function (loaded) {
+              if (loaded) {
+                // keys are loaded now — start (should no longer 409) then go.
+                jfetch("/p/" + id + "/start", { method: "POST" }).catch(function () {});
+                go();
+              } else if (form) {
+                status(form, "keys not loaded — project created but not started.", true);
+                var b = form.querySelector(".btn.primary"); if (b) b.disabled = false;
+              }
+            });
+          } else if (form) {
+            status(form, "SSH keys need loading — open the project and load them (Config → SSH keys).", true);
+          }
+          return;
+        }
+        // Started (or already running / no keys) — proceed.
+        go();
+      })
+      .catch(function () { go(); }); // network hiccup: still navigate; the page shows state
   }
 
   // ---- add repo -----------------------------------------------------------
