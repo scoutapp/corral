@@ -237,6 +237,20 @@ func (a *Agent) AllKeysLoaded() bool {
 	return len(fps) >= len(a.Keys)
 }
 
+// RemoveAll deletes ALL identities currently held by the agent (`ssh-add -D`).
+// Used to reset a project's scoped agent when its key selection changes — so a
+// key you deselected (e.g. because you forgot its passphrase) is dropped from the
+// live agent instead of lingering and being re-prompted on every reload. The
+// agent process itself stays up; only its loaded keys are cleared. This does NOT
+// touch the macOS Keychain — a stored passphrase for a still-selected key still
+// loads silently next time.
+func (a *Agent) RemoveAll() {
+	cmd := exec.Command("ssh-add", "-D")
+	cmd.Env = append(os.Environ(), "SSH_AUTH_SOCK="+a.SocketPath)
+	cmd.Stdin = nil
+	_ = cmd.Run() // best-effort; nothing to do if it fails (agent may be empty)
+}
+
 // LoadedFingerprints returns the fingerprints currently held by the agent (via
 // `ssh-add -l`), so the caller can tell whether keys still need loading (e.g. to
 // skip a redundant PTY prompt). An agent with no identities yields an empty slice

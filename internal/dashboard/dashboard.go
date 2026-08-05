@@ -520,6 +520,8 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleSSHKeysAvailable(w, r, id)
 	case sub == "sshkeys/status":
 		d.handleSSHKeysStatus(w, r, id)
+	case sub == "sshkeys/select":
+		d.handleSSHKeysSelect(w, r, id)
 	case sub == "sshkeys/ws":
 		d.handleSSHKeysLoadWS(w, r, id)
 	case sub == "chat/ws":

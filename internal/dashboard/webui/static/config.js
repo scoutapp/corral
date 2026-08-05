@@ -474,15 +474,28 @@ function startConfig(projectId) {
   // Delegate to the shared SSH-load modal (ssh-load.js) — a terminal-in-a-modal
   // that runs ssh-add over a real PTY, auto-closes on success, and offers Retry
   // on failure. Same component the landing-page Start button uses.
+  //
+  // FIRST persist the current picker selection (POST /sshkeys/select): the load
+  // PTY resolves keys from SAVED config, so without this a key you just
+  // deselected (e.g. you forgot its passphrase) would still be prompted for. The
+  // save also resets the live agent when the selection changed, so a stale /
+  // deselected key doesn't linger and get re-asked on every reload.
   function openSSHLoadModal(onDone) {
     if (typeof window.openSSHLoadModal !== "function") {
       setMsg("terminal unavailable", true);
       return;
     }
-    window.openSSHLoadModal(projectId, function (loaded) {
-      refreshSSHStatus();
-      if (typeof onDone === "function") onDone(loaded);
-    });
+    var btn = document.getElementById("cfg-ssh-load-btn");
+    if (btn) btn.disabled = true;
+    post("/sshkeys/select", { ssh_keys: collectSSHExtras() })
+      .catch(function () { /* non-fatal: fall back to whatever's saved */ })
+      .then(function () {
+        if (btn) btn.disabled = false;
+        window.openSSHLoadModal(projectId, function (loaded) {
+          refreshSSHStatus();
+          if (typeof onDone === "function") onDone(loaded);
+        });
+      });
   }
 
   // reload(okMsg?) refetches + re-renders; okMsg is shown AFTER render so a

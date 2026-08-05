@@ -1,12 +1,14 @@
 package dashboard
 
 import (
+	"encoding/json"
 	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 
+	"github.com/jackrothrock/sandclaude/internal/config"
 	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
 )
 
@@ -78,6 +80,77 @@ func (d *dashboardServer) handleSSHKeysStatus(w http.ResponseWriter, r *http.Req
 		}
 	}
 	writeFilesJSON(w, st)
+}
+
+// handleSSHKeysSelect persists the project's SSH-key EXTRAS (the checked,
+// non-global keys from the Config picker) and, if the resolved key set changed,
+// RESETS the live scoped agent's loaded identities.
+//
+// Why reset: the Load-keys PTY resolves keys from saved config, so without
+// saving first, deselecting a key in the picker had no effect — the load kept
+// prompting for the just-deselected key. And even after saving, a key that was
+// ALREADY loaded (e.g. you forgot its passphrase and want to swap it out) would
+// linger in the persistent agent. Clearing the agent's identities on a changed
+// selection makes "deselect → Load keys" behave: the next load starts clean and
+// only prompts for what's actually selected now. The Keychain is untouched, so
+// still-selected keys reload silently.
+func (d *dashboardServer) handleSSHKeysSelect(w http.ResponseWriter, r *http.Request, id string) {
+	workspace, err := lookupWorkspaceByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	var body struct {
+		Keys []string `json:"ssh_keys"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	cfg, err := readConfigForWorkspace(workspace)
+	if err != nil {
+		http.Error(w, "failed to read config: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	before := cfg.ResolveSSHKeys()
+	cfg.SSHKeys = body.Keys
+	if err := config.WriteConfig(projectDirForWorkspace(workspace), cfg); err != nil {
+		http.Error(w, "failed to save config: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	after := cfg.ResolveSSHKeys()
+
+	// If the resolved set changed at all, reset the live agent so no deselected /
+	// stale key survives to be re-prompted. Only touch a live agent (never spawn).
+	if !sameStringSet(before, after) {
+		if _, live := sshagent.Probe(ProjectID(workspace)); live {
+			if ag, aerr := sshagent.Ensure(ProjectID(workspace), after); aerr == nil && ag != nil {
+				ag.RemoveAll()
+			}
+		}
+	}
+	writeFilesJSON(w, map[string]any{"ok": true, "keys": after})
+}
+
+// sameStringSet reports whether a and b contain the same elements (order-blind).
+func sameStringSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[string]int, len(a))
+	for _, s := range a {
+		seen[s]++
+	}
+	for _, s := range b {
+		seen[s]--
+	}
+	for _, n := range seen {
+		if n != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // handleSSHKeysLoadWS bridges a browser terminal to a real interactive login
