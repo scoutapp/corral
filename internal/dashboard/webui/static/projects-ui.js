@@ -306,6 +306,16 @@
       "clones " + ownerName + " on a new branch, writes ISSUE.md, and pre-types a prompt into Claude."));
     form.appendChild(summary);
 
+    // Firewall mode — top-level (NOT under Advanced). Passthrough keeps the proxy
+    // + mitm + credential injection on but ALLOWS+LOGS unknown domains and permits
+    // direct TCP (so git-over-ssh works). Checked by default per how these are run.
+    var fw = el("label", { class: "row spawn-fw" });
+    var fwCheck = el("input", { type: "checkbox" });
+    fwCheck.checked = true; // default: permissive-but-observed
+    fw.appendChild(fwCheck);
+    fw.appendChild(el("span", {}, "Passthrough firewall — proxy + logging on, allow all domains & git-over-ssh"));
+    form.appendChild(fw);
+
     // Advanced: add extra repos alongside the issue's repo.
     var adv = el("details", { class: "spawn-advanced" });
     adv.appendChild(el("summary", {}, "Advanced — add another repo"));
@@ -337,6 +347,7 @@
       var body = {
         mode: "clone", repos: specs, name: rp.name + "-" + iss.number,
         issue: { number: iss.number, title: iss.title, body: iss.body || "", url: iss.url, repo: ownerName },
+        passthrough: fwCheck.checked, // permissive-but-observed firewall (saved in config)
       };
       jfetch("/projects/create", { method: "POST", body: body }).then(function (res) {
         var id = res.id, prompt = res.issue_prompt || "";

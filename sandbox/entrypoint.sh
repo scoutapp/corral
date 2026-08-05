@@ -226,17 +226,26 @@ if [ -z "$DISABLE_FIREWALL" ]; then
     #      from inner containers and respond to them (SYN-ACK, data) without
     #      the REJECT rule blocking the response packets.
     #   6. Reject all other outbound TCP
-    echo "Applying iptables egress enforcement..."
-    if sudo iptables -F OUTPUT 2>/dev/null && \
-       sudo iptables -A OUTPUT -o lo -j ACCEPT && \
-       sudo iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT && \
-       sudo iptables -A OUTPUT -p udp --dport 53 -j ACCEPT && \
-       sudo iptables -A OUTPUT -p tcp -m owner --uid-owner proxyuser -j ACCEPT && \
-       sudo iptables -A OUTPUT -p tcp -d 172.16.0.0/12 -j ACCEPT && \
-       sudo iptables -A OUTPUT -p tcp -j REJECT --reject-with tcp-reset; then
-        echo "✅ iptables egress rules applied — only proxyuser may make direct TCP connections"
+    if [ -n "$DISABLE_FIREWALL_AND_WRITE" ]; then
+        # Passthrough mode: "permissive but observed". The proxy + mitm are still
+        # on (HTTP/S is inspected, credentials injected, unknown domains allowed +
+        # logged above), but we do NOT install the egress REJECT — so DIRECT TCP
+        # (e.g. git-over-ssh on :22, which never goes through the proxy) is allowed.
+        # Trade-off: no hard containment, but you keep proxy inspection + logging.
+        echo "Passthrough mode: skipping iptables egress REJECT (direct TCP / git-over-ssh allowed)"
     else
-        echo "⚠️  WARNING: iptables not available — no_proxy bypass is possible"
+        echo "Applying iptables egress enforcement..."
+        if sudo iptables -F OUTPUT 2>/dev/null && \
+           sudo iptables -A OUTPUT -o lo -j ACCEPT && \
+           sudo iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT && \
+           sudo iptables -A OUTPUT -p udp --dport 53 -j ACCEPT && \
+           sudo iptables -A OUTPUT -p tcp -m owner --uid-owner proxyuser -j ACCEPT && \
+           sudo iptables -A OUTPUT -p tcp -d 172.16.0.0/12 -j ACCEPT && \
+           sudo iptables -A OUTPUT -p tcp -j REJECT --reject-with tcp-reset; then
+            echo "✅ iptables egress rules applied — only proxyuser may make direct TCP connections"
+        else
+            echo "⚠️  WARNING: iptables not available — no_proxy bypass is possible"
+        fi
     fi
 
     # NOTE: there is intentionally NO nat OUTPUT REDIRECT for the outer container's

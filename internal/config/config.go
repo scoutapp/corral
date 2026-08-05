@@ -15,6 +15,14 @@ type ProjectConfig struct {
 	DindPorts    []string `json:"dind_ports,omitempty"`
 	LaunchTmux   bool     `json:"launch_tmux,omitempty"`
 
+	// PassthroughFirewall = "permissive but observed" mode (the saved form of
+	// --passthrough-firewall-and-write): proxy + mitm stay ON (HTTP/S inspected,
+	// credentials injected), but unknown domains are ALLOWED and logged to
+	// allowed-domains.txt instead of blocked, and the iptables egress REJECT is
+	// skipped so direct TCP (e.g. git-over-ssh) works. Only meaningful when
+	// ProxyEnabled is true. Persisted so a project keeps this mode across starts.
+	PassthroughFirewall bool `json:"passthrough_firewall,omitempty"`
+
 	// Selective mitm (see allowlist-proxy). MonitorHosts, when non-empty, is the
 	// set of hosts routed through mitmweb for full interception + credential
 	// injection; every other allowed host is direct-dialed (still logged, not

@@ -46,11 +46,12 @@ type configEdit struct {
 	UnsetCreds []string  `json:"unset_creds,omitempty"`
 
 	// Restart-required fields (applied only on an explicit restart).
-	ProxyEnabled *bool     `json:"proxy_enabled,omitempty"`
-	DindEnabled  *bool     `json:"dind_enabled,omitempty"`
-	DindPorts    *[]string `json:"dind_ports,omitempty"`
-	LaunchTmux   *bool     `json:"launch_tmux,omitempty"`
-	SeccompMode  *string   `json:"seccomp_mode,omitempty"`
+	ProxyEnabled        *bool     `json:"proxy_enabled,omitempty"`
+	PassthroughFirewall *bool     `json:"passthrough_firewall,omitempty"`
+	DindEnabled         *bool     `json:"dind_enabled,omitempty"`
+	DindPorts           *[]string `json:"dind_ports,omitempty"`
+	LaunchTmux          *bool     `json:"launch_tmux,omitempty"`
+	SeccompMode         *string   `json:"seccomp_mode,omitempty"`
 
 	// SSH scoped-agent EXTRA key list (restart-required — baked at container
 	// start). Union model: these are added on top of the global default; setting
@@ -346,6 +347,9 @@ func computeDiff(edit configEdit, cur *config.ProjectConfig, curAllowed []string
 	if edit.ProxyEnabled != nil && *edit.ProxyEnabled != cur.ProxyEnabled {
 		out = append(out, diffEntry{Field: "proxy_enabled", Change: fmt.Sprintf("~ %v → %v", cur.ProxyEnabled, *edit.ProxyEnabled), Restart: true})
 	}
+	if edit.PassthroughFirewall != nil && *edit.PassthroughFirewall != cur.PassthroughFirewall {
+		out = append(out, diffEntry{Field: "passthrough_firewall", Change: fmt.Sprintf("~ %v → %v", cur.PassthroughFirewall, *edit.PassthroughFirewall), Restart: true})
+	}
 	if edit.DindEnabled != nil && *edit.DindEnabled != cur.DindEnabled {
 		out = append(out, diffEntry{Field: "dind_enabled", Change: fmt.Sprintf("~ %v → %v", cur.DindEnabled, *edit.DindEnabled), Restart: true})
 	}
@@ -397,6 +401,9 @@ func applyRestartFields(workspace string, edit configEdit) error {
 	}
 	if edit.ProxyEnabled != nil {
 		cfg.ProxyEnabled = *edit.ProxyEnabled
+	}
+	if edit.PassthroughFirewall != nil {
+		cfg.PassthroughFirewall = *edit.PassthroughFirewall
 	}
 	if edit.DindEnabled != nil {
 		cfg.DindEnabled = *edit.DindEnabled

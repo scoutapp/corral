@@ -91,10 +91,11 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 		// with a branch + ISSUE.md, and record a prompt to pre-populate into Claude.
 		Issue *issueSeed `json:"issue"`
 		// Init options; proxy defaults ON (the recommended/init default).
-		Proxy *bool    `json:"proxy"`
-		Dind  bool     `json:"dind"`
-		Tmux  bool     `json:"tmux"`
-		Ports []string `json:"ports"`
+		Proxy       *bool    `json:"proxy"`
+		Passthrough bool     `json:"passthrough"` // permissive-but-observed firewall
+		Dind        bool     `json:"dind"`
+		Tmux        bool     `json:"tmux"`
+		Ports       []string `json:"ports"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -116,7 +117,11 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 	// create (the project is already cloned). Returns the prompt to pre-populate.
 	var issuePrompt string
 	if body.Issue != nil && body.Issue.Number > 0 {
-		issuePrompt = seedIssue(workspace, body.Repos, body.Issue)
+		// A fresh project inherits the global SSH keys (union model). If any are
+		// configured, the prompt tells Claude to push over the SSH remote (the
+		// HTTPS remote won't auth in the sandbox).
+		hasSSHKey := len(config.GlobalSSHKeys()) > 0
+		issuePrompt = seedIssue(workspace, body.Repos, body.Issue, hasSSHKey)
 	}
 
 	// Initialize the project config, unless "existing" already has one.
@@ -127,6 +132,7 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 	if _, statErr := os.Stat(config.ProjectDirFor(workspace)); os.IsNotExist(statErr) {
 		if _, err := project.InitProject(workspace, project.InitOptions{
 			ProxyEnabled: proxy, DindEnabled: body.Dind, LaunchTmux: body.Tmux, DindPorts: body.Ports,
+			PassthroughFirewall: body.Passthrough && proxy, // only meaningful with the proxy on
 		}); err != nil {
 			http.Error(w, "init project: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -216,7 +222,7 @@ func issueBranchSlug(number int, title string) string {
 // and returns a prompt to pre-populate into Claude. All best-effort: the clone
 // already succeeded, so a failed branch/file step is logged (via the returned
 // prompt still being useful) but never fails the create.
-func seedIssue(workspace string, specs []repoSpec, iss *issueSeed) string {
+func seedIssue(workspace string, specs []repoSpec, iss *issueSeed, hasSSHKey bool) string {
 	// The repo landed in a subdir of the workspace (see cloneMultiRepoWorkspace).
 	// Seed the first repo (issue-spawn is single-repo in the UI).
 	repoDir := workspace
@@ -239,8 +245,15 @@ func seedIssue(workspace string, specs []repoSpec, iss *issueSeed) string {
 		iss.Repo, iss.Number, iss.Title, strings.TrimSpace(iss.Body), iss.URL, branch)
 	_ = os.WriteFile(filepath.Join(workspace, "ISSUE.md"), []byte(md), 0644)
 
-	return fmt.Sprintf("Work on %s issue #%d: %s. The full description is in ISSUE.md at the workspace root. You're on branch %s.",
+	prompt := fmt.Sprintf("Work on %s issue #%d: %s. The full description is in ISSUE.md at the workspace root. You're on branch %s.",
 		iss.Repo, iss.Number, iss.Title, branch)
+	// When an SSH key is set up for this project, push over the SSH remote — the
+	// HTTPS remote won't authenticate in the sandbox (no token), but the scoped
+	// ssh-agent holds the key. github owner/name is iss.Repo.
+	if hasSSHKey && iss.Repo != "" {
+		prompt += fmt.Sprintf(" When you push, use the SSH remote (git@github.com:%s.git) — the scoped ssh-agent has the key; the HTTPS remote won't authenticate here.", iss.Repo)
+	}
+	return prompt
 }
 
 // resolveNewWorkspace produces the workspace path for each create mode, doing

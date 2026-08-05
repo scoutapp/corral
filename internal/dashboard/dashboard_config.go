@@ -48,11 +48,12 @@ type configView struct {
 	Credentials  []credView `json:"credentials"`
 
 	// Restart-required zone
-	ProxyEnabled bool     `json:"proxy_enabled"`
-	DindEnabled  bool     `json:"dind_enabled"`
-	DindPorts    []string `json:"dind_ports"`
-	LaunchTmux   bool     `json:"launch_tmux"`
-	SeccompMode  string   `json:"seccomp_mode"` // "" default | unconfined | <path>
+	ProxyEnabled        bool     `json:"proxy_enabled"`
+	PassthroughFirewall bool     `json:"passthrough_firewall"`
+	DindEnabled         bool     `json:"dind_enabled"`
+	DindPorts           []string `json:"dind_ports"`
+	LaunchTmux          bool     `json:"launch_tmux"`
+	SeccompMode         string   `json:"seccomp_mode"` // "" default | unconfined | <path>
 
 	// SSH scoped-agent (union model). The effective set is global ∪ project extras.
 	//   SSHKeys          — this project's EXTRA key paths (added on top of global)
@@ -82,18 +83,19 @@ func (d *dashboardServer) handleConfigRead(w http.ResponseWriter, r *http.Reques
 	}
 
 	view := configView{
-		ID:           id,
-		Workspace:    workspace,
-		MonitorHosts: cfg.MonitorHosts,
-		MonitorAll:   len(cfg.MonitorHosts) == 0,
-		MitmPreset:   cfg.MitmPresetOrDefault(),
-		MitmPorts:    cfg.MitmPortsOrDefault(),
-		ProxyEnabled: cfg.ProxyEnabled,
-		DindEnabled:  cfg.DindEnabled,
-		DindPorts:    cfg.DindPorts,
-		LaunchTmux:   cfg.LaunchTmux,
-		SeccompMode:  cfg.SeccompMode,
-		ContainerUp:  session.DockerContainerRunning(session.ContainerNameForWorkspace(workspace)),
+		ID:                  id,
+		Workspace:           workspace,
+		MonitorHosts:        cfg.MonitorHosts,
+		MonitorAll:          len(cfg.MonitorHosts) == 0,
+		MitmPreset:          cfg.MitmPresetOrDefault(),
+		MitmPorts:           cfg.MitmPortsOrDefault(),
+		ProxyEnabled:        cfg.ProxyEnabled,
+		PassthroughFirewall: cfg.PassthroughFirewall,
+		DindEnabled:         cfg.DindEnabled,
+		DindPorts:           cfg.DindPorts,
+		LaunchTmux:          cfg.LaunchTmux,
+		SeccompMode:         cfg.SeccompMode,
+		ContainerUp:         session.DockerContainerRunning(session.ContainerNameForWorkspace(workspace)),
 
 		SSHKeys:          cfg.SSHKeys,
 		SSHKeysGlobal:    config.GlobalSSHKeys(),
