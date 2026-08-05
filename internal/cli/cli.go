@@ -751,6 +751,9 @@ func usage() {
 	fmt.Println("  attach                   Attach interactively to the detached session")
 	fmt.Println("  dashboard                Start (or print the URL of) the host-wide project dashboard")
 	fmt.Println("  dashboard stop           Stop the dashboard server")
+	fmt.Println("  uninstall [--yes] [--keep-images]   Remove everything sandclaude created, then the binary itself")
+	fmt.Println("    --yes / -y       Skip the confirmation prompt")
+	fmt.Println("    --keep-images    Preserve the sandclaude-stable image and DinD volumes")
 	fmt.Println("  version                  Print version, commit, and build date")
 	fmt.Println("  help                     Show this help")
 	fmt.Println()
@@ -771,6 +774,7 @@ func usage() {
 	fmt.Println("  sandclaude attach                  # Attach interactively to the running session")
 	fmt.Println("  sandclaude dashboard                # Start/open the cross-project dashboard")
 	fmt.Println("  sandclaude dashboard stop            # Stop the dashboard")
+	fmt.Println("  sandclaude uninstall               # Remove all sandclaude state, images, and the binary")
 	fmt.Println()
 	fmt.Println("Per-project config lives in ./.sandclaude/ (relative to the current directory):")
 	fmt.Println("  ./.sandclaude/project/config.json          — workspace, proxy, dind settings")
@@ -885,6 +889,9 @@ func Main() {
 
 	case "attach":
 		err = cmdAttach()
+
+	case "uninstall":
+		err = cmdUninstall(os.Args[2:])
 
 	case "dashboard":
 		err = dashboard.CmdDashboard(os.Args[2:])

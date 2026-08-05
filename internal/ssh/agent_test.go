@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -37,6 +38,47 @@ func TestEnsure_NoKeysIsNoop(t *testing.T) {
 func TestStop_NilSafe(t *testing.T) {
 	var a *Agent
 	a.Stop() // must not panic
+}
+
+// StopAll with no agents root is a no-op returning 0.
+func TestStopAll_NoRoot(t *testing.T) {
+	t.Setenv("SANDCLAUDE_HOME", filepath.Join(t.TempDir(), ".sandclaude"))
+	if n := StopAll(); n != 0 {
+		t.Fatalf("StopAll with no agents root = %d, want 0", n)
+	}
+}
+
+// StopAll counts each project dir that has a socket file and removes the whole
+// agents root afterward. (No real ssh-agent is listening on these sockets, so
+// stopAt just fails to connect and removes the file — which is the teardown we
+// want; we only assert the count and that the root is gone.)
+func TestStopAll_RemovesRootAndCounts(t *testing.T) {
+	home := filepath.Join(t.TempDir(), ".sandclaude")
+	t.Setenv("SANDCLAUDE_HOME", home)
+	root := AgentsRoot()
+	// two project dirs with a socket, one without (should not be counted), plus a
+	// stray file at the root (should be ignored — not a dir).
+	for _, p := range []string{"proj1", "proj2"} {
+		if err := os.MkdirAll(filepath.Join(root, p), 0711); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, p, "agent.sock"), nil, 0666); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(root, "empty"), 0711); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "stray"), nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if n := StopAll(); n != 2 {
+		t.Errorf("StopAll counted %d sockets, want 2", n)
+	}
+	if _, err := os.Stat(root); !os.IsNotExist(err) {
+		t.Errorf("agents root still exists after StopAll: %v", err)
+	}
 }
 
 // The socket path must stay under the macOS Unix-socket limit for a normal home.

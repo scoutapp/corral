@@ -286,6 +286,32 @@ func (a *Agent) Stop() {
 	}
 }
 
+// StopAll kills every scoped ssh-agent this user has running (one per project
+// dir under AgentsRoot) and removes the agents root entirely. Best-effort and
+// idempotent: missing dirs/sockets are skipped. Used by `sandclaude uninstall`
+// to tear down all agent processes before wiping ~/.sandclaude. Returns the
+// number of agent sockets it attempted to stop.
+func StopAll() int {
+	root := AgentsRoot()
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return 0 // no agents root -> nothing to stop
+	}
+	n := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		sock := filepath.Join(root, e.Name(), "agent.sock")
+		if _, statErr := os.Stat(sock); statErr == nil {
+			stopAt(sock)
+			n++
+		}
+	}
+	_ = os.RemoveAll(root)
+	return n
+}
+
 // stopAt kills whatever ssh-agent is listening on sock (best effort) by asking
 // ssh-agent itself to shut down via that socket. Used both on teardown and to
 // clear a stale agent before a fresh Start.
