@@ -451,7 +451,10 @@ function startConfig(projectId) {
   }
 
   // Poll the scoped-agent status so the user sees whether keys are already loaded
-  // (and won't be re-prompted on start) vs. need loading.
+  // (and won't be re-prompted on start) vs. need loading — and, crucially, whether
+  // a RUNNING container is stuck on a stale socket mount (keys on the host but the
+  // container can't reach them). The latter is the trap that makes "Load keys"
+  // look like it worked while git-over-ssh still fails inside the sandbox.
   function refreshSSHStatus() {
     var el = document.getElementById("cfg-ssh-status");
     if (!el) return;
@@ -459,7 +462,26 @@ function startConfig(projectId) {
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (s) {
         if (!s) { el.textContent = ""; return; }
+        el.innerHTML = ""; // reset (we may inject a button below)
         if (!s.configured) { el.textContent = "no keys configured"; el.className = "muted"; return; }
+        if (s.container_stale) {
+          // Host has the keys, but the live container is pinned to a dead socket.
+          // Loading again won't help — only a container restart re-mounts it.
+          el.className = "attention";
+          el.appendChild(document.createTextNode(
+            "⚠ keys loaded on host, but the running container can't reach them — restart it to use SSH. "));
+          var b = document.createElement("button");
+          b.className = "cfg-btn cfg-btn-danger";
+          b.type = "button";
+          b.textContent = "Restart container";
+          b.addEventListener("click", function () {
+            if (!window.confirm("Restart this project's container? This kills any running session in it.")) return;
+            b.disabled = true; b.textContent = "restarting…";
+            restartRequest(collectRestartEdit(), b);
+          });
+          el.appendChild(b);
+          return;
+        }
         if (s.loaded) {
           el.textContent = "✓ " + s.count + " key(s) loaded — start won't prompt";
           el.className = "s-2xx";
@@ -474,15 +496,28 @@ function startConfig(projectId) {
   // Delegate to the shared SSH-load modal (ssh-load.js) — a terminal-in-a-modal
   // that runs ssh-add over a real PTY, auto-closes on success, and offers Retry
   // on failure. Same component the landing-page Start button uses.
+  //
+  // FIRST persist the current picker selection (POST /sshkeys/select): the load
+  // PTY resolves keys from SAVED config, so without this a key you just
+  // deselected (e.g. you forgot its passphrase) would still be prompted for. The
+  // save also resets the live agent when the selection changed, so a stale /
+  // deselected key doesn't linger and get re-asked on every reload.
   function openSSHLoadModal(onDone) {
     if (typeof window.openSSHLoadModal !== "function") {
       setMsg("terminal unavailable", true);
       return;
     }
-    window.openSSHLoadModal(projectId, function (loaded) {
-      refreshSSHStatus();
-      if (typeof onDone === "function") onDone(loaded);
-    });
+    var btn = document.getElementById("cfg-ssh-load-btn");
+    if (btn) btn.disabled = true;
+    post("/sshkeys/select", { ssh_keys: collectSSHExtras() })
+      .catch(function () { /* non-fatal: fall back to whatever's saved */ })
+      .then(function () {
+        if (btn) btn.disabled = false;
+        window.openSSHLoadModal(projectId, function (loaded) {
+          refreshSSHStatus();
+          if (typeof onDone === "function") onDone(loaded);
+        });
+      });
   }
 
   // reload(okMsg?) refetches + re-renders; okMsg is shown AFTER render so a

@@ -229,19 +229,27 @@ func (d *dashboardServer) handleConfigRestart(w http.ResponseWriter, r *http.Req
 	// run the Load-keys PTY flow first, then retry the restart (design: pre-load,
 	// then start). A running container is left untouched in this case.
 	if keys := resolveProjectSSHKeys(workspace); len(keys) > 0 {
-		if _, loaded := sshagent.Probe(ProjectID(workspace)); !loaded {
-			// Try the macOS Keychain first (silent load if the passphrase was stored
-			// before); only demand an interactive load if that didn't work.
-			if ag, aerr := sshagent.Ensure(ProjectID(workspace), keys); aerr == nil && ag != nil && ag.TryLoadFromKeychain() {
-				// loaded from keychain — proceed with the restart.
-			} else {
-				w.WriteHeader(http.StatusConflict)
-				writeJSON(w, map[string]any{
-					"ssh_keys_pending": true,
-					"results":          []string{"ssh keys need loading before restart — load them, then restart again"},
-				})
-				return
-			}
+		// Coverage check: the gate must confirm EVERY resolved key is loaded, not
+		// just that the agent holds ≥1 identity. Otherwise a project that adds its
+		// own key on top of the global one looks "loaded" (the global key loads
+		// silently from the Keychain) and we skip prompting for the project key.
+		ag, aerr := sshagent.Ensure(ProjectID(workspace), keys)
+		if aerr != nil || ag == nil {
+			http.Error(w, "ssh agent unavailable", http.StatusInternalServerError)
+			return
+		}
+		// Try the macOS Keychain first (silent load of any stored passphrases);
+		// only demand an interactive load if some key is still missing after.
+		if !ag.AllKeysLoaded() {
+			ag.TryLoadFromKeychain()
+		}
+		if !ag.AllKeysLoaded() {
+			w.WriteHeader(http.StatusConflict)
+			writeJSON(w, map[string]any{
+				"ssh_keys_pending": true,
+				"results":          []string{"ssh keys need loading before restart — load them, then restart again"},
+			})
+			return
 		}
 	}
 
