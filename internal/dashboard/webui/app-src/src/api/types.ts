@@ -69,6 +69,47 @@ export interface GitStatusResponse {
   changes?: GitChange[];
 }
 
+// GET /p/<id>/files/tree?path=
+export interface TreeEntry {
+  name: string;
+  dir: boolean;
+}
+export interface FilesTreeResponse {
+  entries?: TreeEntry[];
+}
+
+// GET /p/<id>/files/read?path=
+export interface FilesReadResponse {
+  content?: string;
+  filename?: string;
+  too_large?: boolean;
+  size?: number;
+}
+
+// GET /p/<id>/files/find?q=
+export interface FilesFindResponse {
+  matches?: string[];
+  truncated?: boolean;
+}
+
+// GET /p/<id>/files/grep?q=
+export interface GrepHit {
+  path: string;
+  line: number;
+  text: string;
+}
+export interface FilesGrepResponse {
+  hits?: GrepHit[];
+  truncated?: boolean;
+}
+
+// GET /p/<id>/git/file?path=&base=&target=  (both sides for the diff view)
+export interface GitFileResponse {
+  original?: string;
+  modified?: string;
+  filename?: string;
+}
+
 // A single mitm flow row (GET /p/<id>/mitm/flows).
 export interface MitmFlow {
   id: string;
