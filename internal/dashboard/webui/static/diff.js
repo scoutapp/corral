@@ -202,7 +202,17 @@
         .then(function (data) {
           var repos = data.repos || [];
           // Only surface the picker when there's a real choice to make.
-          if (repos.length <= 1) { repoRow.style.display = "none"; return; }
+          if (repos.length <= 1) {
+            repoRow.style.display = "none";
+            // A single repo that ISN'T the workspace root (e.g. a spawned/cloned
+            // project has its repo in a SUBDIR) — point at it, else diff/status
+            // run against the non-git root and show nothing.
+            if (repos.length === 1 && repos[0].path && !data.rootIsRepo && repos[0].path !== repo) {
+              repo = repos[0].path;
+              loadRefs(); loadStatus();
+            }
+            return;
+          }
           repoRow.style.display = "";
           repoSel.innerHTML = repos.map(function (rp) { return opt(rp.path, rp.name); }).join("");
           // Default to the root repo if present, else the first detected repo.
