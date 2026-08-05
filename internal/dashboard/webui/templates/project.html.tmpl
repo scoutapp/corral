@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8">
 <title>{{.Workspace}} — sandclaude</title>
+<!-- xterm.css: the inline SSH-load modal renders xterm directly on this page
+     (not an iframe), so it needs xterm's stylesheet — without it the internal
+     char-measure element (a row of "W"s) renders visibly. -->
+<link rel="stylesheet" href="/static/xterm.css">
 <link rel="stylesheet" href="/static/dashboard.css">
 </head>
 <body data-project-id="{{.ID}}">
