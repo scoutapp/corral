@@ -555,6 +555,8 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleChatPage(w, r, id)
 	case sub == "mitm/flows":
 		d.handleMitmFlows(w, r, id)
+	case sub == "mitm/direct":
+		d.handleMitmDirect(w, r, id)
 	case strings.HasPrefix(sub, "mitm/flows/"):
 		d.handleMitmContent(w, r, id, strings.TrimPrefix(sub, "mitm/flows/"))
 	case sub == "firewall/stream":
@@ -800,6 +802,75 @@ func (d *dashboardServer) handleMitmContent(w http.ResponseWriter, r *http.Reque
 
 	path := fmt.Sprintf("/flows/%s/%s/content.data", flowID, side)
 	d.proxyMitmGet(w, r, state.WebPort, path, "")
+}
+
+// directHost is one allowed-but-not-decrypted host surfaced from the proxy log.
+type directHost struct {
+	Host string `json:"host"` // hostname:port
+	When string `json:"when"` // last-seen "YYYY/MM/DD HH:MM:SS" (proxy log stamp)
+	Hits int    `json:"hits"` // times seen in the scanned window
+}
+
+// handleMitmDirect scans this project's proxy.log for DIRECT lines — hosts that
+// were allowed but direct-dialed (not routed through mitmweb, so never decrypted)
+// — and returns them deduped with a last-seen timestamp + hit count. The Mitm
+// tab merges these with mitmweb's decrypted flows so every contacted host is
+// visible; a direct-dialed host can then be one-click added to the monitor list.
+//
+// Log line shape (see allowlist-proxy/main.go):
+//   2026/08/05 00:56:02 DIRECT   http-intake.logs.us5.datadoghq.com:443 (not-monitored)
+func (d *dashboardServer) handleMitmDirect(w http.ResponseWriter, r *http.Request, id string) {
+	workspace, err := lookupWorkspaceByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	logPath := filepath.Join(logsDirForWorkspace(workspace), "proxy.log")
+	lines, _, rerr := readTailLines(logPath, 512*1024, 4000)
+	if rerr != nil {
+		// No log yet (never started) — return an empty set rather than an error so
+		// the tab just shows the decrypted flows.
+		writeJSON(w, map[string]any{"direct": []directHost{}})
+		return
+	}
+
+	type acc struct {
+		when string
+		hits int
+	}
+	seen := map[string]*acc{}
+	order := []string{}
+	for _, ln := range lines {
+		// Split "<date> <time> DIRECT   <host> (<reason>)".
+		i := strings.Index(ln, " DIRECT")
+		if i < 0 {
+			continue
+		}
+		stamp := strings.TrimSpace(ln[:i])
+		rest := strings.TrimSpace(ln[i+len(" DIRECT"):])
+		// rest = "http-intake…:443 (not-monitored)" — host is the first field.
+		host := rest
+		if sp := strings.IndexByte(rest, ' '); sp >= 0 {
+			host = rest[:sp]
+		}
+		if host == "" {
+			continue
+		}
+		a := seen[host]
+		if a == nil {
+			a = &acc{}
+			seen[host] = a
+			order = append(order, host)
+		}
+		a.when = stamp // last-seen wins (lines are chronological)
+		a.hits++
+	}
+
+	out := make([]directHost, 0, len(order))
+	for _, h := range order {
+		out = append(out, directHost{Host: h, When: seen[h].when, Hits: seen[h].hits})
+	}
+	writeJSON(w, map[string]any{"direct": out})
 }
 
 // proxyMitmGet performs a server-side GET against mitmweb on webPort and copies

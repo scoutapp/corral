@@ -38,6 +38,68 @@ export interface SSHKeysStatus {
   container_stale: boolean;
 }
 
+// GET /p/<id>/config -> the editable project config view.
+export interface CredView {
+  host: string;
+  kind: string;
+  name: string;
+  masked: string;
+}
+export interface ConfigView {
+  id: string;
+  workspace: string;
+  allowed_hosts: string[];
+  monitor_hosts: string[];
+  monitor_all: boolean;
+  mitm_preset: string; // minimal|all|none|custom
+  mitm_ports: string[];
+  credentials: CredView[];
+  proxy_enabled: boolean;
+  passthrough_firewall: boolean;
+  dind_enabled: boolean;
+  dind_ports: string[];
+  launch_tmux: boolean;
+  seccomp_mode: string;
+  ssh_keys: string[];
+  ssh_keys_global: string[];
+  ssh_keys_effective: string[];
+  container_up: boolean;
+}
+
+// POST /p/<id>/config/apply | /config/restart payload (only changed fields).
+export interface CredSet {
+  host: string;
+  kind: string;
+  name: string;
+  value: string;
+}
+export interface ConfigEdit {
+  allowed_hosts?: string[];
+  monitor_hosts?: string[];
+  mitm_preset?: string;
+  mitm_ports?: string[];
+  set_creds?: CredSet[];
+  unset_creds?: string[];
+  proxy_enabled?: boolean;
+  passthrough_firewall?: boolean;
+  dind_enabled?: boolean;
+  dind_ports?: string[];
+  launch_tmux?: boolean;
+  seccomp_mode?: string;
+  ssh_keys?: string[];
+}
+export interface ConfigDiffEntry {
+  field: string;
+  change: string;
+}
+
+// GET /p/<id>/sshkeys/available -> { keys: SSHAvailableKey[] }
+export interface SSHAvailableKey {
+  name: string;
+  type?: string;
+  comment?: string;
+}
+
 // GET /p/<id>/git/repos -> { repos: GitRepo[], rootIsRepo: bool }
 export interface GitRepo {
   path: string;
@@ -110,13 +172,29 @@ export interface GitFileResponse {
   filename?: string;
 }
 
-// A single mitm flow row (GET /p/<id>/mitm/flows).
+// mitmweb's raw flow JSON (GET /p/<id>/mitm/flows returns an array of these).
+export interface MitmMessage {
+  headers?: [string, string][];
+  contentLength?: number;
+  timestamp_start?: number;
+  timestamp_end?: number;
+  status_code?: number;
+  method?: string;
+  pretty_host?: string;
+  host?: string;
+  path?: string;
+}
 export interface MitmFlow {
   id: string;
-  method: string;
-  host: string;
-  path: string;
-  status: number;
-  when: string;
-  size?: number;
+  request?: MitmMessage;
+  response?: MitmMessage;
+  timestamp_created?: number;
+}
+
+// GET /p/<id>/mitm/direct -> { direct: DirectHost[] } — allowed-but-not-decrypted
+// hosts parsed from the proxy log (direct-dialed; no decrypted contents exist).
+export interface DirectHost {
+  host: string; // hostname:port
+  when: string; // "YYYY/MM/DD HH:MM:SS"
+  hits: number;
 }
