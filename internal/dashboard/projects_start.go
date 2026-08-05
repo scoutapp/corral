@@ -1,10 +1,13 @@
 package dashboard
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
+	"time"
 
 	"github.com/jackrothrock/sandclaude/internal/session"
 	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
@@ -46,13 +49,20 @@ func (d *dashboardServer) handleStartProject(w http.ResponseWriter, r *http.Requ
 	// user to the Config tab's "Load keys" flow first (design: pre-load, then start).
 	if keys := resolveProjectSSHKeys(workspace); len(keys) > 0 {
 		if _, loaded := sshagent.Probe(ProjectID(workspace)); !loaded {
-			w.WriteHeader(http.StatusConflict)
-			writeFilesJSON(w, map[string]any{
-				"ok":               false,
-				"ssh_keys_pending": true,
-				"message":          "ssh keys need loading first — use Config → SSH keys → Load keys, then start",
-			})
-			return
+			// Before demanding an interactive passphrase, try the macOS Keychain: if
+			// the passphrase was stored on a prior load, this loads the keys silently
+			// (no re-typing) — the whole point of "ask once, reuse". No-op on Linux.
+			if ag, aerr := sshagent.Ensure(ProjectID(workspace), keys); aerr == nil && ag != nil && ag.TryLoadFromKeychain() {
+				// loaded from keychain — fall through and start normally.
+			} else {
+				w.WriteHeader(http.StatusConflict)
+				writeFilesJSON(w, map[string]any{
+					"ok":               false,
+					"ssh_keys_pending": true,
+					"message":          "ssh keys need loading first — use Config → SSH keys → Load keys, then start",
+				})
+				return
+			}
 		}
 	}
 
@@ -116,4 +126,70 @@ func (d *dashboardServer) handleStopProject(w http.ResponseWriter, r *http.Reque
 	_ = exec.Command("tmux", "kill-session", "-t", tmuxSession).Run()
 
 	writeFilesJSON(w, map[string]any{"ok": true, "message": fmt.Sprintf("stopping %s", container)})
+}
+
+// claudeReady reports whether a captured tmux pane shows Claude's input prompt
+// ready to accept text. Claude's TUI draws a `❯` prompt line and a "bypass
+// permissions" footer once it's up; either is a reliable "ready" signal and both
+// only appear after boot completes (so we won't type into the boot log).
+func claudeReady(pane string) bool {
+	return strings.Contains(pane, "❯") ||
+		strings.Contains(pane, "bypass permissions") ||
+		strings.Contains(pane, "shift+tab to cycle")
+}
+
+// handlePopulatePrompt types a prompt INTO the project's Claude input without
+// submitting it (tmux send-keys, no Enter), once the container's dev session is
+// up. Used after spawning a project off a GitHub issue: the user reviews the
+// pre-typed prompt and presses Enter themselves.
+//
+//	POST /p/<id>/populate-prompt   { "prompt": "..." }
+//
+// The session may not exist yet (the container is still booting), so we poll in
+// the background and return immediately; the prompt lands whenever Claude's
+// session appears, or gives up after a bounded wait.
+func (d *dashboardServer) handlePopulatePrompt(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	workspace, err := lookupWorkspaceByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	var body struct {
+		Prompt string `json:"prompt"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Prompt == "" {
+		http.Error(w, "prompt is required", http.StatusBadRequest)
+		return
+	}
+
+	sess := session.TmuxSessionNameForWorkspace(workspace)
+	prompt := body.Prompt
+	go func() {
+		// The session existing is NOT enough: it's created by `docker run` in tmux,
+		// but the container then boots (proxy, dockerd, launcher) for a while before
+		// Claude's TUI actually appears and can accept input. Typing during that
+		// window is lost. So poll the PANE CONTENT until Claude's input prompt is
+		// drawn (its `❯` prompt / "bypass permissions" footer), then type.
+		//
+		// Up to ~5 min (cold boot + image build can be slow). Once ready, a short
+		// settle, then send-keys WITHOUT Enter so the prompt sits unsubmitted.
+		for i := 0; i < 300; i++ {
+			time.Sleep(1 * time.Second)
+			if !session.TmuxSessionExists(sess) {
+				continue
+			}
+			out, _ := exec.Command("tmux", "capture-pane", "-t", sess, "-p").Output()
+			if claudeReady(string(out)) {
+				time.Sleep(1500 * time.Millisecond) // let the input line settle
+				_ = exec.Command("tmux", "send-keys", "-t", sess, "--", prompt).Run()
+				return
+			}
+		}
+	}()
+
+	writeFilesJSON(w, map[string]any{"ok": true, "message": "prompt will be typed into Claude once its input is ready"})
 }

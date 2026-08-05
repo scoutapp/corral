@@ -107,6 +107,103 @@ func (d *dashboardServer) handleGhBranches(w http.ResponseWriter, r *http.Reques
 	writeFilesJSON(w, map[string]any{"available": true, "branches": branches})
 }
 
+// ghIssue is one entry from `gh issue list`. Author/CreatedAt are surfaced in the
+// UI; Body is used for issue-spawn seeding.
+type ghIssue struct {
+	Number    int    `json:"number"`
+	Title     string `json:"title"`
+	URL       string `json:"url"`
+	Body      string `json:"body"`
+	CreatedAt string `json:"createdAt"`
+	Author    struct {
+		Login string `json:"login"`
+	} `json:"author"`
+}
+
+// handleGhIssues lists a repo's OPEN GitHub issues, for the "spawn a project off
+// an issue" flow. GET /gh/issues?repo=<owner/name>. Runs host-side with the
+// operator's gh auth. Returns {available:false} on any failure so the UI can
+// degrade gracefully.
+func (d *dashboardServer) handleGhIssues(w http.ResponseWriter, r *http.Request) {
+	repo := r.URL.Query().Get("repo")
+	if !validOwnerName(repo) {
+		writeFilesJSON(w, map[string]any{"available": false, "reason": "invalid repo"})
+		return
+	}
+	ghBin, err := exec.LookPath("gh")
+	if err != nil {
+		writeFilesJSON(w, map[string]any{"available": false, "reason": "gh CLI not found on PATH"})
+		return
+	}
+	out, err := exec.Command(ghBin, "issue", "list",
+		"--repo", repo, "--state", "open", "--limit", "100",
+		"--json", "number,title,url,body,createdAt,author").Output()
+	if err != nil {
+		writeFilesJSON(w, map[string]any{"available": false, "reason": "gh issue list failed"})
+		return
+	}
+	var issues []ghIssue
+	if err := json.Unmarshal(out, &issues); err != nil {
+		writeFilesJSON(w, map[string]any{"available": false, "reason": "parse error"})
+		return
+	}
+	writeFilesJSON(w, map[string]any{"available": true, "issues": issues})
+}
+
+// handleGhIssueCreate files a new GitHub issue on a repo via `gh issue create`.
+// POST /gh/issues/create  { "repo": "owner/name", "title": "...", "body": "..." }
+// Title/body are passed as argv (not spliced into a shell), and repo is slug-
+// validated. Returns { ok, number, url } on success.
+func (d *dashboardServer) handleGhIssueCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Repo  string `json:"repo"`
+		Title string `json:"title"`
+		Body  string `json:"body"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if !validOwnerName(body.Repo) {
+		http.Error(w, "invalid repo", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(body.Title) == "" {
+		http.Error(w, "title is required", http.StatusBadRequest)
+		return
+	}
+	ghBin, err := exec.LookPath("gh")
+	if err != nil {
+		http.Error(w, "gh CLI not found on PATH", http.StatusServiceUnavailable)
+		return
+	}
+	// gh prints the created issue URL on stdout. Pass body even if empty (gh
+	// accepts --body "").
+	out, err := exec.Command(ghBin, "issue", "create",
+		"--repo", body.Repo, "--title", body.Title, "--body", body.Body).CombinedOutput()
+	if err != nil {
+		http.Error(w, "gh issue create failed: "+strings.TrimSpace(string(out)), http.StatusBadGateway)
+		return
+	}
+	url := strings.TrimSpace(string(out))
+	// Extract the trailing "/NN" issue number from the URL if present.
+	num := 0
+	if i := strings.LastIndex(url, "/"); i >= 0 {
+		for _, c := range url[i+1:] {
+			if c < '0' || c > '9' {
+				num = 0
+				break
+			}
+			num = num*10 + int(c-'0')
+		}
+	}
+	writeFilesJSON(w, map[string]any{"ok": true, "number": num, "url": url})
+}
+
 // validOwnerName reports whether s is a safe "owner/name" GitHub slug (the only
 // shape we splice into a gh api path). Rejects empty, path traversal, extra
 // segments, and anything outside GitHub's allowed characters.

@@ -427,6 +427,18 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleGhBranches(w, r)
 		return
 	}
+	if path == "/gh/issues" {
+		d.handleGhIssues(w, r)
+		return
+	}
+	if path == "/gh/issues/create" {
+		d.handleGhIssueCreate(w, r)
+		return
+	}
+	if path == "/gh/issues/draft" {
+		d.handleGhIssueDraftWS(w, r)
+		return
+	}
 
 	if !strings.HasPrefix(path, "/p/") {
 		http.NotFound(w, r)
@@ -502,6 +514,8 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleStartProject(w, r, id)
 	case sub == "stop":
 		d.handleStopProject(w, r, id)
+	case sub == "populate-prompt":
+		d.handlePopulatePrompt(w, r, id)
 	case sub == "sshkeys/available":
 		d.handleSSHKeysAvailable(w, r, id)
 	case sub == "sshkeys/status":

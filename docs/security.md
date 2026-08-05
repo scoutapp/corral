@@ -28,7 +28,11 @@ Here's what that boundary does and doesn't cover.
   private-key bytes — the agent protocol has no "export key" operation, so this is
   `:ro`-proof (there's no file to read). Your real host agent (and any keys in it
   you didn't choose) is never forwarded. Keys live only in the agent's memory and
-  are torn down with the container. See "SSH residual risk" below.
+  are torn down with the container. On **macOS**, a passphrase you type once is
+  stored in the **login Keychain** (`--apple-use-keychain`), so later loads are
+  silent — the passphrase lives in the OS Keychain, never in sandclaude, and keys
+  stay scoped + torn-down per project. (Linux prompts each time; SSH is macOS-
+  first.) See "SSH residual risk" below.
 - **Dashboard** — binds `127.0.0.1` only, every route requires a per-launch token.
 
 ## What "host privileges" means
