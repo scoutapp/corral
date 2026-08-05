@@ -101,9 +101,13 @@ func (sc *SandClaude) startProxy(workspace string) error {
 		log.Printf("~/.mitmproxy not writable, using confdir: %s", confDir)
 	}
 
-	// Start mitmweb
+	// Start mitmweb. --no-web-open-browser: mitmweb pops a browser tab to its own
+	// web UI by default on every start; suppress it — the proxy still runs, and its
+	// flows are already surfaced in the dashboard's Mitm Proxy tab, so the extra
+	// tab is just noise (especially when spawning several projects).
 	sc.proxyCmd = exec.Command(
 		"mitmweb",
+		"--no-web-open-browser",
 		"--listen-port", sc.proxyPort,
 		"--web-port", fmt.Sprintf("%d", webPort),
 		"--set", fmt.Sprintf("confdir=%s", confDir),
