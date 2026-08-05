@@ -264,7 +264,12 @@ func projectLiveStatus(workspace string) ProjectStatus {
 // Dashboard HTTP server
 // ----------------------------------------------------------------------------
 
-//go:embed webui/templates/*.tmpl webui/static/*
+// all:webui/static recurses into the built React app under static/app/
+// (static/app/index.html + static/app/assets/*), which a bare webui/static/*
+// glob would not reach. The templates embed stays for the legacy embedded
+// iframe pages until they're fully removed.
+//
+//go:embed webui/templates/*.tmpl all:webui/static
 var webuiFS embed.FS
 
 var dashboardTemplates = template.Must(template.ParseFS(webuiFS, "webui/templates/*.tmpl"))
@@ -372,10 +377,28 @@ func handleHealthz(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("ok"))
 }
 
+// serveSPA writes the built React app's index.html (from the embedded
+// static/app bundle) for a client-routed page. The SPA's own History-API router
+// then renders the right view for "/", "/global", or "/p/<id>". Hashed JS/CSS
+// under /static/app/assets are served by the /static file server. If the bundle
+// isn't built yet (fresh checkout before `npm run build`), we say so clearly.
+func (d *dashboardServer) serveSPA(w http.ResponseWriter, _ *http.Request) {
+	html, err := webuiFS.ReadFile("webui/static/app/index.html")
+	if err != nil {
+		http.Error(w, "dashboard UI bundle not built — run `npm run build` in internal/dashboard/webui/app-src (or reinstall via install.sh)", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// The shell references hashed assets, so it can be cached briefly; but keep it
+	// revalidating so a redeploy is picked up promptly.
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Write(html)
+}
+
 func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	if path == "/" {
-		d.handleIndex(w, r)
+		d.serveSPA(w, r)
 		return
 	}
 
@@ -389,7 +412,7 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	// Global (cross-project) control plane.
 	switch path {
 	case "/global":
-		d.handleGlobalPage(w, r)
+		d.serveSPA(w, r)
 		return
 	case "/global/config":
 		d.handleGlobalRead(w, r)
@@ -459,7 +482,9 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case sub == "":
-		d.handleProject(w, r, id)
+		// The project page is now the React SPA (client-routed at /p/<id>). Its
+		// data comes from the JSON/WS endpoints below, not a server-rendered page.
+		d.serveSPA(w, r)
 	case sub == "terminal/ws":
 		d.handleTerminalWS(w, r, id)
 	case sub == "terminal" || sub == "terminal/":

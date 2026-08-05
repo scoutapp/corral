@@ -1,0 +1,27 @@
+{
+  "name": "sandclaude-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "React + TypeScript dashboard for sandclaude. Builds to a committed bundle in ../static, served by the Go binary's go:embed (same model as editor-src).",
+  "comment": "Dependencies are pinned to exact versions (no ^) on purpose: the built bundle is committed and go:embed-ed into the host binary, so it runs as trusted host-side code in the dashboard browser. Exact pins keep the bundle reproducible and prevent a stray npm install from pulling an unreviewed release. Update versions deliberately, then rebuild and review the bundle diff.",
+  "scripts": {
+    "build": "tsc -b && vite build",
+    "dev": "vite",
+    "typecheck": "tsc -b --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "0.10.0",
+    "@xterm/xterm": "5.5.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@vitejs/plugin-react": "4.3.4",
+    "typescript": "5.6.3",
+    "vite": "5.4.11"
+  }
+}
