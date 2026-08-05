@@ -136,10 +136,64 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 		http.Error(w, "register: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Pre-trust the workspace in ~/.claude.json so the container's Claude (which
+	// mounts the host ~/.claude.json) skips the "Do you trust the files in this
+	// folder?" dialog on first launch. Without this, every freshly-created project
+	// blocks on that dialog — and anything typed (e.g. an issue prompt) lands in
+	// the dialog, not Claude's input. Best-effort: a hiccup here shouldn't fail the
+	// create; Claude just shows its normal trust prompt.
+	if err := trustWorkspaceInClaudeConfig(workspace); err != nil {
+		// non-fatal; log-only via debug (no logger here — swallow)
+		_ = err
+	}
 	writeFilesJSON(w, map[string]any{
 		"id": ProjectID(workspace), "workspace": workspace,
 		"issue_prompt": issuePrompt, // "" unless spawned from an issue
 	})
+}
+
+// trustWorkspaceInClaudeConfig marks a workspace path as trusted in the host's
+// ~/.claude.json (projects.<path>.hasTrustDialogAccepted = true), so Claude
+// doesn't show its workspace-trust dialog for it. The container mounts this same
+// file, and runs Claude at the identical absolute workspace path, so the key
+// matches. Preserves every other field; creates the file/structure if absent.
+func trustWorkspaceInClaudeConfig(workspace string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(home, ".claude.json")
+
+	var root map[string]any
+	if data, rerr := os.ReadFile(path); rerr == nil {
+		if jerr := json.Unmarshal(data, &root); jerr != nil {
+			// Don't clobber a file we can't parse — bail rather than risk corruption.
+			return jerr
+		}
+	}
+	if root == nil {
+		root = map[string]any{}
+	}
+
+	projects, _ := root["projects"].(map[string]any)
+	if projects == nil {
+		projects = map[string]any{}
+		root["projects"] = projects
+	}
+	entry, _ := projects[workspace].(map[string]any)
+	if entry == nil {
+		entry = map[string]any{}
+		projects[workspace] = entry
+	}
+	entry["hasTrustDialogAccepted"] = true
+
+	out, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return err
+	}
+	// 0600: ~/.claude.json holds the user's Claude config; keep it user-private.
+	return os.WriteFile(path, out, 0600)
 }
 
 // issueBranchSlug builds a git-branch-safe "issue-<n>-<title-slug>" name.
