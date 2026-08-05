@@ -40,6 +40,7 @@
     // show the working-tree changes (the original default).
     var repo = "";
     var base = "", target = "";
+    var refsAutoTried = false; // auto trunk..branch default is applied at most once
     function refsActive() { return base !== "" && target !== ""; }
     function refQuery() {
       var q = repo ? "&repo=" + encodeURIComponent(repo) : "";
@@ -169,11 +170,30 @@
             targetSel.innerHTML = baseSel.innerHTML;
             return;
           }
-          var refs = (data.branches || []).concat(data.tags || []);
+          var branches = data.branches || [];
+          var refs = branches.concat(data.tags || []);
           var head = '<option value="">— working tree —</option>';
           var options = head + refs.map(function (rf) { return opt(rf); }).join("");
           baseSel.innerHTML = options;
           targetSel.innerHTML = options;
+
+          // Default to trunk..<current-branch> when the checked-out branch is a
+          // feature/issue branch (not the trunk itself) and a trunk exists. This
+          // makes issue-spawned projects open the Diff tab already showing the
+          // branch's work vs. the base, instead of working-tree-vs-HEAD. Only when
+          // the user hasn't already picked refs.
+          if (!refsAutoTried && !refsActive() && branches.length > 0) {
+            refsAutoTried = true; // only after a real repo with branches responds
+            var cur = data.current || "";
+            var trunk = ["main", "master", "trunk"].filter(function (t) {
+              return branches.indexOf(t) >= 0;
+            })[0];
+            if (cur && trunk && cur !== trunk) {
+              base = trunk; target = cur;
+              baseSel.value = trunk; targetSel.value = cur;
+              loadStatus();
+            }
+          }
         })
         .catch(function () { /* refs are optional; the default view still works */ });
     }
