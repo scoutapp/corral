@@ -229,12 +229,18 @@ func (d *dashboardServer) handleConfigRestart(w http.ResponseWriter, r *http.Req
 	// then start). A running container is left untouched in this case.
 	if keys := resolveProjectSSHKeys(workspace); len(keys) > 0 {
 		if _, loaded := sshagent.Probe(ProjectID(workspace)); !loaded {
-			w.WriteHeader(http.StatusConflict)
-			writeJSON(w, map[string]any{
-				"ssh_keys_pending": true,
-				"results":          []string{"ssh keys need loading before restart — load them, then restart again"},
-			})
-			return
+			// Try the macOS Keychain first (silent load if the passphrase was stored
+			// before); only demand an interactive load if that didn't work.
+			if ag, aerr := sshagent.Ensure(ProjectID(workspace), keys); aerr == nil && ag != nil && ag.TryLoadFromKeychain() {
+				// loaded from keychain — proceed with the restart.
+			} else {
+				w.WriteHeader(http.StatusConflict)
+				writeJSON(w, map[string]any{
+					"ssh_keys_pending": true,
+					"results":          []string{"ssh keys need loading before restart — load them, then restart again"},
+				})
+				return
+			}
 		}
 	}
 

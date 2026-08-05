@@ -225,6 +225,14 @@ func (sc *SandClaude) startSSHAgent(cfg *config.ProjectConfig) error {
 		return nil
 	}
 
+	// macOS Keychain: if the passphrase was stored on a previous load, pull the
+	// keys in silently — no re-typing. Preserves scoping (only this project's keys)
+	// and the per-project/torn-down-on-stop lifetime. No-op on Linux.
+	if agent.TryLoadFromKeychain() {
+		log.Printf("Loaded ssh key(s) from the macOS Keychain (no passphrase needed).")
+		return nil
+	}
+
 	// No TTY → can't prompt. Defer to the dashboard pre-load flow.
 	if !isInteractive() {
 		agent.Stop()

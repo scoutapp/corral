@@ -27,6 +27,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/jackrothrock/sandclaude/internal/config"
@@ -185,10 +186,43 @@ func socketResponds(sock string) bool {
 //
 // Returns (argv, env). env is a full os.Environ()-style slice with SSH_AUTH_SOCK
 // overridden. Missing key files are included as-is; ssh-add reports them clearly.
+//
+// On macOS we add --apple-use-keychain so the passphrase the user types once is
+// stored in the login Keychain; thereafter TryLoadFromKeychain loads the key
+// headlessly (no re-typing, even across reboots), while the agent stays scoped +
+// torn-down per project. The flag is Apple-specific — on Linux we omit it and
+// ssh-add just prompts as before (the SSH feature is macOS-first; Linux deferred).
 func (a *Agent) LoadKeysCommand() (argv []string, env []string) {
-	argv = append([]string{"ssh-add"}, a.Keys...)
+	argv = []string{"ssh-add"}
+	if runtime.GOOS == "darwin" {
+		argv = append(argv, "--apple-use-keychain")
+	}
+	argv = append(argv, a.Keys...)
 	env = append(os.Environ(), "SSH_AUTH_SOCK="+a.SocketPath)
 	return argv, env
+}
+
+// TryLoadFromKeychain attempts to load THIS agent's chosen keys from the macOS
+// login Keychain WITHOUT prompting — for keys whose passphrase the user
+// previously stored via --apple-use-keychain. Returns true if, after the attempt,
+// the agent holds ≥1 identity (so the caller can skip the interactive prompt).
+// No-op / false on non-macOS or if nothing is stored.
+//
+// This preserves scoping: it runs `ssh-add --apple-use-keychain <this project's
+// keys>` (not the all-keychain -A), with stdin closed so it can't fall back to an
+// interactive prompt — a stored passphrase loads silently, an unstored one just
+// fails and we fall through to the interactive load elsewhere.
+func (a *Agent) TryLoadFromKeychain() bool {
+	if runtime.GOOS != "darwin" || len(a.Keys) == 0 {
+		return false
+	}
+	argv := append([]string{"--apple-use-keychain"}, a.Keys...)
+	cmd := exec.Command("ssh-add", argv...)
+	cmd.Env = append(os.Environ(), "SSH_AUTH_SOCK="+a.SocketPath)
+	cmd.Stdin = nil // no controlling stdin -> ssh-add can't prompt; keychain-only
+	_ = cmd.Run()   // best-effort; verify via fingerprints below
+	fps, _ := a.LoadedFingerprints()
+	return len(fps) > 0
 }
 
 // LoadedFingerprints returns the fingerprints currently held by the agent (via

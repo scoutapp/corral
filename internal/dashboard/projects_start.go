@@ -49,13 +49,20 @@ func (d *dashboardServer) handleStartProject(w http.ResponseWriter, r *http.Requ
 	// user to the Config tab's "Load keys" flow first (design: pre-load, then start).
 	if keys := resolveProjectSSHKeys(workspace); len(keys) > 0 {
 		if _, loaded := sshagent.Probe(ProjectID(workspace)); !loaded {
-			w.WriteHeader(http.StatusConflict)
-			writeFilesJSON(w, map[string]any{
-				"ok":               false,
-				"ssh_keys_pending": true,
-				"message":          "ssh keys need loading first — use Config → SSH keys → Load keys, then start",
-			})
-			return
+			// Before demanding an interactive passphrase, try the macOS Keychain: if
+			// the passphrase was stored on a prior load, this loads the keys silently
+			// (no re-typing) — the whole point of "ask once, reuse". No-op on Linux.
+			if ag, aerr := sshagent.Ensure(ProjectID(workspace), keys); aerr == nil && ag != nil && ag.TryLoadFromKeychain() {
+				// loaded from keychain — fall through and start normally.
+			} else {
+				w.WriteHeader(http.StatusConflict)
+				writeFilesJSON(w, map[string]any{
+					"ok":               false,
+					"ssh_keys_pending": true,
+					"message":          "ssh keys need loading first — use Config → SSH keys → Load keys, then start",
+				})
+				return
+			}
 		}
 	}
 
