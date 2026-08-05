@@ -222,18 +222,23 @@ func (sc *SandClaude) startSSHAgent(cfg *config.ProjectConfig) error {
 	}
 	sc.sshAgent = agent
 
-	// Already loaded (e.g. dashboard pre-load, or a prior interactive load whose
-	// agent we just adopted)? Nothing to do — mount and go.
-	if fps, _ := agent.LoadedFingerprints(); len(fps) > 0 {
-		log.Printf("Scoped ssh-agent already holds %d key(s); reusing.", len(fps))
+	// Already fully loaded (e.g. dashboard pre-load, or a prior interactive load
+	// whose agent we just adopted)? Nothing to do — mount and go. We check that
+	// ALL resolved keys are present, not just ≥1: a project that adds its own key
+	// on top of the global one must not look "done" once the global key alone is in.
+	if agent.AllKeysLoaded() {
+		fps, _ := agent.LoadedFingerprints()
+		log.Printf("Scoped ssh-agent already holds all %d key(s); reusing.", len(fps))
 		return nil
 	}
 
-	// macOS Keychain: if the passphrase was stored on a previous load, pull the
+	// macOS Keychain: if the passphrases were stored on a previous load, pull the
 	// keys in silently — no re-typing. Preserves scoping (only this project's keys)
-	// and the per-project/torn-down-on-stop lifetime. No-op on Linux.
+	// and the per-project/torn-down-on-stop lifetime. No-op on Linux. Only a FULL
+	// load short-circuits; a partial keychain load still falls through to prompt
+	// for whatever's still missing.
 	if agent.TryLoadFromKeychain() {
-		log.Printf("Loaded ssh key(s) from the macOS Keychain (no passphrase needed).")
+		log.Printf("Loaded all ssh key(s) from the macOS Keychain (no passphrase needed).")
 		return nil
 	}
 

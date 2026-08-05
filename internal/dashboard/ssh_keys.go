@@ -69,10 +69,12 @@ func (d *dashboardServer) handleSSHKeysStatus(w http.ResponseWriter, r *http.Req
 
 	if st.Configured {
 		// Probe is read-only: it never spawns an agent (a status poll must have no
-		// side effects), only reports on an already-live one.
-		if count, loaded := sshagent.Probe(ProjectID(workspace)); loaded {
-			st.Loaded = true
+		// side effects), only reports on an already-live one. "Loaded" means ALL
+		// resolved keys are present, not just ≥1 — otherwise the Config pane shows a
+		// green "loaded" while a project-specific key is still missing.
+		if count, live := sshagent.Probe(ProjectID(workspace)); live {
 			st.Count = count
+			st.Loaded = count >= len(keys)
 		}
 	}
 	writeFilesJSON(w, st)

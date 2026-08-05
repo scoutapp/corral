@@ -204,14 +204,15 @@ func (a *Agent) LoadKeysCommand() (argv []string, env []string) {
 
 // TryLoadFromKeychain attempts to load THIS agent's chosen keys from the macOS
 // login Keychain WITHOUT prompting — for keys whose passphrase the user
-// previously stored via --apple-use-keychain. Returns true if, after the attempt,
-// the agent holds ≥1 identity (so the caller can skip the interactive prompt).
+// previously stored via --apple-use-keychain. Returns true only if, after the
+// attempt, ALL of this project's keys are loaded — a partial load (e.g. the
+// global key's passphrase is in the Keychain but a project-specific key's isn't)
+// returns false so the caller still prompts interactively for the missing ones.
 // No-op / false on non-macOS or if nothing is stored.
 //
 // This preserves scoping: it runs `ssh-add --apple-use-keychain <this project's
 // keys>` (not the all-keychain -A), with stdin closed so it can't fall back to an
-// interactive prompt — a stored passphrase loads silently, an unstored one just
-// fails and we fall through to the interactive load elsewhere.
+// interactive prompt — stored passphrases load silently, unstored ones just fail.
 func (a *Agent) TryLoadFromKeychain() bool {
 	if runtime.GOOS != "darwin" || len(a.Keys) == 0 {
 		return false
@@ -221,8 +222,19 @@ func (a *Agent) TryLoadFromKeychain() bool {
 	cmd.Env = append(os.Environ(), "SSH_AUTH_SOCK="+a.SocketPath)
 	cmd.Stdin = nil // no controlling stdin -> ssh-add can't prompt; keychain-only
 	_ = cmd.Run()   // best-effort; verify via fingerprints below
+	return a.AllKeysLoaded()
+}
+
+// AllKeysLoaded reports whether the agent holds at least as many identities as
+// this project has keys — i.e. every chosen key is loaded, not just some. Used
+// by the start/restart gates so a partial load (only the global key) doesn't
+// look "done" and skip prompting for a project-specific key.
+func (a *Agent) AllKeysLoaded() bool {
+	if len(a.Keys) == 0 {
+		return true
+	}
 	fps, _ := a.LoadedFingerprints()
-	return len(fps) > 0
+	return len(fps) >= len(a.Keys)
 }
 
 // LoadedFingerprints returns the fingerprints currently held by the agent (via

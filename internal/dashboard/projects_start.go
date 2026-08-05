@@ -48,21 +48,28 @@ func (d *dashboardServer) handleStartProject(w http.ResponseWriter, r *http.Requ
 	// yet, the child would fail fast. Surface that here so the caller can send the
 	// user to the Config tab's "Load keys" flow first (design: pre-load, then start).
 	if keys := resolveProjectSSHKeys(workspace); len(keys) > 0 {
-		if _, loaded := sshagent.Probe(ProjectID(workspace)); !loaded {
-			// Before demanding an interactive passphrase, try the macOS Keychain: if
-			// the passphrase was stored on a prior load, this loads the keys silently
-			// (no re-typing) — the whole point of "ask once, reuse". No-op on Linux.
-			if ag, aerr := sshagent.Ensure(ProjectID(workspace), keys); aerr == nil && ag != nil && ag.TryLoadFromKeychain() {
-				// loaded from keychain — fall through and start normally.
-			} else {
-				w.WriteHeader(http.StatusConflict)
-				writeFilesJSON(w, map[string]any{
-					"ok":               false,
-					"ssh_keys_pending": true,
-					"message":          "ssh keys need loading first — use Config → SSH keys → Load keys, then start",
-				})
-				return
-			}
+		// Coverage check: confirm EVERY resolved key is loaded, not just that the
+		// agent holds ≥1 identity — otherwise a project key added on top of the
+		// (silently-keychain-loaded) global key never gets prompted for.
+		ag, aerr := sshagent.Ensure(ProjectID(workspace), keys)
+		if aerr != nil || ag == nil {
+			http.Error(w, "ssh agent unavailable", http.StatusInternalServerError)
+			return
+		}
+		// Before demanding an interactive passphrase, try the macOS Keychain: if
+		// the passphrase was stored on a prior load, this loads the keys silently
+		// (no re-typing) — the whole point of "ask once, reuse". No-op on Linux.
+		if !ag.AllKeysLoaded() {
+			ag.TryLoadFromKeychain()
+		}
+		if !ag.AllKeysLoaded() {
+			w.WriteHeader(http.StatusConflict)
+			writeFilesJSON(w, map[string]any{
+				"ok":               false,
+				"ssh_keys_pending": true,
+				"message":          "ssh keys need loading first — use Config → SSH keys → Load keys, then start",
+			})
+			return
 		}
 	}
 
