@@ -393,6 +393,13 @@ table.projects th, table.projects td {
 }
 .cfg-warn strong { color: var(--warn); }
 
+/* Reassuring TL;DR at the top of the Monitor confirm modal. */
+.mitm-tldr {
+  font-size: 0.85rem; line-height: 1.5; margin: 0 0 0.7rem;
+  padding: 8px 10px; border-radius: 4px; color: var(--fg);
+  background: rgba(92, 230, 168, 0.07); border-left: 3px solid var(--up);
+}
+
 /* "Read more" disclosure inside the Monitor confirm modal. */
 .mitm-readmore { margin: 0.6rem 0; font-size: 0.82rem; }
 .mitm-readmore > summary {

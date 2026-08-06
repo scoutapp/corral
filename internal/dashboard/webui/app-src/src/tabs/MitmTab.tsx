@@ -340,6 +340,10 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
 
       {confirmHost && (
         <Modal title="Monitor this host?" onClose={() => setConfirmHost(null)}>
+          <p className="mitm-tldr">
+            <strong>TL;DR:</strong> this will most likely just work. If requests to this host stop showing up here after you monitor it,
+            it’s a CA-trust issue — remove it from the monitor list in <em>Config → Capture</em> and it goes back to working (undecrypted).
+          </p>
           <div className="cfg-warn" style={{ marginTop: 0 }}>
             <strong>⚠ Monitoring makes the proxy present its own CA.</strong> Clients that pin certificates or statically link their TLS with
             a bundled root store won’t trust it — the handshake fails and the request never completes (so a broken host won’t even appear
