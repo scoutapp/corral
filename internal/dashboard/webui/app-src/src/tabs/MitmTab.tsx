@@ -125,6 +125,7 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
   // acknowledged (persisted), future Monitor clicks act immediately. The ack
   // checkbox in the modal reflects the persisted state (stays selected).
   const [confirmHost, setConfirmHost] = useState<string | null>(null);
+  const [understood, setUnderstood] = useState(false); // per-open acknowledgment gate
   const [ack, setAck] = useState<boolean>(() => {
     try {
       return localStorage.getItem(MONITOR_WARN_KEY) === "1";
@@ -202,8 +203,12 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
   // Gate the Monitor action behind the caveat modal until acknowledged.
   const requestMonitor = useCallback(
     (hostPort: string) => {
-      if (ack) monitorHost(hostPort);
-      else setConfirmHost(hostPort);
+      if (ack) {
+        monitorHost(hostPort);
+        return;
+      }
+      setUnderstood(false); // re-gate each time the modal opens
+      setConfirmHost(hostPort);
     },
     [ack, monitorHost],
   );
@@ -345,12 +350,48 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
             Future requests to <code>{confirmHost.split(":")[0]}</code> will be decrypted. The already-completed request can’t be
             retroactively decrypted.
           </p>
-          <label className="cfg-inline" style={{ margin: "0.4rem 0 0.8rem" }}>
-            <input type="checkbox" checked={ack} onChange={(e) => persistAck(e.target.checked)} /> I understand — don’t show this again
+
+          <details className="mitm-readmore">
+            <summary>Read more — how the CA is trusted, and what to do when it isn’t</summary>
+            <div className="mitm-readmore-body">
+              <p>
+                The sandbox already trusts the proxy CA for most tooling: it installs the CA into the system trust store and exports{" "}
+                <code>SSL_CERT_FILE</code>, <code>REQUESTS_CA_BUNDLE</code>, <code>NODE_EXTRA_CA_CERTS</code>, and{" "}
+                <code>CURL_CA_BUNDLE</code> — so Python, Node, curl, and anything using the OS store or those variables work.
+              </p>
+              <p>
+                <strong>Docker-in-Docker &amp; docker builds are handled too:</strong> a cert-injector daemon adds the CA to every inner
+                container, and builds read it from <code>/etc/docker/certs.d/&lt;host&gt;/ca.crt</code>.
+              </p>
+              <p>
+                <strong>If a runtime has its own trust store,</strong> point it at the CA the same way — most respect an env var, e.g.{" "}
+                <code>SSL_CERT_FILE</code> / <code>SSL_CERT_DIR</code> (Go, OpenSSL), <code>NODE_EXTRA_CA_CERTS</code> (Node),{" "}
+                <code>REQUESTS_CA_BUNDLE</code> (Python requests), <code>GIT_SSL_CAINFO</code> (git). The CA is at{" "}
+                <code>~/.mitmproxy/mitmproxy-ca-cert.pem</code>.
+              </p>
+              <p>
+                <strong>Statically-linked binaries that embed their own root store</strong> ignore both the system store and those env
+                vars — there’s no way to make them trust the proxy CA. For those, don’t monitor the host; instead route just that binary’s
+                traffic through an internal proxy of your own that re-terminates and forwards the payloads, or leave it direct-dialed
+                (undecrypted).
+              </p>
+            </div>
+          </details>
+
+          {/* "I understand" GATES the action — the button stays disabled until it's
+              checked, so the consequences must be acknowledged before monitoring.
+              "Don't show again" is separate and persisted (suppresses the modal). */}
+          <label className="cfg-inline" style={{ margin: "0.6rem 0 0.3rem" }}>
+            <input type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} /> I understand the consequences
+          </label>
+          <label className="cfg-inline" style={{ margin: "0 0 0.9rem" }}>
+            <input type="checkbox" checked={ack} onChange={(e) => persistAck(e.target.checked)} disabled={!understood} /> Don’t show this
+            again
           </label>
           <div className="form-actions">
             <button
               className="btn primary"
+              disabled={!understood}
               onClick={() => {
                 const h = confirmHost;
                 setConfirmHost(null);

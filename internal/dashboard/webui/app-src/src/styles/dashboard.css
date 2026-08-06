@@ -392,6 +392,19 @@ table.projects th, table.projects td {
   border-left: 3px solid var(--warn);
 }
 .cfg-warn strong { color: var(--warn); }
+
+/* "Read more" disclosure inside the Monitor confirm modal. */
+.mitm-readmore { margin: 0.6rem 0; font-size: 0.82rem; }
+.mitm-readmore > summary {
+  cursor: pointer; color: var(--accent); font-size: 0.82rem; user-select: none;
+}
+.mitm-readmore > summary:hover { text-decoration: underline; }
+.mitm-readmore-body { margin-top: 0.5rem; color: var(--fg); line-height: 1.5; }
+.mitm-readmore-body p { margin: 0 0 0.55rem; }
+.mitm-readmore-body code {
+  font-size: 0.78rem; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 3px; padding: 0 3px;
+}
 .cfg-badge {
   font-size: 11px; padding: 1px 7px; border-radius: 10px;
   background: color-mix(in srgb, var(--muted) 20%, transparent); color: var(--muted);
@@ -902,8 +915,11 @@ table.projects th, table.projects td {
 }
 .btn:hover { background: #2b3242; border-color: var(--con-muted); color: #fff; }
 .btn:active { transform: translateY(0.5px); }
-.btn.primary { background: var(--con-working); color: #06281c; border-color: var(--con-working); font-weight: 600; }
-.btn.primary:hover { filter: brightness(1.1); background: var(--con-working); color: #06281c; }
+/* --up mirrors --con-working and is defined on :root, so .btn.primary also works
+   on the project page (modals) where body.console vars are absent. */
+.btn.primary { background: var(--con-working, var(--up)); color: #06281c; border-color: var(--con-working, var(--up)); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.1); background: var(--con-working, var(--up)); color: #06281c; }
+.btn.primary:disabled { opacity: 0.5; cursor: not-allowed; filter: none; }
 /* Mute toggle uses the shared button now (was grey-on-grey + no hover). */
 .mute-all { cursor: pointer; }
 .mute-all[aria-pressed="true"] { color: var(--con-muted); background: var(--con-panel); }
