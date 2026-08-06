@@ -3,6 +3,7 @@ import { Link } from "../router";
 import { getJSON, postJSON, postRaw } from "../api/client";
 import type { CredSet, GlobalEdit, GlobalView } from "../api/types";
 import { XtermPane } from "../components/XtermPane";
+import { useBodyClass } from "../hooks/useBodyClass";
 
 // Global settings: shared credentials (masked), cross-project defaults
 // (monitor-list, mitm-ports) new projects inherit, default SSH keys loaded by
@@ -14,6 +15,7 @@ function sshBasename(p: string): string {
 }
 
 export function GlobalPage() {
+  useBodyClass("console");
   const [g, setG] = useState<GlobalView | null>(null);
   const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
   const [monitor, setMonitor] = useState("");

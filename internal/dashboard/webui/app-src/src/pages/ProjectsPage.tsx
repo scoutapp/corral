@@ -9,6 +9,7 @@ import { postRaw } from "../api/client";
 import type { StatusRow } from "../api/types";
 import { ReposSection } from "./ReposSection";
 import { NewProjectModal, AddRepoModal } from "./ReposModals";
+import { useBodyClass } from "../hooks/useBodyClass";
 
 // Landing page: live "panes into work". Polls /status, renders one pane per
 // project sorted by urgency (waiting-on-you, then working, then idle), chimes on
@@ -44,6 +45,7 @@ function Dot({ up }: { up: boolean }) {
 }
 
 export function ProjectsPage() {
+  useBodyClass("console");
   const { projects, bootId, connected } = useStatus(3000);
   const { isMuted, mutedAll, toggleMute, toggleMuteAll, forgetMute } = useMutes(bootId);
   const { notify } = useToasts();
