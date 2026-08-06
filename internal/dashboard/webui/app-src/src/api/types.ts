@@ -51,6 +51,7 @@ export interface ConfigView {
   allowed_hosts: string[];
   monitor_hosts: string[];
   monitor_effective: string[]; // concrete hosts decrypted under the current preset (for seeding custom)
+  monitor_mandatory: string[]; // always-monitored (credential injection) — locked, not removable
   monitor_all: boolean;
   mitm_preset: string; // minimal|all|none|custom
   mitm_ports: string[];

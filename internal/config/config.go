@@ -65,9 +65,22 @@ type ProjectConfig struct {
 // on selective mode) but no real host is ever selected for interception.
 const MonitorNoneSentinel = "__mitm_none__"
 
+// MandatoryMonitorHosts MUST always be routed through mitm, in every preset and
+// every custom list — they can't be removed. The container authenticates to the
+// Anthropic API with a dummy token; the proxy injects the REAL credential, which
+// only happens if the host is intercepted. Direct-dialing these would break
+// Claude's auth. Enforced in ResolveMonitorHosts so the proxy always monitors
+// them regardless of what's stored; the UI shows them as locked chips.
+var MandatoryMonitorHosts = []string{
+	"api.anthropic.com",
+	"platform.claude.com",
+	"statsig.anthropic.com",
+	"claude.ai",
+}
+
 // The Claude + GitHub host set for the "minimal" preset — the traffic worth
 // intercepting for credential injection / inspection, leaving everything else
-// allowlisted-but-direct-dialed.
+// allowlisted-but-direct-dialed. Superset of MandatoryMonitorHosts.
 var MinimalMonitorHosts = []string{
 	"api.anthropic.com",
 	"platform.claude.com",
@@ -76,6 +89,29 @@ var MinimalMonitorHosts = []string{
 	"api.github.com",
 	"github.com",
 	"raw.githubusercontent.com",
+}
+
+// withMandatory returns hosts with the mandatory set unioned in (mandatory
+// first, deduped case-insensitively), so credential-injection hosts are always
+// monitored.
+func withMandatory(hosts []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(hosts)+len(MandatoryMonitorHosts))
+	for _, h := range MandatoryMonitorHosts {
+		k := strings.ToLower(h)
+		if !seen[k] {
+			seen[k] = true
+			out = append(out, h)
+		}
+	}
+	for _, h := range hosts {
+		k := strings.ToLower(strings.TrimSpace(h))
+		if k != "" && !seen[k] {
+			seen[k] = true
+			out = append(out, strings.TrimSpace(h))
+		}
+	}
+	return out
 }
 
 // MitmPresetOrDefault returns the configured preset, defaulting to "minimal".
@@ -93,8 +129,10 @@ func (c *ProjectConfig) MitmPresetOrDefault() string {
 
 // ResolveMonitorHosts turns the preset into the effective monitor-host list the
 // proxy consumes. "all" -> empty (proxy interprets empty as monitor-all);
-// "none" -> the never-matching sentinel; "minimal" -> the curated set;
-// "custom" (or unknown) -> the explicit MonitorHosts.
+// "none" -> the never-matching sentinel (explicit opt-out of decryption);
+// "minimal" -> the curated set (includes the mandatory hosts); "custom" -> the
+// explicit MonitorHosts with the mandatory credential-injection hosts always
+// unioned in (they can't be removed).
 func (c *ProjectConfig) ResolveMonitorHosts() []string {
 	switch c.MitmPresetOrDefault() {
 	case "all":
@@ -104,7 +142,9 @@ func (c *ProjectConfig) ResolveMonitorHosts() []string {
 	case "minimal":
 		return append([]string(nil), MinimalMonitorHosts...)
 	default: // custom
-		return c.MonitorHosts
+		// Always union in the mandatory hosts so credential injection keeps
+		// working even if the stored list omits them.
+		return withMandatory(c.MonitorHosts)
 	}
 }
 

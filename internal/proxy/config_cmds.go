@@ -237,12 +237,17 @@ func ApplyProxyConfig(scope ApplyScope) error {
 
 	if scope.MonitorOrPorts {
 		monitorPath := MonitorHostsPath()
-		if len(cfg.MonitorHosts) > 0 {
-			if err := config.WriteMonitorHostsFile(monitorPath, cfg.MonitorHosts); err != nil {
+		// Write the RESOLVED list (preset-aware, always includes the mandatory
+		// credential-injection hosts), not the raw stored list — otherwise a live
+		// reload of a custom list that omits e.g. api.anthropic.com would stop the
+		// proxy monitoring it, breaking credential injection until the next start.
+		resolved := cfg.ResolveMonitorHosts()
+		if len(resolved) > 0 {
+			if err := config.WriteMonitorHostsFile(monitorPath, resolved); err != nil {
 				return err
 			}
 		} else {
-			// Empty list -> remove the file so the proxy falls back to monitor-all.
+			// Empty (the "all" preset) -> remove the file so the proxy monitors all.
 			os.Remove(monitorPath)
 		}
 

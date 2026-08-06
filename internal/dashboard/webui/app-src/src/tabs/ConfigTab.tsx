@@ -35,6 +35,7 @@ export function ConfigTab({ projectId, refreshKey }: { projectId: string; refres
   const [preset, setPreset] = useState("minimal");
   const [monitor, setMonitor] = useState("");
   const [monitorEffective, setMonitorEffective] = useState<string[]>([]);
+  const [monitorMandatory, setMonitorMandatory] = useState<string[]>([]);
   const [ports, setPorts] = useState("");
   const [newCreds, setNewCreds] = useState<CredSet[]>([]);
   const [removedCreds, setRemovedCreds] = useState<Record<string, boolean>>({});
@@ -65,6 +66,7 @@ export function ConfigTab({ projectId, refreshKey }: { projectId: string; refres
           setPreset(c.mitm_preset || "minimal");
           setMonitor((c.monitor_hosts || []).join("\n"));
           setMonitorEffective(c.monitor_effective || []);
+          setMonitorMandatory(c.monitor_mandatory || []);
           setPorts((c.mitm_ports || []).join("\n"));
           setProxy(c.proxy_enabled);
           setPassthrough(c.passthrough_firewall);
@@ -294,7 +296,7 @@ export function ConfigTab({ projectId, refreshKey }: { projectId: string; refres
           </select>
           {preset === "custom" && (
             <div>
-              <MonitorList value={monitor} onChange={setMonitor} />
+              <MonitorList value={monitor} onChange={setMonitor} mandatory={monitorMandatory} />
               <div className="muted cfg-note">only these hosts are decrypted; others allowed+logged but direct-dialed</div>
             </div>
           )}
@@ -505,20 +507,23 @@ export function ConfigTab({ projectId, refreshKey }: { projectId: string; refres
 // just a friendlier editor over it. Add supports comma/space/newline-separated
 // paste too. Changes here are pending until Review changes -> apply, like the
 // rest of the live zone.
-function MonitorList({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function MonitorList({ value, onChange, mandatory }: { value: string; onChange: (v: string) => void; mandatory: string[] }) {
   const [entry, setEntry] = useState("");
-  const hosts = value
+  const mandSet = new Set(mandatory.map((h) => h.toLowerCase()));
+  // The user's list excludes the mandatory hosts (they're rendered separately as
+  // locked chips and always monitored regardless of the stored list).
+  const userHosts = value
     .split("\n")
     .map((s) => s.trim())
-    .filter(Boolean);
+    .filter((h) => h && !mandSet.has(h.toLowerCase()));
 
   const write = (list: string[]) => {
-    // de-dupe (case-insensitive), preserve order
+    // de-dupe (case-insensitive), drop mandatory (they're implicit), preserve order
     const seen = new Set<string>();
     const out: string[] = [];
     for (const h of list) {
       const k = h.toLowerCase();
-      if (h && !seen.has(k)) {
+      if (h && !seen.has(k) && !mandSet.has(k)) {
         seen.add(k);
         out.push(h);
       }
@@ -532,27 +537,33 @@ function MonitorList({ value, onChange }: { value: string; onChange: (v: string)
       .map((s) => s.trim())
       .filter(Boolean);
     if (!parts.length) return;
-    write([...hosts, ...parts]);
+    write([...userHosts, ...parts]);
     setEntry("");
   };
-  const remove = (h: string) => write(hosts.filter((x) => x !== h));
+  const remove = (h: string) => write(userHosts.filter((x) => x !== h));
 
   return (
     <div className="monitor-list">
-      {hosts.length === 0 ? (
+      <div className="monitor-chips">
+        {/* Mandatory hosts: always monitored (credential injection), locked. */}
+        {mandatory.map((h) => (
+          <span className="monitor-chip monitor-chip-locked" key={`m-${h}`} title="Always monitored — required for Claude/Anthropic credential injection">
+            <span className="monitor-chip-lock">🔒</span>
+            <span className="monitor-chip-host">{h}</span>
+          </span>
+        ))}
+        {userHosts.map((h) => (
+          <span className="monitor-chip" key={h}>
+            <span className="monitor-chip-host">{h}</span>
+            <button type="button" className="monitor-chip-x" title={`Stop monitoring ${h}`} onClick={() => remove(h)}>
+              ✕
+            </button>
+          </span>
+        ))}
+      </div>
+      {userHosts.length === 0 && (
         <div className="muted cfg-note" style={{ marginBottom: 6 }}>
-          nothing monitored yet — every allowed host is direct-dialed (undecrypted). Add a host to decrypt it.
-        </div>
-      ) : (
-        <div className="monitor-chips">
-          {hosts.map((h) => (
-            <span className="monitor-chip" key={h}>
-              <span className="monitor-chip-host">{h}</span>
-              <button type="button" className="monitor-chip-x" title={`Stop monitoring ${h}`} onClick={() => remove(h)}>
-                ✕
-              </button>
-            </span>
-          ))}
+          only the required hosts above are decrypted; add more to decrypt them too (others stay direct-dialed).
         </div>
       )}
       <div className="monitor-add">
