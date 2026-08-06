@@ -137,6 +137,17 @@ if [ -z "$DISABLE_FIREWALL" ]; then
     fi
     MONITOR_ARG="--monitorlist $MONITOR_COPY"
 
+    # Credential-hosts: hosts that have an injected credential are ALWAYS mitm'd,
+    # independent of the monitor-list (credential injection requires interception).
+    # The host writes just the hostnames (never secret values) to this file.
+    CREDHOSTS_COPY="/tmp/credential-hosts.txt"
+    CREDHOSTS_SRC="${HOME}/credential-hosts.txt"
+    if [ -f "$CREDHOSTS_SRC" ]; then
+        cp "$CREDHOSTS_SRC" "$CREDHOSTS_COPY"
+        chmod 644 "$CREDHOSTS_COPY"
+    fi
+    CREDHOSTS_ARG="--credential-hosts $CREDHOSTS_COPY"
+
     # mitm-ports: forwarded from the host config via env (default handled by the proxy).
     MITM_PORTS_ARG=""
     if [ -n "$SANDCLAUDE_MITM_PORTS" ]; then
@@ -162,6 +173,7 @@ if [ -z "$DISABLE_FIREWALL" ]; then
             --transparent-listen 0.0.0.0:$TRANSPARENT_PORT \
             --allowlist "$ALLOWLIST_COPY" \
             $MONITOR_ARG \
+            $CREDHOSTS_ARG \
             $MITM_PORTS_ARG \
             $UPSTREAM_ARG \
             $PASSTHROUGH_ARG \

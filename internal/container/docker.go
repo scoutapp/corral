@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/jackrothrock/sandclaude/internal/creds"
 	"github.com/jackrothrock/sandclaude/internal/proxy"
 	"github.com/jackrothrock/sandclaude/internal/session"
 	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
@@ -326,6 +327,15 @@ func (sc *SandClaude) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) 
 			args = append(args, "-v", fmt.Sprintf("%s:/home/claude/monitor-hosts.txt:rw", monitorPath))
 		}
 		args = append(args, "-e", "SANDCLAUDE_MITM_PORTS="+strings.Join(cfg.MitmPortsOrDefault(), ","))
+
+		// Credential-hosts: hosts with an injected credential are ALWAYS mitm'd,
+		// independent of the monitor-list (the proxy force-mitms them). Write just
+		// the hostnames (never the secret values) and mount them for --credential-hosts.
+		credHostsPath := filepath.Join(config.GetProjectDir(), "credential-hosts.txt")
+		if err := creds.WriteCredentialHostsFile(credHostsPath, creds.CredentialHostnames()); err != nil {
+			return fmt.Errorf("failed to write credential-hosts file: %w", err)
+		}
+		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/credential-hosts.txt:rw", credHostsPath))
 	}
 
 	logsDir := config.GetLogsDir()

@@ -6,9 +6,47 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/jackrothrock/sandclaude/internal/config"
 )
+
+// CredentialHostnames returns the sorted set of hostnames that have an injected
+// credential, merged across the global + project credentials files (project
+// wins per-host). These hosts MUST always be routed through mitm — the proxy
+// force-mitms them regardless of the monitor-list — because that's where the
+// real credential is swapped in for the container's dummy value. Only the
+// hostnames are returned; secret values never leave the creds file.
+func CredentialHostnames() []string {
+	seen := map[string]bool{}
+	for _, path := range []string{GlobalCredentialsPath(), ProjectCredentialsPath()} {
+		m, err := LoadCredsMap(path)
+		if err != nil {
+			continue
+		}
+		for host := range m {
+			h := strings.TrimSpace(host)
+			if h != "" {
+				seen[strings.ToLower(h)] = true
+			}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for h := range seen {
+		out = append(out, h)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// WriteCredentialHostsFile writes the credentialed hostnames (one per line) to
+// path, for the allowlist-proxy's --credential-hosts input. Writes an empty file
+// (removing any stale entries) when there are no credentialed hosts, so a removed
+// credential stops forcing mitm on the next reload.
+func WriteCredentialHostsFile(path string, hosts []string) error {
+	return os.WriteFile(path, []byte(strings.Join(hosts, "\n")+"\n"), 0644)
+}
 
 // GlobalCredentialsPath returns the shared, cross-project credentials file
 // (~/.sandclaude/proxy-credentials.json).

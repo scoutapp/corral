@@ -200,6 +200,14 @@ type ProxyHandler struct {
 	monitorlist   *Allowlist
 	monitorActive atomic.Bool
 	mitmPorts     map[string]struct{}
+
+	// credentialHosts are hosts that have an injected credential (from the creds
+	// file). They MUST always be mitm'd — the container sends a dummy token and the
+	// proxy swaps in the real one, which only happens when the host is intercepted.
+	// Direct-dialing a credentialed host would leak the dummy value and break auth.
+	// So shouldMitm force-mitms any host in this set regardless of the monitorlist.
+	// Reloaded in place on SIGHUP like the other lists. Empty when no creds.
+	credentialHosts *Allowlist
 }
 
 // shouldMitm decides whether a CONNECT to host ("hostname:port") should be
@@ -219,11 +227,19 @@ func (p *ProxyHandler) shouldMitm(host string) (bool, string) {
 		return false, "port:" + port
 	}
 
+	hostname, _, herr := net.SplitHostPort(host)
+	if herr != nil {
+		hostname = host
+	}
+
+	// Credentialed hosts are ALWAYS mitm'd — a credential is injected for them, so
+	// they must be intercepted regardless of the monitor-list. This is independent
+	// of (and overrides) the user's discretionary monitor selection.
+	if p.credentialHosts != nil && p.credentialHosts.Allowed(hostname) {
+		return true, "credential"
+	}
+
 	if p.monitorActive.Load() {
-		hostname, _, err := net.SplitHostPort(host)
-		if err != nil {
-			hostname = host
-		}
 		if !p.monitorlist.Allowed(hostname) {
 			return false, "not-monitored"
 		}
@@ -469,6 +485,7 @@ func main() {
 	allowlistPath  := flag.String("allowlist", "", "path to encrypted allowlist file (allowed-domains.txt.enc)")
 	passthroughLog := flag.String("passthrough-log", "", "if set, allow unknown domains and append them to this file instead of blocking")
 	monitorPath    := flag.String("monitorlist", "", "path to encrypted monitor-list; if set, only these hosts are routed through the mitm upstream (others allowed+logged but direct-dialed). Empty = monitor all.")
+	credHostsPath  := flag.String("credential-hosts", "", "path to a plaintext list of hosts that have an injected credential; these are ALWAYS mitm'd regardless of the monitor-list (credential injection requires interception)")
 	mitmPortsStr   := flag.String("mitm-ports", "80,443", "comma-separated destination ports eligible for mitm; CONNECT to any other port is direct-dialed (ssh, socks, etc.)")
 
 	// Encrypt subcommand: allowlist-proxy encrypt <plaintext> <output.enc>
@@ -539,11 +556,12 @@ func main() {
 	}
 
 	handler := &ProxyHandler{
-		allowlist:      al,
-		upstream:       upstream,
-		passthroughLog: *passthroughLog,
-		monitorlist:    &Allowlist{},
-		mitmPorts:      mitmPorts,
+		allowlist:       al,
+		upstream:        upstream,
+		passthroughLog:  *passthroughLog,
+		monitorlist:     &Allowlist{},
+		credentialHosts: &Allowlist{},
+		mitmPorts:       mitmPorts,
 	}
 
 	// Transparent (intercepting) listener for iptables-REDIRECTed connections.
@@ -580,6 +598,28 @@ func main() {
 	}
 	loadMonitor()
 
+	// loadCredentialHosts (re)loads the always-mitm credential-host list in place.
+	// These hosts have an injected credential, so they must always be intercepted
+	// regardless of the monitor-list. Absent/empty file = no forced hosts. Called
+	// at startup and on SIGHUP so a credential change takes effect on reload.
+	loadCredentialHosts := func() {
+		if *credHostsPath == "" {
+			return
+		}
+		if _, err := os.Stat(*credHostsPath); err != nil {
+			// Absent = no credentialed hosts. Reset to empty so a removed cred stops
+			// forcing mitm on the next reload.
+			handler.credentialHosts.setFromText("", *credHostsPath, "credential-hosts")
+			return
+		}
+		if err := handler.credentialHosts.loadPlain(*credHostsPath); err != nil {
+			log.Printf("credential-hosts load failed: %v", err)
+			return
+		}
+		log.Printf("credential-hosts active: these hosts are always mitm'd (credential injection)")
+	}
+	loadCredentialHosts()
+
 	// Hot-reload on SIGHUP — refreshes both the allowlist and the monitor-list, so
 	// a single firewall-reload/proxy-apply updates selective-mitm routing too.
 	sigCh := make(chan os.Signal, 1)
@@ -591,6 +631,7 @@ func main() {
 				log.Printf("allowlist reload failed: %v", err)
 			}
 			loadMonitor()
+			loadCredentialHosts()
 		}
 	}()
 
