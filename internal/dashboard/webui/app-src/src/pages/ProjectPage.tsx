@@ -201,10 +201,10 @@ export function ProjectPage({ id }: { id: string }) {
             ))}
           </div>
 
-          <div className="tab-panel" style={{ display: tab === "files" ? "flex" : "none" }}>
+          <div className="tab-panel" style={{ display: tab === "files" ? "flex" : "none", flex: "1 1 auto", minHeight: 0 }}>
             {seen.files && <FilesTab projectId={id} />}
           </div>
-          <div className="tab-panel" style={{ display: tab === "diff" ? "block" : "none" }}>
+          <div className="tab-panel" style={{ display: tab === "diff" ? "flex" : "none", flex: "1 1 auto", minHeight: 0 }}>
             {seen.diff && <DiffTab projectId={id} />}
           </div>
           <div className="tab-panel" style={{ display: tab === "container" ? "block" : "none" }}>

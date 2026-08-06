@@ -353,7 +353,7 @@ export function FilesTab({ projectId }: { projectId: string }) {
   const showResults = q.trim() !== "";
 
   return (
-    <>
+    <div className="files-root">
       <div className="files-side">
         <div className="files-search">
           <input
@@ -483,6 +483,6 @@ export function FilesTab({ projectId }: { projectId: string }) {
           )}
         </div>
       )}
-    </>
+    </div>
   );
 }
