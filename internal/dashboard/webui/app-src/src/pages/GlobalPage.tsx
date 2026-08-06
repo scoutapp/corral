@@ -113,15 +113,22 @@ export function GlobalPage() {
   const extraRows = extraPaths.map((p) => ({ value: p, meta: "custom path" }));
 
   return (
-    <div className="app-shell">
-      <div className="content">
-        <header className="content-head">
-          <h1>Global settings</h1>
-          <Link to="/" className="nav-link">
-            ← All projects
+    <>
+      <header className="console-header">
+        <div className="brand">
+          <Link to="/" className="brand-back" title="Back to all projects">
+            ←
           </Link>
-        </header>
+          <span className="brand-name">sandclaude</span>
+          <span className="brand-sub">global settings</span>
+        </div>
+      </header>
 
+      <main className="global-wrap">
+        <p className="global-intro">
+          Settings that apply across every project. Credentials here are shared by all projects (a project can still override per host).
+          Defaults are inherited by new projects when you run <code>sandclaude init</code>.
+        </p>
         <div id="global-root">
           <section className="cfg-zone">
             <h3>
@@ -276,7 +283,7 @@ export function GlobalPage() {
             {msg && <span className={`cfg-msg ${msg.err ? "s-4xx" : "s-2xx"}`}>{msg.text}</span>}
           </div>
         </div>
-      </div>
-    </div>
+      </main>
+    </>
   );
 }
