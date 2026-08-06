@@ -584,7 +584,7 @@ table.projects th, table.projects td {
 /* Files tab styled to sit flush with the VS Code "Dark Modern" editor the
    CodeMirror bundle renders (editor bg #1e1e1e). VS Code palette, scoped here. */
 .files-root {
-  display: flex; height: 100%; min-height: 0;
+  display: flex; height: 100%; min-height: 0; flex: 1 1 auto; width: 100%;
   --vsc-editor: #1e1e1e;   /* editor surface */
   --vsc-side: #252526;     /* sidebar / tree */
   --vsc-bar: #2d2d2d;      /* tab / breadcrumb bar */
@@ -667,7 +667,7 @@ table.projects th, table.projects td {
 .files-cm .cm-editor { height: 100%; }
 
 /* Diff tab: changed-file list | unified diff */
-.diff-root { display: flex; height: 100%; min-height: 0; }
+.diff-root { display: flex; height: 100%; min-height: 0; flex: 1 1 auto; width: 100%; }
 /* Left column: ref pickers on top, changed-file list below. */
 .diff-side { flex: 0 0 300px; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--con-line); }
 .diff-repo {
