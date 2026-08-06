@@ -22,7 +22,7 @@ function sshKeyBasename(p: string): string {
   return p.replace(/\/$/, "").split("/").pop() || p;
 }
 
-export function ConfigTab({ projectId }: { projectId: string }) {
+export function ConfigTab({ projectId, refreshKey }: { projectId: string; refreshKey?: number }) {
   const [cfg, setCfg] = useState<ConfigView | null>(null);
   const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
   const [diff, setDiff] = useState<ConfigDiffEntry[] | null>(null);
@@ -90,6 +90,36 @@ export function ConfigTab({ projectId }: { projectId: string }) {
   );
 
   useEffect(() => load(), [load]);
+
+  // dirty = the user has unsaved edits vs. the last-loaded config. Used to gate
+  // the on-open refresh so re-entering the Config tab doesn't discard in-progress
+  // edits. Compares the fields a reload would overwrite.
+  const norm = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean).join("\n");
+  const dirty =
+    !!cfg &&
+    (norm(allowed) !== norm((cfg.allowed_hosts || []).join("\n")) ||
+      preset !== (cfg.mitm_preset || "minimal") ||
+      norm(monitor) !== norm((cfg.monitor_hosts || []).join("\n")) ||
+      norm(ports) !== norm((cfg.mitm_ports || []).join("\n")) ||
+      newCreds.length > 0 ||
+      Object.keys(removedCreds).length > 0 ||
+      proxy !== cfg.proxy_enabled ||
+      passthrough !== cfg.passthrough_firewall ||
+      dind !== cfg.dind_enabled ||
+      norm(dindPorts) !== norm((cfg.dind_ports || []).join("\n")) ||
+      tmux !== cfg.launch_tmux ||
+      seccomp !== (cfg.seccomp_mode || ""));
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+
+  // Re-fetch fresh /config when the tab is (re)opened (refreshKey bumps), unless
+  // the user has unsaved edits — then keep their in-progress state. The first
+  // mount is handled by the load() effect above; skip refreshKey === 0.
+  useEffect(() => {
+    if (!refreshKey) return;
+    if (!dirtyRef.current) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
   // SSH available keys + status
   useEffect(() => {

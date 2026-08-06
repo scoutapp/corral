@@ -42,9 +42,13 @@ export function ProjectPage({ id }: { id: string }) {
     firewall: false,
     config: false,
   });
+  // Bumped each time the Config tab is (re)activated, so ConfigTab re-fetches
+  // fresh /config on open — picking up e.g. a host monitored from the Mitm tab.
+  const [configRefresh, setConfigRefresh] = useState(0);
   const activate = (t: Tab) => {
     setTab(t);
     setSeen((s) => (s[t] ? s : { ...s, [t]: true }));
+    if (t === "config") setConfigRefresh((n) => n + 1);
   };
 
   // Docks
@@ -227,7 +231,7 @@ export function ProjectPage({ id }: { id: string }) {
             {seen.firewall && <FirewallTab projectId={id} />}
           </div>
           <div id="tab-config" className="tab-panel" style={{ display: tab === "config" ? "block" : "none", flex: "1 1 auto", minHeight: 0 }}>
-            {seen.config && <ConfigTab projectId={id} />}
+            {seen.config && <ConfigTab projectId={id} refreshKey={configRefresh} />}
           </div>
         </div>
 
