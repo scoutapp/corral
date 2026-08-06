@@ -43,7 +43,6 @@ type configView struct {
 	AllowedHosts []string   `json:"allowed_hosts"`
 	MonitorHosts []string   `json:"monitor_hosts"`           // the custom list (empty for non-custom presets)
 	MonitorEffective []string `json:"monitor_effective"`     // the hosts actually decrypted under the current preset (for seeding custom)
-	MonitorMandatory []string `json:"monitor_mandatory"`     // always-monitored hosts (credential injection) — locked, not removable
 	MonitorAll   bool       `json:"monitor_all"`
 	MitmPreset   string     `json:"mitm_preset"` // minimal|all|none|custom
 	MitmPorts    []string   `json:"mitm_ports"`
@@ -98,7 +97,6 @@ func (d *dashboardServer) handleConfigRead(w http.ResponseWriter, r *http.Reques
 		Workspace:           workspace,
 		MonitorHosts:        cfg.MonitorHosts,
 		MonitorEffective:    monitorEffective,
-		MonitorMandatory:    config.MandatoryMonitorHosts,
 		MonitorAll:          len(cfg.MonitorHosts) == 0,
 		MitmPreset:          cfg.MitmPresetOrDefault(),
 		MitmPorts:           cfg.MitmPortsOrDefault(),

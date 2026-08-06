@@ -42,31 +42,10 @@ func TestResolveMonitorHosts(t *testing.T) {
 	if !has["api.anthropic.com"] || !has["api.github.com"] {
 		t.Errorf("minimal missing expected hosts: %v", min)
 	}
-	// custom -> the explicit list with the mandatory hosts always unioned in
-	// (they can't be removed — credential injection depends on them).
+	// custom -> the explicit list, untouched
 	custom := (&ProjectConfig{MitmPreset: "custom", MonitorHosts: []string{"only.example.com"}}).ResolveMonitorHosts()
-	chas := map[string]bool{}
-	for _, h := range custom {
-		chas[h] = true
-	}
-	if !chas["only.example.com"] {
-		t.Errorf("custom missing the user's host: %v", custom)
-	}
-	for _, m := range MandatoryMonitorHosts {
-		if !chas[m] {
-			t.Errorf("custom dropped mandatory host %s: %v", m, custom)
-		}
-	}
-	// A custom list that OMITS the mandatory hosts must still include them.
-	omit := (&ProjectConfig{MitmPreset: "custom", MonitorHosts: []string{"only.example.com"}}).ResolveMonitorHosts()
-	found := false
-	for _, h := range omit {
-		if h == "api.anthropic.com" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("custom must force api.anthropic.com even when omitted: %v", omit)
+	if !reflect.DeepEqual(custom, []string{"only.example.com"}) {
+		t.Errorf("custom: got %v", custom)
 	}
 	// default (unset) resolves to minimal
 	def := (&ProjectConfig{}).ResolveMonitorHosts()

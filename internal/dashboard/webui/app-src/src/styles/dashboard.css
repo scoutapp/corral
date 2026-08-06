@@ -458,8 +458,6 @@ table.projects th, table.projects td {
   background: var(--panel); border: 1px solid var(--border); color: var(--fg);
 }
 .monitor-chip-host { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-.monitor-chip-locked { padding-right: 8px; opacity: 0.85; border-style: dashed; }
-.monitor-chip-lock { font-size: 10px; line-height: 1; }
 .monitor-chip-x {
   border: none; background: transparent; color: var(--muted); cursor: pointer;
   font-size: 11px; line-height: 1; padding: 2px 4px; border-radius: 50%;
