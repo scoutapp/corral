@@ -86,6 +86,18 @@ body.console {
 }
 .pane:hover { background: var(--con-panel-hi); transform: translateY(-1px); }
 .pane:focus-visible { outline: 2px solid var(--con-working); outline-offset: 2px; }
+
+/* Loading skeletons: shown while the first /status is in flight so the empty
+   state doesn't flash before real projects arrive. Non-interactive, shimmering
+   placeholder lines shaped like a pane's name/peek/footer. */
+.pane-skeleton { cursor: default; pointer-events: none; border-left-color: var(--con-line); }
+.pane-skeleton:hover { transform: none; background: var(--con-panel); }
+.skel { display: inline-block; height: 0.7rem; border-radius: 4px;
+  background: linear-gradient(90deg, var(--con-line) 25%, var(--con-panel-hi) 37%, var(--con-line) 63%);
+  background-size: 400% 100%; animation: skel-shimmer 1.4s ease infinite; }
+.skel-line { vertical-align: middle; }
+.pane-skeleton .pane-peek, .pane-skeleton .pane-foot { display: flex; gap: 0.6rem; }
+@keyframes skel-shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 .pane-working { border-left-color: var(--con-working); }
 .pane-waiting {
   border-left-color: var(--con-waiting);

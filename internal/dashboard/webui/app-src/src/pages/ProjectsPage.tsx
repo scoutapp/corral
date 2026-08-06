@@ -46,7 +46,7 @@ function Dot({ up }: { up: boolean }) {
 
 export function ProjectsPage() {
   useBodyClass("console");
-  const { projects, bootId, connected } = useStatus(3000);
+  const { projects, bootId, connected, loaded } = useStatus(3000);
   const { isMuted, mutedAll, toggleMute, toggleMuteAll, forgetMute } = useMutes(bootId);
   const { notify } = useToasts();
 
@@ -68,6 +68,9 @@ export function ProjectsPage() {
   const seeded = useRef(false);
 
   useEffect(() => {
+    // Until the first poll resolves, keep the initial "connecting…" — don't flash
+    // "lost connection" (connected is false only because nothing has returned yet).
+    if (!loaded) return;
     if (!connected) {
       setSummary("lost connection");
       setSummaryAttn(true);
@@ -89,7 +92,7 @@ export function ProjectsPage() {
 
     setSummary(summarize(projects));
     setSummaryAttn(projects.some((p) => p.activity === "waiting"));
-  }, [projects, connected, isMuted, notify]);
+  }, [projects, connected, loaded, isMuted, notify]);
 
   const sorted = [...projects].sort((a, b) => {
     const ra = RANK[a.activity] ?? 3;
@@ -227,7 +230,27 @@ export function ProjectsPage() {
 
         <section className="section active" style={{ display: section === "projects" ? "" : "none" }}>
           <main className="panes">
-            {sorted.length === 0 && (
+            {/* Before the first /status resolves, show skeleton panes rather than
+                the empty state — otherwise "No projects yet" flashes then vanishes
+                (FOUC) as soon as the poll returns real projects. */}
+            {!loaded &&
+              Array.from({ length: 3 }).map((_, i) => (
+                <div key={`sk-${i}`} className="pane pane-skeleton" aria-hidden="true">
+                  <div className="pane-top">
+                    <span className="pane-name skel skel-line" style={{ width: "40%" }} />
+                    <span className="skel skel-line" style={{ width: "5rem" }} />
+                  </div>
+                  <div className="pane-peek">
+                    <span className="skel skel-line" style={{ width: "70%" }} />
+                  </div>
+                  <div className="pane-foot">
+                    <span className="skel skel-line" style={{ width: "3rem" }} />
+                    <span className="skel skel-line" style={{ width: "3rem" }} />
+                    <span className="skel skel-line" style={{ width: "3rem" }} />
+                  </div>
+                </div>
+              ))}
+            {loaded && sorted.length === 0 && (
               <p className="empty">
                 No projects yet. Start one with <code>sandclaude init</code> then <code>sandclaude start</code>.
               </p>

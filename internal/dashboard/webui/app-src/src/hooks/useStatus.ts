@@ -8,6 +8,10 @@ export interface StatusState {
   projects: StatusRow[];
   bootId: string | null;
   connected: boolean;
+  // loaded is false until the FIRST poll resolves (success or error). Callers use
+  // it to show skeletons instead of assuming an empty project list up front,
+  // which otherwise flashes "No projects yet" before the first /status returns.
+  loaded: boolean;
 }
 
 // useStatus polls GET /status on an interval and returns the latest project
@@ -15,7 +19,7 @@ export interface StatusState {
 // both read from. On a boot_id change (daemon restart) callers may want to
 // reset edge memory — bootId is exposed so they can detect it.
 export function useStatus(pollMs: number = POLL_MS): StatusState {
-  const [state, setState] = useState<StatusState>({ projects: [], bootId: null, connected: false });
+  const [state, setState] = useState<StatusState>({ projects: [], bootId: null, connected: false, loaded: false });
   const timer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -24,10 +28,10 @@ export function useStatus(pollMs: number = POLL_MS): StatusState {
       try {
         const data = await getJSON<StatusResponse>("/status");
         if (!alive) return;
-        setState({ projects: data.projects || [], bootId: data.boot_id, connected: true });
+        setState({ projects: data.projects || [], bootId: data.boot_id, connected: true, loaded: true });
       } catch {
         if (!alive) return;
-        setState((s) => ({ ...s, connected: false }));
+        setState((s) => ({ ...s, connected: false, loaded: true }));
       }
     };
     poll();
