@@ -430,6 +430,25 @@ table.projects th, table.projects td {
 /* success / error coloring for config + global apply messages. */
 .cfg-msg.s-2xx { color: var(--up, #5CE6A8); }
 .cfg-msg.s-4xx { color: #ff6b81; }
+/* Custom monitor-hosts as a managed chip list (Config → Capture). */
+.monitor-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.5rem; }
+.monitor-chip {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 2px 4px 2px 8px; border-radius: 12px; font-size: 12px;
+  background: var(--panel); border: 1px solid var(--border); color: var(--fg);
+}
+.monitor-chip-host { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.monitor-chip-x {
+  border: none; background: transparent; color: var(--muted); cursor: pointer;
+  font-size: 11px; line-height: 1; padding: 2px 4px; border-radius: 50%;
+}
+.monitor-chip-x:hover { color: var(--warn); background: rgba(255,180,84,0.12); }
+.monitor-add { display: flex; gap: 0.4rem; }
+.monitor-add input {
+  flex: 1 1 auto; min-width: 0; font: inherit; font-size: 12px; padding: 3px 6px;
+  border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--fg);
+}
+
 .cfg-cred-add { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
 .cfg-cred-add input, .cfg-cred-add select {
   font: inherit; font-size: 12px; padding: 3px 6px;

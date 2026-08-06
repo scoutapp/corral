@@ -249,7 +249,7 @@ export function ConfigTab({ projectId }: { projectId: string }) {
           </select>
           {preset === "custom" && (
             <div>
-              <textarea className="cfg-edit" rows={Math.max(2, monitor.split("\n").length + 1)} spellCheck={false} value={monitor} onChange={(e) => setMonitor(e.target.value)} />
+              <MonitorList value={monitor} onChange={setMonitor} />
               <div className="muted cfg-note">only these hosts are decrypted; others allowed+logged but direct-dialed</div>
             </div>
           )}
@@ -450,6 +450,85 @@ export function ConfigTab({ projectId }: { projectId: string }) {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// MonitorList renders the custom monitor-hosts as a managed list of removable
+// chips plus an add input. The underlying value is the same newline-joined
+// string the rest of ConfigTab reads (so save/diff logic is unchanged); this is
+// just a friendlier editor over it. Add supports comma/space/newline-separated
+// paste too. Changes here are pending until Review changes -> apply, like the
+// rest of the live zone.
+function MonitorList({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [entry, setEntry] = useState("");
+  const hosts = value
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const write = (list: string[]) => {
+    // de-dupe (case-insensitive), preserve order
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const h of list) {
+      const k = h.toLowerCase();
+      if (h && !seen.has(k)) {
+        seen.add(k);
+        out.push(h);
+      }
+    }
+    onChange(out.join("\n"));
+  };
+
+  const add = () => {
+    const parts = entry
+      .split(/[\s,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!parts.length) return;
+    write([...hosts, ...parts]);
+    setEntry("");
+  };
+  const remove = (h: string) => write(hosts.filter((x) => x !== h));
+
+  return (
+    <div className="monitor-list">
+      {hosts.length === 0 ? (
+        <div className="muted cfg-note" style={{ marginBottom: 6 }}>
+          nothing monitored yet — every allowed host is direct-dialed (undecrypted). Add a host to decrypt it.
+        </div>
+      ) : (
+        <div className="monitor-chips">
+          {hosts.map((h) => (
+            <span className="monitor-chip" key={h}>
+              <span className="monitor-chip-host">{h}</span>
+              <button type="button" className="monitor-chip-x" title={`Stop monitoring ${h}`} onClick={() => remove(h)}>
+                ✕
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="monitor-add">
+        <input
+          type="text"
+          placeholder="add a host (api.example.com)"
+          autoComplete="off"
+          spellCheck={false}
+          value={entry}
+          onChange={(e) => setEntry(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            }
+          }}
+        />
+        <button type="button" className="cfg-btn cfg-btn-ghost" onClick={add}>
+          + add
+        </button>
+      </div>
     </div>
   );
 }
