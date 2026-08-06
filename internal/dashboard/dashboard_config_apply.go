@@ -124,14 +124,22 @@ func (d *dashboardServer) handleConfigApply(w http.ResponseWriter, r *http.Reque
 
 	// Mitm capture preset: persist it to config, then resolve to the effective
 	// monitor-host list and apply it live via the same clear+add path below.
+	//
+	// If the caller ALSO sent an explicit monitor_hosts (e.g. the Mitm tab's
+	// "Monitor host" action posts {mitm_preset:"custom", monitor_hosts:[...]}),
+	// that explicit list wins — don't overwrite it with the resolved preset list,
+	// which for a just-set "custom" preset is whatever was previously stored
+	// (often empty) and would silently drop the host the user asked to monitor.
 	if edit.MitmPreset != nil {
 		if cfg, cerr := readConfigForWorkspace(workspace); cerr == nil {
 			cfg.MitmPreset = *edit.MitmPreset
 			if werr := config.WriteConfig(projectDirForWorkspace(workspace), cfg); werr != nil {
 				fail("save mitm preset", werr)
 			} else {
-				resolved := cfg.ResolveMonitorHosts()
-				edit.MonitorHosts = &resolved // drive the live apply below
+				if edit.MonitorHosts == nil {
+					resolved := cfg.ResolveMonitorHosts()
+					edit.MonitorHosts = &resolved // drive the live apply below
+				}
 				okMsg("mitm capture preset: " + *edit.MitmPreset)
 			}
 		} else {

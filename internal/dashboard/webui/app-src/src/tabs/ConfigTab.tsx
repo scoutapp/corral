@@ -34,6 +34,7 @@ export function ConfigTab({ projectId }: { projectId: string }) {
   const [allowed, setAllowed] = useState("");
   const [preset, setPreset] = useState("minimal");
   const [monitor, setMonitor] = useState("");
+  const [monitorEffective, setMonitorEffective] = useState<string[]>([]);
   const [ports, setPorts] = useState("");
   const [newCreds, setNewCreds] = useState<CredSet[]>([]);
   const [removedCreds, setRemovedCreds] = useState<Record<string, boolean>>({});
@@ -63,6 +64,7 @@ export function ConfigTab({ projectId }: { projectId: string }) {
           setAllowed((c.allowed_hosts || []).join("\n"));
           setPreset(c.mitm_preset || "minimal");
           setMonitor((c.monitor_hosts || []).join("\n"));
+          setMonitorEffective(c.monitor_effective || []);
           setPorts((c.mitm_ports || []).join("\n"));
           setProxy(c.proxy_enabled);
           setPassthrough(c.passthrough_firewall);
@@ -241,7 +243,20 @@ export function ConfigTab({ projectId }: { projectId: string }) {
         </Field>
 
         <Field label="Capture (mitm)">
-          <select className="cfg-select" value={preset} onChange={(e) => setPreset(e.target.value)}>
+          <select
+            className="cfg-select"
+            value={preset}
+            onChange={(e) => {
+              const next = e.target.value;
+              // Seed the custom list from the currently-effective hosts (e.g. the
+              // minimal set) so switching to custom starts from what's monitored
+              // now, rather than an empty list.
+              if (next === "custom" && !monitor.trim() && monitorEffective.length) {
+                setMonitor(monitorEffective.join("\n"));
+              }
+              setPreset(next);
+            }}
+          >
             <option value="minimal">Minimal — Claude + GitHub only</option>
             <option value="all">All — every allowed host</option>
             <option value="none">None — decrypt nothing</option>
