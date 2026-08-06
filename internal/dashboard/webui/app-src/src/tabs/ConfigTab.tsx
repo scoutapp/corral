@@ -253,10 +253,10 @@ export function ConfigTab({ projectId }: { projectId: string }) {
               <div className="muted cfg-note">only these hosts are decrypted; others allowed+logged but direct-dialed</div>
             </div>
           )}
-          <div className="muted cfg-note">
-            ⚠ Monitoring makes the proxy present its own CA. Clients that pin certificates or statically link their TLS with a bundled root
-            store won’t trust it — the handshake fails and the request never completes (so a broken host won’t even appear in the Mitm tab).
-            If a host breaks when monitored, remove it here; it falls back to direct-dial (undecrypted) and works again.
+          <div className="cfg-warn">
+            <strong>⚠ Monitoring a host makes the proxy present its own CA.</strong> Clients that pin certificates or statically link their
+            TLS with a bundled root store won’t trust it — the handshake fails and the request never completes (so a broken host won’t even
+            appear in the Mitm tab). If a host breaks when monitored, remove it here; it falls back to direct-dial (undecrypted) and works again.
           </div>
         </Field>
 
