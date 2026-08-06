@@ -201,13 +201,13 @@ export function ProjectPage({ id }: { id: string }) {
             ))}
           </div>
 
-          <div className="tab-panel" style={{ display: tab === "files" ? "flex" : "none", flex: "1 1 auto", minHeight: 0 }}>
+          <div id="tab-files" className="tab-panel" style={{ display: tab === "files" ? "flex" : "none", flex: "1 1 auto", minHeight: 0 }}>
             {seen.files && <FilesTab projectId={id} />}
           </div>
-          <div className="tab-panel" style={{ display: tab === "diff" ? "flex" : "none", flex: "1 1 auto", minHeight: 0 }}>
+          <div id="tab-diff" className="tab-panel" style={{ display: tab === "diff" ? "flex" : "none", flex: "1 1 auto", minHeight: 0 }}>
             {seen.diff && <DiffTab projectId={id} />}
           </div>
-          <div className="tab-panel" style={{ display: tab === "container" ? "block" : "none" }}>
+          <div id="tab-container" className="tab-panel" style={{ display: tab === "container" ? "block" : "none" }}>
             <div className="screen-frame">
               <div className="screen-bar">
                 <i className="screen-dot" />
@@ -220,13 +220,13 @@ export function ProjectPage({ id }: { id: string }) {
               )}
             </div>
           </div>
-          <div className="tab-panel" style={{ display: tab === "mitm" ? "block" : "none" }}>
+          <div id="tab-mitm" className="tab-panel" style={{ display: tab === "mitm" ? "block" : "none" }}>
             {seen.mitm && <MitmTab projectId={id} mitmUp={!!me?.mitm_up} />}
           </div>
-          <div className="tab-panel" style={{ display: tab === "firewall" ? "block" : "none" }}>
+          <div id="tab-firewall" className="tab-panel" style={{ display: tab === "firewall" ? "block" : "none" }}>
             {seen.firewall && <FirewallTab projectId={id} />}
           </div>
-          <div className="tab-panel" style={{ display: tab === "config" ? "block" : "none" }}>
+          <div id="tab-config" className="tab-panel" style={{ display: tab === "config" ? "block" : "none", flex: "1 1 auto", minHeight: 0 }}>
             {seen.config && <ConfigTab projectId={id} />}
           </div>
         </div>
