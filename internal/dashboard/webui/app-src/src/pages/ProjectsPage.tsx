@@ -153,6 +153,7 @@ export function ProjectsPage() {
   }
 
   return (
+    <>
     <div className="app-shell">
       <nav className="sidebar">
         <div className="brand">
@@ -306,12 +307,13 @@ export function ProjectsPage() {
           </main>
         </section>
       </div>
+    </div>
 
-      <footer className="console-footer">
-        <span className={summaryAttn ? "attention" : "muted"}>{summary}</span>
-      </footer>
+    <footer className="console-footer">
+      <span className={summaryAttn ? "attention" : "muted"}>{summary}</span>
+    </footer>
 
-      {sshFor && (
+    {sshFor && (
         <SSHLoadModal
           projectId={sshFor.id}
           onDone={(loaded) => {
@@ -336,6 +338,6 @@ export function ProjectsPage() {
           }}
         />
       )}
-    </div>
+    </>
   );
 }

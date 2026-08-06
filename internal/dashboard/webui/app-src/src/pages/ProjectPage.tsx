@@ -157,9 +157,8 @@ export function ProjectPage({ id }: { id: string }) {
   const hostHandleRef = useRef<HTMLDivElement | null>(null);
 
   return (
-    <div className="app-shell">
-      <div className={`project-layout${dockCollapsed ? " dock-collapsed" : ""}`} id="project-layout" style={{ width: "100%" }}>
-        <header>
+    <>
+      <header>
           <Link to="/" className="back">
             ← All projects
           </Link>
@@ -190,8 +189,9 @@ export function ProjectPage({ id }: { id: string }) {
           <button className={`dock-toggle${chatOpen ? " on" : ""}`} type="button" title="Ask Claude — a host claude chat (⌘K)" onClick={toggleChat}>
             💬 Ask Claude
           </button>
-        </header>
+      </header>
 
+      <div className={`project-layout${dockCollapsed ? " dock-collapsed" : ""}`} id="project-layout">
         <div className="tab-area">
           <div className="tabs">
             {TABS.map((t) => (
@@ -298,6 +298,6 @@ export function ProjectPage({ id }: { id: string }) {
           }}
         />
       )}
-    </div>
+    </>
   );
 }
