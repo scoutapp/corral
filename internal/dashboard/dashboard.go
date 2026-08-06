@@ -768,10 +768,15 @@ const (
 	mitmDirectQueryCap  = 1000
 )
 
-// parseProxyLogStamp parses the Go-log default stamp "2006/01/02 15:04:05"
-// (local time) into Unix seconds; returns 0 if it doesn't parse.
+// parseProxyLogStamp parses the proxy log's "2006/01/02 15:04:05" stamp into
+// Unix seconds; returns 0 if it doesn't parse. The stamp is UTC: the
+// allowlist-proxy runs inside the container (which is UTC) and logs with
+// log.LUTC, so the wall-clock is UTC regardless of the dashboard host's zone.
+// Parsing as time.Local (the host zone) skewed direct rows by the host's UTC
+// offset relative to the mitmweb flows (whose timestamps are epoch already),
+// misordering the interleaved Mitm table.
 func parseProxyLogStamp(s string) int64 {
-	t, err := time.ParseInLocation("2006/01/02 15:04:05", strings.TrimSpace(s), time.Local)
+	t, err := time.ParseInLocation("2006/01/02 15:04:05", strings.TrimSpace(s), time.UTC)
 	if err != nil {
 		return 0
 	}

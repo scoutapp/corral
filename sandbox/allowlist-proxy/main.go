@@ -458,6 +458,11 @@ func readHTTPStatusLine(conn net.Conn) (string, error) {
 // ----------------------------------------------------------------------------
 
 func main() {
+	// Stamp log lines in UTC explicitly. The dashboard parses these timestamps
+	// (proxy.log DIRECT lines) as UTC to interleave them with mitmweb flows; being
+	// explicit here keeps that correct regardless of the container's TZ.
+	log.SetFlags(log.LstdFlags | log.LUTC)
+
 	listen         := flag.String("listen", "127.0.0.1:3128", "address to listen on")
 	transparent    := flag.String("transparent-listen", "", "if set, also run a transparent (intercepting) listener on this address for iptables-REDIRECTed connections")
 	upstreamStr    := flag.String("upstream", "", "upstream proxy URL (e.g. http://host.docker.internal:8080); empty = direct")

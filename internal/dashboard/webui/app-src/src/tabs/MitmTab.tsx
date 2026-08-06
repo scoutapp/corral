@@ -271,7 +271,10 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
                   const mon = monitoring[r.host];
                   return (
                     <tr key={r.key} className="m-row m-direct" style={{ opacity: 0.62 }}>
-                      <td className="m-when">{fmtWhenLog(r.when)}</td>
+                      {/* Show local time from the parsed epoch (like flows) so
+                          direct + decrypted rows read in the same zone; fall
+                          back to the raw stamp if it didn't parse. */}
+                      <td className="m-when">{r.ts ? fmtWhenEpoch(r.ts) : fmtWhenLog(r.when)}</td>
                       <td className="m-caret" />
                       <td className="m-method">—</td>
                       <td className="m-host">{r.host}</td>
