@@ -752,18 +752,43 @@ func (d *dashboardServer) handleMitmContent(w http.ResponseWriter, r *http.Reque
 	d.proxyMitmGet(w, r, state.WebPort, path, "")
 }
 
-// directHost is one allowed-but-not-decrypted host surfaced from the proxy log.
+// directHost is ONE allowed-but-not-decrypted request surfaced from the proxy
+// log — one entry per DIRECT line (not deduped), so the Mitm tab can interleave
+// each individual direct-dialed request chronologically with the decrypted flows.
 type directHost struct {
 	Host string `json:"host"` // hostname:port
-	When string `json:"when"` // last-seen "YYYY/MM/DD HH:MM:SS" (proxy log stamp)
-	Hits int    `json:"hits"` // times seen in the scanned window
+	When string `json:"when"` // "YYYY/MM/DD HH:MM:SS" (proxy log stamp, local)
+	TS   int64  `json:"ts"`   // Unix seconds parsed from When (0 if unparseable), for sorting
 }
 
-// handleMitmDirect scans this project's proxy.log for DIRECT lines — hosts that
-// were allowed but direct-dialed (not routed through mitmweb, so never decrypted)
-// — and returns them deduped with a last-seen timestamp + hit count. The Mitm
-// tab merges these with mitmweb's decrypted flows so every contacted host is
-// visible; a direct-dialed host can then be one-click added to the monitor list.
+// mitmDirectRecentCap bounds the no-filter response (the 2s poll). mitmDirectQueryCap
+// bounds a ?q= full-log search so a giant log can't produce an unbounded payload.
+const (
+	mitmDirectRecentCap = 500
+	mitmDirectQueryCap  = 1000
+)
+
+// parseProxyLogStamp parses the Go-log default stamp "2006/01/02 15:04:05"
+// (local time) into Unix seconds; returns 0 if it doesn't parse.
+func parseProxyLogStamp(s string) int64 {
+	t, err := time.ParseInLocation("2006/01/02 15:04:05", strings.TrimSpace(s), time.Local)
+	if err != nil {
+		return 0
+	}
+	return t.Unix()
+}
+
+// handleMitmDirect scans this project's proxy.log for DIRECT lines — requests
+// that were allowed but direct-dialed (not routed through mitmweb, so never
+// decrypted). Each line becomes its own entry so the Mitm tab shows individual
+// direct requests inline in the flow, not one grouped row per host.
+//
+//   - no ?q=  : the most recent mitmDirectRecentCap DIRECT lines (cheap — this
+//     is the 2s poll). Only a bounded tail of the log is read.
+//   - ?q=<s>  : search the WHOLE log for DIRECT lines whose host contains <s>
+//     (case-insensitive), returning the newest mitmDirectQueryCap matches. This
+//     is how the Mitm host filter reaches full on-disk history for direct hosts
+//     (mitmweb has no record of them — the log is the only source).
 //
 // Log line shape (see allowlist-proxy/main.go):
 //   2026/08/05 00:56:02 DIRECT   http-intake.logs.us5.datadoghq.com:443 (not-monitored)
@@ -773,30 +798,33 @@ func (d *dashboardServer) handleMitmDirect(w http.ResponseWriter, r *http.Reques
 		http.NotFound(w, r)
 		return
 	}
+	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
 	logPath := filepath.Join(logsDirForWorkspace(workspace), "proxy.log")
-	lines, _, rerr := readTailLines(logPath, 512*1024, 4000)
+
+	// With a query, read the whole log (bounded output cap keeps it safe); without,
+	// only a recent tail — the common poll path stays cheap.
+	var lines []string
+	var rerr error
+	if q != "" {
+		lines, rerr = readAllLines(logPath)
+	} else {
+		lines, _, rerr = readTailLines(logPath, 512*1024, 4000)
+	}
 	if rerr != nil {
-		// No log yet (never started) — return an empty set rather than an error so
-		// the tab just shows the decrypted flows.
+		// No log yet (never started) — empty set, not an error, so the tab still
+		// shows the decrypted flows.
 		writeJSON(w, map[string]any{"direct": []directHost{}})
 		return
 	}
 
-	type acc struct {
-		when string
-		hits int
-	}
-	seen := map[string]*acc{}
-	order := []string{}
+	out := make([]directHost, 0, mitmDirectRecentCap)
 	for _, ln := range lines {
-		// Split "<date> <time> DIRECT   <host> (<reason>)".
 		i := strings.Index(ln, " DIRECT")
 		if i < 0 {
 			continue
 		}
 		stamp := strings.TrimSpace(ln[:i])
 		rest := strings.TrimSpace(ln[i+len(" DIRECT"):])
-		// rest = "http-intake…:443 (not-monitored)" — host is the first field.
 		host := rest
 		if sp := strings.IndexByte(rest, ' '); sp >= 0 {
 			host = rest[:sp]
@@ -804,19 +832,19 @@ func (d *dashboardServer) handleMitmDirect(w http.ResponseWriter, r *http.Reques
 		if host == "" {
 			continue
 		}
-		a := seen[host]
-		if a == nil {
-			a = &acc{}
-			seen[host] = a
-			order = append(order, host)
+		if q != "" && !strings.Contains(strings.ToLower(host), q) {
+			continue
 		}
-		a.when = stamp // last-seen wins (lines are chronological)
-		a.hits++
+		out = append(out, directHost{Host: host, When: stamp, TS: parseProxyLogStamp(stamp)})
 	}
 
-	out := make([]directHost, 0, len(order))
-	for _, h := range order {
-		out = append(out, directHost{Host: h, When: seen[h].when, Hits: seen[h].hits})
+	// Keep the newest N (lines are chronological, so the tail is newest).
+	limit := mitmDirectRecentCap
+	if q != "" {
+		limit = mitmDirectQueryCap
+	}
+	if len(out) > limit {
+		out = out[len(out)-limit:]
 	}
 	writeJSON(w, map[string]any{"direct": out})
 }
@@ -897,6 +925,17 @@ func readTailLines(path string, maxBytes int64, maxLines int) ([]string, int64, 
 		lines = lines[len(lines)-maxLines:]
 	}
 	return lines, size, nil
+}
+
+// readAllLines reads a whole log file into lines, bounded to the last
+// readAllCap bytes as a safety valve against a pathologically large log (still
+// far more than any realistic proxy.log). Used by the direct-host history
+// search, where the caller further caps the matched output.
+const readAllCap = 32 * 1024 * 1024
+
+func readAllLines(path string) ([]string, error) {
+	lines, _, err := readTailLines(path, readAllCap, 1<<31-1)
+	return lines, err
 }
 
 // sseEscape strips trailing \r so a Windows-style log line doesn't corrupt the

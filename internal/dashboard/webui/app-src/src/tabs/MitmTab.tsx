@@ -48,10 +48,10 @@ function contentTypeOf(msg?: MitmMessage): string {
   return "";
 }
 
-// Unified row model: a decrypted mitm flow, or a direct-dialed host.
+// Unified row model: a decrypted mitm flow, or one direct-dialed request.
 type Row =
   | { kind: "flow"; ts: number; flow: MitmFlow }
-  | { kind: "direct"; ts: number; host: string; when: string; hits: number };
+  | { kind: "direct"; ts: number; host: string; when: string; key: string };
 
 const BODY_CAP = 512 * 1024;
 
@@ -107,12 +107,21 @@ function HeaderTable({ headers }: { headers?: [string, string][] }) {
 export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: boolean }) {
   const [flows, setFlows] = useState<MitmFlow[]>([]);
   const [direct, setDirect] = useState<DirectHost[]>([]);
-  const [filter, setFilter] = useState("");
+  const [filter, setFilter] = useState(""); // live input
+  const [query, setQuery] = useState(""); // debounced -> server-side direct search
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState("loading flows…");
   const [statusErr, setStatusErr] = useState(false);
   const [monitoring, setMonitoring] = useState<Record<string, "busy" | "done">>({});
   const visibleRef = useRef(true);
+
+  // Debounce the filter into `query`. `query` drives the SERVER-SIDE direct
+  // search (so a host filter reaches full on-disk history, not just the loaded
+  // window); the live `filter` still filters decrypted flows client-side.
+  useEffect(() => {
+    const t = window.setTimeout(() => setQuery(filter.trim()), 250);
+    return () => window.clearTimeout(t);
+  }, [filter]);
 
   const poll = useCallback(async () => {
     try {
@@ -125,12 +134,14 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
       setStatusErr(true);
     }
     try {
-      const d = await getJSON<{ direct: DirectHost[] }>(api(projectId, "/mitm/direct"));
+      // With a query, ask the server to search the whole log; else recent tail.
+      const qs = query ? `?q=${encodeURIComponent(query)}` : "";
+      const d = await getJSON<{ direct: DirectHost[] }>(api(projectId, `/mitm/direct${qs}`));
       setDirect(d.direct || []);
     } catch {
       /* direct is best-effort */
     }
-  }, [projectId]);
+  }, [projectId, query]);
 
   useEffect(() => {
     if (!mitmUp) return;
@@ -164,27 +175,26 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
 
   if (!mitmUp) return <p className="empty">Credential proxy isn't running for this project.</p>;
 
-  // Build the merged, newest-first row list, honoring the filter.
+  // Build the merged, newest-first row list. Each direct-dialed request is its
+  // OWN row, interleaved with decrypted flows by timestamp — not grouped by host
+  // or sunk to the bottom.
   const terms = filter.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  const decryptedHosts = new Set(flows.map((f) => (f.request?.pretty_host || f.request?.host || "").toLowerCase()));
   const rows: Row[] = [];
-  for (const f of flows) rows.push({ kind: "flow", ts: f.request?.timestamp_start || f.timestamp_created || 0, flow: f });
-  for (const dh of direct) {
-    // Hide a direct host if we already have a decrypted flow for it (it's now monitored).
-    if (decryptedHosts.has(dh.host.split(":")[0].toLowerCase())) continue;
-    rows.push({ kind: "direct", ts: 0, host: dh.host, when: dh.when, hits: dh.hits });
+  // Decrypted flows: filtered client-side over mitmweb's live set.
+  for (const f of flows) {
+    const hay = [f.request?.method, f.request?.pretty_host || f.request?.host, f.request?.path, f.response?.status_code]
+      .join(" ")
+      .toLowerCase();
+    if (terms.length && !terms.every((t) => hay.includes(t))) continue;
+    rows.push({ kind: "flow", ts: f.request?.timestamp_start || f.timestamp_created || 0, flow: f });
   }
+  // Direct rows: the server already applied any host query (?q=), so include all
+  // returned entries as-is. Each gets a stable key (host + when + index).
+  direct.forEach((dh, i) => {
+    rows.push({ kind: "direct", ts: dh.ts, host: dh.host, when: dh.when, key: `${dh.host}|${dh.when}|${i}` });
+  });
   rows.sort((a, b) => b.ts - a.ts);
-
-  const matchRow = (r: Row): boolean => {
-    if (!terms.length) return true;
-    const hay =
-      r.kind === "flow"
-        ? [r.flow.request?.method, r.flow.request?.pretty_host || r.flow.request?.host, r.flow.request?.path, r.flow.response?.status_code].join(" ").toLowerCase()
-        : `direct ${r.host}`.toLowerCase();
-    return terms.every((t) => hay.includes(t));
-  };
-  const shown = rows.filter(matchRow);
+  const shown = rows;
 
   return (
     <>
@@ -193,9 +203,10 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
         <span className={statusErr ? "s-4xx" : "muted"}>{status}</span>
       </div>
       <p className="muted cfg-note" style={{ padding: "0 0.5rem 0.5rem" }}>
-        Decrypted flows are shown for <strong>monitored</strong> hosts. Allowed-but-direct-dialed hosts appear dimmed with a “not decrypted”
-        badge — their TLS isn’t intercepted, so contents aren’t available. Click <em>Monitor</em> to decrypt future requests (the
-        already-completed one can’t be retroactively decrypted). All traffic is in the Firewall Log.
+        Decrypted flows (monitored hosts) and individual direct-dialed requests are interleaved by time. Direct rows are dimmed with a
+        “not decrypted” badge — their TLS isn’t intercepted, so contents aren’t available; click <em>Monitor</em> to decrypt future
+        requests to that host (the already-completed one can’t be retroactively decrypted). Filtering by host searches the full proxy-log
+        history for direct requests; decrypted flows filter over mitmweb’s current set.
       </p>
       <div id="mitm-flows">
         {rows.length === 0 && <p className="empty">No traffic captured yet.</p>}
@@ -219,13 +230,13 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
                 if (r.kind === "direct") {
                   const mon = monitoring[r.host];
                   return (
-                    <tr key={`direct:${r.host}`} className="m-row m-direct" style={{ opacity: 0.62 }}>
+                    <tr key={r.key} className="m-row m-direct" style={{ opacity: 0.62 }}>
                       <td className="m-when">{fmtWhenLog(r.when)}</td>
                       <td className="m-caret" />
                       <td className="m-method">—</td>
                       <td className="m-host">{r.host}</td>
                       <td className="m-path">
-                        <span className="cfg-ssh-badge">not decrypted</span> {r.hits > 1 ? `· ${r.hits}×` : ""}
+                        <span className="cfg-ssh-badge">not decrypted</span>
                       </td>
                       <td className="m-status">—</td>
                       <td className="m-size">—</td>

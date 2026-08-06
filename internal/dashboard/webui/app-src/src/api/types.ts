@@ -249,10 +249,12 @@ export interface MitmFlow {
   timestamp_created?: number;
 }
 
-// GET /p/<id>/mitm/direct -> { direct: DirectHost[] } — allowed-but-not-decrypted
-// hosts parsed from the proxy log (direct-dialed; no decrypted contents exist).
+// GET /p/<id>/mitm/direct[?q=] -> { direct: DirectHost[] } — one entry per
+// allowed-but-not-decrypted (direct-dialed) request from the proxy log. No
+// decrypted contents exist for these. With ?q= the server searches the whole
+// log (host contains q) for historical reach; without, it's the recent tail.
 export interface DirectHost {
   host: string; // hostname:port
   when: string; // "YYYY/MM/DD HH:MM:SS"
-  hits: number;
+  ts: number; // Unix seconds (0 if unparseable) — for chronological interleave
 }
