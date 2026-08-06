@@ -1,6 +1,11 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { getJSON, getText, postJSON } from "../api/client";
 import type { ConfigView, DirectHost, MitmFlow, MitmMessage } from "../api/types";
+import { Modal } from "../components/Modal";
+
+// localStorage flag: once the user acknowledges the CA-trust caveat with
+// "don't show again", the Monitor confirm modal is skipped on future clicks.
+const MONITOR_WARN_KEY = "sandclaude.monitorWarnAck";
 
 // Mitm tab: mitmweb's decrypted flows MERGED with the proxy log's direct-dialed
 // hosts, so every contacted host is visible. Decrypted rows expand to show
@@ -115,6 +120,27 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
   const [monitoring, setMonitoring] = useState<Record<string, "busy" | "done">>({});
   const visibleRef = useRef(true);
 
+  // CA-trust caveat gate. The first time you click "Monitor", a modal explains
+  // the caveat and requires an explicit "I understand" acknowledgment. Once
+  // acknowledged (persisted), future Monitor clicks act immediately. The ack
+  // checkbox in the modal reflects the persisted state (stays selected).
+  const [confirmHost, setConfirmHost] = useState<string | null>(null);
+  const [ack, setAck] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(MONITOR_WARN_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const persistAck = (v: boolean) => {
+    setAck(v);
+    try {
+      localStorage.setItem(MONITOR_WARN_KEY, v ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  };
+
   // Debounce the filter into `query`. `query` drives the SERVER-SIDE direct
   // search (so a host filter reaches full on-disk history, not just the loaded
   // window); the live `filter` still filters decrypted flows client-side.
@@ -171,6 +197,15 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
       }
     },
     [projectId],
+  );
+
+  // Gate the Monitor action behind the caveat modal until acknowledged.
+  const requestMonitor = useCallback(
+    (hostPort: string) => {
+      if (ack) monitorHost(hostPort);
+      else setConfirmHost(hostPort);
+    },
+    [ack, monitorHost],
   );
 
   if (!mitmUp) return <p className="empty">Credential proxy isn't running for this project.</p>;
@@ -246,7 +281,7 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
                             monitoring ✓
                           </span>
                         ) : (
-                          <button className="cfg-btn cfg-btn-ghost" disabled={mon === "busy"} title="Decrypt future requests to this host" onClick={() => monitorHost(r.host)}>
+                          <button className="cfg-btn cfg-btn-ghost" disabled={mon === "busy"} title="Decrypt future requests to this host" onClick={() => requestMonitor(r.host)}>
                             {mon === "busy" ? "…" : "Monitor"}
                           </button>
                         )}
@@ -297,6 +332,39 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
           </table>
         )}
       </div>
+
+      {confirmHost && (
+        <Modal title="Monitor this host?" onClose={() => setConfirmHost(null)}>
+          <div className="cfg-warn" style={{ marginTop: 0 }}>
+            <strong>⚠ Monitoring makes the proxy present its own CA.</strong> Clients that pin certificates or statically link their TLS with
+            a bundled root store won’t trust it — the handshake fails and the request never completes (so a broken host won’t even appear
+            here). If a host breaks after you monitor it, remove it from the monitor list in <em>Config → Capture</em>; it falls back to
+            direct-dial (undecrypted) and works again.
+          </div>
+          <p className="muted" style={{ fontSize: "0.82rem" }}>
+            Future requests to <code>{confirmHost.split(":")[0]}</code> will be decrypted. The already-completed request can’t be
+            retroactively decrypted.
+          </p>
+          <label className="cfg-inline" style={{ margin: "0.4rem 0 0.8rem" }}>
+            <input type="checkbox" checked={ack} onChange={(e) => persistAck(e.target.checked)} /> I understand — don’t show this again
+          </label>
+          <div className="form-actions">
+            <button
+              className="btn primary"
+              onClick={() => {
+                const h = confirmHost;
+                setConfirmHost(null);
+                monitorHost(h);
+              }}
+            >
+              Monitor host
+            </button>
+            <button className="cfg-btn cfg-btn-ghost" onClick={() => setConfirmHost(null)}>
+              Cancel
+            </button>
+          </div>
+        </Modal>
+      )}
     </>
   );
 }
