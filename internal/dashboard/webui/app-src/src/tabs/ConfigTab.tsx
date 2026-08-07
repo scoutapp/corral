@@ -119,6 +119,21 @@ export function ConfigTab({ projectId, refreshKey }: { projectId: string; refres
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 
+  // Also re-fetch when the window regains focus / becomes visible, so a change
+  // made elsewhere (e.g. monitoring a host from the Mitm tab, or the CLI) shows
+  // up without a manual reload. Skipped while dirty so it never clobbers edits.
+  useEffect(() => {
+    const onFocus = () => {
+      if (document.visibilityState !== "hidden" && !dirtyRef.current) load();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [load]);
+
   // SSH available keys + status
   useEffect(() => {
     getJSON<{ keys: SSHAvailableKey[] }>(api(projectId, "/sshkeys/available"))
