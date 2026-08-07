@@ -104,6 +104,14 @@ func (c *ProjectConfig) ResolveMonitorHosts() []string {
 	case "minimal":
 		return append([]string(nil), MinimalMonitorHosts...)
 	default: // custom
+		// An empty custom list means "monitor nothing" (selective mode ON, no
+		// discretionary hosts) — NOT "monitor all". Return the never-matching
+		// sentinel so the proxy keeps selective mode active; credentialed hosts are
+		// still force-mitm'd separately. Without this, removing the last custom host
+		// writes an empty file, which the proxy reads as monitor-all.
+		if len(c.MonitorHosts) == 0 {
+			return []string{MonitorNoneSentinel}
+		}
 		return c.MonitorHosts
 	}
 }
