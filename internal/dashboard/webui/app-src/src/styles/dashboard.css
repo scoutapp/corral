@@ -339,18 +339,10 @@ table.projects th, table.projects td {
 .m-caret { color: var(--muted); width: 1.2em; text-align: center; }
 
 .mitm-detailrow > td { padding: 0; background: color-mix(in srgb, var(--fg) 3%, transparent); }
-/* Pin the expanded detail to the left of the scroll viewport and bound it to the
-   flows pane's own width (--flows-w, set by JS from #mitm-flows clientWidth), so
-   a long header value / body wraps WITHIN the detail rather than forcing the
-   whole max-content table (and every row) to be extra-wide. box-sizing keeps the
-   padding inside the bound. */
+/* The table is width:100% so the detail cell can't widen it; the detail just
+   fills the cell and wraps its content. */
 .mitm-detail {
   padding: 0.5rem 0.75rem 0.75rem;
-  position: sticky;
-  left: 0;
-  width: var(--flows-w, 100%);
-  max-width: var(--flows-w, 100%);
-  box-sizing: border-box;
   overflow: hidden;
 }
 .mitm-sec {
@@ -540,15 +532,24 @@ table.projects th, table.projects td {
 }
 
 .mitm-table {
-  /* Grow to content and let the wide table scroll horizontally within
-     #mitm-flows (overflow:auto) — a long path/host pushes width instead of the
-     table getting bigger or wrapping. min-width keeps it filling the pane when
-     content is short. */
-  min-width: 100%;
-  width: max-content;
+  /* Always exactly the pane width — the table itself never overflows, so
+     expanding a flow's detail row can't grow it and columns never reflow. Long
+     path/host values scroll WITHIN their own cell instead (see .m-path/.m-host).
+     Fixed layout keeps column widths stable between header and body rows. */
+  width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 12px;
 }
+/* Fixed column widths so nothing shifts when the caret flips ▸/▾ on expand or a
+   direct row has an empty caret. The path column takes the remaining space. */
+.mitm-table .m-when { width: 5.5rem; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mitm-table .m-caret { width: 1.25rem; text-align: center; }
+.mitm-table .m-method { width: 4rem; }
+.mitm-table .m-host { width: 14rem; }
+.mitm-table .m-status { width: 3.5rem; }
+.mitm-table .m-size { width: 4rem; }
+.mitm-table .m-dur { width: 4rem; }
 .mitm-table th, .mitm-table td {
   text-align: left;
   padding: 4px 8px;
@@ -564,12 +565,16 @@ table.projects th, table.projects td {
   z-index: 1;
 }
 .mitm-table .m-method { color: var(--accent); }
-/* Show the full path (nowrap) so a long one extends the row and scrolls
-   horizontally within #mitm-flows, rather than being ellipsis-truncated. */
-.mitm-table .m-path { white-space: nowrap; }
-.mitm-table .m-host { white-space: nowrap; }
+/* path/host clip to their fixed column; a long value scrolls WITHIN the cell via
+   an inner scroller (.cell-scroll), so the table width never changes. */
+.mitm-table .m-path, .mitm-table .m-host { overflow: hidden; }
+.mitm-table .cell-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: thin;
+}
 .mitm-table .m-size, .mitm-table .m-dur { color: var(--muted); text-align: right; }
-.mitm-table .m-when { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mitm-table .m-status { font-variant-numeric: tabular-nums; }
 .mitm-table .s-2xx { color: var(--up); }
 .mitm-table .s-3xx { color: var(--accent); }

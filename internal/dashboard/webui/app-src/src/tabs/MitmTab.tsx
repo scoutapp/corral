@@ -119,20 +119,6 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
   const [statusErr, setStatusErr] = useState(false);
   const [monitoring, setMonitoring] = useState<Record<string, "busy" | "done">>({});
   const visibleRef = useRef(true);
-  const flowsRef = useRef<HTMLDivElement | null>(null);
-
-  // Bound the expanded detail row to the flows pane's own visible width via the
-  // --flows-w CSS var, so a long header/body wraps inside the detail instead of
-  // widening the (max-content) table. Track it on mount + resize.
-  useEffect(() => {
-    const el = flowsRef.current;
-    if (!el) return;
-    const set = () => el.style.setProperty("--flows-w", `${el.clientWidth}px`);
-    set();
-    const ro = new ResizeObserver(set);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
 
   // CA-trust caveat gate. The first time you click "Monitor", a modal explains
   // the caveat and requires an explicit "I understand" acknowledgment. Once
@@ -262,7 +248,7 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
         requests to that host (the already-completed one can’t be retroactively decrypted). Filtering by host searches the full proxy-log
         history for direct requests; decrypted flows filter over mitmweb’s current set.
       </p>
-      <div id="mitm-flows" ref={flowsRef}>
+      <div id="mitm-flows">
         {rows.length === 0 && <p className="empty">No traffic captured yet.</p>}
         {rows.length > 0 && shown.length === 0 && <p className="empty">No flows match “{filter}”.</p>}
         {shown.length > 0 && (
@@ -291,7 +277,9 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
                       <td className="m-when">{r.ts ? fmtWhenEpoch(r.ts) : fmtWhenLog(r.when)}</td>
                       <td className="m-caret" />
                       <td className="m-method">—</td>
-                      <td className="m-host">{r.host}</td>
+                      <td className="m-host">
+                        <div className="cell-scroll">{r.host}</div>
+                      </td>
                       <td className="m-path">
                         <span className="cfg-ssh-badge">not decrypted</span>
                       </td>
@@ -323,9 +311,11 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
                       <td className="m-when">{fmtWhenEpoch(req.timestamp_start || f.timestamp_created)}</td>
                       <td className="m-caret">{open ? "▾" : "▸"}</td>
                       <td className="m-method">{req.method || ""}</td>
-                      <td className="m-host">{req.pretty_host || req.host || ""}</td>
+                      <td className="m-host">
+                        <div className="cell-scroll">{req.pretty_host || req.host || ""}</div>
+                      </td>
                       <td className="m-path" title={req.path || ""}>
-                        {req.path || ""}
+                        <div className="cell-scroll">{req.path || ""}</div>
                       </td>
                       <td className={`m-status ${statusClass(code)}`}>{code || "…"}</td>
                       <td className="m-size">{fmtBytes(size)}</td>
