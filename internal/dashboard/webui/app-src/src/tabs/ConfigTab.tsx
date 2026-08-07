@@ -298,7 +298,25 @@ export function ConfigTab({ projectId, refreshKey }: { projectId: string; refres
           </select>
           {preset === "custom" && (
             <div>
-              <MonitorList value={monitor} onChange={setMonitor} />
+              <MonitorList
+                value={monitor}
+                onChange={setMonitor}
+                onPersist={async (hosts) => {
+                  // Persist + reload immediately (like the Mitm tab's Monitor
+                  // button), so add/remove take effect without Review→apply and
+                  // there's no staged state to get flipped back.
+                  setMonitor(hosts.join("\n"));
+                  try {
+                    const r = await postJSON<{ results?: string[] }>(api(projectId, "/config/apply"), {
+                      mitm_preset: "custom",
+                      monitor_hosts: hosts,
+                    });
+                    setMsg({ text: (r.results || []).join("  •  ") || "✓ monitor list updated", err: false });
+                  } catch (e) {
+                    setMsg({ text: `apply failed: ${(e as Error).message}`, err: true });
+                  }
+                }}
+              />
               <div className="muted cfg-note">
                 only these hosts are decrypted; others allowed+logged but direct-dialed. Hosts with an injected credential are always
                 decrypted regardless (required for credential injection) and aren't listed here.
@@ -507,12 +525,20 @@ export function ConfigTab({ projectId, refreshKey }: { projectId: string; refres
 }
 
 // MonitorList renders the custom monitor-hosts as a managed list of removable
-// chips plus an add input. The underlying value is the same newline-joined
-// string the rest of ConfigTab reads (so save/diff logic is unchanged); this is
-// just a friendlier editor over it. Add supports comma/space/newline-separated
-// paste too. Changes here are pending until Review changes -> apply, like the
-// rest of the live zone.
-function MonitorList({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+// chips plus an add input. Add/remove persist IMMEDIATELY via onPersist (POST
+// config/apply + proxy reload) — like the Mitm tab's Monitor button — so there's
+// no staged state to get flipped back, and ✕ takes effect at once. onChange
+// keeps the parent's local mirror in sync for the dirty check. Add supports
+// comma/space/newline-separated paste.
+function MonitorList({
+  value,
+  onChange,
+  onPersist,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onPersist: (hosts: string[]) => void;
+}) {
   const [entry, setEntry] = useState("");
   const hosts = value
     .split("\n")
@@ -531,6 +557,7 @@ function MonitorList({ value, onChange }: { value: string; onChange: (v: string)
       }
     }
     onChange(out.join("\n"));
+    onPersist(out);
   };
 
   const add = () => {

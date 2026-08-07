@@ -182,7 +182,9 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
   }, [mitmUp, poll]);
 
   // Load the current monitor list so already-monitored hosts render as historical
-  // (not with a Monitor button). Refreshed on mount and after a monitor action.
+  // (not with a Monitor button). Kept authoritative by refreshing on mount, on
+  // every poll tick, on window focus, and after a monitor action — so a removal
+  // made in the Config tab (or via the CLI) is reflected here without a reload.
   const refreshMonitored = useCallback(async () => {
     try {
       const cfg = await getJSON<ConfigView>(api(projectId, "/config"));
@@ -192,7 +194,15 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
     }
   }, [projectId]);
   useEffect(() => {
-    if (mitmUp) refreshMonitored();
+    if (!mitmUp) return;
+    refreshMonitored();
+    const id = window.setInterval(() => visibleRef.current && refreshMonitored(), 3000);
+    const onFocus = () => refreshMonitored();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [mitmUp, refreshMonitored]);
 
   const monitorHost = useCallback(
