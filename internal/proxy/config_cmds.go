@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -237,13 +236,12 @@ func ApplyProxyConfig(scope ApplyScope) error {
 
 	if scope.MonitorOrPorts {
 		monitorPath := MonitorHostsPath()
-		if len(cfg.MonitorHosts) > 0 {
-			if err := config.WriteMonitorHostsFile(monitorPath, cfg.MonitorHosts); err != nil {
-				return err
-			}
-		} else {
-			// Empty list -> remove the file so the proxy falls back to monitor-all.
-			os.Remove(monitorPath)
+		// Always write the file (even empty) rather than removing it: the file is a
+		// bind-mount target, and a missing source makes Docker recreate it as a
+		// directory on the next start (breaking all future writes). The proxy treats
+		// an empty file as "monitor all", same as absent.
+		if err := config.WriteMonitorHostsFile(monitorPath, cfg.ResolveMonitorHosts()); err != nil {
+			return err
 		}
 
 		containerName := session.RunningContainerName()

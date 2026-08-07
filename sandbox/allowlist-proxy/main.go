@@ -148,6 +148,13 @@ func (al *Allowlist) setFromText(text, path, label string) error {
 
 // Allowed returns true if host (without port) is in the allowlist or is a
 // subdomain of a listed domain.
+// Len reports how many domains the list holds (0 = empty). Concurrency-safe.
+func (al *Allowlist) Len() int {
+	al.mu.RLock()
+	defer al.mu.RUnlock()
+	return len(al.domains)
+}
+
 func (al *Allowlist) Allowed(host string) bool {
 	h, _, err := net.SplitHostPort(host)
 	if err != nil {
@@ -591,6 +598,17 @@ func main() {
 		if err := handler.monitorlist.loadPlain(*monitorPath); err != nil {
 			log.Printf("monitor-list load failed: %v — monitoring all allowed hosts", err)
 			handler.monitorActive.Store(false)
+			return
+		}
+		// An EMPTY monitor file means "monitor all" (same as absent) — NOT "monitor
+		// nothing". A present-but-empty file is common: the mount target is written
+		// unconditionally so Docker never turns it into a directory, and a project
+		// with no custom monitor list writes an empty one. Without this, an empty
+		// file would leave monitorActive=true with zero hosts, silently direct-
+		// dialing everything.
+		if handler.monitorlist.Len() == 0 {
+			handler.monitorActive.Store(false)
+			log.Printf("monitor-list empty (%s) — monitoring all allowed hosts", *monitorPath)
 			return
 		}
 		handler.monitorActive.Store(true)
