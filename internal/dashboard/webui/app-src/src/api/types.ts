@@ -50,7 +50,6 @@ export interface ConfigView {
   workspace: string;
   allowed_hosts: string[];
   monitor_hosts: string[];
-  monitor_effective: string[]; // concrete hosts decrypted under the current preset (for seeding custom)
   monitor_all: boolean;
   mitm_preset: string; // minimal|all|none|custom
   mitm_ports: string[];

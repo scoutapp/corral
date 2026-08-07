@@ -42,7 +42,6 @@ type configView struct {
 	// Live zone
 	AllowedHosts []string   `json:"allowed_hosts"`
 	MonitorHosts []string   `json:"monitor_hosts"`           // the custom list (empty for non-custom presets)
-	MonitorEffective []string `json:"monitor_effective"`     // the hosts actually decrypted under the current preset (for seeding custom)
 	MonitorAll   bool       `json:"monitor_all"`
 	MitmPreset   string     `json:"mitm_preset"` // minimal|all|none|custom
 	MitmPorts    []string   `json:"mitm_ports"`
@@ -83,20 +82,10 @@ func (d *dashboardServer) handleConfigRead(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Effective monitor list = the concrete hosts decrypted under the current
-	// preset, used to seed the custom editor when switching presets. "all"/"none"
-	// have no concrete host list to seed from, so leave it empty there.
-	var monitorEffective []string
-	switch cfg.MitmPresetOrDefault() {
-	case "minimal", "custom":
-		monitorEffective = cfg.ResolveMonitorHosts()
-	}
-
 	view := configView{
 		ID:                  id,
 		Workspace:           workspace,
 		MonitorHosts:        cfg.MonitorHosts,
-		MonitorEffective:    monitorEffective,
 		MonitorAll:          len(cfg.MonitorHosts) == 0,
 		MitmPreset:          cfg.MitmPresetOrDefault(),
 		MitmPorts:           cfg.MitmPortsOrDefault(),
