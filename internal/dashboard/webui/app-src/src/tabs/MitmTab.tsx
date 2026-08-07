@@ -298,10 +298,11 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
               {shown.map((r) => {
                 if (r.kind === "direct") {
                   const mon = monitoring[r.host];
-                  // A host now in the monitor list (or just monitored this session):
-                  // this direct row is HISTORICAL — it was direct-dialed then; newer
-                  // requests are decrypted. Show "now monitored", not a Monitor button.
-                  const nowMonitored = mon === "done" || monitoredSet.has(r.host.split(":")[0].toLowerCase());
+                  // monitoredSet (from live /config) is the source of truth — a host
+                  // shows "now monitored" iff it's ACTUALLY in the monitor list now.
+                  // The session `monitoring` map only drives the transient "busy"
+                  // state; it must NOT keep a row labelled monitored after removal.
+                  const nowMonitored = monitoredSet.has(r.host.split(":")[0].toLowerCase());
                   return (
                     <tr key={r.key} className="m-row m-direct" style={{ opacity: 0.62 }}>
                       {/* Show local time from the parsed epoch (like flows) so
