@@ -339,7 +339,17 @@ table.projects th, table.projects td {
 .m-caret { color: var(--muted); width: 1.2em; text-align: center; }
 
 .mitm-detailrow > td { padding: 0; background: color-mix(in srgb, var(--fg) 3%, transparent); }
-.mitm-detail { padding: 0.5rem 0.75rem 0.75rem; }
+/* Keep the expanded detail pinned to the left of the scroll viewport and sized
+   to it, so a long header value / body wraps+scrolls WITHIN the detail rather
+   than forcing the whole table (and every row) to be extra-wide. */
+.mitm-detail {
+  padding: 0.5rem 0.75rem 0.75rem;
+  position: sticky;
+  left: 0;
+  width: 100%;
+  max-width: 100vw;
+  box-sizing: border-box;
+}
 .mitm-sec {
   font-size: 11px;
   text-transform: uppercase;
@@ -347,9 +357,11 @@ table.projects th, table.projects td {
   color: var(--muted);
   margin: 0.6rem 0 0.25rem;
 }
-.mitm-headers { border-collapse: collapse; font-size: 12px; }
+.mitm-headers { border-collapse: collapse; font-size: 12px; table-layout: fixed; width: 100%; }
 .mitm-headers td { padding: 1px 10px 1px 0; vertical-align: top; }
-.mitm-headers td:first-child { color: var(--muted); white-space: nowrap; }
+.mitm-headers td:first-child { color: var(--muted); white-space: nowrap; width: 1%; }
+/* Wrap long header values (JWTs, cookies) instead of blowing out the width. */
+.mitm-headers td:last-child { word-break: break-all; }
 .mitm-body {
   margin: 0;
   padding: 0.5rem;
@@ -525,7 +537,12 @@ table.projects th, table.projects td {
 }
 
 .mitm-table {
-  width: 100%;
+  /* Grow to content and let the wide table scroll horizontally within
+     #mitm-flows (overflow:auto) — a long path/host pushes width instead of the
+     table getting bigger or wrapping. min-width keeps it filling the pane when
+     content is short. */
+  min-width: 100%;
+  width: max-content;
   border-collapse: collapse;
   font-size: 12px;
 }
@@ -544,11 +561,10 @@ table.projects th, table.projects td {
   z-index: 1;
 }
 .mitm-table .m-method { color: var(--accent); }
-.mitm-table .m-path {
-  max-width: 40ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+/* Show the full path (nowrap) so a long one extends the row and scrolls
+   horizontally within #mitm-flows, rather than being ellipsis-truncated. */
+.mitm-table .m-path { white-space: nowrap; }
+.mitm-table .m-host { white-space: nowrap; }
 .mitm-table .m-size, .mitm-table .m-dur { color: var(--muted); text-align: right; }
 .mitm-table .m-when { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mitm-table .m-status { font-variant-numeric: tabular-nums; }
