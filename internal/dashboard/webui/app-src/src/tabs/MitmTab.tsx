@@ -118,6 +118,10 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
   const [status, setStatus] = useState("loading flows…");
   const [statusErr, setStatusErr] = useState(false);
   const [monitoring, setMonitoring] = useState<Record<string, "busy" | "done">>({});
+  // Hosts currently in the monitor list (from /config) — a direct row for one of
+  // these is HISTORICAL (it was direct-dialed then; new traffic is decrypted), so
+  // it shows "now monitored" instead of a Monitor button. Lowercased hostnames.
+  const [monitoredSet, setMonitoredSet] = useState<Set<string>>(new Set());
   const visibleRef = useRef(true);
 
   // CA-trust caveat gate. The first time you click "Monitor", a modal explains
@@ -177,6 +181,20 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
     return () => window.clearInterval(id);
   }, [mitmUp, poll]);
 
+  // Load the current monitor list so already-monitored hosts render as historical
+  // (not with a Monitor button). Refreshed on mount and after a monitor action.
+  const refreshMonitored = useCallback(async () => {
+    try {
+      const cfg = await getJSON<ConfigView>(api(projectId, "/config"));
+      setMonitoredSet(new Set((cfg.monitor_hosts || []).map((h) => h.toLowerCase())));
+    } catch {
+      /* best-effort */
+    }
+  }, [projectId]);
+  useEffect(() => {
+    if (mitmUp) refreshMonitored();
+  }, [mitmUp, refreshMonitored]);
+
   const monitorHost = useCallback(
     async (hostPort: string) => {
       const host = hostPort.split(":")[0];
@@ -188,6 +206,7 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
         // custom preset so the explicit monitor list is honored (empty = monitor all).
         await postJSON(api(projectId, "/config/apply"), { mitm_preset: "custom", monitor_hosts: [...list] });
         setMonitoring((m) => ({ ...m, [hostPort]: "done" }));
+        refreshMonitored();
       } catch (e) {
         setMonitoring((m) => {
           const n = { ...m };
@@ -269,6 +288,10 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
               {shown.map((r) => {
                 if (r.kind === "direct") {
                   const mon = monitoring[r.host];
+                  // A host now in the monitor list (or just monitored this session):
+                  // this direct row is HISTORICAL — it was direct-dialed then; newer
+                  // requests are decrypted. Show "now monitored", not a Monitor button.
+                  const nowMonitored = mon === "done" || monitoredSet.has(r.host.split(":")[0].toLowerCase());
                   return (
                     <tr key={r.key} className="m-row m-direct" style={{ opacity: 0.62 }}>
                       {/* Show local time from the parsed epoch (like flows) so
@@ -286,9 +309,9 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
                       <td className="m-status">—</td>
                       <td className="m-size">—</td>
                       <td className="m-dur">
-                        {mon === "done" ? (
-                          <span className="s-2xx" title="Future requests to this host will be decrypted">
-                            monitoring ✓
+                        {nowMonitored ? (
+                          <span className="s-2xx" title="This host is now monitored — this was an earlier direct-dialed request; newer ones are decrypted">
+                            now monitored
                           </span>
                         ) : (
                           <button className="cfg-btn cfg-btn-ghost" disabled={mon === "busy"} title="Decrypt future requests to this host" onClick={() => requestMonitor(r.host)}>
