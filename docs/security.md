@@ -60,9 +60,10 @@ risks. The chat panel is read-only by default.)
    the `docker` group — close to host root (see the platform note above: real root
    on Linux, root in the Docker VM on macOS). Escape is not a high bar; treat it as
    a real capability. `--disable-dind` drops the privileged flag.
-2. **Loopback is reachable → the token is the guard.** The container (and inner
-   containers) can reach host loopback services, including the dashboard. The
-   per-launch token is what prevents access — treat the dashboard URL as a secret.
+2. **The container can't reach the dashboard.** It's bound to host loopback,
+   which a container can't reach, and the egress firewall blocks it too. The
+   per-launch token is a defense-in-depth guard on the HTTP layer, not the
+   boundary — still, treat the dashboard URL/token as secret.
 3. **Dashboard grants shells + writes.** It can open a container shell, a *host*
    shell, and edit workspace files — gated only by loopback + token.
    The dashboard can also **create projects host-side**: cloning repos (private
@@ -90,13 +91,7 @@ risks. The chat panel is read-only by default.)
    bootstrapping an allowlist); no network protection while active.
 7. **Dangerous mode** — no per-action approval; the container + firewall are the
    only guardrails.
-8. **Seccomp `unconfined`** (Config → Seccomp) removes syscall filtering — needed
-   by some runtimes (e.g. Erlang/BEAM) but it widens the container's attack
-   surface. Same platform split as above: syscalls hit your **real kernel on
-   Linux** (so `unconfined` genuinely widens host exposure), but only the **Docker
-   VM's kernel on macOS** (contained by the VM). Default keeps Docker's profile.
-   No effect with DinD (`--privileged` already disables seccomp).
-9. **SSH scoped-agent — `use`, not `steal`, and a DinD cross-project window.**
+8. **SSH scoped-agent — `use`, not `steal`, and a DinD cross-project window.**
    The container can *use* a chosen key while it's running (push, auth anywhere
    that key is trusted) — that's the point. It can't copy the key out (socket
    only, no bytes). Two bounded caveats:
