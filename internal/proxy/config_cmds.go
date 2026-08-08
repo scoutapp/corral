@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -237,13 +236,12 @@ func ApplyProxyConfig(scope ApplyScope) error {
 
 	if scope.MonitorOrPorts {
 		monitorPath := MonitorHostsPath()
-		if len(cfg.MonitorHosts) > 0 {
-			if err := config.WriteMonitorHostsFile(monitorPath, cfg.MonitorHosts); err != nil {
-				return err
-			}
-		} else {
-			// Empty list -> remove the file so the proxy falls back to monitor-all.
-			os.Remove(monitorPath)
+		// Always write the file (even empty) rather than removing it: the file is a
+		// bind-mount target, and a missing source makes Docker recreate it as a
+		// directory on the next start (breaking all future writes). The proxy treats
+		// an empty file as "monitor all", same as absent.
+		if err := config.WriteMonitorHostsFile(monitorPath, cfg.ResolveMonitorHosts()); err != nil {
+			return err
 		}
 
 		containerName := session.RunningContainerName()
@@ -258,9 +256,21 @@ func ApplyProxyConfig(scope ApplyScope) error {
 	}
 
 	if scope.Credentials {
-		// mitmweb's addon watches the credentials file and reloads within ~1s;
-		// nothing to signal. Note it so the user knows it took effect.
-		fmt.Println("✅ credentials updated (mitmweb reloads automatically within ~1s)")
+		// mitmweb's addon watches the credentials file and reloads the VALUES within
+		// ~1s. But the allowlist-proxy must also learn the current set of
+		// credentialed HOSTS (it force-mitms them) — so rewrite credential-hosts.txt
+		// and SIGHUP the proxy so a newly-credentialed host starts being intercepted
+		// (or a de-credentialed one stops being forced) without a restart.
+		if err := creds.WriteCredentialHostsFile(CredentialHostsPath(), creds.CredentialHostnames()); err != nil {
+			return fmt.Errorf("write credential-hosts: %w", err)
+		}
+		containerName := session.RunningContainerName()
+		if session.DockerContainerRunning(containerName) {
+			if err := ReloadProxyInContainer(containerName); err != nil {
+				return fmt.Errorf("proxy reload failed: %w", err)
+			}
+		}
+		fmt.Println("✅ credentials updated (mitmweb reloads values ~1s; proxy interception refreshed)")
 	}
 
 	return nil
@@ -273,6 +283,12 @@ func ApplyProxyConfig(scope ApplyScope) error {
 // MonitorHostsPath is the host-side path of the project's monitor-hosts file.
 func MonitorHostsPath() string {
 	return filepath.Join(config.GetProjectDir(), "monitor-hosts.txt")
+}
+
+// CredentialHostsPath is the host-side path of the project's credential-hosts
+// file (hostnames with an injected credential — always mitm'd).
+func CredentialHostsPath() string {
+	return filepath.Join(config.GetProjectDir(), "credential-hosts.txt")
 }
 
 func contains(xs []string, x string) bool {

@@ -95,14 +95,6 @@ type globalView struct {
 	AvailableSSHKey []sshagent.AvailableKey `json:"available_ssh_keys"`
 }
 
-// handleGlobalPage serves the Global config page shell (data loaded via JS).
-func (d *dashboardServer) handleGlobalPage(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := dashboardTemplates.ExecuteTemplate(w, "global.html.tmpl", nil); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
 func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Request) {
 	credsMap, _ := creds.LoadCredsMap(creds.GlobalCredentialsPath())
 	view := globalView{CredsPath: creds.GlobalCredentialsPath()}

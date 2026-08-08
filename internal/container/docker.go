@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/jackrothrock/sandclaude/internal/creds"
 	"github.com/jackrothrock/sandclaude/internal/proxy"
 	"github.com/jackrothrock/sandclaude/internal/session"
 	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
@@ -316,16 +317,30 @@ func (sc *SandClaude) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) 
 	//  - mitm-ports: passed as an env var the entrypoint forwards to --mitm-ports.
 	if cfg, err := config.ReadConfig(config.GetProjectDir()); err == nil {
 		// Resolve the capture preset (minimal/all/none/custom) to the effective
-		// monitor-host list. "all" -> empty -> no file -> proxy monitors everything.
-		monitorHosts := cfg.ResolveMonitorHosts()
-		if len(monitorHosts) > 0 {
-			monitorPath := proxy.MonitorHostsPath()
-			if err := config.WriteMonitorHostsFile(monitorPath, monitorHosts); err != nil {
-				return fmt.Errorf("failed to write monitor-hosts file: %w", err)
-			}
-			args = append(args, "-v", fmt.Sprintf("%s:/home/claude/monitor-hosts.txt:rw", monitorPath))
+		// monitor-host list. Write the file UNCONDITIONALLY (even when empty) and
+		// always mount it: if we skipped the mount/file, Docker's -v with a missing
+		// source auto-creates the target as a DIRECTORY, which then breaks every
+		// later WriteMonitorHostsFile (and the reload). An empty file means "monitor
+		// all" (the proxy treats empty == absent). If a prior run already left a
+		// directory there, remove it first.
+		monitorPath := proxy.MonitorHostsPath()
+		if fi, statErr := os.Stat(monitorPath); statErr == nil && fi.IsDir() {
+			os.RemoveAll(monitorPath)
 		}
+		if err := config.WriteMonitorHostsFile(monitorPath, cfg.ResolveMonitorHosts()); err != nil {
+			return fmt.Errorf("failed to write monitor-hosts file: %w", err)
+		}
+		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/monitor-hosts.txt:rw", monitorPath))
 		args = append(args, "-e", "SANDCLAUDE_MITM_PORTS="+strings.Join(cfg.MitmPortsOrDefault(), ","))
+
+		// Credential-hosts: hosts with an injected credential are ALWAYS mitm'd,
+		// independent of the monitor-list (the proxy force-mitms them). Write just
+		// the hostnames (never the secret values) and mount them for --credential-hosts.
+		credHostsPath := filepath.Join(config.GetProjectDir(), "credential-hosts.txt")
+		if err := creds.WriteCredentialHostsFile(credHostsPath, creds.CredentialHostnames()); err != nil {
+			return fmt.Errorf("failed to write credential-hosts file: %w", err)
+		}
+		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/credential-hosts.txt:rw", credHostsPath))
 	}
 
 	logsDir := config.GetLogsDir()

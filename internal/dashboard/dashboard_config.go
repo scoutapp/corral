@@ -41,7 +41,7 @@ type configView struct {
 
 	// Live zone
 	AllowedHosts []string   `json:"allowed_hosts"`
-	MonitorHosts []string   `json:"monitor_hosts"` // empty = monitor all
+	MonitorHosts []string   `json:"monitor_hosts"`           // the custom list (empty for non-custom presets)
 	MonitorAll   bool       `json:"monitor_all"`
 	MitmPreset   string     `json:"mitm_preset"` // minimal|all|none|custom
 	MitmPorts    []string   `json:"mitm_ports"`

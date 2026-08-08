@@ -31,12 +31,28 @@ func ReloadProxyInContainer(containerName string) error {
 		exec.Command("docker", "exec", "-u", "root", containerName, "rm", "-f", "/tmp/monitor-hosts.txt").Run()
 	}
 
+	// Same live-copy treatment for credential-hosts (always-mitm hosts), so a
+	// credential added/removed on a running container updates forced interception
+	// without a restart.
+	hostCred := CredentialHostsPath()
+	if _, err := os.Stat(hostCred); err == nil {
+		cp := exec.Command("docker", "cp", hostCred, containerName+":/tmp/credential-hosts.txt")
+		cp.Stderr = os.Stderr
+		if err := cp.Run(); err != nil {
+			return fmt.Errorf("copy credential-hosts into container: %w", err)
+		}
+	} else {
+		exec.Command("docker", "exec", "-u", "root", containerName, "rm", "-f", "/tmp/credential-hosts.txt").Run()
+	}
+
 	// Re-copy the allowlist into the proxyuser-readable /tmp path, ensure the
-	// monitor copy is readable, then SIGHUP so the proxy reloads both.
+	// monitor + credential-hosts copies are readable, then SIGHUP so the proxy
+	// reloads all three.
 	cmd := exec.Command("docker", "exec", "-u", "root", containerName, "bash", "-c",
 		"cp /home/claude/allowed-domains.txt.enc /tmp/allowed-domains.txt.enc && "+
 			"chmod 644 /tmp/allowed-domains.txt.enc && "+
 			"chmod 644 /tmp/monitor-hosts.txt 2>/dev/null || true && "+
+			"chmod 644 /tmp/credential-hosts.txt 2>/dev/null || true && "+
 			"pkill -HUP -x allowlist-proxy")
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

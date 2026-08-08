@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"github.com/jackrothrock/sandclaude/internal/config"
 	"github.com/jackrothrock/sandclaude/internal/session"
-	"html/template"
 	"io"
 	"io/fs"
 	"log"
@@ -264,10 +263,13 @@ func projectLiveStatus(workspace string) ProjectStatus {
 // Dashboard HTTP server
 // ----------------------------------------------------------------------------
 
-//go:embed webui/templates/*.tmpl webui/static/*
+// all:webui/static recurses into the built React app under static/app/
+// (static/app/index.html + static/app/assets/*), which a bare webui/static/*
+// glob would not reach. The whole UI is now the React SPA served from
+// static/app; there are no server-rendered templates anymore.
+//
+//go:embed all:webui/static
 var webuiFS embed.FS
-
-var dashboardTemplates = template.Must(template.ParseFS(webuiFS, "webui/templates/*.tmpl"))
 
 const dashboardCookieName = "sc_dash_token"
 
@@ -372,10 +374,28 @@ func handleHealthz(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("ok"))
 }
 
+// serveSPA writes the built React app's index.html (from the embedded
+// static/app bundle) for a client-routed page. The SPA's own History-API router
+// then renders the right view for "/", "/global", or "/p/<id>". Hashed JS/CSS
+// under /static/app/assets are served by the /static file server. If the bundle
+// isn't built yet (fresh checkout before `npm run build`), we say so clearly.
+func (d *dashboardServer) serveSPA(w http.ResponseWriter, _ *http.Request) {
+	html, err := webuiFS.ReadFile("webui/static/app/index.html")
+	if err != nil {
+		http.Error(w, "dashboard UI bundle not built — run `npm run build` in internal/dashboard/webui/app-src (or reinstall via install.sh)", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// The shell references hashed assets, so it can be cached briefly; but keep it
+	// revalidating so a redeploy is picked up promptly.
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Write(html)
+}
+
 func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	if path == "/" {
-		d.handleIndex(w, r)
+		d.serveSPA(w, r)
 		return
 	}
 
@@ -389,7 +409,7 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	// Global (cross-project) control plane.
 	switch path {
 	case "/global":
-		d.handleGlobalPage(w, r)
+		d.serveSPA(w, r)
 		return
 	case "/global/config":
 		d.handleGlobalRead(w, r)
@@ -459,11 +479,11 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case sub == "":
-		d.handleProject(w, r, id)
+		// The project page is now the React SPA (client-routed at /p/<id>). Its
+		// data comes from the JSON/WS endpoints below, not a server-rendered page.
+		d.serveSPA(w, r)
 	case sub == "terminal/ws":
 		d.handleTerminalWS(w, r, id)
-	case sub == "terminal" || sub == "terminal/":
-		d.handleTerminalPage(w, r, id)
 	case sub == "config":
 		d.handleConfigRead(w, r, id)
 	case sub == "config/diff":
@@ -504,12 +524,8 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleGitRepos(w, r, id)
 	case sub == "container/ws":
 		d.handleContainerWS(w, r, id)
-	case sub == "container" || sub == "container/":
-		d.handleContainerPage(w, r, id)
 	case sub == "host/ws":
 		d.handleHostWS(w, r, id)
-	case sub == "host" || sub == "host/":
-		d.handleHostPage(w, r, id)
 	case sub == "start":
 		d.handleStartProject(w, r, id)
 	case sub == "stop":
@@ -526,10 +542,10 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleSSHKeysLoadWS(w, r, id)
 	case sub == "chat/ws":
 		d.handleChatWS(w, r, id)
-	case sub == "chat" || sub == "chat/":
-		d.handleChatPage(w, r, id)
 	case sub == "mitm/flows":
 		d.handleMitmFlows(w, r, id)
+	case sub == "mitm/direct":
+		d.handleMitmDirect(w, r, id)
 	case strings.HasPrefix(sub, "mitm/flows/"):
 		d.handleMitmContent(w, r, id, strings.TrimPrefix(sub, "mitm/flows/"))
 	case sub == "firewall/stream":
@@ -539,29 +555,6 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-type projectRow struct {
-	ID string
-	ProjectStatus
-}
-
-func (d *dashboardServer) handleIndex(w http.ResponseWriter, r *http.Request) {
-	reg, err := readRegistry()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	rows := make([]projectRow, 0, len(reg.Projects))
-	for _, p := range reg.Projects {
-		rows = append(rows, projectRow{ID: ProjectID(p.Workspace), ProjectStatus: projectLiveStatus(p.Workspace)})
-	}
-
-	data := struct{ Projects []projectRow }{Projects: rows}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := dashboardTemplates.ExecuteTemplate(w, "index.html.tmpl", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
 
 // statusRow is the per-project JSON the landing page polls for live pane updates.
 type statusRow struct {
@@ -684,24 +677,6 @@ func tmuxLastLine(session string) string {
 	return ""
 }
 
-func (d *dashboardServer) handleProject(w http.ResponseWriter, r *http.Request, id string) {
-	workspace, err := lookupWorkspaceByID(id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	data := struct {
-		ID string
-		ProjectStatus
-	}{ID: id, ProjectStatus: projectLiveStatus(workspace)}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := dashboardTemplates.ExecuteTemplate(w, "project.html.tmpl", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
 // shutdown closes every live browser-terminal PTY (see terminal.go). It never
 // touches the underlying tmux sessions or Docker containers — those keep running
 // independent of the dashboard, by design; closing a terminal only detaches.
@@ -775,6 +750,108 @@ func (d *dashboardServer) handleMitmContent(w http.ResponseWriter, r *http.Reque
 
 	path := fmt.Sprintf("/flows/%s/%s/content.data", flowID, side)
 	d.proxyMitmGet(w, r, state.WebPort, path, "")
+}
+
+// directHost is ONE allowed-but-not-decrypted request surfaced from the proxy
+// log — one entry per DIRECT line (not deduped), so the Mitm tab can interleave
+// each individual direct-dialed request chronologically with the decrypted flows.
+type directHost struct {
+	Host string `json:"host"` // hostname:port
+	When string `json:"when"` // "YYYY/MM/DD HH:MM:SS" (proxy log stamp, local)
+	TS   int64  `json:"ts"`   // Unix seconds parsed from When (0 if unparseable), for sorting
+}
+
+// mitmDirectRecentCap bounds the no-filter response (the 2s poll). mitmDirectQueryCap
+// bounds a ?q= full-log search so a giant log can't produce an unbounded payload.
+const (
+	mitmDirectRecentCap = 500
+	mitmDirectQueryCap  = 1000
+)
+
+// parseProxyLogStamp parses the proxy log's "2006/01/02 15:04:05" stamp into
+// Unix seconds; returns 0 if it doesn't parse. The stamp is UTC: the
+// allowlist-proxy runs inside the container (which is UTC) and logs with
+// log.LUTC, so the wall-clock is UTC regardless of the dashboard host's zone.
+// Parsing as time.Local (the host zone) skewed direct rows by the host's UTC
+// offset relative to the mitmweb flows (whose timestamps are epoch already),
+// misordering the interleaved Mitm table.
+func parseProxyLogStamp(s string) int64 {
+	t, err := time.ParseInLocation("2006/01/02 15:04:05", strings.TrimSpace(s), time.UTC)
+	if err != nil {
+		return 0
+	}
+	return t.Unix()
+}
+
+// handleMitmDirect scans this project's proxy.log for DIRECT lines — requests
+// that were allowed but direct-dialed (not routed through mitmweb, so never
+// decrypted). Each line becomes its own entry so the Mitm tab shows individual
+// direct requests inline in the flow, not one grouped row per host.
+//
+//   - no ?q=  : the most recent mitmDirectRecentCap DIRECT lines (cheap — this
+//     is the 2s poll). Only a bounded tail of the log is read.
+//   - ?q=<s>  : search the WHOLE log for DIRECT lines whose host contains <s>
+//     (case-insensitive), returning the newest mitmDirectQueryCap matches. This
+//     is how the Mitm host filter reaches full on-disk history for direct hosts
+//     (mitmweb has no record of them — the log is the only source).
+//
+// Log line shape (see allowlist-proxy/main.go):
+//   2026/08/05 00:56:02 DIRECT   http-intake.logs.us5.datadoghq.com:443 (not-monitored)
+func (d *dashboardServer) handleMitmDirect(w http.ResponseWriter, r *http.Request, id string) {
+	workspace, err := lookupWorkspaceByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	logPath := filepath.Join(logsDirForWorkspace(workspace), "proxy.log")
+
+	// With a query, read the whole log (bounded output cap keeps it safe); without,
+	// only a recent tail — the common poll path stays cheap.
+	var lines []string
+	var rerr error
+	if q != "" {
+		lines, rerr = readAllLines(logPath)
+	} else {
+		lines, _, rerr = readTailLines(logPath, 512*1024, 4000)
+	}
+	if rerr != nil {
+		// No log yet (never started) — empty set, not an error, so the tab still
+		// shows the decrypted flows.
+		writeJSON(w, map[string]any{"direct": []directHost{}})
+		return
+	}
+
+	out := make([]directHost, 0, mitmDirectRecentCap)
+	for _, ln := range lines {
+		i := strings.Index(ln, " DIRECT")
+		if i < 0 {
+			continue
+		}
+		stamp := strings.TrimSpace(ln[:i])
+		rest := strings.TrimSpace(ln[i+len(" DIRECT"):])
+		host := rest
+		if sp := strings.IndexByte(rest, ' '); sp >= 0 {
+			host = rest[:sp]
+		}
+		if host == "" {
+			continue
+		}
+		if q != "" && !strings.Contains(strings.ToLower(host), q) {
+			continue
+		}
+		out = append(out, directHost{Host: host, When: stamp, TS: parseProxyLogStamp(stamp)})
+	}
+
+	// Keep the newest N (lines are chronological, so the tail is newest).
+	limit := mitmDirectRecentCap
+	if q != "" {
+		limit = mitmDirectQueryCap
+	}
+	if len(out) > limit {
+		out = out[len(out)-limit:]
+	}
+	writeJSON(w, map[string]any{"direct": out})
 }
 
 // proxyMitmGet performs a server-side GET against mitmweb on webPort and copies
@@ -853,6 +930,17 @@ func readTailLines(path string, maxBytes int64, maxLines int) ([]string, int64, 
 		lines = lines[len(lines)-maxLines:]
 	}
 	return lines, size, nil
+}
+
+// readAllLines reads a whole log file into lines, bounded to the last
+// readAllCap bytes as a safety valve against a pathologically large log (still
+// far more than any realistic proxy.log). Used by the direct-host history
+// search, where the caller further caps the matched output.
+const readAllCap = 32 * 1024 * 1024
+
+func readAllLines(path string) ([]string, error) {
+	lines, _, err := readTailLines(path, readAllCap, 1<<31-1)
+	return lines, err
 }
 
 // sseEscape strips trailing \r so a Windows-style log line doesn't corrupt the
