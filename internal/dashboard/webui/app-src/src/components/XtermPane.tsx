@@ -60,6 +60,14 @@ export function XtermPane({ projectId, wsPath, fullPath }: { projectId?: string;
       }, 100);
     };
     window.addEventListener("resize", onResize);
+
+    // Refit when the PANE's own box changes size — not just the window. This is
+    // what makes dragging the dock/overlay/chat resize handles actually reflow the
+    // terminal (cols/rows) instead of just stretching the container around a
+    // fixed-size grid. Debounced through the same timer as window resizes.
+    const ro = new ResizeObserver(() => onResize());
+    if (host.current) ro.observe(host.current);
+
     // Fit again shortly after mount once layout settles.
     const settle = window.setTimeout(() => {
       fit.fit();
@@ -68,6 +76,7 @@ export function XtermPane({ projectId, wsPath, fullPath }: { projectId?: string;
 
     return () => {
       window.removeEventListener("resize", onResize);
+      ro.disconnect();
       window.clearTimeout(resizeTimer);
       window.clearTimeout(settle);
       try {
