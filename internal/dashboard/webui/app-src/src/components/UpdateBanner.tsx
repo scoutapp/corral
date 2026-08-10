@@ -3,20 +3,52 @@ import type { UpdateStatus } from "../api/types";
 import { Modal } from "./Modal";
 import { XtermPane } from "./XtermPane";
 
-// A slim, dismissible banner shown at the top of every page when a newer
-// sandclaude release is available. "Update" opens a terminal that runs
-// `sandclaude update` on the HOST (a real PTY, so sudo/confirm prompts work and
-// output is visible) — the same consent model as the host shell. Dismissing
-// hides it for this tab session; it reappears on reload if still out of date.
+// A slim banner shown at the top of every page: either "update available" or,
+// when the source can't be reached, a muted "couldn't check" notice. Both are
+// dismissible, and the dismissal PERSISTS across reloads/navigation via
+// localStorage:
+//   - the unreachable notice stays dismissed until it becomes reachable again
+//     (dismissing clears once a real answer arrives, so a later update still
+//     surfaces);
+//   - the update banner is dismissed PER VERSION, so a newer release re-shows it.
+// "Update…" opens a terminal running `sandclaude update` on the HOST (a real PTY,
+// so sudo/confirm prompts work) — the same consent model as the host shell.
+
+const UNREACHABLE_KEY = "sandclaude.update.unreachableDismissed";
+const VERSION_KEY = "sandclaude.update.dismissedVersion";
+
+function lsGet(key: string): string {
+  try {
+    return localStorage.getItem(key) || "";
+  } catch {
+    return "";
+  }
+}
+function lsSet(key: string, val: string) {
+  try {
+    localStorage.setItem(key, val);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function UpdateBanner({ status }: { status: UpdateStatus | null }) {
-  const [dismissed, setDismissed] = useState(false);
+  // Seed dismissal state from localStorage so a persisted dismissal hides the
+  // banner immediately on mount (no flash).
+  const [unreachableDismissed, setUnreachableDismissed] = useState(() => lsGet(UNREACHABLE_KEY) === "1");
+  const [dismissedVersion, setDismissedVersion] = useState(() => lsGet(VERSION_KEY));
   const [running, setRunning] = useState(false);
 
-  if (!status || dismissed) return null;
+  if (!status) return null;
 
   // Couldn't reach the update source (e.g. a still-private repo, or offline):
   // show a muted, dismissible notice rather than an update prompt.
   if (status.unreachable) {
+    if (unreachableDismissed) return null;
+    const dismiss = () => {
+      lsSet(UNREACHABLE_KEY, "1");
+      setUnreachableDismissed(true);
+    };
     return (
       <div className="update-banner update-banner-warn" role="status">
         <span className="update-banner-text">
@@ -24,7 +56,7 @@ export function UpdateBanner({ status }: { status: UpdateStatus | null }) {
           <span className="muted">({status.repo || "unknown"})</span> isn't reachable right now.
         </span>
         <span className="update-banner-actions">
-          <button className="update-banner-dismiss" title="Dismiss" onClick={() => setDismissed(true)}>
+          <button className="update-banner-dismiss" title="Dismiss" onClick={dismiss}>
             ✕
           </button>
         </span>
@@ -32,7 +64,21 @@ export function UpdateBanner({ status }: { status: UpdateStatus | null }) {
     );
   }
 
+  // The source is reachable again — clear any persisted "unreachable" dismissal
+  // so a future outage shows the notice afresh.
+  if (unreachableDismissed) {
+    lsSet(UNREACHABLE_KEY, "");
+    setUnreachableDismissed(false);
+  }
+
   if (!status.update_available) return null;
+  // Dismissed for THIS exact release? Stay hidden until a newer one appears.
+  if (dismissedVersion && dismissedVersion === status.latest) return null;
+
+  const dismiss = () => {
+    lsSet(VERSION_KEY, status.latest);
+    setDismissedVersion(status.latest);
+  };
 
   return (
     <>
@@ -45,7 +91,7 @@ export function UpdateBanner({ status }: { status: UpdateStatus | null }) {
           <button className="update-banner-btn" onClick={() => setRunning(true)}>
             Update…
           </button>
-          <button className="update-banner-dismiss" title="Dismiss" onClick={() => setDismissed(true)}>
+          <button className="update-banner-dismiss" title="Dismiss" onClick={dismiss}>
             ✕
           </button>
         </span>
