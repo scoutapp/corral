@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePersistentState } from "../hooks/usePersistentState";
 import { getJSON, postRaw } from "../api/client";
 import type { FilesReadResponse, FilesFindResponse, FilesGrepResponse, TreeEntry } from "../api/types";
 import { fileIconDef } from "../lib/fileIcons";
@@ -173,6 +174,13 @@ export function FilesTab({ projectId }: { projectId: string }) {
   const editorRef = useRef<EditorHandle | null>(null);
   const [openPath, setOpenPath] = useState<string | null>(null);
   const openPathRef = useRef<string | null>(null);
+  // Remember the last-opened file per project so navigating away and back
+  // reopens it (the component unmounts on navigation, losing in-memory state).
+  const [rememberedPath, setRememberedPath] = usePersistentState<string | null>(
+    `sandclaude.filesOpen.${projectId}`,
+    null,
+  );
+  const restoredRef = useRef(false);
   const [dirty, setDirty] = useState(false);
   const dirtyRef = useRef(false);
   const [tooLarge, setTooLarge] = useState<number | null>(null);
@@ -198,6 +206,7 @@ export function FilesTab({ projectId }: { projectId: string }) {
         const data = await getJSON<FilesReadResponse>(api(projectId, `/files/read?path=${encodeURIComponent(rel)}`));
         openPathRef.current = rel;
         setOpenPath(rel);
+        setRememberedPath(rel);
         if (data.too_large) {
           editorRef.current?.destroy();
           editorRef.current = null;
@@ -226,8 +235,17 @@ export function FilesTab({ projectId }: { projectId: string }) {
           cmHost.current.innerHTML = `<p class="attention" style="padding:1rem">read error: ${(e as Error).message}</p>`;
       }
     },
-    [projectId],
+    [projectId, setRememberedPath],
   );
+
+  // On mount, reopen the file we had open last time in this project. Runs once;
+  // clears the remembered path if the file is gone (openFile surfaces the error).
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    if (rememberedPath) openFile(rememberedPath);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const save = useCallback(async () => {
     if (!editorRef.current || openPathRef.current == null) return;
