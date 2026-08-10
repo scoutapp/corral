@@ -52,6 +52,9 @@ treat that link like a password.
 Prefer the terminal? `sandclaude dev` runs Claude in the background so you can
 `capture` its output, `send` it a prompt, or `attach` to it directly.
 
+**Want the full tour?** See the [usage guide](docs/usage.md) — the dashboard, the
+project tabs, and everything you can drive from your browser (with screenshots).
+
 ## What keeps it safe
 
 - **Nothing leaks.** Claude runs with a dummy token; your real credentials are
