@@ -142,16 +142,20 @@ func cmdInit() error {
 
 	var opts project.InitOptions
 
-	// Credential proxy
-	if config.AskYesNo("RECOMMENDED: Enable credential proxy (hides secrets from Claude)?") {
-		opts.ProxyEnabled = true
-		log.Println("✅ Proxy mode enabled")
-		log.Println()
-		log.Println("⚠️  IMPORTANT: You must configure real credentials before starting!")
-		log.Printf("   Global credentials live at: %s\n", creds.GlobalCredentialsPath())
-		log.Println("   Run: sandclaude populate-proxy-credentials")
-		log.Println("   For a project-specific override, run: sandclaude populate-proxy-credentials --project")
-	}
+	// Credential proxy is ON by default (mitm proxy + credential injection is the
+	// point of the sandbox) — no longer a question. Passthrough is the default
+	// firewall mode (allow+log unknown domains, direct TCP ok); switch to the
+	// strict allowlist later via `sandclaude start --enforce-allowlist` or the
+	// dashboard Config. Run without the proxy via `sandclaude start
+	// --disable-firewall`.
+	opts.ProxyEnabled = true
+	opts.PassthroughFirewall = true
+	log.Println("✅ Proxy mode enabled (credential injection + mitm)")
+	log.Println()
+	log.Println("⚠️  IMPORTANT: You must configure real credentials before starting!")
+	log.Printf("   Global credentials live at: %s\n", creds.GlobalCredentialsPath())
+	log.Println("   Run: sandclaude populate-proxy-credentials")
+	log.Println("   For a project-specific override, run: sandclaude populate-proxy-credentials --project")
 
 	log.Println()
 
@@ -248,7 +252,12 @@ func cmdDev(args []string) error {
 
 func runStart(args []string, devMode bool) error {
 	disableFirewall := false
-	passthroughFirewallAndWrite := false
+	// Passthrough (proxy + mitm on, allow+log unknown domains, direct TCP ok) is
+	// now the DEFAULT. --enforce-allowlist opts into the old strict behavior
+	// (block unknown domains + egress REJECT). The legacy
+	// --passthrough-firewall-and-write is kept as an accepted no-op for
+	// back-compat since it now describes the default.
+	enforceAllowlist := false
 	disableDind := false
 	keepDevfiles := false
 
@@ -256,8 +265,10 @@ func runStart(args []string, devMode bool) error {
 		switch arg {
 		case "--disable-firewall":
 			disableFirewall = true
+		case "--enforce-allowlist":
+			enforceAllowlist = true
 		case "--passthrough-firewall-and-write":
-			passthroughFirewallAndWrite = true
+			// Deprecated: now the default. Accepted so existing invocations don't error.
 		case "--disable-dind":
 			disableDind = true
 		case "--keep-devfiles":
@@ -273,7 +284,9 @@ func runStart(args []string, devMode bool) error {
 	}
 
 	sc.DisableFirewall = disableFirewall
-	sc.PassthroughFirewallAndWrite = passthroughFirewallAndWrite
+	// Passthrough is the default (driven by the saved per-project config, which
+	// init sets to passthrough). --enforce-allowlist forces strict for this run.
+	sc.EnforceAllowlist = enforceAllowlist
 	sc.DisableDind = disableDind
 	sc.DevMode = devMode
 	return sc.Run(keepDevfiles)
@@ -725,7 +738,7 @@ func usage() {
 	fmt.Println("  start [flags]            Start Claude Code detached and open it in the dashboard (browser-first)")
 	fmt.Println("    --foreground                   Run attached to this terminal instead (classic interactive mode)")
 	fmt.Println("    --disable-firewall             Skip firewall initialization")
-	fmt.Println("    --passthrough-firewall-and-write   Keep proxy but allow all domains; write unknown ones to allowed-domains.txt")
+	fmt.Println("    --enforce-allowlist            Strict allowlist: block unknown domains + REJECT direct TCP (default is permissive: proxy+mitm on, allow+log unknowns)")
 	fmt.Println("    --disable-dind                 Skip inner dockerd startup")
 	fmt.Println("    --keep-devfiles                Do not hide .devcontainer from the container (skip tmpfs overlay)")
 	fmt.Println("  dev [flags]              Start detached in a tmux session for closed-loop development")
@@ -765,7 +778,7 @@ func usage() {
 	fmt.Println("  sandclaude start --debug           # Start with verbose debug logging")
 	fmt.Println("  sandclaude --debug start           # Same (--debug works in any position)")
 	fmt.Println("  sandclaude start --disable-firewall              # Start without firewall")
-	fmt.Println("  sandclaude start --passthrough-firewall-and-write   # Allow all, log unknowns to allowed-domains.txt")
+	fmt.Println("  sandclaude start --enforce-allowlist             # Strict: block unknown domains (default allows+logs them)")
 	fmt.Println("  sandclaude populate-proxy-credentials            # Set global credentials")
 	fmt.Println("  sandclaude populate-proxy-credentials --project  # Set a project-specific override")
 	fmt.Println("  sandclaude shell                   # Debug container")

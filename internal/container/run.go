@@ -340,11 +340,16 @@ func (sc *SandClaude) Run(keepDevfiles bool) error {
 	}
 	sc.seccompMode = cfg.SeccompMode
 
-	// Passthrough firewall is a savable per-project mode. Honor it from config
-	// (the CLI --passthrough-firewall-and-write flag, if passed, already set this
-	// and stays honored). Only meaningful with the proxy on.
-	if cfg.PassthroughFirewall && cfg.ProxyEnabled {
-		sc.PassthroughFirewallAndWrite = true
+	// Passthrough firewall is a savable per-project mode and now the default
+	// (proxy + mitm on, allow+log unknown domains, direct TCP ok). The saved
+	// per-project config is authoritative; only meaningful with the proxy on.
+	// A CLI --enforce-allowlist (sc.EnforceAllowlist) overrides config for this
+	// run, forcing the strict allowlist.
+	if cfg.ProxyEnabled {
+		sc.PassthroughFirewallAndWrite = cfg.PassthroughFirewall
+	}
+	if sc.EnforceAllowlist {
+		sc.PassthroughFirewallAndWrite = false
 	}
 
 	// Scoped ssh-agent (CLI path): if keys are chosen for this project, start a

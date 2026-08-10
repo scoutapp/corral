@@ -110,11 +110,14 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 		// with a branch + ISSUE.md, and record a prompt to pre-populate into Claude.
 		Issue *issueSeed `json:"issue"`
 		// Init options; proxy defaults ON (the recommended/init default).
-		Proxy       *bool    `json:"proxy"`
-		Passthrough bool     `json:"passthrough"` // permissive-but-observed firewall
-		Dind        bool     `json:"dind"`
-		Tmux        bool     `json:"tmux"`
-		Ports       []string `json:"ports"`
+		Proxy *bool `json:"proxy"`
+		// Firewall default is passthrough (proxy + mitm on, allow+log unknown
+		// domains). EnforceAllowlist opts into the strict allowlist (block unknown
+		// + REJECT direct TCP) — the "more restrictive" choice.
+		EnforceAllowlist bool     `json:"enforceAllowlist"`
+		Dind             bool     `json:"dind"`
+		Tmux             bool     `json:"tmux"`
+		Ports            []string `json:"ports"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -151,7 +154,9 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 	if _, statErr := os.Stat(config.ProjectDirFor(workspace)); os.IsNotExist(statErr) {
 		if _, err := project.InitProject(workspace, project.InitOptions{
 			ProxyEnabled: proxy, DindEnabled: body.Dind, LaunchTmux: body.Tmux, DindPorts: body.Ports,
-			PassthroughFirewall: body.Passthrough && proxy, // only meaningful with the proxy on
+			// Passthrough is the default; only strict when the caller opts in AND the
+			// proxy is on (passthrough is meaningless without the proxy).
+			PassthroughFirewall: proxy && !body.EnforceAllowlist,
 		}); err != nil {
 			http.Error(w, "init project: "+err.Error(), http.StatusInternalServerError)
 			return
