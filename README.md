@@ -13,7 +13,9 @@ curl -fsSL https://raw.githubusercontent.com/scoutapp/sandclaude/main/scripts/in
 ```
 
 That's it — you just need [Docker](https://www.docker.com/) installed and Claude
-Code signed in (`claude` once, to log in).
+Code signed in (`claude` once, to log in). The installer pulls in its other host
+dependencies for you — `mitmproxy` (the credential proxy) and `tmux` (which hosts
+the interactive session) — via Homebrew on macOS or apt on Linux.
 
 ## Get going
 

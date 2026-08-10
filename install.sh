@@ -94,6 +94,21 @@ if ! command -v mitmweb >/dev/null 2>&1; then
   fi
 fi
 
+# tmux is a HOST dependency: sandclaude runs the interactive container inside a
+# host tmux session (so it survives detach/reattach and the dashboard can attach
+# to it). Same package name on Homebrew and apt.
+echo "==> Checking for tmux (host terminal multiplexer)"
+if ! command -v tmux >/dev/null 2>&1; then
+  echo "    tmux not found"
+  if ! install_pkg "tmux" "tmux" "tmux"; then
+    echo "Error: could not install tmux automatically." >&2
+    echo "       tmux hosts the interactive session behind every 'sandclaude start'." >&2
+    echo "         macOS:  brew install tmux" >&2
+    echo "         Linux:  apt-get install tmux" >&2
+    exit 1
+  fi
+fi
+
 echo "==> Installing binary to $PREFIX/sandclaude"
 if [ -w "$PREFIX" ]; then
   install -m 0755 "$REPO_DIR/sandclaude" "$PREFIX/sandclaude"
