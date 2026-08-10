@@ -100,21 +100,6 @@ too; its cross-project residual risk differs and is noted in the code.
 
 ## How the dashboard reaches a container
 
-The dashboard never connects *to* a container — it's sealed off (no network in),
-so there's nothing to dial. The host drives everything: it runs a helper command
-wired to a PTY and bridges that PTY to xterm.js in the browser over a WebSocket.
-`bridgePTY` (internal/dashboard/terminal.go) is that shared bridge — it just
-shovels bytes both ways (plus a `{"type":"resize"}` frame → PTY window size);
-xterm.js does the rendering. The three terminals differ only in the command:
-
-- **Claude terminal** (`terminal/ws`) — `tmux attach` to the dev session.
-- **Container shell** (`container/ws`) — `docker exec -it` a shell in the sandbox.
-- **Host shell** (`host/ws`) — `tmux attach` to a per-project `<id>-host` session;
-  not sandboxed, a real shell on the host.
-
-The Claude terminal is the fullest path — two stacked PTYs, with tmux and the
-docker client both on the host and only `claude` in the container:
-
 ```
 xterm.js (browser)
    ▼  WebSocket (raw terminal bytes)
@@ -127,15 +112,24 @@ docker run -it  (host: docker client; -it plumbs the container's stdio to PTY-B)
 claude  (the only piece INSIDE the container)
 ```
 
-tmux sits in the middle so the session outlives the connection: closing the tab
-kills the `tmux attach` client, but the server keeps `claude` running — reattaching
-redraws the screen + scrollback. Same reason `sandclaude dev` can detach/reattach.
+The dashboard never connects *to* a container — it's sealed off (no network in).
+The host drives everything: a helper command wired to a PTY, bridged to xterm.js
+over a WebSocket by `bridgePTY` (internal/dashboard/terminal.go). tmux sits in the
+middle so the session outlives the connection — closing the tab kills the `tmux
+attach` client, but the server keeps `claude` running; reattaching redraws screen
++ scrollback (also how `sandclaude dev` detaches).
 
-Non-terminal data (files, git diff, mitm flows) mostly skips the container: the
-workspace is bind-mounted, so Files/Diff run on the host and logs are read there
-too. Everything is loopback-bound, token-gated, and same-origin. Because the
-sessions are host tmux sessions, **tmux is a host dependency** — the installer
-sets it up alongside mitmproxy.
+The three terminals differ only in the command:
+
+- **Claude terminal** (`terminal/ws`) — `tmux attach` to the dev session.
+- **Container shell** (`container/ws`) — `docker exec -it` a shell in the sandbox.
+- **Host shell** (`host/ws`) — `tmux attach` to a per-project `<id>-host` session;
+  not sandboxed, a real shell on the host.
+
+Non-terminal data (files, git diff, mitm flows) mostly skips the container — the
+workspace is bind-mounted, so Files/Diff and logs are read on the host. All
+loopback-bound, token-gated, same-origin. Since the sessions are host tmux
+sessions, **tmux is a host dependency** — the installer adds it alongside mitmproxy.
 
 ## Where things live (repo layout by tier)
 
