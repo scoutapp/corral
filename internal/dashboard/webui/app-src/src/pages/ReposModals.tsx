@@ -73,6 +73,7 @@ export function NewProjectModal({ presetRepoId, onClose }: { presetRepoId?: stri
   const [rows, setRows] = useState<{ text: string; branch: string }[]>([{ text: "", branch: "" }]);
   const [name, setName] = useState("");
   const [path, setPath] = useState("");
+  const [enforceAllowlist, setEnforceAllowlist] = useState(false); // opt-in strict; default is passthrough
   const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
   const [ssh, setSsh] = useState<string | null>(null); // project id awaiting SSH-key load
 
@@ -113,6 +114,7 @@ export function NewProjectModal({ presetRepoId, onClose }: { presetRepoId?: stri
       }
       body = { mode: "clone", name: name.trim(), repos: specs };
     }
+    body.enforceAllowlist = enforceAllowlist;
     try {
       const res = await postJSON<CreateProjectResponse>("/projects/create", body);
       setMsg({ text: "created — starting…", err: false });
@@ -176,6 +178,16 @@ export function NewProjectModal({ presetRepoId, onClose }: { presetRepoId?: stri
             Absolute path <input type="text" placeholder="/Users/you/code/project" autoComplete="off" value={path} onChange={(e) => setPath(e.target.value)} />
           </label>
         )}
+        <details className="spawn-advanced">
+          <summary>Advanced</summary>
+          <label className="row spawn-fw">
+            <input type="checkbox" checked={enforceAllowlist} onChange={(e) => setEnforceAllowlist(e.target.checked)} />
+            <span>
+              More restrictive — strict allowlist (block unknown domains, no direct TCP). Default is permissive: proxy + mitm on,
+              unknown domains allowed &amp; logged.
+            </span>
+          </label>
+        </details>
         <div className="form-actions">
           <button type="submit" className="btn primary">
             {mode === "existing" ? "Register & start" : "Create & start"}
@@ -381,11 +393,12 @@ export function NewIssueModal({ repoId, ownerName, onClose, onCreated }: { repoI
 }
 
 // Spawn modal: create a project off an issue (clone repo on a branch, write
-// ISSUE.md, pre-type a prompt). Advanced = extra repos. Passthrough firewall on
-// by default. Handles the 409 ssh_keys_pending -> load -> start -> navigate flow.
+// ISSUE.md, pre-type a prompt). Advanced = extra repos + a "more restrictive"
+// (strict allowlist) opt-in; default is the permissive passthrough firewall.
+// Handles the 409 ssh_keys_pending -> load -> start -> navigate flow.
 export function SpawnModal({ repo, ownerName, issue, onClose }: { repo: CachedRepo; ownerName: string; issue: GhIssue; onClose: () => void }) {
   const { repos: ghRepos } = useGhRepos();
-  const [passthrough, setPassthrough] = useState(true);
+  const [enforceAllowlist, setEnforceAllowlist] = useState(false);
   const [extras, setExtras] = useState<{ text: string; branch: string }[]>([]);
   const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -425,7 +438,7 @@ export function SpawnModal({ repo, ownerName, issue, onClose }: { repo: CachedRe
       repos: specs,
       name: `${repo.name}-${issue.number}`,
       issue: { number: issue.number, title: issue.title, body: issue.body || "", url: issue.url, repo: ownerName },
-      passthrough,
+      enforceAllowlist,
     };
     try {
       const res = await postJSON<CreateProjectResponse>("/projects/create", body);
@@ -452,13 +465,15 @@ export function SpawnModal({ repo, ownerName, issue, onClose }: { repo: CachedRe
           </div>
         </div>
 
-        <label className="row spawn-fw">
-          <input type="checkbox" checked={passthrough} onChange={(e) => setPassthrough(e.target.checked)} />
-          <span>Passthrough firewall — proxy + logging on, allow all domains &amp; git-over-ssh</span>
-        </label>
-
         <details className="spawn-advanced">
-          <summary>Advanced — add another repo</summary>
+          <summary>Advanced</summary>
+          <label className="row spawn-fw" style={{ marginBottom: "0.5rem" }}>
+            <input type="checkbox" checked={enforceAllowlist} onChange={(e) => setEnforceAllowlist(e.target.checked)} />
+            <span>
+              More restrictive — strict allowlist (block unknown domains, no direct TCP). Default is permissive: proxy + mitm on,
+              unknown domains allowed &amp; logged.
+            </span>
+          </label>
           <div className="repo-rows">
             {extras.map((r, i) => (
               <RepoRow

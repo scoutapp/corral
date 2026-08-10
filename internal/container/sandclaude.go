@@ -23,7 +23,12 @@ type SandClaude struct {
 	proxyEnabled                bool
 	DisableFirewall             bool
 	PassthroughFirewallAndWrite bool
-	DisableDind                 bool
+	// EnforceAllowlist, when set by the CLI --enforce-allowlist flag, forces the
+	// strict allowlist for THIS run regardless of the saved per-project config
+	// (which now defaults to passthrough). It's a per-invocation override, not a
+	// saved setting.
+	EnforceAllowlist bool
+	DisableDind      bool
 	dindEnabled                 bool
 	dindPorts                   []string
 	seccompMode                 string          // "" default | "unconfined" | custom profile path
