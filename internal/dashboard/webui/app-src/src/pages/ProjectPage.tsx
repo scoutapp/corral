@@ -245,7 +245,7 @@ export function ProjectPage({ id }: { id: string }) {
               <XtermPane projectId={id} wsPath="/terminal/ws" />
             ) : (
               <p className="empty">
-                {me?.tmux_up ? "open to connect" : "no tmux dev session — start it with sandclaude dev"}
+                {me?.tmux_up ? "open to connect" : "this project isn't running — press ▶ Start above"}
               </p>
             )}
           </div>

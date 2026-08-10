@@ -73,7 +73,7 @@ func (d *dashboardServer) handleTerminalWS(w http.ResponseWriter, r *http.Reques
 	}
 
 	d.bridgeSessionWS(w, r, session.TmuxSessionNameForWorkspace(workspace),
-		"no tmux dev session for this project — start it with `sandclaude dev`")
+		"this project isn't running — press ▶ Start in the dashboard")
 }
 
 // handleContainerWS bridges a browser terminal to an interactive shell INSIDE

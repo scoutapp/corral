@@ -39,6 +39,25 @@ func uniqueWorkspacePath(name string) string {
 	}
 }
 
+// expandWorkspaceParent resolves a user-supplied parent directory for a blank
+// project: "~"/"~/x" → under home, absolute → as-is, anything else (bare or
+// relative) → under the home dir (so "code/foo" lands in ~/code/foo, not some
+// server cwd the user can't see). Existence is checked by the caller.
+func expandWorkspaceParent(p string) string {
+	p = strings.TrimSpace(p)
+	home, _ := os.UserHomeDir()
+	switch {
+	case p == "~":
+		return home
+	case strings.HasPrefix(p, "~/"):
+		return filepath.Join(home, p[2:])
+	case filepath.IsAbs(p):
+		return filepath.Clean(p)
+	default:
+		return filepath.Join(home, p)
+	}
+}
+
 // issueSeed carries a GitHub issue to seed a spawned project with. The frontend
 // fills it from `gh issue list`; the backend uses it to create an issue branch,
 // write ISSUE.md, and build the pre-populate prompt.
@@ -277,7 +296,23 @@ func (d *dashboardServer) resolveNewWorkspace(mode, path, name string, specs []r
 		if strings.TrimSpace(name) == "" {
 			return "", fmt.Errorf("name is required for mode=new")
 		}
-		ws := uniqueWorkspacePath(name)
+		// Optional location: create <parent>/<name> under a user-chosen parent dir
+		// (~, an absolute path, or a path relative to the home dir). Absent → the
+		// managed ~/.sandclaude/workspaces dir. This lets a blank project live in
+		// the operator's own tree instead of being buried in the managed dir.
+		var ws string
+		if p := strings.TrimSpace(path); p != "" {
+			parent := expandWorkspaceParent(p)
+			if fi, serr := os.Stat(parent); serr != nil || !fi.IsDir() {
+				return "", fmt.Errorf("parent directory does not exist: %s", parent)
+			}
+			ws = filepath.Join(parent, name)
+			if _, serr := os.Stat(ws); serr == nil {
+				return "", fmt.Errorf("already exists: %s", ws)
+			}
+		} else {
+			ws = uniqueWorkspacePath(name)
+		}
 		if err := os.MkdirAll(ws, 0755); err != nil {
 			return "", err
 		}
