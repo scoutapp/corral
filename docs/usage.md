@@ -86,10 +86,14 @@ type to it directly.
 ### Seeing what Claude reached out to
 
 The **Mitm Proxy** tab is the heart of "know what it's doing." Every outbound
-request is listed — method, host, path, status. Click a monitored request to open
-its gutter and read the full exchange — headers and the request/response body.
-Below, an expanded call to Anthropic showing the exact payload that was sent (your
-real credential is injected by the proxy and never exposed to Claude):
+request is listed — method, host, path, status.
+
+![Mitm Proxy tab — every request Claude made](images/project-mitm.png)
+
+Click a monitored request to open its gutter and read the full exchange — headers
+and the request/response body. Below, an expanded call to Anthropic showing the
+exact payload that was sent (your real credential is injected by the proxy and
+never exposed to Claude):
 
 ![Expanded request to Anthropic, showing the payload](images/project-mitm-payload.png)
 
