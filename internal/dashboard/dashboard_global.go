@@ -93,6 +93,12 @@ type globalView struct {
 	SSHKeys         []string                `json:"ssh_keys"`
 	SSHKeysPath     string                  `json:"ssh_keys_path"`
 	AvailableSSHKey []sshagent.AvailableKey `json:"available_ssh_keys"`
+
+	// UpdateRepo is the GitHub owner/name self-updates are pulled from. Blank
+	// input in the UI means "use the default" — we surface the effective value and
+	// the default so the field can show a placeholder.
+	UpdateRepo        string `json:"update_repo"`
+	UpdateRepoDefault string `json:"update_repo_default"`
 }
 
 func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Request) {
@@ -121,6 +127,11 @@ func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Reques
 	view.SSHKeysPath = config.GlobalSSHKeysPath()
 	view.AvailableSSHKey = sshagent.AvailableKeys()
 
+	// Show the raw configured value (empty = using the default) plus the default
+	// so the UI can render it as a placeholder.
+	view.UpdateRepo = config.ReadGlobalSettings().UpdateRepo
+	view.UpdateRepoDefault = config.DefaultUpdateRepo
+
 	writeJSON(w, view)
 }
 
@@ -139,6 +150,7 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 		MonitorHosts *[]string `json:"monitor_hosts,omitempty"`
 		MitmPorts    *[]string `json:"mitm_ports,omitempty"`
 		SSHKeys      *[]string `json:"ssh_keys,omitempty"`
+		UpdateRepo   *string   `json:"update_repo,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&edit); err != nil {
 		http.Error(w, "bad payload: "+err.Error(), http.StatusBadRequest)
@@ -194,6 +206,29 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		results = append(results, fmt.Sprintf("✓ %d global ssh key(s) saved (loaded by every project on next start)", len(*edit.SSHKeys)))
+	}
+
+	if edit.UpdateRepo != nil {
+		raw := strings.TrimSpace(*edit.UpdateRepo)
+		// Empty clears the override (back to the default source). A non-empty value
+		// must normalize to owner/name.
+		if raw != "" {
+			if _, ok := config.NormalizeRepo(raw); !ok {
+				http.Error(w, fmt.Sprintf("%q doesn't look like a GitHub owner/name (e.g. %s) or a release URL (e.g. https://host/owner/repo)", raw, config.DefaultUpdateRepo), http.StatusBadRequest)
+				return
+			}
+		}
+		gs := config.ReadGlobalSettings()
+		gs.UpdateRepo = raw
+		if err := config.WriteGlobalSettings(gs); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if raw == "" {
+			results = append(results, "✓ update source reset to default ("+config.DefaultUpdateRepo+")")
+		} else {
+			results = append(results, "✓ update source set to "+gs.UpdateRepoOrDefault())
+		}
 	}
 
 	writeJSON(w, map[string]any{"results": results})

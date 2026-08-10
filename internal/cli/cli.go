@@ -19,15 +19,18 @@ import (
 	"time"
 )
 
-// cmdUpdate updates project config fields without touching credentials or the allowlist key.
-func cmdUpdate() error {
+// cmdConfig edits this project's config fields (DinD/tmux/etc.) without touching
+// credentials or the allowlist key. Was `sandclaude update`; renamed because
+// `update` now updates the CLI + image, and project config is mostly managed in
+// the dashboard's Config tab.
+func cmdConfig() error {
 	projectDir := config.GetProjectDir()
 	cfg, err := config.ReadConfig(projectDir)
 	if err != nil {
 		return err
 	}
 
-	log.Println("Updating project config (press Enter to keep current value)")
+	log.Println("Editing project config (press Enter to keep current value)")
 	log.Println()
 
 	reader := bufio.NewReader(os.Stdin)
@@ -135,7 +138,7 @@ func cmdInit() error {
 	projectDir := config.GetProjectDir()
 
 	if _, err := os.Stat(projectDir); err == nil {
-		return fmt.Errorf("project already initialized at %s\n   To update config run: sandclaude update\n   To remove it run:     sandclaude remove", projectDir)
+		return fmt.Errorf("project already initialized at %s\n   To edit config run:   sandclaude config\n   To remove it run:     sandclaude remove", projectDir)
 	}
 
 	log.Println()
@@ -478,7 +481,10 @@ func cmdRebuild(destroy bool, destroyInner bool) error {
 	if destroy {
 		buildArgs = append(buildArgs, "--no-cache")
 	}
-	buildArgs = append(buildArgs, "-t", "sandclaude-stable", config.AssetsDir())
+	// Stamp the version (label + tags) so `rebuild` produces the same
+	// version-traceable image EnsureImage does. See internal/container/image.go.
+	buildArgs = append(buildArgs, container.ImageBuildStampArgs()...)
+	buildArgs = append(buildArgs, config.AssetsDir())
 	buildCmd := exec.Command("docker", buildArgs...)
 	buildCmd.Stdout = os.Stdout
 	buildCmd.Stderr = os.Stderr
@@ -734,7 +740,11 @@ func usage() {
 	fmt.Println()
 	fmt.Println("Commands:")
 	fmt.Println("  init                     Initialize ./.sandclaude/ in the current directory")
-	fmt.Println("  update                   Update project config (preserves credentials and allowlist key)")
+	fmt.Println("  config                   Edit this project's config (was `update`; preserves credentials and allowlist key)")
+	fmt.Println("  update [--check] [--repo <src>] [--set-repo <src>]")
+	fmt.Println("                           Update sandclaude itself: fetch the latest CLI + assets and rebuild the image")
+	fmt.Println("                           <src> = a GitHub owner/name or a full release URL (https://host/owner/repo)")
+	fmt.Println("                           (--set-repo persists a custom release source to global settings)")
 	fmt.Println("  start [flags]            Start Claude Code detached and open it in the dashboard (browser-first)")
 	fmt.Println("    --foreground                   Run attached to this terminal instead (classic interactive mode)")
 	fmt.Println("    --disable-firewall             Skip firewall initialization")
@@ -833,8 +843,11 @@ func Main() {
 	case "init":
 		err = cmdInit()
 
+	case "config":
+		err = cmdConfig()
+
 	case "update":
-		err = cmdUpdate()
+		err = cmdUpdate(os.Args[2:])
 
 	case "start":
 		err = cmdStart(os.Args[2:])

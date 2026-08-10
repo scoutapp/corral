@@ -28,6 +28,7 @@ export function GlobalPage() {
   const [extraPaths, setExtraPaths] = useState<string[]>([]);
   const [populating, setPopulating] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [updateRepo, setUpdateRepo] = useState("");
 
   const linesToList = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
 
@@ -46,6 +47,7 @@ export function GlobalPage() {
           // custom-path global keys (outside ~/.ssh)
           const availNames = new Set((data.available_ssh_keys || []).map((k) => k.name));
           setExtraPaths((data.ssh_keys || []).filter((p) => !availNames.has(sshBasename(p))));
+          setUpdateRepo(data.update_repo || "");
           if (okMsg) setMsg({ text: okMsg, err: false });
         })
         .catch((e) => setMsg({ text: `failed to load: ${(e as Error).message}`, err: true }));
@@ -73,6 +75,7 @@ export function GlobalPage() {
     edit.monitor_hosts = linesToList(monitor);
     edit.mitm_ports = linesToList(ports);
     edit.ssh_keys = collectSSHKeys();
+    edit.update_repo = updateRepo.trim();
     setApplying(true);
     try {
       const r = await postJSON<{ results?: string[] }>("/global/apply", edit);
@@ -273,6 +276,30 @@ export function GlobalPage() {
             </div>
             <div className="muted cfg-note">
               The container can USE these keys (sign/push) but never reads the key bytes — only the agent socket is mounted. Projects can add more in their Config tab.
+            </div>
+          </section>
+
+          <section className="cfg-zone">
+            <h3>
+              Update source <span className="muted">— where <code>sandclaude update</code> pulls releases from</span>
+            </h3>
+            <div className="cfg-field">
+              <div className="cfg-label">Repo or URL</div>
+              <div className="cfg-value">
+                <input
+                  className="cfg-edit"
+                  spellCheck={false}
+                  placeholder={g.update_repo_default}
+                  value={updateRepo}
+                  onChange={(e) => setUpdateRepo(e.target.value)}
+                />
+                <div className="muted cfg-note">
+                  A GitHub <code>owner/name</code>, or a full release URL for another host (e.g.{" "}
+                  <code>https://git.example.com/owner/repo</code>) that uses the same{" "}
+                  <code>/releases/latest</code> + <code>/releases/download/&lt;tag&gt;/…</code> layout. Leave blank
+                  for the default (<code>{g.update_repo_default}</code>).
+                </div>
+              </div>
             </div>
           </section>
 

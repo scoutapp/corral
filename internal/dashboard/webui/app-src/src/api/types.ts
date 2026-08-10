@@ -109,6 +109,8 @@ export interface GlobalView {
   mitm_ports: string[];
   ssh_keys: string[];
   available_ssh_keys: SSHAvailableKey[];
+  update_repo: string; // configured value ("" = use default)
+  update_repo_default: string;
 }
 export interface GlobalEdit {
   set_creds?: CredSet[];
@@ -116,6 +118,18 @@ export interface GlobalEdit {
   monitor_hosts?: string[];
   mitm_ports?: string[];
   ssh_keys?: string[];
+  update_repo?: string; // "" clears the override (back to default)
+}
+
+// GET /update-status -> update availability for the global banner.
+export interface UpdateStatus {
+  current: string;
+  latest: string;
+  repo: string;
+  update_available: boolean;
+  checked_at?: string;
+  unreachable?: boolean; // couldn't reach the update host (e.g. private repo)
+  error?: string;
 }
 
 // GET /p/<id>/git/repos -> { repos: GitRepo[], rootIsRepo: bool }

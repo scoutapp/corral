@@ -497,6 +497,13 @@ func (sc *SandClaude) EnsureImage(imageName string) error {
 	cmd := exec.Command("docker", "image", "inspect", imageName)
 	if err := cmd.Run(); err == nil {
 		config.Debugf("Image '%s' already exists, skipping build", imageName)
+		// Support images built by older CLIs: don't force a rebuild, just warn so
+		// the user knows a `sandclaude update` (or `rebuild`) would refresh it.
+		if stale, imgVer := ImageStale(); stale {
+			log.Printf("⚠️  Image %s was built by sandclaude %s but this CLI is %s — "+
+				"run `sandclaude update` (or `sandclaude rebuild`) to refresh it.",
+				imageName, imgVer, config.Version)
+		}
 		return nil // Image exists
 	}
 
@@ -550,7 +557,12 @@ func (sc *SandClaude) EnsureImage(imageName string) error {
 		)
 	}
 
-	buildArgs = append(buildArgs, "-t", imageName, config.AssetsDir())
+	// Stamp the build with the CLI version (label + version-pinned tag) so a later
+	// run can detect an image built by an older CLI. imageBuildTags applies the
+	// canonical `sandclaude-stable` tag plus the :<version> alias for real releases.
+	buildArgs = append(buildArgs, imageVersionLabelArg()...)
+	buildArgs = append(buildArgs, imageBuildTags()...)
+	buildArgs = append(buildArgs, config.AssetsDir())
 	buildCmd := exec.Command("docker", buildArgs...)
 	buildCmd.Stdout = os.Stdout
 	buildCmd.Stderr = os.Stderr

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -127,6 +128,34 @@ func (d *dashboardServer) handleHostWS(w http.ResponseWriter, r *http.Request, i
 	if _, serr := os.Stat(workspace); serr == nil {
 		cmd.Dir = workspace // land in the project on the host
 	}
+	d.bridgePTY(w, r, cmd)
+}
+
+// handleUpdateWS bridges a browser terminal to `sandclaude update` running on
+// the HOST. This is the dashboard's "Update" button: rather than a silent
+// privileged endpoint, it opens a real PTY so the update runs with the operator's
+// TTY — sudo (if the binary lives somewhere unwritable) can prompt, the
+// confirmation prompt works, and the operator sees the full output. We run the
+// SAME binary serving this dashboard (os.Executable) so the update targets the
+// actual install, and pass --yes since the click IS the consent. After it exits
+// we drop into an interactive shell so the log stays on screen and the tab isn't
+// dead.
+func (d *dashboardServer) handleUpdateWS(w http.ResponseWriter, r *http.Request) {
+	exe, err := os.Executable()
+	if err != nil {
+		http.Error(w, "cannot locate the sandclaude binary", http.StatusInternalServerError)
+		return
+	}
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/bash"
+	}
+	// Run the update, then hand off to an interactive shell so output persists and
+	// the user can act on any printed instruction (e.g. a sudo command). Quote the
+	// exe path for safety against spaces.
+	script := "'" + strings.ReplaceAll(exe, "'", "'\\''") + "' update --yes; " +
+		"echo; echo '[update finished — this shell stays open; close the tab when done]'; exec " + shell + " -l"
+	cmd := exec.Command(shell, "-lc", script)
 	d.bridgePTY(w, r, cmd)
 }
 

@@ -1195,3 +1195,37 @@ table.projects th, table.projects td {
   font-size: 0.85rem; min-width: 260px;
 }
 .cfg-select:focus { outline: none; border-color: var(--con-working); box-shadow: 0 0 0 2px rgba(92,230,168,0.2); }
+
+/* =========================================================================
+   Update banner — shown at the top of EVERY page, so it uses the global :root
+   palette (NOT the body.console-scoped --con-* vars, which don't resolve on the
+   project page). Amber to read as "attention, not error".
+   ========================================================================= */
+.update-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 0.5rem 1rem;
+  background: rgba(255,180,84,0.10);
+  border-bottom: 1px solid rgba(255,180,84,0.35);
+  color: var(--fg);
+  font-size: 0.82rem;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+/* Muted variant: "couldn't reach the update source" — informational, not amber. */
+.update-banner-warn {
+  background: rgba(107,118,136,0.10);
+  border-bottom-color: var(--border);
+  color: var(--muted);
+}
+.update-banner-text strong { color: var(--warn); }
+.update-banner .muted { color: var(--muted); }
+.update-banner-actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+.update-banner-btn {
+  background: var(--warn); color: #1a1204; border: none; border-radius: 6px;
+  padding: 0.3rem 0.75rem; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+}
+.update-banner-btn:hover { filter: brightness(1.08); }
+.update-banner-dismiss {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  font-size: 0.9rem; line-height: 1; padding: 0.2rem 0.35rem;
+}
+.update-banner-dismiss:hover { color: var(--fg); }
