@@ -79,7 +79,7 @@ export function NewProjectModal({ presetRepoId, onClose }: { presetRepoId?: stri
     e.preventDefault();
     setMsg({ text: "creating…", err: false });
     let body: Record<string, unknown>;
-    if (mode === "new") body = { mode: "new", name: name.trim() };
+    if (mode === "new") body = { mode: "new", name: name.trim(), path: path.trim() };
     else if (mode === "existing") body = { mode: "existing", path: path.trim() };
     else {
       const specs: RepoSpec[] = [];
@@ -137,9 +137,19 @@ export function NewProjectModal({ presetRepoId, onClose }: { presetRepoId?: stri
           </>
         )}
         {mode === "new" && (
-          <label>
-            Name <input type="text" placeholder="my-project" autoComplete="off" value={name} onChange={(e) => setName(e.target.value)} />
-          </label>
+          <>
+            <label>
+              Name <input type="text" placeholder="my-project" autoComplete="off" value={name} onChange={(e) => setName(e.target.value)} />
+            </label>
+            <label>
+              Location (optional)
+              <input type="text" placeholder="~/code  (default: managed workspaces dir)" autoComplete="off" value={path} onChange={(e) => setPath(e.target.value)} />
+            </label>
+            <div className="muted cfg-note">
+              Parent directory for the new project. Use <code>~</code>, an absolute path, or a path relative to your home dir. Leave blank
+              to keep it in sandclaude's managed workspaces.
+            </div>
+          </>
         )}
         {mode === "existing" && (
           <label>

@@ -885,7 +885,74 @@ table.projects th, table.projects td {
   font-size: 0.85rem; padding: 0 0.3rem; border-radius: 3px;
 }
 .chat-panel-bar button:hover { background: rgba(255,255,255,0.1); }
-.chat-panel-iframe { flex: 1 1 auto; width: 100%; border: none; background: #1e1e1e; }
+.chat-panel-iframe { flex: 1 1 auto; width: 100%; border: none; background: var(--cream, #F5F4EE); overflow: hidden; display: flex; }
+
+/* Ask-Claude chat surface — Claude-Desktop-inspired warm cream/clay theme,
+   deliberately distinct from the dark console (signals: host, NOT sandboxed).
+   Ported from the old chat.html.tmpl inline styles; scoped under .chat-root and
+   mapped to the React ChatPanel's element/class names (was full-page body +
+   #composer). Vars are namespaced so they don't leak into the dashboard theme. */
+.chat-root {
+  --cream: #F5F4EE; --cream-hi: #FBFAF7; --clay: #C15F3C; --clay-soft: #E8D9CE;
+  --ink: #2B2A27; --c-muted: #706C64; --line: #E3E0D8; --user-bubble: #ECE7DE;
+  display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; width: 100%;
+  background: var(--cream); color: var(--ink);
+  font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+}
+.chat-root > .cfg-note {
+  flex: 0 0 auto; background: #FBEEE6; color: #8A4B2C;
+  border-bottom: 1px solid #E7C7B4; font-size: 12px;
+}
+.chat-root > .cfg-note strong { color: var(--clay); }
+.chat-log { flex: 1 1 auto; overflow-y: auto; padding: 18px 16px 8px; }
+.chat-root .msg { max-width: 760px; margin: 0 auto 18px; display: flex; gap: 10px; }
+.chat-root .msg .avatar {
+  flex: 0 0 26px; width: 26px; height: 26px; border-radius: 6px;
+  display: grid; place-items: center; font-size: 14px; margin-top: 1px;
+}
+.chat-root .msg.assistant .avatar { background: var(--clay); color: #fff; }
+.chat-root .msg.user { flex-direction: row-reverse; }
+.chat-root .msg.user .bubble { background: var(--user-bubble); border-radius: 14px 14px 4px 14px; padding: 9px 13px; }
+.chat-root .msg.user .avatar { background: var(--clay-soft); color: var(--clay); }
+.chat-root .bubble { min-width: 0; }
+.chat-root .bubble p { margin: 0 0 8px; }
+.chat-root .bubble p:last-child { margin-bottom: 0; }
+.chat-root .bubble pre {
+  background: #2B2A27; color: #F5F4EE; border-radius: 10px; padding: 12px 14px;
+  overflow-x: auto; font-size: 12.5px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.chat-root .bubble code:not(pre code) {
+  background: #EBE7DE; border-radius: 4px; padding: 1px 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em;
+}
+.chat-root .tool { max-width: 760px; margin: 0 auto 10px; padding-left: 36px; }
+.chat-root .tool details { background: var(--cream-hi); border: 1px solid var(--line); border-radius: 8px; font-size: 12px; color: var(--c-muted); }
+.chat-root .tool summary { cursor: pointer; padding: 5px 10px; list-style: none; display: flex; align-items: center; gap: 6px; user-select: none; }
+.chat-root .tool summary::-webkit-details-marker { display: none; }
+.chat-root .tool summary::before { content: "🔧"; }
+.chat-root .tool .tool-name { color: var(--ink); font-weight: 600; }
+.chat-root .tool .tool-arg { color: var(--c-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-root .tool .tool-body { padding: 0 10px 8px; }
+.chat-root .tool .tool-body .label { color: var(--clay); font-weight: 600; margin-top: 6px; }
+.chat-root .tool .tool-body pre {
+  margin: 3px 0 0; background: #EFEBE2; color: #2B2A27; border-radius: 6px; padding: 7px 9px;
+  overflow-x: auto; font-size: 11.5px; white-space: pre-wrap; word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; max-height: 220px; overflow-y: auto;
+}
+.chat-root .meta { max-width: 760px; margin: -8px auto 18px; color: var(--c-muted); font-size: 11.5px; padding-left: 36px; }
+.chat-root .meta.error { color: #B23; }
+.chat-root .typing { color: var(--c-muted); font-style: italic; }
+.chat-composer { flex: 0 0 auto; border-top: 1px solid var(--line); background: var(--cream-hi); padding: 10px 16px 14px; display: flex; gap: 8px; align-items: flex-end; }
+.chat-composer textarea {
+  flex: 1 1 auto; border: 1px solid var(--line); outline: none; resize: none; background: #fff;
+  font: inherit; color: var(--ink); max-height: 160px; line-height: 1.5; border-radius: 12px; padding: 8px 12px;
+}
+.chat-composer #send, .chat-composer #stop {
+  flex: 0 0 auto; width: 34px; height: 34px; border: none; border-radius: 10px; color: #fff; font-size: 16px; cursor: pointer;
+}
+.chat-composer #send { background: var(--clay); }
+.chat-composer #send:disabled { opacity: 0.4; cursor: default; }
+.chat-composer #stop { background: #7a2e1a; }
 
 /* ---- Landing page: sidebar shell + repos + new-project modal ------------- */
 .app-shell { display: flex; min-height: calc(100vh - 46px); }
