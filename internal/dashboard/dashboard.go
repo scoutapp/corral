@@ -406,6 +406,17 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Update availability for the global banner, and the host-PTY that runs
+	// `sandclaude update` behind the "Update" button.
+	if path == "/update-status" {
+		d.handleUpdateStatus(w, r)
+		return
+	}
+	if path == "/update/ws" {
+		d.handleUpdateWS(w, r)
+		return
+	}
+
 	// Global (cross-project) control plane.
 	switch path {
 	case "/global":

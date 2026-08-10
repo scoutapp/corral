@@ -72,6 +72,11 @@ risks. The chat panel is read-only by default.)
    `sandclaude dev` on the host. These run with the operator's full host
    privileges (same loopback + token trust basis as the host shell). Adding a repo
    clones an operator-supplied URL — an outbound host action by design.
+   The **Update** button opens a host PTY running `sandclaude update` — it replaces
+   the running binary and rebuilds the image. If the install dir isn't user-writable
+   it does NOT elevate on its own; it prints the exact `sudo install …` command for
+   the operator to run. It's a real host shell, not a silent privileged endpoint,
+   so consent (and any elevation) happens visibly on the terminal.
 4. **"Ask Claude" chat panel is NOT sandboxed.** The dashboard chat panel runs
    the operator's *own host* `claude` (real credentials/subscription — not the
    Anthropic API, not the sandboxed container instance), started in the project
