@@ -41,6 +41,19 @@ stored). New projects start automatically.
 
 > CLI equivalent: `cd ~/my-project && sandclaude init`.
 
+### Spinning a project off a GitHub issue
+
+Under **Repos**, each cloned repo has an **Issues** button that lists its open
+GitHub issues:
+
+![A repo's GitHub issues](images/repos-issues.png)
+
+Hit **Spawn** on any issue and Sandclaude offers to create a project for it —
+cloning the repo on a fresh branch, writing an `ISSUE.md`, and pre-typing a prompt
+into Claude so it can get straight to work. Nothing starts until you confirm:
+
+![Spawn-project modal for an issue](images/spawn-issue-modal.png)
+
 ---
 
 ## Working in a project
@@ -73,13 +86,16 @@ type to it directly.
 ### Seeing what Claude reached out to
 
 The **Mitm Proxy** tab is the heart of "know what it's doing." Every outbound
-request is listed — method, host, path, status. For monitored hosts you can
-inspect the full request; anything else is logged but its contents stay private.
+request is listed — method, host, path, status. Click a monitored request to open
+its gutter and read the full exchange — headers and the request/response body.
+Below, an expanded call to Anthropic showing the exact payload that was sent (your
+real credential is injected by the proxy and never exposed to Claude):
 
-![Mitm Proxy tab](images/project-mitm.png)
+![Expanded request to Anthropic, showing the payload](images/project-mitm-payload.png)
 
-Not monitoring a host yet but want to? Hit **Monitor** on its row to start
-capturing it live.
+Anything not being monitored is still logged, but its contents stay private. Want
+to start capturing a host you aren't yet? Hit **Monitor** on its row to decrypt it
+from then on.
 
 ### Tuning a project
 
