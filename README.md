@@ -19,26 +19,25 @@ Code signed in (`claude` once, to log in).
 
 ```bash
 cd ~/my-project
-sandclaude init                                     # answer a few prompts, once per project
-sandclaude populate-proxy-credentials               # set your credentials once
-sandclaude start --passthrough-firewall-and-write   # start working
+sandclaude init                         # answer a few prompts, once per project
+sandclaude populate-proxy-credentials   # set your credentials once
+sandclaude start                        # start working
 ```
 
-During `init` you'll be asked a few yes/no questions (protect my credentials?
-let Claude use Docker? expose any ports?) — the recommended answers are the
-defaults. Your credentials are set once and reused across every project.
+During `init` you'll be asked a few yes/no questions (Docker-in-Docker? expose any
+ports?) — the recommended answers are the defaults. Your credentials are set once
+and reused across every project.
 
-**Start with `--passthrough-firewall-and-write`.** A brand-new project has an empty
-allowlist, so a plain `start` would block the sites your project needs. Passthrough
-lets everything through *and quietly records what gets used* — so Claude can work
-right away while Sandclaude learns your project's real network needs. (The first
-`start` sets things up and can take a minute; after that it's quick.)
+**`start` is permissive by default.** The proxy and credential injection are on,
+but unknown sites are *allowed and logged* rather than blocked — so Claude can work
+right away while Sandclaude quietly records what your project actually reaches out
+to. (The first `start` sets things up and can take a minute; after that it's quick.)
 
-Once things are working, lock it down to just what was actually used:
+Once you know what's needed, lock it down to just that:
 
 ```bash
-sandclaude firewall-reload   # lock in the discovered sites
-sandclaude start             # now enforced — nothing new gets out
+sandclaude firewall-reload             # lock in the discovered sites
+sandclaude start --enforce-allowlist   # strict — nothing new gets out
 ```
 
 ## Watching & driving

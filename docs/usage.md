@@ -147,11 +147,20 @@ The dashboard is the main way to drive Sandclaude, but everything has a CLI:
 
 ```bash
 sandclaude init      # set up a project (once)
-sandclaude start     # start it (enforced allowlist)
+sandclaude start     # start it (permissive by default: unknown sites are allowed + logged)
 sandclaude dev       # start in the background: capture / send / attach
 sandclaude config    # edit this project's settings
 sandclaude list      # list projects
 sandclaude update    # update Sandclaude itself
+```
+
+By default `start` runs in **permissive** mode — the proxy and credential
+injection are on, but unknown sites are allowed and logged rather than blocked, so
+a new project works right away while Sandclaude learns what it actually needs. Once
+you know, lock it down:
+
+```bash
+sandclaude start --enforce-allowlist   # strict: block anything not on the allowlist
 ```
 
 Run `sandclaude` with no arguments for the full command list.
