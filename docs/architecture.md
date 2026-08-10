@@ -117,16 +117,16 @@ browser (xterm.js)                    HOST: sandclaude dashboard
 ```
 
 The dashboard never connects *to* a container — it's sealed off (no network in).
-The host drives everything: a helper command wired to a PTY, bridged to xterm.js
-over a WebSocket by `bridgePTY` (internal/dashboard/terminal.go). The three
-terminals differ only in that command (routes `terminal/ws`, `container/ws`,
-`host/ws`; the host shell is a real, un-sandboxed host shell).
+The host does the work: it runs a helper command in a PTY and pipes that PTY to
+the browser over a WebSocket (`bridgePTY`, internal/dashboard/terminal.go). Each
+terminal is just a different helper command — `tmux attach` for Claude, `docker
+exec` for the container shell, `tmux attach` for the host shell (which is a real,
+un-sandboxed shell on your machine).
 
-tmux sits in the middle so the session outlives the connection — closing the tab
-kills the `tmux attach` client, but the server keeps `claude` running; reattaching
-redraws screen + scrollback (also how `sandclaude dev` detaches). The full path
-stacks two PTYs, with tmux and the docker client both on the host and only
-`claude` in the container:
+Because the sessions live in tmux, they outlast the browser: reload the page or
+leave the project and come back, and you're reattached to the same live terminals,
+right where you left off. The full chain stacks two PTYs — tmux and the docker
+client run on the host; only `claude` runs in the container:
 
 ```
 xterm.js → dashboard(host) →PTY-A→ tmux → docker run -it →PTY-B→ claude(container)
