@@ -107,28 +107,55 @@ func (d *dashboardServer) handleContainerWS(w http.ResponseWriter, r *http.Reque
 	d.bridgePTY(w, r, cmd)
 }
 
+// hostShellSession returns the per-project tmux session name backing that
+// project's host shell. It's distinct from the Claude dev session
+// (TmuxSessionNameForWorkspace) — a "-host" suffix — so the integrated host
+// terminal is its own long-lived session that survives navigation and reloads.
+func hostShellSession(workspace string) string {
+	return session.TmuxSessionNameForWorkspace(workspace) + "-host"
+}
+
 // handleHostWS bridges a browser terminal to a real shell on the HOST (the
 // machine running the dashboard), started in the project's workspace directory.
 // This is the VS Code-style "integrated terminal" — unlike the container shell,
 // it is NOT sandboxed; it runs with the operator's full privileges. That's
 // acceptable because the dashboard is loopback-only and token-gated (the same
 // gate that guards the container shell), and the operator is the machine owner.
+//
+// The shell runs inside a PERSISTENT per-project tmux session (created on first
+// open, attached on every open thereafter). So leaving the project and coming
+// back — or even reloading the browser — reattaches the SAME live shell with its
+// cwd, running commands, and scrollback intact, rather than spawning a fresh one.
 func (d *dashboardServer) handleHostWS(w http.ResponseWriter, r *http.Request, id string) {
 	workspace, err := lookupWorkspaceByID(id)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/bash"
+	sessionName := hostShellSession(workspace)
+
+	// Create the session detached if it doesn't exist yet, rooted in the project
+	// dir so the shell lands there. `tmux new-session -d` is a no-op error if it
+	// already exists; we gate on has-session to avoid clobbering a live one.
+	if !session.TmuxSessionExists(sessionName) {
+		dir := workspace
+		if _, serr := os.Stat(workspace); serr != nil {
+			dir = "" // workspace gone; let tmux use the default cwd
+		}
+		args := []string{"new-session", "-d", "-s", sessionName}
+		if dir != "" {
+			args = append(args, "-c", dir)
+		}
+		// Disable tmux's status bar so the browser terminal looks like a plain
+		// shell, not a tmux UI.
+		if err := exec.Command("tmux", args...).Run(); err == nil {
+			exec.Command("tmux", "set-option", "-t", sessionName, "status", "off").Run()
+		}
 	}
-	// -l: a login shell so the user's normal PATH/aliases/env are present.
-	cmd := exec.Command(shell, "-l")
-	if _, serr := os.Stat(workspace); serr == nil {
-		cmd.Dir = workspace // land in the project on the host
-	}
-	d.bridgePTY(w, r, cmd)
+
+	// Attach (forces a PTY via -t inside bridgeSessionWS). Detaching on tab close
+	// leaves the session alive for next time.
+	d.bridgeSessionWS(w, r, sessionName, "could not start host shell")
 }
 
 // handleUpdateWS bridges a browser terminal to `sandclaude update` running on

@@ -662,10 +662,19 @@ table.projects th, table.projects td {
 .project-layout { display: flex; gap: 0; height: calc(100vh - 64px); }
 .tab-area { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
 .term-dock {
-  flex: 0 0 42%; min-width: 320px; max-width: 60%;
+  /* flex-basis is set inline (drag-resizable, persisted). Keep a floor; the drag
+     hook enforces the ceiling so the inline width isn't clamped mid-drag. */
+  flex: 0 0 480px; min-width: 240px;
+  position: relative;
   border-left: 1px solid var(--con-line); overflow: hidden;
   display: flex; flex-direction: column;
 }
+/* Drag handle on the dock's left edge (dragging left widens the dock). */
+.term-dock-handle {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 5px;
+  cursor: ew-resize; background: transparent; z-index: 2;
+}
+.term-dock-handle:hover { background: var(--con-working); }
 .project-layout.dock-collapsed .term-dock { display: none; }
 .term-dock .screen-frame, .term-dock .screen-iframe { height: 100%; }
 

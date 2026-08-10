@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "../router";
 import { useStatus } from "../hooks/useStatus";
+import { usePersistentState } from "../hooks/usePersistentState";
+import { useDragResize } from "../hooks/useDragResize";
 import { postRaw } from "../api/client";
 import { SSHLoadModal } from "../components/SSHLoadModal";
 import { XtermPane } from "../components/XtermPane";
@@ -24,6 +26,15 @@ const TABS: { key: Tab; label: string }[] = [
 
 const DOCK_KEY = "sandclaude.dockCollapsed";
 const CHAT_DOCK_KEY = "sandclaude.chatDock";
+// Panel sizes are shared across projects (a global preference); open-state is
+// per-project (keyed by id) so each project remembers whether you had its host
+// shell / chat open. Defaults roughly match the CSS starting sizes.
+const DOCK_W_KEY = "sandclaude.dockWidth";
+const HOST_H_KEY = "sandclaude.hostHeight";
+const CHAT_W_KEY = "sandclaude.chatWidth";
+const DOCK_W_DEFAULT = 480;
+const HOST_H_DEFAULT = 320;
+const CHAT_W_DEFAULT = 420;
 
 export function ProjectPage({ id }: { id: string }) {
   const { projects } = useStatus(4000);
@@ -51,39 +62,42 @@ export function ProjectPage({ id }: { id: string }) {
     if (t === "config") setConfigRefresh((n) => n + 1);
   };
 
-  // Docks
-  const [dockCollapsed, setDockCollapsed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(DOCK_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
+  // Docks. Collapsed/side are global prefs; open-state is per-project so each
+  // project remembers whether you left its host shell / chat open (survives
+  // navigation + reload). Sizes are global prefs.
+  const [dockCollapsed, setDockCollapsed] = usePersistentState<boolean>(DOCK_KEY, false);
   const [dockSeen, setDockSeen] = useState(!dockCollapsed);
-  const [hostOpen, setHostOpen] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
-  const [chatSide, setChatSide] = useState<"left" | "right">(() => {
-    try {
-      return (localStorage.getItem(CHAT_DOCK_KEY) as "left" | "right") || "right";
-    } catch {
-      return "right";
-    }
+  const [hostOpen, setHostOpen] = usePersistentState<boolean>(`sandclaude.hostOpen.${id}`, false);
+  const [chatOpen, setChatOpen] = usePersistentState<boolean>(`sandclaude.chatOpen.${id}`, false);
+  const [chatSide, setChatSide] = usePersistentState<"left" | "right">(CHAT_DOCK_KEY, "right");
+
+  // Persistent, drag-resizable panel sizes.
+  const [dockWidth, setDockWidth] = usePersistentState<number>(DOCK_W_KEY, DOCK_W_DEFAULT);
+  const [hostHeight, setHostHeight] = usePersistentState<number>(HOST_H_KEY, HOST_H_DEFAULT);
+  const [chatWidth, setChatWidth] = usePersistentState<number>(CHAT_W_KEY, CHAT_W_DEFAULT);
+
+  const dockResizeRef = useDragResize({
+    axis: "x", edge: "start", get: () => dockWidth, min: 240,
+    max: () => Math.round(window.innerWidth * 0.8), onResize: setDockWidth,
+  });
+  const hostResizeRef = useDragResize({
+    axis: "y", edge: "start", get: () => hostHeight, min: 120,
+    max: () => Math.round(window.innerHeight * 0.85), onResize: setHostHeight,
+  });
+  const chatResizeRef = useDragResize({
+    axis: "x", edge: chatSide === "right" ? "start" : "end", get: () => chatWidth, min: 300,
+    max: () => Math.round(window.innerWidth * 0.8), onResize: setChatWidth,
   });
 
   const toggleDock = useCallback(() => {
     setDockCollapsed((c) => {
       const next = !c;
-      try {
-        localStorage.setItem(DOCK_KEY, next ? "1" : "0");
-      } catch {
-        /* ignore */
-      }
       if (!next) setDockSeen(true);
       return next;
     });
-  }, []);
-  const toggleHost = useCallback(() => setHostOpen((v) => !v), []);
-  const toggleChat = useCallback(() => setChatOpen((v) => !v), []);
+  }, [setDockCollapsed]);
+  const toggleHost = useCallback(() => setHostOpen((v) => !v), [setHostOpen]);
+  const toggleChat = useCallback(() => setChatOpen((v) => !v), [setChatOpen]);
 
   // Power toggle: mirrors dashboard.js — a pending spinner that clears when the
   // /status poll confirms the container reached the target state.
@@ -146,19 +160,7 @@ export function ProjectPage({ id }: { id: string }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [toggleHost, toggleChat, toggleDock]);
 
-  const flipChatSide = () => {
-    setChatSide((s) => {
-      const next = s === "left" ? "right" : "left";
-      try {
-        localStorage.setItem(CHAT_DOCK_KEY, next);
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  };
-
-  const hostHandleRef = useRef<HTMLDivElement | null>(null);
+  const flipChatSide = () => setChatSide((s) => (s === "left" ? "right" : "left"));
 
   return (
     <>
@@ -235,7 +237,8 @@ export function ProjectPage({ id }: { id: string }) {
           </div>
         </div>
 
-        <aside className="term-dock" id="term-dock">
+        <aside className="term-dock" id="term-dock" style={{ flex: `0 0 ${dockWidth}px` }}>
+          <div className="term-dock-handle" ref={dockResizeRef} title="Drag to resize" />
           <div className="screen-frame">
             <div className="screen-bar">
               <i className="screen-dot" />
@@ -253,8 +256,8 @@ export function ProjectPage({ id }: { id: string }) {
       </div>
 
       {hostOpen && (
-        <div className="host-overlay" id="host-overlay">
-          <div className="host-overlay-handle" ref={hostHandleRef} />
+        <div className="host-overlay" id="host-overlay" style={{ height: `${hostHeight}px` }}>
+          <div className="host-overlay-handle" ref={hostResizeRef} title="Drag to resize" />
           <div className="host-overlay-bar">
             <span>
               <i className="screen-dot" />
@@ -271,8 +274,8 @@ export function ProjectPage({ id }: { id: string }) {
       )}
 
       {chatOpen && (
-        <div className={`chat-panel${chatSide === "left" ? " dock-left" : ""}`} id="chat-panel">
-          <div className="chat-panel-handle" />
+        <div className={`chat-panel${chatSide === "left" ? " dock-left" : ""}`} id="chat-panel" style={{ width: `${chatWidth}px` }}>
+          <div className="chat-panel-handle" ref={chatResizeRef} />
           <div className="chat-panel-bar">
             <span>
               <i className="screen-dot" />
