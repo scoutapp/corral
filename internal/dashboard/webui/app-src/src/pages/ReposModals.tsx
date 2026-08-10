@@ -74,6 +74,25 @@ export function NewProjectModal({ presetRepoId, onClose }: { presetRepoId?: stri
   const [name, setName] = useState("");
   const [path, setPath] = useState("");
   const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
+  const [ssh, setSsh] = useState<string | null>(null); // project id awaiting SSH-key load
+
+  // Start the newly-created project, then open it. On 409 ssh_keys_pending, load
+  // keys first (SSH modal), then retry + navigate. A start failure still opens
+  // the project (its page shows the state / a Start button).
+  async function startAndOpen(id: string) {
+    try {
+      const res = await postRaw(`/p/${id}/start`);
+      const b = await res.json().catch(() => ({}));
+      if (res.status === 409 && b?.ssh_keys_pending) {
+        setMsg({ text: "load SSH keys to start this project…", err: false });
+        setSsh(id);
+        return;
+      }
+    } catch {
+      /* fall through — open the project regardless */
+    }
+    window.location.href = `/p/${id}/`;
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -96,7 +115,8 @@ export function NewProjectModal({ presetRepoId, onClose }: { presetRepoId?: stri
     }
     try {
       const res = await postJSON<CreateProjectResponse>("/projects/create", body);
-      window.location.href = `/p/${res.id}/`;
+      setMsg({ text: "created — starting…", err: false });
+      await startAndOpen(res.id);
     } catch (err) {
       setMsg({ text: (err as Error).message, err: true });
     }
@@ -158,11 +178,23 @@ export function NewProjectModal({ presetRepoId, onClose }: { presetRepoId?: stri
         )}
         <div className="form-actions">
           <button type="submit" className="btn primary">
-            {mode === "existing" ? "Register & open" : "Create & open"}
+            {mode === "existing" ? "Register & start" : "Create & start"}
           </button>
           <Status msg={msg} />
         </div>
       </form>
+
+      {ssh && (
+        <SSHLoadModal
+          projectId={ssh}
+          onDone={(loaded) => {
+            const id = ssh;
+            setSsh(null);
+            if (loaded) postRaw(`/p/${id}/start`).catch(() => {});
+            window.location.href = `/p/${id}/`;
+          }}
+        />
+      )}
     </Modal>
   );
 }
