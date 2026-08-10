@@ -101,30 +101,36 @@ too; its cross-project residual risk differs and is noted in the code.
 ## How the dashboard reaches a container
 
 ```
-xterm.js (browser)
-   ▼  WebSocket (raw terminal bytes)
-dashboard (host) ── relays bytes, renders nothing
-   ▼  PTY-A
-tmux attach  (client → server → pane, all on the host)
-   ▼  PTY-B (the pane's command)
-docker run -it  (host: docker client; -it plumbs the container's stdio to PTY-B)
-   ▼
-claude  (the only piece INSIDE the container)
+browser (xterm.js)                    HOST: sandclaude dashboard
+  │  WebSocket                                       │
+  │  ── you type (keystrokes) ───────────────────▶ PTY (host)
+  │  ◀─ screen output ───────────────────────────── │       │
+  │  ── window resized (cols×rows) ──────────────▶ resize   │
+  │                                                          ▼ helper command
+  │                                          ┌───────────────────────────────┐
+  │  Claude terminal   → tmux attach ────────┼─▶ the live Claude session      │
+  │                                           │   (the `docker run` process)   │
+  │  Container shell   → docker exec ─────────┼─▶ a shell INSIDE the container │
+  │  Host shell        → tmux attach ─────────┼─▶ a shell ON the host, in the  │
+  │                                           │   project folder               │
+  └───────────────────────────────────────────┘
 ```
 
 The dashboard never connects *to* a container — it's sealed off (no network in).
 The host drives everything: a helper command wired to a PTY, bridged to xterm.js
-over a WebSocket by `bridgePTY` (internal/dashboard/terminal.go). tmux sits in the
-middle so the session outlives the connection — closing the tab kills the `tmux
-attach` client, but the server keeps `claude` running; reattaching redraws screen
-+ scrollback (also how `sandclaude dev` detaches).
+over a WebSocket by `bridgePTY` (internal/dashboard/terminal.go). The three
+terminals differ only in that command (routes `terminal/ws`, `container/ws`,
+`host/ws`; the host shell is a real, un-sandboxed host shell).
 
-The three terminals differ only in the command:
+tmux sits in the middle so the session outlives the connection — closing the tab
+kills the `tmux attach` client, but the server keeps `claude` running; reattaching
+redraws screen + scrollback (also how `sandclaude dev` detaches). The full path
+stacks two PTYs, with tmux and the docker client both on the host and only
+`claude` in the container:
 
-- **Claude terminal** (`terminal/ws`) — `tmux attach` to the dev session.
-- **Container shell** (`container/ws`) — `docker exec -it` a shell in the sandbox.
-- **Host shell** (`host/ws`) — `tmux attach` to a per-project `<id>-host` session;
-  not sandboxed, a real shell on the host.
+```
+xterm.js → dashboard(host) →PTY-A→ tmux → docker run -it →PTY-B→ claude(container)
+```
 
 Non-terminal data (files, git diff, mitm flows) mostly skips the container — the
 workspace is bind-mounted, so Files/Diff and logs are read on the host. All
