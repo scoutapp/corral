@@ -100,120 +100,73 @@ too; its cross-project residual risk differs and is noted in the code.
 
 ## How the dashboard reaches a container
 
-The dashboard never opens a network connection to a container — a container has
-no listening port the dashboard dials (it lives in its own netns behind the
-egress firewall). Every interactive surface is instead a **local child process**
-the host `sandclaude` spawns, attached to a **PTY**, whose bytes are bridged over
-a same-origin WebSocket to xterm.js in the browser. Control reaches the container
-through host-side channels the operator already owns: the **Docker Engine socket**
-and the **host tmux server**.
+The dashboard never connects *to* a container — the container is sealed off (no
+network in from outside), so there's nothing to dial. The host drives everything:
+it runs a helper command (e.g. `docker exec`) wired to a PTY and bridges that PTY
+to xterm.js in the browser over a WebSocket. tmux (on the host) keeps the session
+alive whether or not anyone's watching — how the Claude terminal survives closing
+the tab.
 
 ```
 browser (xterm.js)                    HOST: sandclaude dashboard
-  │  WebSocket /p/<id>/<kind>/ws                     │
-  │  ── binary frame: keystrokes ───────────────▶ ptmx (PTY master)
-  │  ◀─ binary frame: output ───────────────────── │        │
-  │  ── {"type":"resize",cols,rows} (JSON) ──────▶ TIOCSWINSZ│
-  │                                                          ▼ child process
+  │  WebSocket                                       │
+  │  ── you type (keystrokes) ───────────────────▶ PTY (host)
+  │  ◀─ screen output ───────────────────────────── │       │
+  │  ── window resized (cols×rows) ──────────────▶ resize   │
+  │                                                          ▼ helper command
   │                                          ┌───────────────────────────────┐
-  │  terminal/ws  → tmux attach-session ─────┼─▶ Claude dev session (the very │
-  │                 (host tmux server)        │   `docker run -it` PID)        │
-  │  container/ws → docker exec -it <c> bash ─┼─▶ shell INSIDE the container   │
-  │                 (Docker Engine socket)    │   (Docker demuxes the exec)    │
-  │  host/ws      → tmux attach <id>-host ────┼─▶ shell ON the host, in the    │
-  │                 (host tmux server)        │   project workspace            │
+  │  Claude terminal   → tmux attach ────────┼─▶ the live Claude session      │
+  │                                           │   (the `docker run` process)   │
+  │  Container shell   → docker exec ─────────┼─▶ a shell INSIDE the container │
+  │  Host shell        → tmux attach ─────────┼─▶ a shell ON the host, in the  │
+  │                                           │   project folder               │
   └───────────────────────────────────────────┘
 ```
 
-### The Claude terminal, byte by byte
+(The URLs, if you're reading the code, are `/p/<id>/terminal/ws`,
+`/container/ws`, and `/host/ws`; the resize is a small `{"type":"resize"}` JSON
+message the dashboard turns into the PTY's window size.)
 
-The Claude terminal is the fullest version of the bridge, and it's worth tracing
-end to end because it explains where tmux lives and why. There are **two** PTYs
-stacked, and **tmux runs on the HOST** — not in the container:
+The Claude terminal is the fullest path — two PTYs stacked, tmux and the docker
+client both on the host, only `claude` in the container:
 
 ```
 xterm.js (browser)
-   │  WebSocket — binary frames are raw terminal bytes (VT/ANSI + text)
+   │  WebSocket (raw terminal bytes)
    ▼
-sandclaude dashboard (HOST)                      ── a dumb byte relay ──
-   │  writes ▶ / reads ◀  PTY-A master
+dashboard (host) — relays bytes, renders nothing
+   ▼  PTY-A
+tmux attach  (tmux client → tmux server → pane, all on the host)
+   ▼  PTY-B (the pane's command)
+docker run -it  (host: docker client; -it plumbs the container's stdio to PTY-B)
    ▼
-PTY-A  (created by pty.Start; lives on the HOST)
-   │  its slave is stdin/stdout of…
-   ▼
-tmux attach-session   ← the child process the dashboard spawned (a tmux CLIENT)
-   │  talks to the tmux SERVER over tmux's own unix socket (not the dashboard's)
-   ▼
-tmux server → session → pane   (all on the HOST)
-   │  the pane's command is `docker run -it … claude`, wired to pane PTY-B
-   ▼
-docker run -it   (HOST process: the docker client)
-   │  -it plumbs the container's stdio to PTY-B
-   ▼
-claude   ← the ONLY piece running INSIDE the container
+claude  (the only piece INSIDE the container)
 ```
 
-So the host runs tmux **and** the `docker run -it` client; only `claude` runs in
-the container, with its terminal plumbed out through `-it` to the host tmux pane.
+The dashboard just shovels bytes; xterm.js does the rendering. tmux sits in the
+middle so the session outlives the connection — closing the tab kills the `tmux
+attach` client (and PTY-A), but the server keeps `claude` running; reattaching
+redraws the current screen + scrollback. Same reason `sandclaude dev` can
+detach/reattach, and why the host shell gets its own `<id>-host` session.
 
-How the bytes move:
+`bridgePTY` (internal/dashboard/terminal.go) is the shared bridge; the three
+terminals differ only in the command handed to it:
 
-- **You type** → xterm.js sends a WS binary frame → the dashboard writes those
-  exact bytes into PTY-A → they arrive as the tmux client's stdin → tmux forwards
-  them to the focused pane → `claude` reads them on PTY-B.
-- **Display** → `claude` writes to PTY-B → the tmux server composes the screen and
-  the client emits a stream of **VT/ANSI escape codes** (cursor moves, colors,
-  clears) + text to PTY-A → the dashboard reads PTY-A → WS binary frame → xterm.js.
+- **Claude terminal** (`terminal/ws`) — `tmux attach` to the dev session (which
+  *is* the `docker run -it` process); mirrors the live Claude run.
+- **Container shell** (`container/ws`) — `docker exec -it` a fresh shell inside the
+  sandbox. Gated on the container running.
+- **Host shell** (`host/ws`) — `tmux attach` to a per-project `<id>-host` session,
+  so it persists across navigation. Not sandboxed — a real shell on the host.
 
-The dashboard renders nothing and understands nothing — it shovels raw bytes both
-ways. Correct display happens because **xterm.js is a terminal emulator**: it
-parses the same VT/ANSI stream a physical terminal would and paints the character
-grid. The one structured message is the `{"type":"resize"}` JSON frame, which the
-dashboard turns into a `TIOCSWINSZ` on PTY-A so tmux lays the pane out to match
-xterm.js's dimensions.
+Non-terminal data (files, git diff, mitm flows, config) is plain request/response
+and mostly skips the container: the workspace is bind-mounted, so Files/Diff
+read/write and run `git` on the host, and mitm/proxy logs are read from the host
+too. Ask Claude and the ssh-key load reuse the same PTY bridge.
 
-**Why tmux is in the middle** (the container shell skips it — `docker exec -it`
-attaches PTY-A straight to a shell): tmux is the persistence layer that outlives
-the connection. The tmux server keeps the session (and `claude`) running whether
-or not a client is attached, so closing the browser tab just kills the
-`tmux attach` client and tears down PTY-A — the session survives, and reattaching
-spins up a fresh PTY-A and redraws the current screen + scrollback. This is the
-same reason `sandclaude dev` can detach/reattach, and why the host shell got its
-own `<id>-host` tmux session.
-
-`bridgePTY` (internal/dashboard/terminal.go) is the shared bridge: it upgrades
-the WebSocket, `pty.Start`s the given command, and pumps PTY↔WS both ways, with
-a small JSON `{"type":"resize"}` control frame mapped to the PTY's window size.
-The three project terminals differ only in the command handed to it:
-
-- **Claude terminal** (`terminal/ws`) — `tmux attach-session` to the project's dev
-  session. That session *is* the `docker run -it` process, so attaching mirrors
-  the live Claude run and redraws current screen + scrollback; closing the tab
-  detaches without killing it.
-- **Container shell** (`container/ws`) — `docker exec -it <container> bash`, a
-  fresh shell inside the sandbox for poking around its filesystem. Gated on the
-  container running.
-- **Host shell** (`host/ws`) — `tmux attach` to a per-project host-side session
-  (`<id>-host`) so it persists across navigation and reloads (see the dashboard
-  UI docs). Not sandboxed — it's a real shell on the host.
-
-Non-terminal data (files, git diff, mitm flows, config, status) is plain
-request/response, not a PTY — and mostly doesn't touch the container at all.
-Because the project workspace is bind-mounted, the Files and Diff tabs read/write
-the files and run `git` **directly on the host**; mitm flows and firewall/proxy
-logs are read from the per-project `.sandclaude/logs/` on the host (mitmweb also
-runs host-side). Container-scoped actions that do need it (e.g. restart) shell
-out via the Docker socket. The **Ask Claude** chat and the **scoped-ssh-agent
-load** ride the same WS-PTY bridge; the ssh-agent's own socket (above) is a
-separate bind-mount, not a PTY.
-
-All of this is loopback-bound and token-gated; the WebSocket upgrader is
-same-origin only. A container never initiates any of these — it can neither reach
-the dashboard nor open a session; the operator drives everything from the host.
-
-Because the sessions are host tmux sessions, **`tmux` is a host dependency**: it
-must be installed on the machine running sandclaude for `start`/`dev` and the
-dashboard terminals to work (the installer sets it up alongside mitmproxy).
+Everything is loopback-bound, token-gated, and same-origin; a container never
+initiates any of it. Because the sessions are host tmux sessions, **tmux is a host
+dependency** — the installer sets it up alongside mitmproxy.
 
 ## Where things live (repo layout by tier)
 
