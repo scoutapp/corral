@@ -41,6 +41,13 @@ export const vscodeDarkTheme = EditorView.theme(
       backgroundColor: selection + " !important",
     },
     "&.cm-focused .cm-selectionBackground": { backgroundColor: selection + " !important" },
+    // The ACTIVE line has its own background, and its ::selection renders with a
+    // browser default that's invisible against it — so a selection on the current
+    // line looked like nothing. Color it explicitly (this is the rule that actually
+    // fixes "can't see what I'm highlighting").
+    ".cm-activeLine::selection, .cm-activeLine ::selection": {
+      backgroundColor: selection + " !important",
+    },
     ".cm-selectionMatch": { backgroundColor: selectionMatch },
     ".cm-activeLine": { backgroundColor: lineHighlight },
     ".cm-activeLineGutter": { backgroundColor: lineHighlight, color: gutterActiveFg },

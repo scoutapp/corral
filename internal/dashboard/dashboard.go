@@ -495,6 +495,8 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.serveSPA(w, r)
 	case sub == "terminal/ws":
 		d.handleTerminalWS(w, r, id)
+	case sub == "terminal/action":
+		d.handleTerminalAction(w, r, id)
 	case sub == "config":
 		d.handleConfigRead(w, r, id)
 	case sub == "config/diff":

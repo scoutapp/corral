@@ -115,6 +115,76 @@ func hostShellSession(workspace string) string {
 	return session.TmuxSessionNameForWorkspace(workspace) + "-host"
 }
 
+// handleTerminalAction runs a tmux operation (split/close/clear) against a
+// project's tmux-backed terminal, driving the right-click menu in the dashboard.
+// Body: {"kind":"claude"|"host","action":"split-h"|"split-v"|"kill-pane"|"clear"}.
+// The container shell is a bare `docker exec` (no tmux), so it isn't handled here
+// — its menu offers only client-side copy/paste/clear.
+func (d *dashboardServer) handleTerminalAction(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	workspace, err := lookupWorkspaceByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	var body struct {
+		Kind   string `json:"kind"`
+		Action string `json:"action"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad payload", http.StatusBadRequest)
+		return
+	}
+
+	// Map the terminal kind to its tmux session.
+	var sess string
+	switch body.Kind {
+	case "claude":
+		sess = session.TmuxSessionNameForWorkspace(workspace)
+	case "host":
+		sess = hostShellSession(workspace)
+	default:
+		http.Error(w, "split/close not available for this terminal", http.StatusBadRequest)
+		return
+	}
+	if !session.TmuxSessionExists(sess) {
+		http.Error(w, "terminal not running", http.StatusBadGateway)
+		return
+	}
+
+	// Translate the action to a tmux command targeting the session's active pane.
+	// -h = split into left|right, -v = split into top/bottom (tmux's axis naming
+	// is the opposite of the visual, hence the labels the UI uses).
+	var args []string
+	switch body.Action {
+	case "split-h":
+		args = []string{"split-window", "-h", "-t", sess}
+	case "split-v":
+		args = []string{"split-window", "-v", "-t", sess}
+	case "kill-pane":
+		args = []string{"kill-pane", "-t", sess}
+	case "clear":
+		args = []string{"send-keys", "-t", sess, "clear", "Enter"}
+	default:
+		http.Error(w, "unknown action", http.StatusBadRequest)
+		return
+	}
+	// Start new panes in the workspace dir for splits.
+	if (body.Action == "split-h" || body.Action == "split-v") && workspace != "" {
+		if _, serr := os.Stat(workspace); serr == nil {
+			args = append(args, "-c", workspace)
+		}
+	}
+	if out, err := exec.Command("tmux", args...).CombinedOutput(); err != nil {
+		http.Error(w, "tmux "+body.Action+" failed: "+strings.TrimSpace(string(out)), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true})
+}
+
 // handleHostWS bridges a browser terminal to a real shell on the HOST (the
 // machine running the dashboard), started in the project's workspace directory.
 // This is the VS Code-style "integrated terminal" — unlike the container shell,
@@ -146,10 +216,13 @@ func (d *dashboardServer) handleHostWS(w http.ResponseWriter, r *http.Request, i
 		if dir != "" {
 			args = append(args, "-c", dir)
 		}
-		// Disable tmux's status bar so the browser terminal looks like a plain
-		// shell, not a tmux UI.
+		// Make the session feel like a plain terminal, not a tmux UI:
+		//   status off  — no tmux status bar
+		//   mouse on     — scroll wheel scrolls scrollback, click focuses a pane
+		//                  (xterm still gives native shift+drag select/copy)
 		if err := exec.Command("tmux", args...).Run(); err == nil {
 			exec.Command("tmux", "set-option", "-t", sessionName, "status", "off").Run()
+			exec.Command("tmux", "set-option", "-t", sessionName, "mouse", "on").Run()
 		}
 	}
 

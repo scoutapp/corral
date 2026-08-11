@@ -476,6 +476,9 @@ func (sc *Corral) startDetached(containerName string, args []string) error {
 	newSession := exec.Command(
 		"tmux", "new-session", "-d", "-x", "200", "-y", "50", "-s", sessionName, dockerCmdStr,
 		";", "set-option", "-g", "remain-on-exit", "on",
+		// mouse on: scroll wheel scrolls scrollback in the dashboard terminal
+		// (falls through to Claude's own mouse handling when it grabs the mouse).
+		";", "set-option", "-t", sessionName, "mouse", "on",
 	)
 	if out, err := newSession.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to create tmux session '%s': %w\n%s\n\nIs tmux installed?", sessionName, err, string(out))

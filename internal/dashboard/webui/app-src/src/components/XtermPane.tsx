@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { wsURL } from "../api/client";
+import { wsURL, postJSON } from "../api/client";
+import { TerminalMenu, type TermAction } from "./TerminalMenu";
 
 // A PTY terminal bridged to a WebSocket endpoint. Keystrokes -> binary frames ->
 // PTY; PTY output -> binary frames -> xterm; xterm resize -> JSON control frame.
@@ -10,8 +11,13 @@ import { wsURL } from "../api/client";
 // closes on unmount, so a pane that isn't rendered spawns no PTY.
 // Provide either (projectId + wsPath) for a project-scoped endpoint, or fullPath
 // for an absolute one (e.g. the global populate-creds terminal).
-export function XtermPane({ projectId, wsPath, fullPath }: { projectId?: string; wsPath?: string; fullPath?: string }) {
+// `kind` enables the right-click menu's tmux actions (split/close) for the
+// tmux-backed terminals (claude/host); container/absent = copy/paste/clear only.
+export function XtermPane({ projectId, wsPath, fullPath, kind }: { projectId?: string; wsPath?: string; fullPath?: string; kind?: "claude" | "host" | "container" }) {
   const host = useRef<HTMLDivElement | null>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const path = fullPath ?? `/p/${projectId}${wsPath}`;
 
   useEffect(() => {
@@ -22,14 +28,20 @@ export function XtermPane({ projectId, wsPath, fullPath }: { projectId?: string;
       theme: { background: "#0B0E14" },
       scrollback: 10000,
     });
+    termRef.current = term;
     const fit = new FitAddon();
     term.loadAddon(fit);
     if (host.current) {
       term.open(host.current);
-      fit.fit();
+      // Only fit if the pane already has real geometry. Fitting a 0×0 (hidden or
+      // not-yet-laid-out) pane produces a garbage 1-col grid that tmux redraws into
+      // — the "…" placeholder dots seen while loading. The rAF fit below handles
+      // the real size once layout settles.
+      if (host.current.clientWidth > 0 && host.current.clientHeight > 0) fit.fit();
     }
 
     const ws = new WebSocket(wsURL(path));
+    wsRef.current = ws;
     ws.binaryType = "arraybuffer";
     const decoder = new TextDecoder();
 
@@ -110,5 +122,60 @@ export function XtermPane({ projectId, wsPath, fullPath }: { projectId?: string;
     };
   }, [path]);
 
-  return <div className="term-fill" ref={host} style={{ width: "100%", height: "100%" }} />;
+  // Run a context-menu action. tmux ops (split/close/clear) go to the backend for
+  // the session; copy/paste/clear-screen act on the xterm client-side.
+  const runAction = async (action: TermAction) => {
+    setMenu(null);
+    const term = termRef.current;
+    switch (action) {
+      case "copy": {
+        const sel = term?.getSelection();
+        if (sel) await navigator.clipboard.writeText(sel).catch(() => {});
+        return;
+      }
+      case "paste": {
+        const text = await navigator.clipboard.readText().catch(() => "");
+        if (text && wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(new TextEncoder().encode(text));
+        }
+        return;
+      }
+      case "clear":
+        // For tmux terminals, send `clear` so scrollback clears server-side too;
+        // otherwise just clear the xterm view.
+        if (kind === "claude" || kind === "host") {
+          await postJSON(`/p/${projectId}/terminal/action`, { kind, action: "clear" }).catch(() => {});
+        } else {
+          term?.clear();
+        }
+        return;
+      case "split-h":
+      case "split-v":
+      case "kill-pane":
+        if (kind === "claude" || kind === "host") {
+          await postJSON(`/p/${projectId}/terminal/action`, { kind, action }).catch(() => {});
+        }
+        return;
+    }
+  };
+
+  // Only the tmux-backed terminals can split/close. projectId is required for any
+  // backend action.
+  const canSplit = (kind === "claude" || kind === "host") && !!projectId;
+
+  return (
+    <div
+      className="term-fill"
+      ref={host}
+      style={{ width: "100%", height: "100%" }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setMenu({ x: e.clientX, y: e.clientY });
+      }}
+    >
+      {menu && (
+        <TerminalMenu x={menu.x} y={menu.y} canSplit={canSplit} onClose={() => setMenu(null)} onAction={runAction} />
+      )}
+    </div>
+  );
 }
