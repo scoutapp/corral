@@ -42,6 +42,29 @@ func TmuxSessionExists(sessionName string) bool {
 	return exec.Command("tmux", "has-session", "-t", sessionName).Run() == nil
 }
 
+// TmuxSessionLive reports whether the session exists AND its pane is alive (not a
+// dead pane left behind by `remain-on-exit on` after the container's `docker run`
+// exited). The dashboard uses this to decide whether the Claude terminal is
+// attachable — attaching to a dead-pane session just shows tmux's "Pane is dead"
+// fill (the blank/dotted screen users saw when the project wasn't running but the
+// session lingered). Returns false if the session is gone or every pane is dead.
+func TmuxSessionLive(sessionName string) bool {
+	if !TmuxSessionExists(sessionName) {
+		return false
+	}
+	// #{pane_dead} is 1 for a dead pane, 0 for a live one — one line per pane.
+	out, err := exec.Command("tmux", "list-panes", "-t", sessionName, "-F", "#{pane_dead}").Output()
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if strings.TrimSpace(line) == "0" {
+			return true // at least one live pane
+		}
+	}
+	return false
+}
+
 // PidAlive reports whether a process with the given pid currently exists.
 // Signal 0 performs no actual signal delivery, just existence/permission checks.
 func PidAlive(pid int) bool {

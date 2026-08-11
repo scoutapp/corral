@@ -73,7 +73,16 @@ func (d *dashboardServer) handleTerminalWS(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	d.bridgeSessionWS(w, r, session.TmuxSessionNameForWorkspace(workspace),
+	sessionName := session.TmuxSessionNameForWorkspace(workspace)
+	// Don't attach to a dead-pane session — after the container's `docker run`
+	// exits, `remain-on-exit on` keeps the session alive with a dead pane, and
+	// attaching to it just shows tmux's blank "Pane is dead" fill. Treat that as
+	// not-running so the dashboard shows the ▶ Start empty state instead.
+	if !session.TmuxSessionLive(sessionName) {
+		http.Error(w, "this project isn't running — press ▶ Start in the dashboard", http.StatusBadGateway)
+		return
+	}
+	d.bridgeSessionWS(w, r, sessionName,
 		"this project isn't running — press ▶ Start in the dashboard")
 }
 

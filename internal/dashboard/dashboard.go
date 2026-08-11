@@ -245,7 +245,10 @@ func projectLiveStatus(workspace string) ProjectStatus {
 	}
 
 	status.ContainerUp = session.DockerContainerRunning(status.Container)
-	status.TmuxUp = session.TmuxSessionExists(status.Session)
+	// Live (not dead-pane) so the dashboard doesn't connect the Claude terminal to
+	// a session whose container has exited — attaching to a dead pane shows tmux's
+	// blank "Pane is dead" fill instead of a terminal.
+	status.TmuxUp = session.TmuxSessionLive(status.Session)
 
 	if state, err := readProxyRuntimeStateFor(workspace); err != nil {
 		config.Debugf("Warning: failed to read proxy runtime state for %s: %v", workspace, err)
