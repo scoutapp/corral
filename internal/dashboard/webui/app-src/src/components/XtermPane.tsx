@@ -87,6 +87,11 @@ export function XtermPane({ projectId, wsPath, fullPath, kind }: { projectId?: s
       // visible resize flash (FOUC). Skip until there's real geometry.
       const el = host.current;
       if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
+      // Skip if the fit wouldn't change anything — repeatedly calling fit.fit()
+      // with the same result still triggers a reflow, which is the "flicker in and
+      // out" when the settle-fits re-run. Only apply when dims actually differ.
+      const dims = fit.proposeDimensions();
+      if (dims && dims.cols === term.cols && dims.rows === term.rows) return;
       fit.fit();
       sendResize();
     };

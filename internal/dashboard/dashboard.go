@@ -389,9 +389,14 @@ func (d *dashboardServer) serveSPA(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// The shell references hashed assets, so it can be cached briefly; but keep it
-	// revalidating so a redeploy is picked up promptly.
-	w.Header().Set("Cache-Control", "no-cache")
+	// NEVER cache the shell: it references content-hashed asset filenames, so after
+	// a redeploy (install + dashboard restart) a plain browser reload must pick up
+	// the NEW index.html to load the new bundle. A cached shell points at stale
+	// assets — the recurring "I reinstalled but still see the old UI" problem. The
+	// hashed /static/app/assets/* files are immutable and cache fine on their own.
+	w.Header().Set("Cache-Control", "no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 	w.Write(html)
 }
 
