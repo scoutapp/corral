@@ -28,6 +28,8 @@ allowlist-proxy/allowed-domains.txt.enc
 
 # Per-project corral state (config, allowlist, key, logs) — never commit
 .corral/
+# Legacy pre-rename state dir (was sandclaude); ignore so leftovers aren't committed
+.sandclaude/
 
 __pycache__/
 
