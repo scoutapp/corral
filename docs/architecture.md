@@ -9,12 +9,17 @@ Four tiers. Traffic and control flow between them shown below.
 │     ├─ starts mitmweb ──────────┐        ┌─ serves Web Dashboard :PORT         │
 │     │    -s proxy-addon.py      │        │    (projects, mitm flows, terminal, │
 │     │    (host mitm :9500+)     │        │     config) ── browser opens tab    │
-│     └─ docker run ──▶ sandbox   │        └─ SSE/WS ⇄ tmux in sandbox           │
-│                                 │                                              │
+│     ├─ scoped ssh-agent ──┐     │        └─ SSE/WS ⇄ tmux in sandbox           │
+│     │    (per project;    │     │                                              │
+│     │     holds only the  │     │                                              │
+│     │     chosen keys)    │     │                                              │
+│     └─ docker run ──▶ sandbox   │                                              │
+│                           │     │                                              │
 │   ┌──────────────── SANDBOX (outer container) ─────────────┐   ▲ TLS traffic  │
-│   │                                                        │   │ decrypted     │
-│   │  entrypoint.sh (PID 1)                                 │   │ + credential  │
-│   │  launcher.py → claude (tmux session)                   │   │ injection     │
+│   │                       │ agent socket bind-mount        │   │ decrypted     │
+│   │                       ▼ (SSH_AUTH_SOCK; keys usable,   │   │ + credential  │
+│   │  entrypoint.sh (PID 1)   never readable)               │   │ injection     │
+│   │  launcher.py → claude (tmux session)                   │   │               │
 │   │                                                        │   │               │
 │   │  allowlist-proxy  ──chains upstream──────────────────────┘  by proxy-addon │
 │   │    (enforces allowed-domains.txt; blocks the rest)     │                   │
@@ -36,6 +41,8 @@ Four tiers. Traffic and control flow between them shown below.
 Legend
   host mitmweb      Terminates TLS, injects credentials, records flows (dashboard reads these)
   allowlist-proxy   In-sandbox gatekeeper; only allowed domains pass, chains up to host mitm
+  scoped ssh-agent  Per-project host agent holding only the chosen keys; its socket is
+                    bind-mounted in so the container can SIGN but never read the key bytes
   DinD              Nested docker; agent's app containers run isolated here
   cert-injector     Makes inner containers trust the mitm CA (docker cp + one restart)
   bin/docker        Wraps `docker build` to trust the mitm CA during image builds
@@ -52,12 +59,53 @@ inner app ─▶ allowlist-proxy ─(if allowed)─▶ host mitmweb ─▶ inter
    └─ trusts mitm CA (injected by cert-injector / bin/docker)
 ```
 
+## Flow: the agent uses an SSH key (git push, clone over SSH)
+
+Keys never enter the sandbox. Instead, a per-project ssh-agent runs on the HOST
+holding only the keys chosen for that project, and only its socket is mounted in:
+
+```
+                     HOST                          │        SANDBOX
+  chosen keys (union: global ∪ project)            │
+        │  ssh-add (passphrase typed once,         │
+        ▼   via foreground shell or dashboard PTY) │
+  scoped ssh-agent ──── agent.sock ────────────────┼──▶ /ssh-agent.sock
+  (~/.sandclaude/agents/<projectID>/)   bind-mount  │     (SSH_AUTH_SOCK)
+        ▲                                           │        │
+        └─────────── sign request ─────────────────┼────────┘  git / ssh in the
+                     (no key bytes cross)           │           container asks the
+                                                    │           agent to sign
+```
+
+Why a scoped agent rather than forwarding the host's real agent, or mounting the
+key file:
+
+- **Scoping** — the agent holds ONLY this project's keys, not everything in your
+  real agent. Key selection is the union of the global default set
+  (`~/.sandclaude/ssh-keys.json`) and the project's extras (see
+  `ProjectConfig.ResolveSSHKeys`).
+- **No byte leak** — the ssh-agent protocol has no "export key" operation, so even
+  an escaped container can request signatures but cannot copy the private key.
+  No key file is ever bind-mounted.
+- **Lifetime** — the agent is tied to the container: created on start, torn down on
+  stop. Keys live only in the agent's memory; a restart re-prompts (or, on macOS,
+  reloads silently from the login Keychain if the passphrase was saved). Loading is
+  interactive because keys are passphrase-protected — it runs in a PTY the caller
+  owns (the foreground shell, or the dashboard's host-terminal). See
+  [`docs/security.md`](security.md) and the `internal/ssh` package docs.
+
+macOS-first: the socket lives under `~/.sandclaude` (a Docker-Desktop shared path)
+so virtiofs proxies the Unix-socket connection host → VM → container. Linux works
+too; its cross-project residual risk differs and is noted in the code.
+
 ## Where things live (repo layout by tier)
 
 ```
 cmd/sandclaude/        host CLI entrypoint (Go)
 internal/              host CLI packages: config, creds, session, proxy,
                        dashboard, container, cli
+  ssh/                   per-project scoped ssh-agent (start/adopt, key load,
+                         teardown); socket lives under ~/.sandclaude/agents/
 host/                  HOST-tier assets loaded by host processes
   proxy-addon.py         → loaded by the host's mitmweb
 sandbox/               SANDBOX image build context + runtime mounts
