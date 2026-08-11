@@ -26,7 +26,7 @@ import (
 // frame ({"type":"resize",...}) carries terminal resize events through to
 // TIOCSWINSZ via pty.Setsize.
 //
-// Everything ships inside the sandclaude binary (Go code + embedded xterm.js
+// Everything ships inside the corral binary (Go code + embedded xterm.js
 // assets), so there is no external terminal program to install — the reason
 // this exists instead of ttyd.
 // ----------------------------------------------------------------------------
@@ -63,7 +63,7 @@ type terminalResize struct {
 
 // handleTerminalWS upgrades to a WebSocket and bridges it to a PTY running
 // `tmux attach-session`. Attaching (rather than spawning a fresh shell) is what
-// makes the browser terminal show the same live session as `sandclaude dev` and
+// makes the browser terminal show the same live session as `corral dev` and
 // redraw at the current screen — tmux redraws and keeps scrollback on every
 // attach, so no state needs tracking here beyond the process lifetime.
 func (d *dashboardServer) handleTerminalWS(w http.ResponseWriter, r *http.Request, id string) {
@@ -158,7 +158,7 @@ func (d *dashboardServer) handleHostWS(w http.ResponseWriter, r *http.Request, i
 	d.bridgeSessionWS(w, r, sessionName, "could not start host shell")
 }
 
-// handleUpdateWS bridges a browser terminal to `sandclaude update` running on
+// handleUpdateWS bridges a browser terminal to `corral update` running on
 // the HOST. This is the dashboard's "Update" button: rather than a silent
 // privileged endpoint, it opens a real PTY so the update runs with the operator's
 // TTY — sudo (if the binary lives somewhere unwritable) can prompt, the
@@ -170,7 +170,7 @@ func (d *dashboardServer) handleHostWS(w http.ResponseWriter, r *http.Request, i
 func (d *dashboardServer) handleUpdateWS(w http.ResponseWriter, r *http.Request) {
 	exe, err := os.Executable()
 	if err != nil {
-		http.Error(w, "cannot locate the sandclaude binary", http.StatusInternalServerError)
+		http.Error(w, "cannot locate the corral binary", http.StatusInternalServerError)
 		return
 	}
 	shell := os.Getenv("SHELL")

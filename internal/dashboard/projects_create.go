@@ -303,7 +303,7 @@ func (d *dashboardServer) resolveNewWorkspace(mode, path, name string, specs []r
 		}
 		// Optional location: create <parent>/<name> under a user-chosen parent dir
 		// (~, an absolute path, or a path relative to the home dir). Absent → the
-		// managed ~/.sandclaude/workspaces dir. This lets a blank project live in
+		// managed ~/.corral/workspaces dir. This lets a blank project live in
 		// the operator's own tree instead of being buried in the managed dir.
 		var ws string
 		if p := strings.TrimSpace(path); p != "" {

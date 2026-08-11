@@ -49,8 +49,8 @@ func TestResolveClaudeBinEnvOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A valid SANDCLAUDE_CLAUDE_BIN is honored ahead of everything else.
-	t.Setenv("SANDCLAUDE_CLAUDE_BIN", fake)
+	// A valid CORRAL_CLAUDE_BIN is honored ahead of everything else.
+	t.Setenv("CORRAL_CLAUDE_BIN", fake)
 	got, err := resolveClaudeBin()
 	if err != nil {
 		t.Fatalf("resolveClaudeBin: %v", err)
@@ -65,7 +65,7 @@ func TestResolveClaudeBinEnvOverride(t *testing.T) {
 	claudeBinMu.Lock()
 	claudeBinCached = ""
 	claudeBinMu.Unlock()
-	t.Setenv("SANDCLAUDE_CLAUDE_BIN", filepath.Join(dir, "nope"))
+	t.Setenv("CORRAL_CLAUDE_BIN", filepath.Join(dir, "nope"))
 	got, _ = resolveClaudeBin()
 	if got == filepath.Join(dir, "nope") {
 		t.Errorf("resolveClaudeBin() returned a non-executable env path %q", got)

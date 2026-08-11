@@ -25,9 +25,9 @@ func (sc *Corral) startProxy(workspace string) error {
 	sc.workspace = workspace
 
 	// Re-resolve credentials with lifecycle tracking so any merged temp file gets
-	// cleaned up on stopProxy. An explicit SANDCLAUDE_PROXY_CREDS override is honored
+	// cleaned up on stopProxy. An explicit CORRAL_PROXY_CREDS override is honored
 	// as-is (no merge, no temp file). Skip when merging isn't applicable.
-	if os.Getenv("SANDCLAUDE_PROXY_CREDS") == "" {
+	if os.Getenv("CORRAL_PROXY_CREDS") == "" {
 		credsFile, tempFile := creds.ResolveCredentialsFileTracked()
 		sc.credentialsFile = credsFile
 		sc.mergedCredsFile = tempFile
@@ -94,7 +94,7 @@ func (sc *Corral) startProxy(workspace string) error {
 	userHome, _ := os.UserHomeDir()
 	confDir := filepath.Join(userHome, ".mitmproxy")
 	if err := os.MkdirAll(confDir, 0700); err != nil || !config.IsDirWritable(confDir) {
-		confDir = filepath.Join(os.TempDir(), "sandclaude-mitmproxy")
+		confDir = filepath.Join(os.TempDir(), "corral-mitmproxy")
 		if err := os.MkdirAll(confDir, 0700); err != nil {
 			return fmt.Errorf("failed to create mitmproxy conf dir: %w", err)
 		}
@@ -200,12 +200,12 @@ func (sc *Corral) stopProxy() {
 // chosen keys, so startDocker can mount its socket. No-op when no keys are
 // configured. Two paths, by whether we have a controlling TTY:
 //
-//   - Interactive (foreground `sandclaude dev`/`start` in a terminal): load the
+//   - Interactive (foreground `corral dev`/`start` in a terminal): load the
 //     keys here via the foreground shell, prompting for passphrases on the TTY.
 //   - Detached (dashboard start / restart — no TTY): DON'T prompt (there's
 //     nowhere to type). Adopt an agent the dashboard pre-loaded; if the keys
 //     aren't loaded yet, fail fast with a clear message pointing at the dashboard
-//     "Load SSH keys" flow (or an interactive `sandclaude dev`).
+//     "Load SSH keys" flow (or an interactive `corral dev`).
 func (sc *Corral) startSSHAgent(cfg *config.ProjectConfig) error {
 	keys := cfg.ResolveSSHKeys()
 	if len(keys) == 0 {
@@ -247,7 +247,7 @@ func (sc *Corral) startSSHAgent(cfg *config.ProjectConfig) error {
 		agent.Stop()
 		sc.sshAgent = nil
 		return fmt.Errorf("this project has ssh keys configured but they aren't loaded, and there is no terminal to prompt for passphrases here.\n" +
-			"Load them from the dashboard (Config → SSH keys → Load), or run `sandclaude dev` in a terminal to be prompted.")
+			"Load them from the dashboard (Config → SSH keys → Load), or run `corral dev` in a terminal to be prompted.")
 	}
 
 	// Interactive: load keys via the foreground shell. ssh-add prompts for each
@@ -271,7 +271,7 @@ func (sc *Corral) startSSHAgent(cfg *config.ProjectConfig) error {
 
 // isInteractive reports whether stdin is a REAL terminal — i.e. we can prompt for
 // an ssh key passphrase. False for the dashboard's detached start (which runs with
-// stdin = /dev/null), true for a foreground `sandclaude dev` in a terminal.
+// stdin = /dev/null), true for a foreground `corral dev` in a terminal.
 //
 // We must NOT use the os.ModeCharDevice check here: /dev/null is itself a
 // character device, so a detached child with stdin redirected to /dev/null would
@@ -307,7 +307,7 @@ func (sc *Corral) stopSSHAgent() {
 	sc.sshAgent = nil
 }
 
-// Run starts the full sandclaude environment
+// Run starts the full corral environment
 func (sc *Corral) Run(keepDevfiles bool) error {
 	log.Println("Corral - Secure Claude Code Environment")
 
@@ -327,9 +327,9 @@ func (sc *Corral) Run(keepDevfiles bool) error {
 		config.Debugf("Warning: failed to update project registry: %v", err)
 	}
 
-	// If we're already inside a sandclaude container, skip docker entirely.
+	// If we're already inside a corral container, skip docker entirely.
 	// The proxy, firewall, and workspace are set up by the outer entrypoint.
-	if os.Getenv("SANDCLAUDE_CONTAINER") == "1" {
+	if os.Getenv("CORRAL_CONTAINER") == "1" {
 		return sc.startDirect(cfg)
 	}
 
@@ -376,7 +376,7 @@ func (sc *Corral) Run(keepDevfiles bool) error {
 
 	// Build the image before starting the proxy — the proxy intercepts HTTPS during
 	// docker build and presents its own cert, which the build's curl won't trust yet.
-	if err := sc.EnsureImage("sandclaude-stable"); err != nil {
+	if err := sc.EnsureImage("corral-stable"); err != nil {
 		return err
 	}
 

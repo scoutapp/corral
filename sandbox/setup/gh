@@ -17,7 +17,7 @@ set -euo pipefail
 REAL_GH=/usr/bin/gh
 
 blocked() {
-    echo "gh: this command is disabled in the sandclaude sandbox (it would expose the GitHub token)." >&2
+    echo "gh: this command is disabled in the corral sandbox (it would expose the GitHub token)." >&2
     echo "    GitHub auth is handled automatically by the credential proxy; gh/git commands work without the raw token." >&2
     exit 1
 }

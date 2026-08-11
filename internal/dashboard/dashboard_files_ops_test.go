@@ -9,7 +9,7 @@ import (
 )
 
 func TestFilesMutations(t *testing.T) {
-	t.Setenv("SANDCLAUDE_HOME", t.TempDir())
+	t.Setenv("CORRAL_HOME", t.TempDir())
 	ws := t.TempDir()
 	if err := RegisterProject(ws); err != nil {
 		t.Fatal(err)

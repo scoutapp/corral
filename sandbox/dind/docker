@@ -66,9 +66,9 @@ fi
 # Inserted immediately after every `FROM` line. Best-effort and non-fatal: a
 # stage with no shell (scratch/distroless) silently skips via the `|| true`s, and
 # Alpine gets ca-certificates installed first. The CA is provided as a named
-# build context `sandclaude-ca` (a directory containing proxy-ca.crt).
+# build context `corral-ca` (a directory containing proxy-ca.crt).
 read -r -d '' INJECT <<'SNIPPET' || true
-COPY --from=sandclaude-ca proxy-ca.crt /usr/local/share/ca-certificates/mitmproxy-ca.crt
+COPY --from=corral-ca proxy-ca.crt /usr/local/share/ca-certificates/mitmproxy-ca.crt
 RUN (command -v update-ca-certificates >/dev/null 2>&1 && update-ca-certificates) \
  || (command -v apk >/dev/null 2>&1 && apk add --no-cache ca-certificates >/dev/null 2>&1 && update-ca-certificates) \
  || (command -v update-ca-trust >/dev/null 2>&1 && cp /usr/local/share/ca-certificates/mitmproxy-ca.crt /etc/pki/ca-trust/source/anchors/ 2>/dev/null && update-ca-trust) \
@@ -128,7 +128,7 @@ inserted=0
 for a in "${newargs[@]}"; do
     final+=("$a")
     if [ "$inserted" -eq 0 ] && { [ "$a" = "build" ]; }; then
-        final+=("-f" "$newdf" "--build-context" "sandclaude-ca=$cadir")
+        final+=("-f" "$newdf" "--build-context" "corral-ca=$cadir")
         inserted=1
     fi
 done

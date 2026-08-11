@@ -17,8 +17,8 @@ var (
 )
 
 // VersionString is the one-line human-readable build identity, e.g.
-// "sandclaude v1.2.3 (abc1234, 2026-07-28T00:00:00Z) darwin/arm64".
+// "corral v1.2.3 (abc1234, 2026-07-28T00:00:00Z) darwin/arm64".
 func VersionString() string {
-	return fmt.Sprintf("sandclaude %s (%s, %s) %s/%s",
+	return fmt.Sprintf("corral %s (%s, %s) %s/%s",
 		Version, Commit, Date, runtime.GOOS, runtime.GOARCH)
 }

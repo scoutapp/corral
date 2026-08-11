@@ -41,7 +41,7 @@ func makeRepo(t *testing.T, dir string) {
 // layout: /git/repos should detect both child repos and not the parent.
 func TestGitReposSiblings(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("SANDCLAUDE_HOME", home)
+	t.Setenv("CORRAL_HOME", home)
 	ws := t.TempDir()
 	makeRepo(t, filepath.Join(ws, "api"))
 	makeRepo(t, filepath.Join(ws, "web"))

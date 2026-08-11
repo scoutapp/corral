@@ -20,12 +20,12 @@ import (
 func (sc *Corral) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) error {
 	workspace := cfg.Workspace
 	// Build image if needed
-	imageName := "sandclaude-stable"
+	imageName := "corral-stable"
 	if err := sc.EnsureImage(imageName); err != nil {
 		return err
 	}
 
-	log.Printf("Starting sandclaude (workspace: %s)", workspace)
+	log.Printf("Starting corral (workspace: %s)", workspace)
 
 	// Get home directory
 	home, err := os.UserHomeDir()
@@ -62,13 +62,13 @@ func (sc *Corral) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) erro
 		keyPath := filepath.Join(projectDir, ".allowlist-key")
 		keyData, err := os.ReadFile(keyPath)
 		if err != nil {
-			return fmt.Errorf("encryption key not found at %s\nRun 'sandclaude init' to generate it", keyPath)
+			return fmt.Errorf("encryption key not found at %s\nRun 'corral init' to generate it", keyPath)
 		}
 		args = append(args, "-e", fmt.Sprintf("ALLOWLIST_KEY=%s", strings.TrimSpace(string(keyData))))
 
 		encPath := filepath.Join(config.CorralDir(), "allowed-domains.txt.enc")
 		if _, err := os.Stat(encPath); os.IsNotExist(err) {
-			return fmt.Errorf("encrypted allowlist not found at %s\nRun 'sandclaude firewall-reload' to create it", encPath)
+			return fmt.Errorf("encrypted allowlist not found at %s\nRun 'corral firewall-reload' to create it", encPath)
 		}
 		os.Chmod(encPath, 0644)
 		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/allowed-domains.txt.enc:ro", encPath))
@@ -78,14 +78,14 @@ func (sc *Corral) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) erro
 		keyPath := filepath.Join(projectDir, ".allowlist-key")
 		keyData, err := os.ReadFile(keyPath)
 		if err != nil {
-			return fmt.Errorf("encryption key not found at %s\nRun 'sandclaude init' to generate it", keyPath)
+			return fmt.Errorf("encryption key not found at %s\nRun 'corral init' to generate it", keyPath)
 		}
 		args = append(args, "-e", fmt.Sprintf("ALLOWLIST_KEY=%s", strings.TrimSpace(string(keyData))))
 
 		// Mount the encrypted allowlist file
 		encPath := filepath.Join(config.CorralDir(), "allowed-domains.txt.enc")
 		if _, err := os.Stat(encPath); os.IsNotExist(err) {
-			return fmt.Errorf("encrypted allowlist not found at %s\nRun 'sandclaude firewall-reload' to create it", encPath)
+			return fmt.Errorf("encrypted allowlist not found at %s\nRun 'corral firewall-reload' to create it", encPath)
 		}
 		// Make sure the file is world-readable so proxyuser can read it
 		os.Chmod(encPath, 0644)
@@ -233,7 +233,7 @@ func (sc *Corral) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) erro
 	}
 
 	workspaceClaudeDir := filepath.Join(workspace, ".claude")
-	workspaceSandclaudeDir := filepath.Join(workspace, ".sandclaude")
+	workspaceSandclaudeDir := filepath.Join(workspace, ".corral")
 	if entries, err := os.ReadDir(workspaceClaudeDir); err == nil {
 		for _, e := range entries {
 			if e.IsDir() {
@@ -253,9 +253,9 @@ func (sc *Corral) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) erro
 			mountClaudeSubdirItems("sandbox", config.AssetsDir(), subName)
 			mountClaudeSubdirItems("workspace", workspaceClaudeDir, subName)
 
-			// Also check .sandclaude for project-specific items (primarily for skills)
+			// Also check .corral for project-specific items (primarily for skills)
 			if subName == "skills" {
-				mountClaudeSubdirItems("workspace/.sandclaude", workspaceSandclaudeDir, subName)
+				mountClaudeSubdirItems("workspace/.corral", workspaceSandclaudeDir, subName)
 			}
 		} else if writableSubdirs[subName] {
 			// Writable subdirectories: mount from host with read-write access for persistence
@@ -287,7 +287,7 @@ func (sc *Corral) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) erro
 		args = append(args, "--tmpfs", fmt.Sprintf("%s/.devcontainer:rw,noexec,nosuid,size=1m", workspace))
 	}
 
-	// The plaintext allowlist always lives at <cwd>/.sandclaude/allowed-domains.txt,
+	// The plaintext allowlist always lives at <cwd>/.corral/allowed-domains.txt,
 	// owned by the project. The container appends newly-seen domains here in
 	// passthrough-and-write mode.
 	allowlistPath := filepath.Join(config.CorralDir(), "allowed-domains.txt")
@@ -331,7 +331,7 @@ func (sc *Corral) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) erro
 			return fmt.Errorf("failed to write monitor-hosts file: %w", err)
 		}
 		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/monitor-hosts.txt:rw", monitorPath))
-		args = append(args, "-e", "SANDCLAUDE_MITM_PORTS="+strings.Join(cfg.MitmPortsOrDefault(), ","))
+		args = append(args, "-e", "CORRAL_MITM_PORTS="+strings.Join(cfg.MitmPortsOrDefault(), ","))
 
 		// Credential-hosts: hosts with an injected credential are ALWAYS mitm'd,
 		// independent of the monitor-list (the proxy force-mitms them). Write just
@@ -393,9 +393,9 @@ func (sc *Corral) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) erro
 		}
 	}
 
-	// Mark the container as a sandclaude environment so nested `sandclaude start`
+	// Mark the container as a corral environment so nested `corral start`
 	// calls can detect they're already inside and skip the docker layer entirely.
-	args = append(args, "-e", "SANDCLAUDE_CONTAINER=1")
+	args = append(args, "-e", "CORRAL_CONTAINER=1")
 
 	// DinD: signal entrypoint to start inner dockerd and expose ports
 	if sc.dindEnabled {
@@ -483,10 +483,10 @@ func (sc *Corral) startDetached(containerName string, args []string) error {
 
 	sc.detachedSession = sessionName
 
-	fmt.Printf("\nsandclaude started in tmux session: %s\n\n", sessionName)
-	fmt.Printf("  sandclaude capture          # read inner Claude output\n")
-	fmt.Printf("  sandclaude send '<prompt>'  # send a prompt to inner Claude\n")
-	fmt.Printf("  sandclaude attach           # attach interactively\n")
+	fmt.Printf("\ncorral started in tmux session: %s\n\n", sessionName)
+	fmt.Printf("  corral capture          # read inner Claude output\n")
+	fmt.Printf("  corral send '<prompt>'  # send a prompt to inner Claude\n")
+	fmt.Printf("  corral attach           # attach interactively\n")
 	fmt.Printf("  docker ps --filter name=%s\n\n", containerName)
 	return nil
 }
@@ -498,10 +498,10 @@ func (sc *Corral) EnsureImage(imageName string) error {
 	if err := cmd.Run(); err == nil {
 		config.Debugf("Image '%s' already exists, skipping build", imageName)
 		// Support images built by older CLIs: don't force a rebuild, just warn so
-		// the user knows a `sandclaude update` (or `rebuild`) would refresh it.
+		// the user knows a `corral update` (or `rebuild`) would refresh it.
 		if stale, imgVer := ImageStale(); stale {
-			log.Printf("⚠️  Image %s was built by sandclaude %s but this CLI is %s — "+
-				"run `sandclaude update` (or `sandclaude rebuild`) to refresh it.",
+			log.Printf("⚠️  Image %s was built by corral %s but this CLI is %s — "+
+				"run `corral update` (or `corral rebuild`) to refresh it.",
 				imageName, imgVer, config.Version)
 		}
 		return nil // Image exists
@@ -541,7 +541,7 @@ func (sc *Corral) EnsureImage(imageName string) error {
 		// installed after the image is running if needed.
 		"--build-arg", "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1",
 	}
-	// Propagate the host's proxy env only when actually set (e.g. sandclaude
+	// Propagate the host's proxy env only when actually set (e.g. corral
 	// running inside another sandbox). Empty otherwise -> direct networking.
 	for _, key := range []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"} {
 		if v := os.Getenv(key); v != "" {
@@ -559,7 +559,7 @@ func (sc *Corral) EnsureImage(imageName string) error {
 
 	// Stamp the build with the CLI version (label + version-pinned tag) so a later
 	// run can detect an image built by an older CLI. imageBuildTags applies the
-	// canonical `sandclaude-stable` tag plus the :<version> alias for real releases.
+	// canonical `corral-stable` tag plus the :<version> alias for real releases.
 	buildArgs = append(buildArgs, imageVersionLabelArg()...)
 	buildArgs = append(buildArgs, imageBuildTags()...)
 	buildArgs = append(buildArgs, config.AssetsDir())
@@ -570,15 +570,15 @@ func (sc *Corral) EnsureImage(imageName string) error {
 	return buildCmd.Run()
 }
 
-// startDirect launches Claude directly inside the current sandclaude container.
-// Used when sandclaude start is called from within a running sandclaude container
-// (detected via SANDCLAUDE_CONTAINER=1). The proxy, firewall, and workspace are
+// startDirect launches Claude directly inside the current corral container.
+// Used when corral start is called from within a running corral container
+// (detected via CORRAL_CONTAINER=1). The proxy, firewall, and workspace are
 // already set up by the outer entrypoint.
 //
 // We run claude directly rather than via launcher.py to avoid launcher.py trying to
-// create a tmux session named "sandclaude" which already exists (it's the outer session).
+// create a tmux session named "corral" which already exists (it's the outer session).
 func (sc *Corral) startDirect(cfg *config.ProjectConfig) error {
-	log.Println("Running inside sandclaude container — starting Claude directly (no nested Docker)")
+	log.Println("Running inside corral container — starting Claude directly (no nested Docker)")
 
 	// patch-claude-settings.py must run before Claude starts.
 	patch := exec.Command("python3", "/home/claude/bin/patch-claude-settings.py")
@@ -600,7 +600,7 @@ func (sc *Corral) startDirect(cfg *config.ProjectConfig) error {
 	}
 
 	// dev: create a new detached tmux session and run claude directly inside it.
-	// We avoid launcher.py because it would try to create a session named "sandclaude"
+	// We avoid launcher.py because it would try to create a session named "corral"
 	// which already exists (the outer session we're running in).
 	containerName := session.ContainerNameForWorkspace(cfg.Workspace)
 	sessionName := session.TmuxSessionNameForContainer(containerName)
@@ -620,8 +620,8 @@ func (sc *Corral) startDirect(cfg *config.ProjectConfig) error {
 	sc.detachedSession = sessionName
 
 	fmt.Printf("\nClaude started in tmux session: %s\n\n", sessionName)
-	fmt.Printf("  sandclaude capture          # read inner Claude output\n")
-	fmt.Printf("  sandclaude send '<prompt>'  # send a prompt to inner Claude\n")
-	fmt.Printf("  sandclaude attach           # attach interactively\n\n")
+	fmt.Printf("  corral capture          # read inner Claude output\n")
+	fmt.Printf("  corral send '<prompt>'  # send a prompt to inner Claude\n")
+	fmt.Printf("  corral attach           # attach interactively\n\n")
 	return nil
 }

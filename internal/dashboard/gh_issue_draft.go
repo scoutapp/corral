@@ -73,7 +73,7 @@ func (d *dashboardServer) handleGhIssueDraftWS(w http.ResponseWriter, r *http.Re
 	_ = os.MkdirAll(tmpRoot, 0755)
 	tmp, err := os.MkdirTemp(tmpRoot, "issue-draft-*")
 	if err != nil {
-		// Fall back to the system temp dir if ~/.sandclaude/tmp isn't writable.
+		// Fall back to the system temp dir if ~/.corral/tmp isn't writable.
 		tmp, err = os.MkdirTemp("", "issue-draft-*")
 	}
 	if err != nil {

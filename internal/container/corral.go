@@ -41,17 +41,17 @@ type Corral struct {
 
 func NewSandClaude() (*Corral, error) {
 	// Get configuration from environment
-	proxyPort := os.Getenv("SANDCLAUDE_PROXY_PORT")
+	proxyPort := os.Getenv("CORRAL_PROXY_PORT")
 	if proxyPort == "" {
 		proxyPort = defaultProxyPort
 	}
 
 	// Resolve the credentials file. An explicit env override wins; otherwise merge
-	// the global (~/.sandclaude/proxy-credentials.json) with the per-project override
-	// (<cwd>/.sandclaude/project/proxy-credentials.json), project winning per-domain.
+	// the global (~/.corral/proxy-credentials.json) with the per-project override
+	// (<cwd>/.corral/project/proxy-credentials.json), project winning per-domain.
 	// The real per-domain merge happens in startProxy (which can track the temp file
 	// for cleanup); here we just pick a best-effort path.
-	credentialsFile := os.Getenv("SANDCLAUDE_PROXY_CREDS")
+	credentialsFile := os.Getenv("CORRAL_PROXY_CREDS")
 	if credentialsFile == "" {
 		credentialsFile = creds.ResolveCredentialsFile()
 	}

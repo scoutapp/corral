@@ -14,9 +14,9 @@ import (
 // routes() mux: the page renders with the "not sandboxed" warning, and the WS
 // upgrade actually spawns a host `claude` (skipped if claude isn't installed).
 func TestChatSmoke(t *testing.T) {
-	// Isolate the project registry in a temp SANDCLAUDE_HOME.
+	// Isolate the project registry in a temp CORRAL_HOME.
 	home := t.TempDir()
-	t.Setenv("SANDCLAUDE_HOME", home)
+	t.Setenv("CORRAL_HOME", home)
 
 	ws := t.TempDir() // a throwaway workspace to spawn claude in
 	if err := RegisterProject(ws); err != nil {
@@ -92,7 +92,7 @@ func TestChatSmoke(t *testing.T) {
 // a terminal turn_end (with a canceled frame when the kill wins the race).
 func TestChatCancel(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("SANDCLAUDE_HOME", home)
+	t.Setenv("CORRAL_HOME", home)
 	ws := t.TempDir()
 	if err := RegisterProject(ws); err != nil {
 		t.Fatalf("RegisterProject: %v", err)

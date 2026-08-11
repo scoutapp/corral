@@ -12,7 +12,7 @@ import (
 // both of which return before any docker/start work. (A real cold start needs
 // Docker + a workspace and is covered by manual/e2e testing.)
 func TestStartProjectRouting(t *testing.T) {
-	t.Setenv("SANDCLAUDE_HOME", t.TempDir())
+	t.Setenv("CORRAL_HOME", t.TempDir())
 	srv := httptest.NewServer(newDashboardServer("tok").routes())
 	defer srv.Close()
 

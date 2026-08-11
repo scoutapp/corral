@@ -18,12 +18,12 @@ import (
 // ----------------------------------------------------------------------------
 // SSH scoped-agent control plane (dashboard side).
 //
-// The dashboard "start" path runs `sandclaude dev` DETACHED — no TTY — so it
+// The dashboard "start" path runs `corral dev` DETACHED — no TTY — so it
 // cannot prompt for a passphrase-protected key. The fix (design: "pre-load, then
 // start"): before starting, the browser loads the project's chosen keys into the
 // project's scoped ssh-agent through a PTY the dashboard owns (the same
 // bridgePTY the host terminal uses), so the passphrase prompt appears in a real
-// terminal. `sandclaude dev` then ADOPTS that already-loaded agent (see
+// terminal. `corral dev` then ADOPTS that already-loaded agent (see
 // internal/ssh Ensure + container startSSHAgent) instead of re-prompting.
 //
 //   GET  /p/<id>/sshkeys/status  -> { configured, loaded, keys[], count }
@@ -256,7 +256,7 @@ func (d *dashboardServer) handleSSHKeysLoadWS(w http.ResponseWriter, r *http.Req
 	if shell == "" {
 		shell = "/bin/bash"
 	}
-	banner := "── sandclaude · HOST shell (NOT sandboxed) · loading SSH keys into the scoped agent for this project ──"
+	banner := "── corral · HOST shell (NOT sandboxed) · loading SSH keys into the scoped agent for this project ──"
 	script := "echo " + shellSingleQuote(banner) + "; " +
 		addCmd + "; exec " + shell + " -i"
 

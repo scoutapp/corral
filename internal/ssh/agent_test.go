@@ -24,7 +24,7 @@ func TestParseAgentPID(t *testing.T) {
 
 // Ensure with an empty key list is a no-op: no agent, no error, no socket.
 func TestEnsure_NoKeysIsNoop(t *testing.T) {
-	t.Setenv("SANDCLAUDE_HOME", filepath.Join(t.TempDir(), ".sandclaude"))
+	t.Setenv("CORRAL_HOME", filepath.Join(t.TempDir(), ".corral"))
 	a, err := Ensure("abc123", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -42,7 +42,7 @@ func TestStop_NilSafe(t *testing.T) {
 
 // StopAll with no agents root is a no-op returning 0.
 func TestStopAll_NoRoot(t *testing.T) {
-	t.Setenv("SANDCLAUDE_HOME", filepath.Join(t.TempDir(), ".sandclaude"))
+	t.Setenv("CORRAL_HOME", filepath.Join(t.TempDir(), ".corral"))
 	if n := StopAll(); n != 0 {
 		t.Fatalf("StopAll with no agents root = %d, want 0", n)
 	}
@@ -53,8 +53,8 @@ func TestStopAll_NoRoot(t *testing.T) {
 // stopAt just fails to connect and removes the file — which is the teardown we
 // want; we only assert the count and that the root is gone.)
 func TestStopAll_RemovesRootAndCounts(t *testing.T) {
-	home := filepath.Join(t.TempDir(), ".sandclaude")
-	t.Setenv("SANDCLAUDE_HOME", home)
+	home := filepath.Join(t.TempDir(), ".corral")
+	t.Setenv("CORRAL_HOME", home)
 	root := AgentsRoot()
 	// two project dirs with a socket, one without (should not be counted), plus a
 	// stray file at the root (should be ignored — not a dir).
@@ -83,7 +83,7 @@ func TestStopAll_RemovesRootAndCounts(t *testing.T) {
 
 // The socket path must stay under the macOS Unix-socket limit for a normal home.
 func TestSocketPath_WithinLimit(t *testing.T) {
-	t.Setenv("SANDCLAUDE_HOME", "/Users/someuser/.sandclaude")
+	t.Setenv("CORRAL_HOME", "/Users/someuser/.corral")
 	dir := agentDir("0123456789ab")
 	sock := filepath.Join(dir, "agent.sock")
 	if len(sock) > maxUnixSocketPath {

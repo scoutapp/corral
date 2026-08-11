@@ -1,5 +1,5 @@
 """
-mitmproxy addon for credential injection in sandclaude
+mitmproxy addon for credential injection in corral
 
 This addon intercepts HTTP requests to external services and injects
 real credentials from secure storage, allowing Claude Code to use dummy
@@ -47,7 +47,7 @@ class CredentialInjector:
         loader.add_option(
             name="credentials_file",
             typespec=str,
-            default="~/.config/sandclaude/proxy-credentials.json",
+            default="~/.config/corral/proxy-credentials.json",
             help="Path to JSON file containing credentials to inject",
         )
 
@@ -58,7 +58,7 @@ class CredentialInjector:
 
     def running(self):
         """Called once the proxy is up. Start watching the credentials file so
-        updates take effect live — no mitmweb/sandclaude restart needed. This is
+        updates take effect live — no mitmweb/corral restart needed. This is
         what makes 'set credentials on the fly' work: the dashboard/CLI just
         rewrites the file and this loop picks it up within ~1s."""
         if self._watch_task is None:

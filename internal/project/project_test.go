@@ -8,12 +8,12 @@ import (
 	"github.com/scoutapp/corral/internal/config"
 )
 
-// fakeAssets sets SANDCLAUDE_HOME to a temp dir laid out so config.AssetsDir()
+// fakeAssets sets CORRAL_HOME to a temp dir laid out so config.AssetsDir()
 // resolves there, with a minimal allowlist seed InitProject can copy.
 func fakeAssets(t *testing.T) {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("SANDCLAUDE_HOME", home)
+	t.Setenv("CORRAL_HOME", home)
 	sandbox := filepath.Join(home, "assets", "sandbox")
 	if err := os.MkdirAll(filepath.Join(sandbox, "allowlist-proxy"), 0755); err != nil {
 		t.Fatal(err)
@@ -43,8 +43,8 @@ func TestInitProject(t *testing.T) {
 	for _, p := range []string{
 		filepath.Join(projDir, "config.json"),
 		filepath.Join(projDir, ".allowlist-key"),
-		filepath.Join(ws, ".sandclaude", "allowed-domains.txt"),
-		filepath.Join(ws, ".sandclaude", "allowed-domains.txt.enc"),
+		filepath.Join(ws, ".corral", "allowed-domains.txt"),
+		filepath.Join(ws, ".corral", "allowed-domains.txt.enc"),
 	} {
 		if _, err := os.Stat(p); err != nil {
 			t.Errorf("expected %s to exist: %v", p, err)

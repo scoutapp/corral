@@ -27,14 +27,14 @@ import (
 )
 
 // ----------------------------------------------------------------------------
-// Project registry (~/.sandclaude/projects.json)
+// Project registry (~/.corral/projects.json)
 //
 // Purely a discovery aid — "which workspace paths has the user ever started a
 // project in" — never trusted for liveness. Whether a registered project is
 // actually running right now is always re-derived on demand (projectLiveStatus),
 // the same way session.RunningContainerName() already re-checks Docker rather than
 // caching a status flag. This sidesteps the many unreliable ways a project can
-// stop (Ctrl-C, `docker kill`, crash, `sandclaude remove`) — there is no single
+// stop (Ctrl-C, `docker kill`, crash, `corral remove`) — there is no single
 // hook to deregister from, so we don't try.
 // ----------------------------------------------------------------------------
 
@@ -110,16 +110,16 @@ func RegisterProject(workspace string) error {
 // operate on "the project you're standing in." The dashboard is host-wide and
 // needs to inspect *other* projects regardless of its own cwd, so it needs
 // workspace-parameterized siblings. These assume what the rest of the codebase
-// already assumes (README: `sandclaude init` is run from the project's own
-// directory) — that .sandclaude/ lives directly under the workspace path.
+// already assumes (README: `corral init` is run from the project's own
+// directory) — that .corral/ lives directly under the workspace path.
 // ----------------------------------------------------------------------------
 
 func projectDirForWorkspace(workspace string) string {
-	return filepath.Join(workspace, ".sandclaude", "project")
+	return filepath.Join(workspace, ".corral", "project")
 }
 
 func logsDirForWorkspace(workspace string) string {
-	return filepath.Join(workspace, ".sandclaude", "logs")
+	return filepath.Join(workspace, ".corral", "logs")
 }
 
 // ----------------------------------------------------------------------------
@@ -139,7 +139,7 @@ type ProxyRuntimeState struct {
 // workspace. Both the write path (WriteProxyRuntimeState) and the read path
 // (readProxyRuntimeStateFor) derive from projectDirForWorkspace(workspace) so
 // they are guaranteed symmetric even when the writing process's cwd differs
-// from the workspace (e.g. `sandclaude start` run from another directory).
+// from the workspace (e.g. `corral start` run from another directory).
 func ProxyRuntimeStatePathFor(workspace string) string {
 	return filepath.Join(projectDirForWorkspace(workspace), "runtime.json")
 }
@@ -407,7 +407,7 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update availability for the global banner, and the host-PTY that runs
-	// `sandclaude update` behind the "Update" button.
+	// `corral update` behind the "Update" button.
 	if path == "/update-status" {
 		d.handleUpdateStatus(w, r)
 		return
@@ -432,7 +432,7 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleGlobalPopulate(w, r)
 		return
 	case "/global/populate/ws":
-		d.handleSessionWS(w, r, "sandclaude-populate-creds")
+		d.handleSessionWS(w, r, "corral-populate-creds")
 		return
 	}
 
@@ -625,8 +625,8 @@ func (d *dashboardServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 // handleRemoveProject unregisters a project from the dashboard registry
 // (projects.json) by its ProjectID. It does NOT touch the project's on-disk
-// ./.sandclaude/ (config, allowlist, logs) — it only removes it from the
-// dashboard list; `sandclaude start` re-registers it. POST only.
+// ./.corral/ (config, allowlist, logs) — it only removes it from the
+// dashboard list; `corral start` re-registers it. POST only.
 func (d *dashboardServer) handleRemoveProject(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -964,7 +964,7 @@ func writeSSELine(w http.ResponseWriter, line string) {
 	fmt.Fprintf(w, "data: %s\n\n", sseEscape(line))
 }
 
-// handleFirewallStream tails <workspace>/.sandclaude/logs/proxy.log directly off
+// handleFirewallStream tails <workspace>/.corral/logs/proxy.log directly off
 // the host filesystem — no docker exec needed, since that file is already
 // bind-mounted read-write into the container (see startProxy/startDocker) and so
 // persists independent of whether the container is currently running. This is
@@ -1067,13 +1067,13 @@ func (d *dashboardServer) pollFirewallLog(w http.ResponseWriter, logPath string,
 }
 
 // ----------------------------------------------------------------------------
-// CLI: `sandclaude dashboard` / `sandclaude dashboard stop` / the internal
-// `sandclaude dashboard-serve` the former re-execs to actually run the server.
+// CLI: `corral dashboard` / `corral dashboard stop` / the internal
+// `corral dashboard-serve` the former re-execs to actually run the server.
 //
 // The dashboard is a singleton, host-wide, long-lived daemon (unlike every
-// other sandclaude command, which is scoped to the current project and exits
-// when its work is done) — state in ~/.sandclaude/dashboard.json tracks the
-// one running instance so a second `sandclaude dashboard` just prints the
+// other corral command, which is scoped to the current project and exits
+// when its work is done) — state in ~/.corral/dashboard.json tracks the
+// one running instance so a second `corral dashboard` just prints the
 // existing URL instead of spawning a duplicate.
 // ----------------------------------------------------------------------------
 
@@ -1144,7 +1144,7 @@ func CmdDashboard(args []string) error {
 	return cmdDashboardStart()
 }
 
-// cmdDashboardStart re-execs the sandclaude binary as `dashboard-serve`,
+// cmdDashboardStart re-execs the corral binary as `dashboard-serve`,
 // detached via Setsid so it keeps running after this command's process exits —
 // more robust than dev-mode mitmweb's current implicit-reparenting persistence
 // (main.go Run(), sc.detachedSession != ""), which this daemon is deliberately
@@ -1160,8 +1160,8 @@ func cmdDashboardStart() error {
 
 // EnsureDashboardRunning returns the state of the already-running dashboard,
 // or spawns it as a detached daemon (same re-exec approach as cmdDashboardStart
-// used to do directly) if it isn't running yet. Shared by `sandclaude dashboard`
-// and `sandclaude start`/`dev`, which both want the singleton daemon up without
+// used to do directly) if it isn't running yet. Shared by `corral dashboard`
+// and `corral start`/`dev`, which both want the singleton daemon up without
 // caring which of them happened to be the one that launched it.
 // The bool return reports whether this call spawned a new daemon (true) vs found
 // one already running (false) — callers use it to open a browser tab only on the
@@ -1183,7 +1183,7 @@ func EnsureDashboardRunning() (*DashboardState, bool, error) {
 
 	exePath, err := os.Executable()
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to resolve sandclaude binary path: %w", err)
+		return nil, false, fmt.Errorf("failed to resolve corral binary path: %w", err)
 	}
 
 	if err := os.MkdirAll(config.CorralHome(), 0700); err != nil {
@@ -1207,7 +1207,7 @@ func EnsureDashboardRunning() (*DashboardState, bool, error) {
 	// falls back to its own PATH lookup if this is unset.)
 	cmd.Env = os.Environ()
 	if claudeBin, err := exec.LookPath("claude"); err == nil {
-		cmd.Env = append(cmd.Env, "SANDCLAUDE_CLAUDE_BIN="+claudeBin)
+		cmd.Env = append(cmd.Env, "CORRAL_CLAUDE_BIN="+claudeBin)
 	}
 	if err := cmd.Start(); err != nil {
 		return nil, false, fmt.Errorf("failed to start dashboard server: %w", err)
@@ -1277,7 +1277,7 @@ func CmdDashboardServe(args []string) error {
 		httpServer.Shutdown(ctx)
 	}()
 
-	log.Printf("sandclaude dashboard listening on http://127.0.0.1:%d", *port)
+	log.Printf("corral dashboard listening on http://127.0.0.1:%d", *port)
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return err
 	}

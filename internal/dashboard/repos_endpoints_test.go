@@ -14,7 +14,7 @@ import (
 // TestReposEndpoints exercises the /repos routes against the real mux: add a
 // repo (from a local origin, no network), list it, then delete it.
 func TestReposEndpoints(t *testing.T) {
-	t.Setenv("SANDCLAUDE_HOME", t.TempDir())
+	t.Setenv("CORRAL_HOME", t.TempDir())
 
 	// Local origin repo to clone.
 	origin := t.TempDir()

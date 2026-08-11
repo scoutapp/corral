@@ -34,7 +34,7 @@ func Debugln(args ...any) {
 // denied" error that bind mounts hit when Docker extracts layers containing /proc.
 func DindVolumeName(workspace string) string {
 	h := sha256.Sum256([]byte(workspace))
-	return fmt.Sprintf("sandclaude-dind-%x", h[:6])
+	return fmt.Sprintf("corral-dind-%x", h[:6])
 }
 
 // ShellQuote returns a single-quoted, shell-safe version of s (equivalent to Python's shlex.quote).
@@ -107,10 +107,10 @@ func IsDirWritable(dir string) bool {
 // is a convenience on top of the printed URL, never a requirement, so callers
 // should treat a returned error as non-fatal (e.g. log at debug level).
 //
-// Set SANDCLAUDE_NO_BROWSER=1 to suppress the launch entirely — used by the e2e
+// Set CORRAL_NO_BROWSER=1 to suppress the launch entirely — used by the e2e
 // suite (and handy for headless/CI use) so `start` doesn't pop a tab per run.
 func OpenBrowser(url string) error {
-	if os.Getenv("SANDCLAUDE_NO_BROWSER") != "" {
+	if os.Getenv("CORRAL_NO_BROWSER") != "" {
 		return nil
 	}
 	var cmd *exec.Cmd

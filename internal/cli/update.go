@@ -20,16 +20,16 @@ import (
 	"github.com/scoutapp/corral/internal/release"
 )
 
-// cmdUpdate self-updates sandclaude: it resolves the newest published release,
+// cmdUpdate self-updates corral: it resolves the newest published release,
 // and (unless --check) downloads the platform binary + asset bundle, replaces the
-// running executable, refreshes ~/.sandclaude/assets, and rebuilds the sandbox
+// running executable, refreshes ~/.corral/assets, and rebuilds the sandbox
 // image so it's re-stamped with the new version.
 //
-// This replaces the OLD `sandclaude update`, which edited the PROJECT config —
-// that behavior now lives under `sandclaude config`.
+// This replaces the OLD `corral update`, which edited the PROJECT config —
+// that behavior now lives under `corral config`.
 //
-// Release source: config.UpdateRepo() (default scoutapp/sandclaude, overridable
-// in ~/.sandclaude/global-settings.json). Everything is fetched anonymously from
+// Release source: config.UpdateRepo() (default scoutapp/corral, overridable
+// in ~/.corral/global-settings.json). Everything is fetched anonymously from
 // GitHub Releases — same artifacts and layout the curl|bash installer uses.
 //
 // Flags:
@@ -98,14 +98,14 @@ func cmdUpdate(args []string) error {
 		fmt.Printf("Couldn't reach the update source %s.\n", repo)
 		fmt.Printf("  (%v)\n", err)
 		fmt.Println("  If this repo is private or you use a custom source, set one with:")
-		fmt.Println("    sandclaude update --set-repo owner/name          (a GitHub repo)")
-		fmt.Println("    sandclaude update --set-repo https://host/owner/repo   (a non-GitHub host)")
+		fmt.Println("    corral update --set-repo owner/name          (a GitHub repo)")
+		fmt.Println("    corral update --set-repo https://host/owner/repo   (a non-GitHub host)")
 		return nil
 	}
 
 	newer := release.IsNewer(latest, current)
-	fmt.Printf("sandclaude %s (installed)\n", current)
-	fmt.Printf("sandclaude %s (latest, from %s)\n", latest, repo)
+	fmt.Printf("corral %s (installed)\n", current)
+	fmt.Printf("corral %s (latest, from %s)\n", latest, repo)
 
 	if !newer {
 		fmt.Println("✅ You're on the latest release.")
@@ -118,7 +118,7 @@ func cmdUpdate(args []string) error {
 	}
 
 	if !assumeYes {
-		if !config.AskYesNo(fmt.Sprintf("Update sandclaude to %s now?", latest)) {
+		if !config.AskYesNo(fmt.Sprintf("Update corral to %s now?", latest)) {
 			fmt.Println("Cancelled.")
 			return nil
 		}
@@ -132,7 +132,7 @@ func cmdUpdate(args []string) error {
 func validateRepoInput(s string) (string, error) {
 	norm, ok := config.NormalizeRepo(s)
 	if !ok {
-		return "", fmt.Errorf("%q doesn't look like a GitHub owner/name (e.g. scoutapp/sandclaude) or a release URL (e.g. https://host/owner/repo)", s)
+		return "", fmt.Errorf("%q doesn't look like a GitHub owner/name (e.g. scoutapp/corral) or a release URL (e.g. https://host/owner/repo)", s)
 	}
 	return norm, nil
 }
@@ -142,10 +142,10 @@ func validateRepoInput(s string) (string, error) {
 func runSelfUpdate(baseURL, tag string) error {
 	platform := fmt.Sprintf("%s_%s", runtime.GOOS, runtime.GOARCH)
 	base := strings.TrimRight(baseURL, "/") + "/releases/download/" + tag
-	binArchive := fmt.Sprintf("sandclaude_%s.tar.gz", platform)
-	assetsArchive := "sandclaude-assets.tar.gz"
+	binArchive := fmt.Sprintf("corral_%s.tar.gz", platform)
+	assetsArchive := "corral-assets.tar.gz"
 
-	tmp, err := os.MkdirTemp("", "sandclaude-update-")
+	tmp, err := os.MkdirTemp("", "corral-update-")
 	if err != nil {
 		return fmt.Errorf("could not create temp dir: %w", err)
 	}
@@ -171,8 +171,8 @@ func runSelfUpdate(baseURL, tag string) error {
 
 	// Extract the new binary.
 	log.Println("Extracting binary ...")
-	newBin := filepath.Join(tmp, "sandclaude.new")
-	if err := extractBinaryFromTarGz(binPath, "sandclaude", newBin); err != nil {
+	newBin := filepath.Join(tmp, "corral.new")
+	if err := extractBinaryFromTarGz(binPath, "corral", newBin); err != nil {
 		return fmt.Errorf("could not extract binary: %w", err)
 	}
 	if err := os.Chmod(newBin, 0o755); err != nil {
@@ -184,7 +184,7 @@ func runSelfUpdate(baseURL, tag string) error {
 		return err
 	}
 
-	// Refresh the asset bundle (~/.sandclaude/assets/{sandbox,host}).
+	// Refresh the asset bundle (~/.corral/assets/{sandbox,host}).
 	log.Println("Refreshing asset bundle ...")
 	if err := syncAssetBundle(assetsPath); err != nil {
 		return fmt.Errorf("could not refresh assets: %w", err)
@@ -197,13 +197,13 @@ func runSelfUpdate(baseURL, tag string) error {
 	log.Println("Rebuilding sandbox image (this can take a few minutes) ...")
 	if err := rebuildViaInstalledBinary(); err != nil {
 		log.Printf("⚠️  Image rebuild failed: %v", err)
-		log.Println("    Run `sandclaude rebuild` manually to finish the update.")
+		log.Println("    Run `corral rebuild` manually to finish the update.")
 	}
 
 	fmt.Println()
-	fmt.Printf("✅ Updated sandclaude to %s.\n", tag)
+	fmt.Printf("✅ Updated corral to %s.\n", tag)
 	fmt.Println("   If the dashboard was running, restart it to pick up the new build:")
-	fmt.Println("     sandclaude dashboard stop && sandclaude dashboard")
+	fmt.Println("     corral dashboard stop && corral dashboard")
 	return nil
 }
 
@@ -226,7 +226,7 @@ func replaceRunningBinary(newBin string) error {
 	if !dirWritable(dir) {
 		// Stage the new binary somewhere stable the user can reference, then print
 		// the privileged command. We deliberately do not run sudo for them.
-		staged := filepath.Join(config.CorralHome(), "sandclaude.staged")
+		staged := filepath.Join(config.CorralHome(), "corral.staged")
 		if err := os.MkdirAll(config.CorralHome(), 0o755); err == nil {
 			if copyErr := copyFile(newBin, staged, 0o755); copyErr == nil {
 				newBin = staged
@@ -241,7 +241,7 @@ func replaceRunningBinary(newBin string) error {
 	// Atomic replace within the same directory: write a sibling temp then rename
 	// over the target. A running executable's inode stays live, so replacing the
 	// on-disk file is safe on macOS/Linux.
-	tmpDest := filepath.Join(dir, ".sandclaude.new")
+	tmpDest := filepath.Join(dir, ".corral.new")
 	if err := copyFile(newBin, tmpDest, 0o755); err != nil {
 		return fmt.Errorf("could not stage new binary in %s: %w", dir, err)
 	}
@@ -253,8 +253,8 @@ func replaceRunningBinary(newBin string) error {
 	return nil
 }
 
-// syncAssetBundle extracts sandclaude-assets.tar.gz (holding sandbox/ and host/)
-// into ~/.sandclaude/assets, fully replacing those two subtrees — the same
+// syncAssetBundle extracts corral-assets.tar.gz (holding sandbox/ and host/)
+// into ~/.corral/assets, fully replacing those two subtrees — the same
 // refresh install.sh does.
 func syncAssetBundle(assetsTarGz string) error {
 	assetsDir := filepath.Join(config.CorralHome(), "assets")
@@ -268,7 +268,7 @@ func syncAssetBundle(assetsTarGz string) error {
 	return extractTarGz(assetsTarGz, assetsDir)
 }
 
-// rebuildViaInstalledBinary shells out to the freshly-installed sandclaude to
+// rebuildViaInstalledBinary shells out to the freshly-installed corral to
 // rebuild the image, so the new version stamping/build logic is used rather than
 // this still-running old process's.
 func rebuildViaInstalledBinary() error {

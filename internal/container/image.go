@@ -9,16 +9,16 @@ import (
 )
 
 // ImageName is the canonical (always-latest) tag every code path builds and runs.
-const ImageName = "sandclaude-stable"
+const ImageName = "corral-stable"
 
 // ImageVersionLabel is the OCI label key stamped with the CLI version that built
 // the image, so we can later detect a stale image (built by an older CLI) and
 // warn — without forcing a rebuild. Read via `docker inspect`.
-const ImageVersionLabel = "org.sandclaude.version"
+const ImageVersionLabel = "org.corral.version"
 
 // imageBuildTags returns the -t arguments for a build: always the plain
-// `sandclaude-stable` (what everything runs), plus a version-pinned
-// `sandclaude-stable:<version>` when the binary is a real release build (not the
+// `corral-stable` (what everything runs), plus a version-pinned
+// `corral-stable:<version>` when the binary is a real release build (not the
 // "dev" default) so an image can be traced back to the CLI that built it.
 func imageBuildTags() []string {
 	tags := []string{"-t", ImageName}
@@ -43,7 +43,7 @@ func ImageBuildStampArgs() []string {
 	return append(args, imageBuildTags()...)
 }
 
-// ImageVersion returns the version label stamped on the local sandclaude-stable
+// ImageVersion returns the version label stamped on the local corral-stable
 // image, or "" if the image is absent or unlabeled (built before stamping
 // existed). Best-effort: any docker error yields "".
 func ImageVersion() string {

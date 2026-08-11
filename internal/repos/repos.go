@@ -2,7 +2,7 @@
 // clones that back ephemeral, isolated project workspaces.
 //
 // Each added repo gets ONE bare `--mirror` cache clone under
-// ~/.sandclaude/repos/<slug>.git. The cache is fetch-only — never worked in — so
+// ~/.corral/repos/<slug>.git. The cache is fetch-only — never worked in — so
 // `git fetch` can never hit local-change/non-fast-forward problems. A project is
 // then created by `git clone --local` from the cache into its own workspace: own
 // .git + index (no shared-index locking like git worktrees), objects hardlinked
@@ -30,7 +30,7 @@ type Repo struct {
 	URL           string `json:"url"`            // remote URL (empty for a local-path source)
 	LocalPath     string `json:"local_path"`     // local source path (empty for a URL source)
 	IsPrivate     bool   `json:"is_private"`     // hint: clone via host git/gh auth
-	CachePath     string `json:"cache_path"`     // ~/.sandclaude/repos/<slug>.git
+	CachePath     string `json:"cache_path"`     // ~/.corral/repos/<slug>.git
 	DefaultBranch string `json:"default_branch"` // best-effort, from the cache
 	LastFetched   string `json:"last_fetched"`   // RFC3339
 	AddedAt       string `json:"added_at"`       // RFC3339

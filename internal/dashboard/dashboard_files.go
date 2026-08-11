@@ -25,7 +25,7 @@ const maxEditableBytes = 2 << 20 // 2 MiB
 // dirsToSkip are never listed in the file tree (noise / not project source).
 var dirsToSkip = map[string]bool{
 	".git":         true,
-	".sandclaude":  true,
+	".corral":  true,
 	"node_modules": true,
 }
 

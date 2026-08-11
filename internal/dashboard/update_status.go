@@ -17,7 +17,7 @@ import (
 //
 // The dashboard is a long-lived daemon and every open tab polls this endpoint
 // (on load + every few hours), so we must NOT hit GitHub on every request. The
-// latest tag is cached to ~/.sandclaude/update-check.json and only re-fetched
+// latest tag is cached to ~/.corral/update-check.json and only re-fetched
 // when the cache is older than updateCheckTTL. GitHub is reached anonymously via
 // the redirect trick (release.LatestTag) with a short timeout; any failure falls
 // back to the cached value (or "unknown"), never blocking the UI.
@@ -70,7 +70,7 @@ type updateStatusResp struct {
 	Error       string `json:"error,omitempty"`
 }
 
-// handleUpdateStatus reports whether a newer sandclaude release is available.
+// handleUpdateStatus reports whether a newer corral release is available.
 // It returns the cached latest tag, refreshing from GitHub only when the cache
 // is stale (or the configured repo changed). Errors are non-fatal — we serve the
 // last known value so the banner logic degrades to "no update" rather than an

@@ -18,8 +18,8 @@ import (
 //	POST /p/<id>/start
 //
 // Today the dashboard only ever RESTARTED a project (handleConfigRestart);
-// starting a freshly-created one is new. We shell out to this same sandclaude
-// binary (`sandclaude dev`, detached, in the workspace) so there is ONE start
+// starting a freshly-created one is new. We shell out to this same corral
+// binary (`corral dev`, detached, in the workspace) so there is ONE start
 // path shared with the CLI, rather than re-implementing container orchestration.
 //
 // The child is launched THROUGH the operator's login shell so it inherits the
@@ -51,7 +51,7 @@ func (d *dashboardServer) handleStartProject(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Pre-load gate: the child `sandclaude dev` runs detached (no TTY), so if this
+	// Pre-load gate: the child `corral dev` runs detached (no TTY), so if this
 	// project has ssh keys configured but they aren't loaded into the scoped agent
 	// yet, the child would fail fast. Surface that here so the caller can send the
 	// user to the Config tab's "Load keys" flow first (design: pre-load, then start).
@@ -87,7 +87,7 @@ func (d *dashboardServer) handleStartProject(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// `<shell> -lc 'exec "$0" dev' <sandclaude-abs-path>`: login shell for the full
+	// `<shell> -lc 'exec "$0" dev' <corral-abs-path>`: login shell for the full
 	// PATH, exec our own binary by absolute path (no lookup needed), args passed
 	// positionally so nothing is interpolated into the shell string.
 	shell := os.Getenv("SHELL")

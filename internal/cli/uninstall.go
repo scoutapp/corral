@@ -37,25 +37,25 @@ func dockerOut(args ...string) (string, error) {
 	return string(out), err
 }
 
-// cmdUninstall removes everything sandclaude created on this machine and then
-// deletes the sandclaude binary itself (self-removal is last). It is deliberately
+// cmdUninstall removes everything corral created on this machine and then
+// deletes the corral binary itself (self-removal is last). It is deliberately
 // aggressive — the point is to leave no trace — so it requires an explicit typed
 // confirmation unless --yes is passed.
 //
 // What it tears down, in order (each step best-effort; a failure logs a warning
 // and we continue so a single stuck resource can't strand the rest):
 //  1. dashboard daemon (SIGTERM via its state file)
-//  2. tmux sessions       sandclaude_*
-//  3. containers          sandclaude_*   (running or stopped, force-removed)
-//  4. image               sandclaude-stable
-//  5. DinD volumes        sandclaude-dind-*
-//  6. scoped ssh-agents   (killed; ~/.sandclaude/agents removed)
-//  7. ~/.sandclaude/       (assets, managed workspaces, creds, ssh-keys, logs, state)
+//  2. tmux sessions       corral_*
+//  3. containers          corral_*   (running or stopped, force-removed)
+//  4. image               corral-stable
+//  5. DinD volumes        corral-dind-*
+//  6. scoped ssh-agents   (killed; ~/.corral/agents removed)
+//  7. ~/.corral/       (assets, managed workspaces, creds, ssh-keys, logs, state)
 //  8. the binary itself    (the currently-running executable)
 //
-// It intentionally does NOT touch per-project ./.sandclaude/ dirs living inside
+// It intentionally does NOT touch per-project ./.corral/ dirs living inside
 // the user's own repositories — those are scattered, may be committed, and
-// `sandclaude remove` already handles them one-by-one. We print a note about them.
+// `corral remove` already handles them one-by-one. We print a note about them.
 //
 // Flags:
 //
@@ -83,23 +83,23 @@ func cmdUninstall(args []string) error {
 	}
 	home := config.CorralHome()
 
-	log.Println("This will remove EVERYTHING sandclaude created on this machine:")
+	log.Println("This will remove EVERYTHING corral created on this machine:")
 	log.Println("  • the dashboard daemon (stopped)")
-	log.Println("  • all sandclaude_* containers and tmux sessions")
+	log.Println("  • all corral_* containers and tmux sessions")
 	if !keepImages {
-		log.Println("  • the sandclaude-stable image and sandclaude-dind-* volumes")
+		log.Println("  • the corral-stable image and corral-dind-* volumes")
 	}
 	log.Println("  • all scoped ssh-agents")
 	log.Printf("  • %s (assets, managed workspaces, credentials, ssh-keys, logs)\n", home)
 	if exeErr == nil {
-		log.Printf("  • the sandclaude binary itself (%s)\n", exePath)
+		log.Printf("  • the corral binary itself (%s)\n", exePath)
 	}
 	log.Println()
-	log.Println("It will NOT touch ./.sandclaude/ directories inside your own repositories.")
+	log.Println("It will NOT touch ./.corral/ directories inside your own repositories.")
 	log.Println()
 
 	if !assumeYes {
-		if !config.AskYesNo("Are you absolutely sure you want to uninstall sandclaude?") {
+		if !config.AskYesNo("Are you absolutely sure you want to uninstall corral?") {
 			log.Println("Cancelled.")
 			return nil
 		}
@@ -111,25 +111,25 @@ func cmdUninstall(args []string) error {
 		log.Printf("    warning: could not stop dashboard: %v", err)
 	}
 
-	// 2. Kill sandclaude_* tmux sessions.
+	// 2. Kill corral_* tmux sessions.
 	log.Println("==> Killing tmux sessions")
 	killTmuxSessions()
 
-	// 3. Force-remove sandclaude_* containers (running or stopped).
+	// 3. Force-remove corral_* containers (running or stopped).
 	log.Println("==> Removing containers")
 	removeContainers()
 
 	if !keepImages {
 		// 4. Remove the sandbox image.
-		log.Println("==> Removing image sandclaude-stable")
-		if out, err := dockerOut("rmi", "-f", "sandclaude-stable"); err != nil {
+		log.Println("==> Removing image corral-stable")
+		if out, err := dockerOut("rmi", "-f", "corral-stable"); err != nil {
 			// Not fatal — the image may simply not exist.
 			if !strings.Contains(out, "No such image") {
-				log.Printf("    warning: could not remove image sandclaude-stable: %v", dockerErr(err, out))
+				log.Printf("    warning: could not remove image corral-stable: %v", dockerErr(err, out))
 			}
 		}
 
-		// 5. Remove DinD volumes (sandclaude-dind-*).
+		// 5. Remove DinD volumes (corral-dind-*).
 		log.Println("==> Removing DinD volumes")
 		removeDindVolumes()
 	}
@@ -139,7 +139,7 @@ func cmdUninstall(args []string) error {
 	n := sshagent.StopAll()
 	log.Printf("    stopped %d ssh-agent(s)", n)
 
-	// 7. Remove ~/.sandclaude entirely (assets, workspaces, creds, state, logs).
+	// 7. Remove ~/.corral entirely (assets, workspaces, creds, state, logs).
 	log.Printf("==> Removing %s", home)
 	if err := os.RemoveAll(home); err != nil {
 		log.Printf("    warning: could not remove %s: %v", home, err)
@@ -150,7 +150,7 @@ func cmdUninstall(args []string) error {
 	// executable can delete its own on-disk file (the inode stays live until this
 	// process exits), so this is safe.
 	if exeErr != nil {
-		log.Printf("Warning: could not resolve the sandclaude binary path (%v) — remove it manually.", exeErr)
+		log.Printf("Warning: could not resolve the corral binary path (%v) — remove it manually.", exeErr)
 	} else {
 		log.Printf("==> Removing binary %s", exePath)
 		if err := removeSelf(exePath); err != nil {
@@ -160,9 +160,9 @@ func cmdUninstall(args []string) error {
 	}
 
 	log.Println()
-	log.Println("✅ sandclaude uninstalled.")
-	log.Println("   Note: any ./.sandclaude/ directories inside your own repos remain —")
-	log.Println("   delete them per-project with `rm -rf .sandclaude` if you want them gone.")
+	log.Println("✅ corral uninstalled.")
+	log.Println("   Note: any ./.corral/ directories inside your own repos remain —")
+	log.Println("   delete them per-project with `rm -rf .corral` if you want them gone.")
 	return nil
 }
 
@@ -188,7 +188,7 @@ func removeSelf(path string) error {
 // dirWritable reports whether dir is writable by this user (cheap heuristic via a
 // temp file; used to decide whether removing the binary needs sudo).
 func dirWritable(dir string) bool {
-	f, err := os.CreateTemp(dir, ".sandclaude-wtest-")
+	f, err := os.CreateTemp(dir, ".corral-wtest-")
 	if err != nil {
 		return false
 	}
@@ -198,7 +198,7 @@ func dirWritable(dir string) bool {
 	return true
 }
 
-// killTmuxSessions kills every tmux session named sandclaude_*.
+// killTmuxSessions kills every tmux session named corral_*.
 func killTmuxSessions() {
 	out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").Output()
 	if err != nil {
@@ -206,17 +206,17 @@ func killTmuxSessions() {
 	}
 	for _, name := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		name = strings.TrimSpace(name)
-		if strings.HasPrefix(name, "sandclaude_") {
+		if strings.HasPrefix(name, "corral_") {
 			_ = exec.Command("tmux", "kill-session", "-t", name).Run()
 		}
 	}
 }
 
-// removeContainers force-removes every container named sandclaude_* (running or
+// removeContainers force-removes every container named corral_* (running or
 // stopped), one at a time so one stuck container can't hide the rest. Matches on
 // the name prefix so all per-workspace containers are caught.
 func removeContainers() {
-	out, err := dockerOut("ps", "-aq", "--filter", "name=^/sandclaude_")
+	out, err := dockerOut("ps", "-aq", "--filter", "name=^/corral_")
 	if err != nil {
 		log.Printf("    warning: could not list containers: %v", dockerErr(err, out))
 		return
@@ -237,12 +237,12 @@ func forceRemoveContainers(ids []string) {
 	}
 }
 
-// removeDindVolumes removes every Docker volume named sandclaude-dind-*. A volume
+// removeDindVolumes removes every Docker volume named corral-dind-*. A volume
 // that's still attached to a container can't be removed (and `volume rm` may block
 // on a wedged daemon), so we first force-remove any container holding it, then
 // remove the volume — each call bounded by a timeout.
 func removeDindVolumes() {
-	out, err := dockerOut("volume", "ls", "-q", "--filter", "name=sandclaude-dind-")
+	out, err := dockerOut("volume", "ls", "-q", "--filter", "name=corral-dind-")
 	if err != nil {
 		log.Printf("    warning: could not list volumes: %v", dockerErr(err, out))
 		return

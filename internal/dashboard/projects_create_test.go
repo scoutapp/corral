@@ -11,12 +11,12 @@ import (
 	"testing"
 )
 
-// setupHome points SANDCLAUDE_HOME at a temp dir with a minimal asset layout so
+// setupHome points CORRAL_HOME at a temp dir with a minimal asset layout so
 // InitProject can seed the allowlist (config.AssetsDir resolves under it).
 func setupHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("SANDCLAUDE_HOME", home)
+	t.Setenv("CORRAL_HOME", home)
 	sandbox := filepath.Join(home, "assets", "sandbox", "allowlist-proxy")
 	os.MkdirAll(sandbox, 0755)
 	os.WriteFile(filepath.Join(home, "assets", "sandbox", "Dockerfile"), []byte("FROM scratch\n"), 0644)
@@ -65,7 +65,7 @@ func TestCreateProject(t *testing.T) {
 		t.Fatalf("new: status %d (%v)", resp.StatusCode, out)
 	}
 	ws, _ := out["workspace"].(string)
-	if _, err := os.Stat(filepath.Join(ws, ".sandclaude", "project", "config.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(ws, ".corral", "project", "config.json")); err != nil {
 		t.Errorf("new: config not written: %v", err)
 	}
 	if out["id"] == "" {
@@ -78,7 +78,7 @@ func TestCreateProject(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("existing: status %d (%v)", resp.StatusCode, out)
 	}
-	if _, err := os.Stat(filepath.Join(existing, ".sandclaude", "project", "config.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(existing, ".corral", "project", "config.json")); err != nil {
 		t.Errorf("existing: config not written: %v", err)
 	}
 
@@ -105,7 +105,7 @@ func TestCreateProject(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(cloneWs, "cloneme", ".git")); err != nil {
 		t.Errorf("clone: subdir should have its own .git: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(cloneWs, ".sandclaude", "project", "config.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(cloneWs, ".corral", "project", "config.json")); err != nil {
 		t.Errorf("clone: config not written at parent: %v", err)
 	}
 
@@ -125,7 +125,7 @@ func TestCreateProject(t *testing.T) {
 			t.Errorf("multi: expected subdir %s with its own .git: %v", sub, err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(multiWs, ".sandclaude", "project", "config.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(multiWs, ".corral", "project", "config.json")); err != nil {
 		t.Errorf("multi: config not written at parent: %v", err)
 	}
 }

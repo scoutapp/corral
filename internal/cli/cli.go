@@ -20,7 +20,7 @@ import (
 )
 
 // cmdConfig edits this project's config fields (DinD/tmux/etc.) without touching
-// credentials or the allowlist key. Was `sandclaude update`; renamed because
+// credentials or the allowlist key. Was `corral update`; renamed because
 // `update` now updates the CLI + image, and project config is mostly managed in
 // the dashboard's Config tab.
 func cmdConfig() error {
@@ -138,7 +138,7 @@ func cmdInit() error {
 	projectDir := config.GetProjectDir()
 
 	if _, err := os.Stat(projectDir); err == nil {
-		return fmt.Errorf("project already initialized at %s\n   To edit config run:   sandclaude config\n   To remove it run:     sandclaude remove", projectDir)
+		return fmt.Errorf("project already initialized at %s\n   To edit config run:   corral config\n   To remove it run:     corral remove", projectDir)
 	}
 
 	log.Println()
@@ -148,8 +148,8 @@ func cmdInit() error {
 	// Credential proxy is ON by default (mitm proxy + credential injection is the
 	// point of the sandbox) — no longer a question. Passthrough is the default
 	// firewall mode (allow+log unknown domains, direct TCP ok); switch to the
-	// strict allowlist later via `sandclaude start --enforce-allowlist` or the
-	// dashboard Config. Run without the proxy via `sandclaude start
+	// strict allowlist later via `corral start --enforce-allowlist` or the
+	// dashboard Config. Run without the proxy via `corral start
 	// --disable-firewall`.
 	opts.ProxyEnabled = true
 	opts.PassthroughFirewall = true
@@ -157,8 +157,8 @@ func cmdInit() error {
 	log.Println()
 	log.Println("⚠️  IMPORTANT: You must configure real credentials before starting!")
 	log.Printf("   Global credentials live at: %s\n", creds.GlobalCredentialsPath())
-	log.Println("   Run: sandclaude populate-proxy-credentials")
-	log.Println("   For a project-specific override, run: sandclaude populate-proxy-credentials --project")
+	log.Println("   Run: corral populate-proxy-credentials")
+	log.Println("   For a project-specific override, run: corral populate-proxy-credentials --project")
 
 	log.Println()
 
@@ -195,7 +195,7 @@ func cmdInit() error {
 
 	log.Println()
 
-	// Workspace directory. sandclaude now runs from the project root itself (not from
+	// Workspace directory. corral now runs from the project root itself (not from
 	// an embedded .devcontainer), so the workspace defaults to the current directory.
 	cwd, _ := os.Getwd()
 	reader := bufio.NewReader(os.Stdin)
@@ -220,13 +220,13 @@ func cmdInit() error {
 	log.Println()
 	log.Println("Next steps:")
 	if cfg.ProxyEnabled {
-		log.Println("  sandclaude populate-proxy-credentials")
+		log.Println("  corral populate-proxy-credentials")
 	}
-	log.Println("  sandclaude start")
+	log.Println("  corral start")
 	log.Println()
 
-	// Ensure .sandclaude/ (this project's config, key, and logs) is gitignored.
-	config.EnsureGitignored(".sandclaude/")
+	// Ensure .corral/ (this project's config, key, and logs) is gitignored.
+	config.EnsureGitignored(".corral/")
 
 	return nil
 }
@@ -307,7 +307,7 @@ func cmdList() error {
 
 	cfg, err := config.ReadConfig(projectDir)
 	if err != nil {
-		log.Println("No project configured. Run: sandclaude init")
+		log.Println("No project configured. Run: corral init")
 		return nil
 	}
 
@@ -364,7 +364,7 @@ func cmdShell() error {
 		return err
 	}
 
-	imageName := "sandclaude-stable"
+	imageName := "corral-stable"
 	if err := sc.EnsureImage(imageName); err != nil {
 		return err
 	}
@@ -441,14 +441,14 @@ func cmdRebuild(destroy bool, destroyInner bool) error {
 	}
 
 	if destroy {
-		log.Println("Destroying existing sandclaude containers and image...")
+		log.Println("Destroying existing corral containers and image...")
 
-		// Containers are named per-workspace (sandclaude_<workspace>), not
-		// "sandclaude-stable" (that's the image tag). Enumerate every container
-		// — running or stopped — built from the sandclaude-stable image and
+		// Containers are named per-workspace (corral_<workspace>), not
+		// "corral-stable" (that's the image tag). Enumerate every container
+		// — running or stopped — built from the corral-stable image and
 		// remove them. Otherwise the old containers survive the rebuild and the
 		// image can't be removed while a container still references it.
-		for _, name := range containersUsingImage("sandclaude-stable") {
+		for _, name := range containersUsingImage("corral-stable") {
 			log.Printf("Removing container %s...", name)
 			rmCmd := exec.Command("docker", "rm", "-f", name)
 			rmCmd.Stdout = os.Stdout
@@ -457,13 +457,13 @@ func cmdRebuild(destroy bool, destroyInner bool) error {
 		}
 
 		// Remove the image
-		rmiCmd := exec.Command("docker", "rmi", "-f", "sandclaude-stable")
+		rmiCmd := exec.Command("docker", "rmi", "-f", "corral-stable")
 		rmiCmd.Stdout = os.Stdout
 		rmiCmd.Stderr = os.Stderr
 		rmiCmd.Run() // ignore error — image may not exist
 	}
 
-	log.Println("Building sandclaude image...")
+	log.Println("Building corral image...")
 
 	// Get user and group IDs
 	cmd := exec.Command("id", "-u")
@@ -499,15 +499,15 @@ func cmdRebuild(destroy bool, destroyInner bool) error {
 }
 
 // cmdPopulateProxyCredentials populates proxy-credentials.json interactively using
-// claude setup-token. By default it writes the global file (~/.sandclaude/proxy-credentials.json)
+// claude setup-token. By default it writes the global file (~/.corral/proxy-credentials.json)
 // shared across all projects; with projectScope=true it writes the per-project override
-// (<cwd>/.sandclaude/project/proxy-credentials.json), which takes precedence per-domain.
+// (<cwd>/.corral/project/proxy-credentials.json), which takes precedence per-domain.
 func cmdPopulateProxyCredentials(projectScope bool) error {
 	var credsPath string
 	if projectScope {
 		projectDir := config.GetProjectDir()
 		if _, err := os.Stat(projectDir); os.IsNotExist(err) {
-			return fmt.Errorf("no project found — run: sandclaude init")
+			return fmt.Errorf("no project found — run: corral init")
 		}
 		credsPath = creds.ProjectCredentialsPath()
 		fmt.Printf("Writing project-specific credentials to: %s\n\n", credsPath)
@@ -620,7 +620,7 @@ func cmdPopulateProxyCredentials(projectScope bool) error {
 	return nil
 }
 
-// cmdRemove removes the <cwd>/.sandclaude/ directory (config, allowlist, logs).
+// cmdRemove removes the <cwd>/.corral/ directory (config, allowlist, logs).
 func cmdRemove() error {
 	scDir := config.CorralDir()
 
@@ -630,7 +630,7 @@ func cmdRemove() error {
 	}
 
 	// Confirm deletion
-	log.Printf("Warning: This will permanently delete the sandclaude directory\n")
+	log.Printf("Warning: This will permanently delete the corral directory\n")
 	log.Printf("   Location: %s\n", scDir)
 	log.Println("   (config, allowlist, encryption key, and logs)")
 	log.Println()
@@ -640,7 +640,7 @@ func cmdRemove() error {
 		return nil
 	}
 
-	// Remove the entire .sandclaude directory
+	// Remove the entire .corral directory
 	if err := os.RemoveAll(scDir); err != nil {
 		return fmt.Errorf("failed to remove %s: %w", scDir, err)
 	}
@@ -690,7 +690,7 @@ func cmdCapture() error {
 // cmdSend sends a prompt to the inner Claude running in the detached session.
 func cmdSend(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: sandclaude send <prompt>")
+		return fmt.Errorf("usage: corral send <prompt>")
 	}
 	session, _, err := session.DetachedSessionName()
 	if err != nil {
@@ -737,18 +737,18 @@ func cmdAttach() error {
 
 // usage prints help information
 func usage() {
-	fmt.Println("sandclaude - Sandboxed Claude Code with network firewall")
+	fmt.Println("corral - Sandboxed Claude Code with network firewall")
 	fmt.Println()
-	fmt.Println("Usage: sandclaude [--debug] <command> [options]")
+	fmt.Println("Usage: corral [--debug] <command> [options]")
 	fmt.Println()
 	fmt.Println("Global flags:")
 	fmt.Println("  --debug                  Enable verbose debug logging (port scanning, volume mounts, docker args, etc.)")
 	fmt.Println()
 	fmt.Println("Commands:")
-	fmt.Println("  init                     Initialize ./.sandclaude/ in the current directory")
+	fmt.Println("  init                     Initialize ./.corral/ in the current directory")
 	fmt.Println("  config                   Edit this project's config (was `update`; preserves credentials and allowlist key)")
 	fmt.Println("  update [--check] [--repo <src>] [--set-repo <src>]")
-	fmt.Println("                           Update sandclaude itself: fetch the latest CLI + assets and rebuild the image")
+	fmt.Println("                           Update corral itself: fetch the latest CLI + assets and rebuild the image")
 	fmt.Println("                           <src> = a GitHub owner/name or a full release URL (https://host/owner/repo)")
 	fmt.Println("                           (--set-repo persists a custom release source to global settings)")
 	fmt.Println("  start [flags]            Start Claude Code detached and open it in the dashboard (browser-first)")
@@ -759,8 +759,8 @@ func usage() {
 	fmt.Println("    --keep-devfiles                Do not hide .devcontainer from the container (skip tmpfs overlay)")
 	fmt.Println("  dev [flags]              Start detached in a tmux session for closed-loop development")
 	fmt.Println("                           (same flags as start; observe/drive with capture/send/attach)")
-	fmt.Println("  list                     Show ./.sandclaude/ configuration")
-	fmt.Println("  remove                   Remove ./.sandclaude/ directory after confirmation")
+	fmt.Println("  list                     Show ./.corral/ configuration")
+	fmt.Println("  remove                   Remove ./.corral/ directory after confirmation")
 	fmt.Println("  firewall-reload          Encrypt allowed-domains.txt and SIGHUP proxy")
 	fmt.Println("  firewall-monitor         Tail allowlist proxy log in running container")
 	fmt.Println("  monitor [list|add <host>|remove <host>|clear]   Selective mitm: hosts routed through mitm")
@@ -771,7 +771,7 @@ func usage() {
 	fmt.Println("  proxy-apply              Re-apply proxy config to the running proxies (no restart)")
 	fmt.Println("  shell                    Open bash shell in container")
 	fmt.Println("  populate-proxy-credentials [--project]   Populate credentials from 'claude setup-token'")
-	fmt.Println("    (default: global ~/.sandclaude/proxy-credentials.json; --project: this project's override)")
+	fmt.Println("    (default: global ~/.corral/proxy-credentials.json; --project: this project's override)")
 	fmt.Println("  rebuild [--destroy] [--destroy-inner]   Force rebuild container image")
 	fmt.Println("    --destroy        Remove existing outer image/container first (full rebuild from scratch, implies --no-cache)")
 	fmt.Println("    --destroy-inner  Wipe inner docker data: all inner images and volumes")
@@ -780,49 +780,49 @@ func usage() {
 	fmt.Println("  attach                   Attach interactively to the detached session")
 	fmt.Println("  dashboard                Start (or print the URL of) the host-wide project dashboard")
 	fmt.Println("  dashboard stop           Stop the dashboard server")
-	fmt.Println("  uninstall [--yes] [--keep-images]   Remove everything sandclaude created, then the binary itself")
+	fmt.Println("  uninstall [--yes] [--keep-images]   Remove everything corral created, then the binary itself")
 	fmt.Println("    --yes / -y       Skip the confirmation prompt")
-	fmt.Println("    --keep-images    Preserve the sandclaude-stable image and DinD volumes")
+	fmt.Println("    --keep-images    Preserve the corral-stable image and DinD volumes")
 	fmt.Println("  version                  Print version, commit, and build date")
 	fmt.Println("  help                     Show this help")
 	fmt.Println()
 	fmt.Println("Examples:")
-	fmt.Println("  sandclaude init                    # Initialize ./.sandclaude/ in the current directory")
-	fmt.Println("  sandclaude start                   # Start detached + open in the dashboard (browser-first)")
-	fmt.Println("  sandclaude start --foreground      # Classic interactive session in this terminal")
-	fmt.Println("  sandclaude dev                     # Start detached in tmux for closed-loop development")
-	fmt.Println("  sandclaude start --debug           # Start with verbose debug logging")
-	fmt.Println("  sandclaude --debug start           # Same (--debug works in any position)")
-	fmt.Println("  sandclaude start --disable-firewall              # Start without firewall")
-	fmt.Println("  sandclaude start --enforce-allowlist             # Strict: block unknown domains (default allows+logs them)")
-	fmt.Println("  sandclaude populate-proxy-credentials            # Set global credentials")
-	fmt.Println("  sandclaude populate-proxy-credentials --project  # Set a project-specific override")
-	fmt.Println("  sandclaude shell                   # Debug container")
-	fmt.Println("  sandclaude capture                 # Read inner Claude output (non-interactive start)")
-	fmt.Println("  sandclaude send 'fix the bug'      # Send a prompt to inner Claude")
-	fmt.Println("  sandclaude attach                  # Attach interactively to the running session")
-	fmt.Println("  sandclaude dashboard                # Start/open the cross-project dashboard")
-	fmt.Println("  sandclaude dashboard stop            # Stop the dashboard")
-	fmt.Println("  sandclaude uninstall               # Remove all sandclaude state, images, and the binary")
+	fmt.Println("  corral init                    # Initialize ./.corral/ in the current directory")
+	fmt.Println("  corral start                   # Start detached + open in the dashboard (browser-first)")
+	fmt.Println("  corral start --foreground      # Classic interactive session in this terminal")
+	fmt.Println("  corral dev                     # Start detached in tmux for closed-loop development")
+	fmt.Println("  corral start --debug           # Start with verbose debug logging")
+	fmt.Println("  corral --debug start           # Same (--debug works in any position)")
+	fmt.Println("  corral start --disable-firewall              # Start without firewall")
+	fmt.Println("  corral start --enforce-allowlist             # Strict: block unknown domains (default allows+logs them)")
+	fmt.Println("  corral populate-proxy-credentials            # Set global credentials")
+	fmt.Println("  corral populate-proxy-credentials --project  # Set a project-specific override")
+	fmt.Println("  corral shell                   # Debug container")
+	fmt.Println("  corral capture                 # Read inner Claude output (non-interactive start)")
+	fmt.Println("  corral send 'fix the bug'      # Send a prompt to inner Claude")
+	fmt.Println("  corral attach                  # Attach interactively to the running session")
+	fmt.Println("  corral dashboard                # Start/open the cross-project dashboard")
+	fmt.Println("  corral dashboard stop            # Stop the dashboard")
+	fmt.Println("  corral uninstall               # Remove all corral state, images, and the binary")
 	fmt.Println()
-	fmt.Println("Per-project config lives in ./.sandclaude/ (relative to the current directory):")
-	fmt.Println("  ./.sandclaude/project/config.json          — workspace, proxy, dind settings")
-	fmt.Println("  ./.sandclaude/project/.allowlist-key       — allowlist encryption key (never commit)")
-	fmt.Println("  ./.sandclaude/allowed-domains.txt[.enc]    — firewall allowlist")
-	fmt.Println("  ./.sandclaude/project/proxy-credentials.json — optional per-project credential override")
+	fmt.Println("Per-project config lives in ./.corral/ (relative to the current directory):")
+	fmt.Println("  ./.corral/project/config.json          — workspace, proxy, dind settings")
+	fmt.Println("  ./.corral/project/.allowlist-key       — allowlist encryption key (never commit)")
+	fmt.Println("  ./.corral/allowed-domains.txt[.enc]    — firewall allowlist")
+	fmt.Println("  ./.corral/project/proxy-credentials.json — optional per-project credential override")
 	fmt.Println()
-	fmt.Println("Global config lives in ~/.sandclaude/ (override with $SANDCLAUDE_HOME):")
-	fmt.Println("  ~/.sandclaude/assets/                       — Docker build context + support files (installed)")
-	fmt.Println("  ~/.sandclaude/proxy-credentials.json        — shared credentials (project override wins per-domain)")
+	fmt.Println("Global config lives in ~/.corral/ (override with $CORRAL_HOME):")
+	fmt.Println("  ~/.corral/assets/                       — Docker build context + support files (installed)")
+	fmt.Println("  ~/.corral/proxy-credentials.json        — shared credentials (project override wins per-domain)")
 	fmt.Println()
 }
 
-// Main is the CLI entrypoint. It is invoked by cmd/sandclaude/main.go.
+// Main is the CLI entrypoint. It is invoked by cmd/corral/main.go.
 func Main() {
 	log.SetFlags(0) // Remove timestamp prefix
 
 	// Scan all args for --debug before command dispatch so it works in any position
-	// e.g. `sandclaude --debug start` or `sandclaude start --debug`
+	// e.g. `corral --debug start` or `corral start --debug`
 	filteredArgs := os.Args[:1]
 	for _, arg := range os.Args[1:] {
 		if arg == "--debug" {
@@ -928,7 +928,7 @@ func Main() {
 	case "dashboard":
 		err = dashboard.CmdDashboard(os.Args[2:])
 
-	case "dashboard-serve": // internal only, spawned by `sandclaude dashboard`
+	case "dashboard-serve": // internal only, spawned by `corral dashboard`
 		err = dashboard.CmdDashboardServe(os.Args[2:])
 
 	case "version", "--version", "-v":

@@ -12,7 +12,7 @@ import (
 // spawning an agent: unknown id 404s, unauth 403s. (A real status probe needs a
 // registered workspace + config and is exercised via manual/e2e testing.)
 func TestSSHKeysStatusRouting(t *testing.T) {
-	t.Setenv("SANDCLAUDE_HOME", t.TempDir())
+	t.Setenv("CORRAL_HOME", t.TempDir())
 	srv := httptest.NewServer(newDashboardServer("tok").routes())
 	defer srv.Close()
 
@@ -47,7 +47,7 @@ func TestSSHKeysStatusRouting(t *testing.T) {
 // and an authenticated POST to an unknown id is merely not-found (404) — i.e. the
 // route IS wired AND IS gated. No agent is spawned (unknown id 404s first).
 func TestSSHKeysSelectAuthGate(t *testing.T) {
-	t.Setenv("SANDCLAUDE_HOME", t.TempDir())
+	t.Setenv("CORRAL_HOME", t.TempDir())
 	srv := httptest.NewServer(newDashboardServer("tok").routes())
 	defer srv.Close()
 

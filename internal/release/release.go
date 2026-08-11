@@ -1,4 +1,4 @@
-// Package release resolves the latest published sandclaude release and compares
+// Package release resolves the latest published corral release and compares
 // it to the running build — shared by the CLI `update` command and the dashboard
 // update-check. It deliberately avoids the GitHub API (no token, no rate limits):
 // GitHub 302-redirects /releases/latest to /releases/tag/<tag>, so a single

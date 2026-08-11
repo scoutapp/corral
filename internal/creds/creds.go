@@ -49,13 +49,13 @@ func WriteCredentialHostsFile(path string, hosts []string) error {
 }
 
 // GlobalCredentialsPath returns the shared, cross-project credentials file
-// (~/.sandclaude/proxy-credentials.json).
+// (~/.corral/proxy-credentials.json).
 func GlobalCredentialsPath() string {
 	return filepath.Join(config.CorralHome(), "proxy-credentials.json")
 }
 
 // ProjectCredentialsPath returns the per-project credentials override
-// (<cwd>/.sandclaude/project/proxy-credentials.json).
+// (<cwd>/.corral/project/proxy-credentials.json).
 func ProjectCredentialsPath() string {
 	return filepath.Join(config.GetProjectDir(), "proxy-credentials.json")
 }
@@ -154,7 +154,7 @@ func ResolveCredentialsFileTracked() (credsFile string, tempFile string) {
 		return globalPath, ""
 	}
 
-	tmp, err := os.CreateTemp("", "sandclaude-merged-creds-*.json")
+	tmp, err := os.CreateTemp("", "corral-merged-creds-*.json")
 	if err != nil {
 		log.Printf("Warning: failed to create temp credentials file: %v — using global only", err)
 		return globalPath, ""
