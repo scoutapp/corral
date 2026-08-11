@@ -10,12 +10,12 @@ import { tags as t } from "@lezer/highlight";
 const bg = "#1e1e1e";
 const fg = "#d4d4d4";
 const caret = "#aeafad";
-// Selection: VS Code uses #264f78, but on the active line CodeMirror's
-// active-line background (painted on the line, in front of the selection layer)
-// washes a small selection out so it reads the same as the line. Use a brighter
-// blue AND lift the selection layer above the active line (below) so a partial
-// selection stays clearly visible on the current line.
-const selection = "#3163ad";
+// Selection: VS Code's editor.selectionBackground. The selection layer sits
+// BEHIND the text (CodeMirror's default), so the highlighted characters stay
+// readable — do NOT raise its z-index (that paints the selection over the text).
+// A slightly brighter-than-VS-Code blue keeps a small selection distinct from the
+// active-line highlight without hiding the glyphs.
+const selection = "#2e5aa0";
 const selectionMatch = "#3a3d41";
 const lineHighlight = "#2a2d2e";
 const gutterBg = "#1e1e1e";
@@ -34,9 +34,6 @@ export const vscodeDarkTheme = EditorView.theme(
     ".cm-cursor, .cm-dropCursor": { borderLeftColor: caret },
     "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
       { backgroundColor: selection },
-    // Lift the selection layer above the active-line background so a selection on
-    // the current line is drawn ON TOP of the line highlight, not behind it.
-    ".cm-selectionLayer": { zIndex: "1 !important" },
     ".cm-selectionMatch": { backgroundColor: selectionMatch },
     ".cm-activeLine": { backgroundColor: lineHighlight },
     ".cm-activeLineGutter": { backgroundColor: lineHighlight, color: gutterActiveFg },

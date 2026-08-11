@@ -345,6 +345,18 @@ table.projects th, table.projects td {
   padding: 0.5rem 0.75rem 0.75rem;
   overflow: hidden;
 }
+/* Request / Response tab toggle inside the expanded flow gutter. */
+.mitm-tabs {
+  display: flex; gap: 0.25rem; margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.mitm-tab {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer;
+  padding: 0.25rem 0.6rem; margin-bottom: -1px;
+}
+.mitm-tab:hover { color: var(--fg); }
+.mitm-tab.active { color: var(--fg); border-bottom-color: var(--accent); }
 .mitm-sec {
   font-size: 11px;
   text-transform: uppercase;
