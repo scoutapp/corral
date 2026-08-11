@@ -5,9 +5,9 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/creds"
-	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/creds"
+	sshagent "github.com/scoutapp/corral/internal/ssh"
 )
 
 const (
@@ -15,7 +15,7 @@ const (
 	mitmwebProcessName = "mitmweb"
 )
 
-type SandClaude struct {
+type Corral struct {
 	proxyCmd                    *exec.Cmd
 	proxyPort                   string
 	credentialsFile             string
@@ -39,7 +39,7 @@ type SandClaude struct {
 	sshAgent                    *sshagent.Agent // non-nil when a scoped ssh-agent was started for this run (mounted + torn down on stop)
 }
 
-func NewSandClaude() (*SandClaude, error) {
+func NewSandClaude() (*Corral, error) {
 	// Get configuration from environment
 	proxyPort := os.Getenv("SANDCLAUDE_PROXY_PORT")
 	if proxyPort == "" {
@@ -60,7 +60,7 @@ func NewSandClaude() (*SandClaude, error) {
 	// sandbox — so it resolves from the host/ bundle, not the sandbox build context.
 	addonScript := filepath.Join(config.HostAssetsDir(), "proxy-addon.py")
 
-	return &SandClaude{
+	return &Corral{
 		proxyPort:       proxyPort,
 		credentialsFile: credentialsFile,
 		addonScript:     addonScript,

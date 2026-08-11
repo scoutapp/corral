@@ -4,13 +4,13 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/container"
-	"github.com/jackrothrock/sandclaude/internal/creds"
-	"github.com/jackrothrock/sandclaude/internal/dashboard"
-	"github.com/jackrothrock/sandclaude/internal/project"
-	"github.com/jackrothrock/sandclaude/internal/proxy"
-	"github.com/jackrothrock/sandclaude/internal/session"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/container"
+	"github.com/scoutapp/corral/internal/creds"
+	"github.com/scoutapp/corral/internal/dashboard"
+	"github.com/scoutapp/corral/internal/project"
+	"github.com/scoutapp/corral/internal/proxy"
+	"github.com/scoutapp/corral/internal/session"
 	"log"
 	"os"
 	"os/exec"
@@ -512,8 +512,8 @@ func cmdPopulateProxyCredentials(projectScope bool) error {
 		credsPath = creds.ProjectCredentialsPath()
 		fmt.Printf("Writing project-specific credentials to: %s\n\n", credsPath)
 	} else {
-		if err := os.MkdirAll(config.SandclaudeHome(), 0700); err != nil {
-			return fmt.Errorf("failed to create %s: %w", config.SandclaudeHome(), err)
+		if err := os.MkdirAll(config.CorralHome(), 0700); err != nil {
+			return fmt.Errorf("failed to create %s: %w", config.CorralHome(), err)
 		}
 		credsPath = creds.GlobalCredentialsPath()
 		fmt.Printf("Writing global credentials to: %s\n\n", credsPath)
@@ -622,7 +622,7 @@ func cmdPopulateProxyCredentials(projectScope bool) error {
 
 // cmdRemove removes the <cwd>/.sandclaude/ directory (config, allowlist, logs).
 func cmdRemove() error {
-	scDir := config.SandclaudeDir()
+	scDir := config.CorralDir()
 
 	// Check if project exists
 	if _, err := os.Stat(config.GetProjectDir()); os.IsNotExist(err) {

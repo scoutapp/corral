@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/release"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/release"
 )
 
 // Update-availability check for the dashboard banner.
@@ -35,7 +35,7 @@ type updateCache struct {
 var updateCheckMu sync.Mutex
 
 func updateCachePath() string {
-	return filepath.Join(config.SandclaudeHome(), "update-check.json")
+	return filepath.Join(config.CorralHome(), "update-check.json")
 }
 
 func readUpdateCache() updateCache {
@@ -49,7 +49,7 @@ func readUpdateCache() updateCache {
 }
 
 func writeUpdateCache(c updateCache) {
-	if err := os.MkdirAll(config.SandclaudeHome(), 0o700); err != nil {
+	if err := os.MkdirAll(config.CorralHome(), 0o700); err != nil {
 		return
 	}
 	if data, err := json.MarshalIndent(c, "", "  "); err == nil {

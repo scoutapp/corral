@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackrothrock/sandclaude/internal/session"
-	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
+	"github.com/scoutapp/corral/internal/session"
+	sshagent "github.com/scoutapp/corral/internal/ssh"
 )
 
 // handleStartProject cold-starts a project's container from the dashboard.

@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/repos"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/repos"
 )
 
 // ----------------------------------------------------------------------------
@@ -69,7 +69,7 @@ func (d *dashboardServer) handleGhIssueDraftWS(w http.ResponseWriter, r *http.Re
 
 	// Fresh temp checkout of the repo mirror so claude can read the code. Removed
 	// when we return (socket close / done).
-	tmpRoot := filepath.Join(config.SandclaudeHome(), "tmp")
+	tmpRoot := filepath.Join(config.CorralHome(), "tmp")
 	_ = os.MkdirAll(tmpRoot, 0755)
 	tmp, err := os.MkdirTemp(tmpRoot, "issue-draft-*")
 	if err != nil {

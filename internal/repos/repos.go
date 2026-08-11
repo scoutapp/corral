@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/scoutapp/corral/internal/config"
 )
 
 // Repo is one entry in the repos list.
@@ -40,8 +40,8 @@ type registry struct {
 	Repos []Repo `json:"repos"`
 }
 
-func reposDir() string     { return filepath.Join(config.SandclaudeHome(), "repos") }
-func registryPath() string { return filepath.Join(config.SandclaudeHome(), "repos.json") }
+func reposDir() string     { return filepath.Join(config.CorralHome(), "repos") }
+func registryPath() string { return filepath.Join(config.CorralHome(), "repos.json") }
 
 func readRegistry() (*registry, error) {
 	data, err := os.ReadFile(registryPath())
@@ -63,7 +63,7 @@ func writeRegistry(reg *registry) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(config.SandclaudeHome(), 0700); err != nil {
+	if err := os.MkdirAll(config.CorralHome(), 0700); err != nil {
 		return err
 	}
 	return os.WriteFile(registryPath(), data, 0600)

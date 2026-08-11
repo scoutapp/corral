@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/scoutapp/corral/internal/config"
 )
 
 // fakeAssets sets SANDCLAUDE_HOME to a temp dir laid out so config.AssetsDir()

@@ -7,10 +7,10 @@ import (
 	"strings"
 )
 
-// SandclaudeHome returns the per-user data directory (~/.sandclaude), overridable
+// CorralHome returns the per-user data directory (~/.sandclaude), overridable
 // via $SANDCLAUDE_HOME. It holds the installed asset bundle (assets/) and the
 // global proxy-credentials.json.
-func SandclaudeHome() string {
+func CorralHome() string {
 	if h := os.Getenv("SANDCLAUDE_HOME"); h != "" {
 		return h
 	}
@@ -49,7 +49,7 @@ func AssetsDir() string {
 
 	// 1. Explicit override via SANDCLAUDE_HOME.
 	if os.Getenv("SANDCLAUDE_HOME") != "" {
-		if cand := filepath.Join(SandclaudeHome(), "assets", "sandbox"); looksLikeSandbox(cand) {
+		if cand := filepath.Join(CorralHome(), "assets", "sandbox"); looksLikeSandbox(cand) {
 			return cand
 		}
 	}
@@ -67,7 +67,7 @@ func AssetsDir() string {
 
 	// 4. Default installed location. Returned even if it doesn't exist yet, so callers
 	// produce a clear "run install.sh" style error rather than an empty path.
-	return filepath.Join(SandclaudeHome(), "assets", "sandbox")
+	return filepath.Join(CorralHome(), "assets", "sandbox")
 }
 
 // HostAssetsDir returns the HOST-tier asset directory holding assets loaded by
@@ -80,7 +80,7 @@ func HostAssetsDir() string {
 	}
 
 	if os.Getenv("SANDCLAUDE_HOME") != "" {
-		if cand := filepath.Join(SandclaudeHome(), "assets", "host"); looksLikeHost(cand) {
+		if cand := filepath.Join(CorralHome(), "assets", "host"); looksLikeHost(cand) {
 			return cand
 		}
 	}
@@ -93,12 +93,12 @@ func HostAssetsDir() string {
 			return cand // dev mode: checkout's host/ beside the binary
 		}
 	}
-	return filepath.Join(SandclaudeHome(), "assets", "host")
+	return filepath.Join(CorralHome(), "assets", "host")
 }
 
-// SandclaudeDir returns <cwd>/.sandclaude — the per-project directory holding the
+// CorralDir returns <cwd>/.sandclaude — the per-project directory holding the
 // allowlist (allowed-domains.txt[.enc]), logs/, and project/ config.
-func SandclaudeDir() string {
+func CorralDir() string {
 	cwd, err := os.Getwd()
 	if err != nil {
 		log.Fatalf("Failed to get working directory: %v", err)
@@ -108,12 +108,12 @@ func SandclaudeDir() string {
 
 // GetProjectDir returns <cwd>/.sandclaude/project/ — per-project config and state.
 func GetProjectDir() string {
-	return filepath.Join(SandclaudeDir(), "project")
+	return filepath.Join(CorralDir(), "project")
 }
 
 // GetLogsDir returns <cwd>/.sandclaude/logs/ — host-side proxy/mitm logs for this project.
 func GetLogsDir() string {
-	return filepath.Join(SandclaudeDir(), "logs")
+	return filepath.Join(CorralDir(), "logs")
 }
 
 // The following resolve the same per-project paths but under an EXPLICIT
@@ -121,14 +121,14 @@ func GetLogsDir() string {
 // workspace (cwd == workspace) and uses the cwd-based helpers above; the
 // dashboard creates projects in arbitrary workspaces and uses these.
 
-// SandclaudeDirFor returns <workspace>/.sandclaude.
-func SandclaudeDirFor(workspace string) string {
+// CorralDirFor returns <workspace>/.sandclaude.
+func CorralDirFor(workspace string) string {
 	return filepath.Join(workspace, ".sandclaude")
 }
 
 // ProjectDirFor returns <workspace>/.sandclaude/project/.
 func ProjectDirFor(workspace string) string {
-	return filepath.Join(SandclaudeDirFor(workspace), "project")
+	return filepath.Join(CorralDirFor(workspace), "project")
 }
 
 // EnsureGitignored adds entry to <cwd>/.gitignore if not already present.

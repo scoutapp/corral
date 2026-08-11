@@ -12,14 +12,14 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/creds"
-	"github.com/jackrothrock/sandclaude/internal/dashboard"
-	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/creds"
+	"github.com/scoutapp/corral/internal/dashboard"
+	sshagent "github.com/scoutapp/corral/internal/ssh"
 )
 
 // startProxy starts the mitmweb proxy process
-func (sc *SandClaude) startProxy(workspace string) error {
+func (sc *Corral) startProxy(workspace string) error {
 	// Remember the workspace so stopProxy cleans up the same workspace-relative
 	// runtime.json that WriteProxyRuntimeState writes below.
 	sc.workspace = workspace
@@ -160,7 +160,7 @@ func (sc *SandClaude) startProxy(workspace string) error {
 }
 
 // stopProxy stops the mitmweb proxy process
-func (sc *SandClaude) stopProxy() {
+func (sc *Corral) stopProxy() {
 	if sc.proxyCmd != nil && sc.proxyCmd.Process != nil {
 		config.Debugf("Stopping proxy (PID %d)...", sc.proxyCmd.Process.Pid)
 
@@ -206,7 +206,7 @@ func (sc *SandClaude) stopProxy() {
 //     nowhere to type). Adopt an agent the dashboard pre-loaded; if the keys
 //     aren't loaded yet, fail fast with a clear message pointing at the dashboard
 //     "Load SSH keys" flow (or an interactive `sandclaude dev`).
-func (sc *SandClaude) startSSHAgent(cfg *config.ProjectConfig) error {
+func (sc *Corral) startSSHAgent(cfg *config.ProjectConfig) error {
 	keys := cfg.ResolveSSHKeys()
 	if len(keys) == 0 {
 		return nil
@@ -295,7 +295,7 @@ func isInteractive() bool {
 // container keeps running after Run() returns and still needs the agent — the
 // agent is then left alongside the still-running mitmproxy and cleaned up when
 // the container stops. Safe to call when no agent was started.
-func (sc *SandClaude) stopSSHAgent() {
+func (sc *Corral) stopSSHAgent() {
 	if sc.sshAgent == nil {
 		return
 	}
@@ -308,8 +308,8 @@ func (sc *SandClaude) stopSSHAgent() {
 }
 
 // Run starts the full sandclaude environment
-func (sc *SandClaude) Run(keepDevfiles bool) error {
-	log.Println("SandClaude - Secure Claude Code Environment")
+func (sc *Corral) Run(keepDevfiles bool) error {
+	log.Println("Corral - Secure Claude Code Environment")
 
 	projectDir := config.GetProjectDir()
 	cfg, err := config.ReadConfig(projectDir)

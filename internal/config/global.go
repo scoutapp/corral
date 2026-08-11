@@ -24,7 +24,7 @@ type GlobalSettings struct {
 
 // GlobalSettingsPath is ~/.sandclaude/global-settings.json.
 func GlobalSettingsPath() string {
-	return filepath.Join(SandclaudeHome(), "global-settings.json")
+	return filepath.Join(CorralHome(), "global-settings.json")
 }
 
 // ReadGlobalSettings loads global settings; a missing or unparseable file
@@ -49,7 +49,7 @@ func WriteGlobalSettings(gs *GlobalSettings) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(SandclaudeHome(), 0700); err != nil {
+	if err := os.MkdirAll(CorralHome(), 0700); err != nil {
 		return err
 	}
 	return os.WriteFile(GlobalSettingsPath(), data, 0600)

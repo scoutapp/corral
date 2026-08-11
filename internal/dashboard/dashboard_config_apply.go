@@ -3,9 +3,9 @@ package dashboard
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/session"
-	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/session"
+	sshagent "github.com/scoutapp/corral/internal/ssh"
 	"net/http"
 	"os"
 	"os/exec"

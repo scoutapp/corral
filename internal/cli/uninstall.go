@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/dashboard"
-	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/dashboard"
+	sshagent "github.com/scoutapp/corral/internal/ssh"
 )
 
 // dockerTimeout bounds every docker call during uninstall. A wedged Docker daemon
@@ -81,7 +81,7 @@ func cmdUninstall(args []string) error {
 			exePath = resolved
 		}
 	}
-	home := config.SandclaudeHome()
+	home := config.CorralHome()
 
 	log.Println("This will remove EVERYTHING sandclaude created on this machine:")
 	log.Println("  • the dashboard daemon (stopped)")

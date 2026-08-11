@@ -4,8 +4,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/release"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/release"
 )
 
 // ImageName is the canonical (always-latest) tag every code path builds and runs.

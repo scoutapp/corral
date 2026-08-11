@@ -3,10 +3,10 @@ package dashboard
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/creds"
-	"github.com/jackrothrock/sandclaude/internal/session"
-	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/creds"
+	"github.com/scoutapp/corral/internal/session"
+	sshagent "github.com/scoutapp/corral/internal/ssh"
 	"net/http"
 	"os"
 	"os/exec"
@@ -35,7 +35,7 @@ type GlobalDefaults struct {
 }
 
 func globalDefaultsPath() string {
-	return filepath.Join(config.SandclaudeHome(), "defaults.json")
+	return filepath.Join(config.CorralHome(), "defaults.json")
 }
 
 func ReadGlobalDefaults() GlobalDefaults {
@@ -49,7 +49,7 @@ func ReadGlobalDefaults() GlobalDefaults {
 }
 
 func writeGlobalDefaults(d GlobalDefaults) error {
-	if err := os.MkdirAll(config.SandclaudeHome(), 0700); err != nil {
+	if err := os.MkdirAll(config.CorralHome(), 0700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(d, "", "  ")

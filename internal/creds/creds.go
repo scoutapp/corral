@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/scoutapp/corral/internal/config"
 )
 
 // CredentialHostnames returns the sorted set of hostnames that have an injected
@@ -51,7 +51,7 @@ func WriteCredentialHostsFile(path string, hosts []string) error {
 // GlobalCredentialsPath returns the shared, cross-project credentials file
 // (~/.sandclaude/proxy-credentials.json).
 func GlobalCredentialsPath() string {
-	return filepath.Join(config.SandclaudeHome(), "proxy-credentials.json")
+	return filepath.Join(config.CorralHome(), "proxy-credentials.json")
 }
 
 // ProjectCredentialsPath returns the per-project credentials override

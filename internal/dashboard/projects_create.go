@@ -10,15 +10,15 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/project"
-	"github.com/jackrothrock/sandclaude/internal/repos"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/project"
+	"github.com/scoutapp/corral/internal/repos"
 )
 
 // managedWorkspacesDir is where the dashboard puts workspaces it creates (new
 // dirs and clones), so it owns their lifecycle. "Add existing dir" points in place.
 func managedWorkspacesDir() string {
-	return filepath.Join(config.SandclaudeHome(), "workspaces")
+	return filepath.Join(config.CorralHome(), "workspaces")
 }
 
 var wsSlugRe = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)

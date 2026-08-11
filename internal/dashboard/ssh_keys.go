@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/session"
-	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/session"
+	sshagent "github.com/scoutapp/corral/internal/ssh"
 )
 
 // ----------------------------------------------------------------------------

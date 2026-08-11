@@ -9,15 +9,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/creds"
-	"github.com/jackrothrock/sandclaude/internal/proxy"
-	"github.com/jackrothrock/sandclaude/internal/session"
-	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/creds"
+	"github.com/scoutapp/corral/internal/proxy"
+	"github.com/scoutapp/corral/internal/session"
+	sshagent "github.com/scoutapp/corral/internal/ssh"
 )
 
 // startDocker starts the Docker container with Claude Code
-func (sc *SandClaude) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) error {
+func (sc *Corral) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) error {
 	workspace := cfg.Workspace
 	// Build image if needed
 	imageName := "sandclaude-stable"
@@ -66,7 +66,7 @@ func (sc *SandClaude) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) 
 		}
 		args = append(args, "-e", fmt.Sprintf("ALLOWLIST_KEY=%s", strings.TrimSpace(string(keyData))))
 
-		encPath := filepath.Join(config.SandclaudeDir(), "allowed-domains.txt.enc")
+		encPath := filepath.Join(config.CorralDir(), "allowed-domains.txt.enc")
 		if _, err := os.Stat(encPath); os.IsNotExist(err) {
 			return fmt.Errorf("encrypted allowlist not found at %s\nRun 'sandclaude firewall-reload' to create it", encPath)
 		}
@@ -83,7 +83,7 @@ func (sc *SandClaude) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) 
 		args = append(args, "-e", fmt.Sprintf("ALLOWLIST_KEY=%s", strings.TrimSpace(string(keyData))))
 
 		// Mount the encrypted allowlist file
-		encPath := filepath.Join(config.SandclaudeDir(), "allowed-domains.txt.enc")
+		encPath := filepath.Join(config.CorralDir(), "allowed-domains.txt.enc")
 		if _, err := os.Stat(encPath); os.IsNotExist(err) {
 			return fmt.Errorf("encrypted allowlist not found at %s\nRun 'sandclaude firewall-reload' to create it", encPath)
 		}
@@ -290,7 +290,7 @@ func (sc *SandClaude) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) 
 	// The plaintext allowlist always lives at <cwd>/.sandclaude/allowed-domains.txt,
 	// owned by the project. The container appends newly-seen domains here in
 	// passthrough-and-write mode.
-	allowlistPath := filepath.Join(config.SandclaudeDir(), "allowed-domains.txt")
+	allowlistPath := filepath.Join(config.CorralDir(), "allowed-domains.txt")
 	if sc.PassthroughFirewallAndWrite {
 		// Ensure the file exists and is world-writable before the container starts,
 		// so proxyuser (which doesn't own the file) can append to it.
@@ -449,7 +449,7 @@ func (sc *SandClaude) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) 
 // for closed-loop development (the `dev` command). The host tmux owns the PTY, so the
 // interactive container behaves identically to the attached path; capture/send/attach
 // then observe and drive the inner Claude.
-func (sc *SandClaude) startDetached(containerName string, args []string) error {
+func (sc *Corral) startDetached(containerName string, args []string) error {
 	sessionName := session.TmuxSessionNameForContainer(containerName)
 
 	if exec.Command("tmux", "has-session", "-t", sessionName).Run() == nil {
@@ -492,7 +492,7 @@ func (sc *SandClaude) startDetached(containerName string, args []string) error {
 }
 
 // EnsureImage builds the Docker image if it doesn't exist
-func (sc *SandClaude) EnsureImage(imageName string) error {
+func (sc *Corral) EnsureImage(imageName string) error {
 	// Check if image exists
 	cmd := exec.Command("docker", "image", "inspect", imageName)
 	if err := cmd.Run(); err == nil {
@@ -577,7 +577,7 @@ func (sc *SandClaude) EnsureImage(imageName string) error {
 //
 // We run claude directly rather than via launcher.py to avoid launcher.py trying to
 // create a tmux session named "sandclaude" which already exists (it's the outer session).
-func (sc *SandClaude) startDirect(cfg *config.ProjectConfig) error {
+func (sc *Corral) startDirect(cfg *config.ProjectConfig) error {
 	log.Println("Running inside sandclaude container — starting Claude directly (no nested Docker)")
 
 	// patch-claude-settings.py must run before Claude starts.

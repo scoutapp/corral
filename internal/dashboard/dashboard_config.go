@@ -3,9 +3,9 @@ package dashboard
 import (
 	"bufio"
 	"encoding/json"
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/creds"
-	"github.com/jackrothrock/sandclaude/internal/session"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/creds"
+	"github.com/scoutapp/corral/internal/session"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -118,7 +118,7 @@ func (d *dashboardServer) handleConfigRead(w http.ResponseWriter, r *http.Reques
 // ----------------------------------------------------------------------------
 
 // sandclaudeDirForWorkspace is <workspace>/.sandclaude (the plaintext allowlist,
-// logs/, and project/ live under here). Mirrors the cwd-based config.SandclaudeDir().
+// logs/, and project/ live under here). Mirrors the cwd-based config.CorralDir().
 func sandclaudeDirForWorkspace(workspace string) string {
 	return filepath.Join(workspace, ".sandclaude")
 }

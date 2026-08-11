@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/scoutapp/corral/internal/config"
 )
 
 // ContainerNameForWorkspace returns the container name for a workspace:

@@ -128,7 +128,7 @@ func (c *ProjectConfig) MitmPortsOrDefault() []string {
 // GlobalSSHKeysPath is ~/.sandclaude/ssh-keys.json — the cross-project default
 // key list, mirroring the global proxy-credentials.json pattern.
 func GlobalSSHKeysPath() string {
-	return filepath.Join(SandclaudeHome(), "ssh-keys.json")
+	return filepath.Join(CorralHome(), "ssh-keys.json")
 }
 
 // GlobalSSHKeys reads the global default key list (raw, unexpanded paths).
@@ -148,7 +148,7 @@ func WriteGlobalSSHKeys(keys []string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(SandclaudeHome(), 0700); err != nil {
+	if err := os.MkdirAll(CorralHome(), 0700); err != nil {
 		return err
 	}
 	return os.WriteFile(GlobalSSHKeysPath(), data, 0600)

@@ -19,7 +19,7 @@ func withHome(t *testing.T, fn func(home string)) {
 
 func writeGlobalKeys(t *testing.T, keys string) {
 	t.Helper()
-	dir := SandclaudeHome()
+	dir := CorralHome()
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}

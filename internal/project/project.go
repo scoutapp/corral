@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/creds"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/creds"
 )
 
 // InitOptions carries the non-interactive settings for a new project. The CLI
@@ -90,7 +90,7 @@ func writeAllowlistKey(projectDir string) (string, error) {
 // seedAndEncryptAllowlist copies the shipped default allowlist into the project
 // (if absent) and writes its encrypted form, mirroring cmdInit.
 func seedAndEncryptAllowlist(workspace, keyHex string) error {
-	scDir := config.SandclaudeDirFor(workspace)
+	scDir := config.CorralDirFor(workspace)
 	if err := os.MkdirAll(scDir, 0755); err != nil {
 		return fmt.Errorf("create %s: %w", scDir, err)
 	}

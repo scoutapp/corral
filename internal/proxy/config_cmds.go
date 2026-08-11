@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/creds"
-	"github.com/jackrothrock/sandclaude/internal/session"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/creds"
+	"github.com/scoutapp/corral/internal/session"
 )
 
 // ----------------------------------------------------------------------------

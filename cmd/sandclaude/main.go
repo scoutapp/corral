@@ -2,7 +2,7 @@
 // this entrypoint exists only to satisfy Go's cmd/ layout convention.
 package main
 
-import "github.com/jackrothrock/sandclaude/internal/cli"
+import "github.com/scoutapp/corral/internal/cli"
 
 func main() {
 	cli.Main()

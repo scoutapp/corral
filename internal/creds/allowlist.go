@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/scoutapp/corral/internal/config"
 )
 
 // ----------------------------------------------------------------------------
@@ -62,8 +62,8 @@ func SyncEncryptedAllowlist() error {
 		return err
 	}
 
-	plaintextPath := filepath.Join(config.SandclaudeDir(), "allowed-domains.txt")
-	encPath := filepath.Join(config.SandclaudeDir(), "allowed-domains.txt.enc")
+	plaintextPath := filepath.Join(config.CorralDir(), "allowed-domains.txt")
+	encPath := filepath.Join(config.CorralDir(), "allowed-domains.txt.enc")
 
 	plaintext, err := os.ReadFile(plaintextPath)
 	if err != nil {

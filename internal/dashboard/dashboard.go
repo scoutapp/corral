@@ -10,8 +10,8 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/session"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/session"
 	"io"
 	"io/fs"
 	"log"
@@ -48,7 +48,7 @@ type ProjectRegistry struct {
 }
 
 func registryPath() string {
-	return filepath.Join(config.SandclaudeHome(), "projects.json")
+	return filepath.Join(config.CorralHome(), "projects.json")
 }
 
 // readRegistry tolerates a missing file (first run) but not a corrupt one.
@@ -72,7 +72,7 @@ func writeRegistry(reg *ProjectRegistry) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(config.SandclaudeHome(), 0700); err != nil {
+	if err := os.MkdirAll(config.CorralHome(), 0700); err != nil {
 		return err
 	}
 	return os.WriteFile(registryPath(), data, 0600)
@@ -105,7 +105,7 @@ func RegisterProject(workspace string) error {
 // ----------------------------------------------------------------------------
 // Per-project paths, parameterized by workspace.
 //
-// Every existing helper (config.SandclaudeDir/config.GetProjectDir/config.GetLogsDir) resolves via
+// Every existing helper (config.CorralDir/config.GetProjectDir/config.GetLogsDir) resolves via
 // os.Getwd(), which is correct for every existing command — they only ever
 // operate on "the project you're standing in." The dashboard is host-wide and
 // needs to inspect *other* projects regardless of its own cwd, so it needs
@@ -1085,7 +1085,7 @@ type DashboardState struct {
 }
 
 func dashboardStatePath() string {
-	return filepath.Join(config.SandclaudeHome(), "dashboard.json")
+	return filepath.Join(config.CorralHome(), "dashboard.json")
 }
 
 func ReadDashboardState() (*DashboardState, error) {
@@ -1186,10 +1186,10 @@ func EnsureDashboardRunning() (*DashboardState, bool, error) {
 		return nil, false, fmt.Errorf("failed to resolve sandclaude binary path: %w", err)
 	}
 
-	if err := os.MkdirAll(config.SandclaudeHome(), 0700); err != nil {
+	if err := os.MkdirAll(config.CorralHome(), 0700); err != nil {
 		return nil, false, err
 	}
-	logPath := filepath.Join(config.SandclaudeHome(), "dashboard.log")
+	logPath := filepath.Join(config.CorralHome(), "dashboard.log")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to open %s: %w", logPath, err)

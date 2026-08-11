@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/release"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/release"
 )
 
 // cmdUpdate self-updates sandclaude: it resolves the newest published release,
@@ -226,8 +226,8 @@ func replaceRunningBinary(newBin string) error {
 	if !dirWritable(dir) {
 		// Stage the new binary somewhere stable the user can reference, then print
 		// the privileged command. We deliberately do not run sudo for them.
-		staged := filepath.Join(config.SandclaudeHome(), "sandclaude.staged")
-		if err := os.MkdirAll(config.SandclaudeHome(), 0o755); err == nil {
+		staged := filepath.Join(config.CorralHome(), "sandclaude.staged")
+		if err := os.MkdirAll(config.CorralHome(), 0o755); err == nil {
 			if copyErr := copyFile(newBin, staged, 0o755); copyErr == nil {
 				newBin = staged
 			}
@@ -257,7 +257,7 @@ func replaceRunningBinary(newBin string) error {
 // into ~/.sandclaude/assets, fully replacing those two subtrees — the same
 // refresh install.sh does.
 func syncAssetBundle(assetsTarGz string) error {
-	assetsDir := filepath.Join(config.SandclaudeHome(), "assets")
+	assetsDir := filepath.Join(config.CorralHome(), "assets")
 	// Replace sandbox/ and host/ wholesale so removed files don't linger.
 	for _, sub := range []string{"sandbox", "host"} {
 		os.RemoveAll(filepath.Join(assetsDir, sub))

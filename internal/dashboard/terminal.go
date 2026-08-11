@@ -12,7 +12,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
 
-	"github.com/jackrothrock/sandclaude/internal/session"
+	"github.com/scoutapp/corral/internal/session"
 )
 
 // ----------------------------------------------------------------------------

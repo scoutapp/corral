@@ -30,7 +30,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/scoutapp/corral/internal/config"
 )
 
 // ContainerSocketPath is where the scoped-agent socket is mounted inside the
@@ -56,7 +56,7 @@ type Agent struct {
 
 // AgentsRoot is ~/.sandclaude/agents — the parent of all per-project agent dirs.
 func AgentsRoot() string {
-	return filepath.Join(config.SandclaudeHome(), "agents")
+	return filepath.Join(config.CorralHome(), "agents")
 }
 
 // agentDir is the per-project directory holding this project's socket. projectID
