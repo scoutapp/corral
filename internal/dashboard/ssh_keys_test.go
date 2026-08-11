@@ -12,13 +12,13 @@ import (
 // spawning an agent: unknown id 404s, unauth 403s. (A real status probe needs a
 // registered workspace + config and is exercised via manual/e2e testing.)
 func TestSSHKeysStatusRouting(t *testing.T) {
-	t.Setenv("SANDCLAUDE_HOME", t.TempDir())
+	t.Setenv("CORRAL_HOME", t.TempDir())
 	srv := httptest.NewServer(newDashboardServer("tok").routes())
 	defer srv.Close()
 
 	// Unknown id → 404.
 	r, _ := http.NewRequest("GET", srv.URL+"/p/deadbeef/sshkeys/status", strings.NewReader(""))
-	r.AddCookie(&http.Cookie{Name: "sc_dash_token", Value: "tok"})
+	r.AddCookie(&http.Cookie{Name: "corral_dash_token", Value: "tok"})
 	resp, err := http.DefaultClient.Do(r)
 	if err != nil {
 		t.Fatal(err)
@@ -47,7 +47,7 @@ func TestSSHKeysStatusRouting(t *testing.T) {
 // and an authenticated POST to an unknown id is merely not-found (404) — i.e. the
 // route IS wired AND IS gated. No agent is spawned (unknown id 404s first).
 func TestSSHKeysSelectAuthGate(t *testing.T) {
-	t.Setenv("SANDCLAUDE_HOME", t.TempDir())
+	t.Setenv("CORRAL_HOME", t.TempDir())
 	srv := httptest.NewServer(newDashboardServer("tok").routes())
 	defer srv.Close()
 
@@ -68,7 +68,7 @@ func TestSSHKeysSelectAuthGate(t *testing.T) {
 	// A bad token is also rejected (constant-time compare, no bypass).
 	rb, _ := http.NewRequest("POST", srv.URL+"/p/deadbeef/sshkeys/select", strings.NewReader(body))
 	rb.Header.Set("Content-Type", "application/json")
-	rb.AddCookie(&http.Cookie{Name: "sc_dash_token", Value: "wrong"})
+	rb.AddCookie(&http.Cookie{Name: "corral_dash_token", Value: "wrong"})
 	respb, err := http.DefaultClient.Do(rb)
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +82,7 @@ func TestSSHKeysSelectAuthGate(t *testing.T) {
 	// past auth and into handleRoot's project lookup rather than 403-ing).
 	r2, _ := http.NewRequest("POST", srv.URL+"/p/deadbeef/sshkeys/select", strings.NewReader(body))
 	r2.Header.Set("Content-Type", "application/json")
-	r2.AddCookie(&http.Cookie{Name: "sc_dash_token", Value: "tok"})
+	r2.AddCookie(&http.Cookie{Name: "corral_dash_token", Value: "tok"})
 	resp2, err := http.DefaultClient.Do(r2)
 	if err != nil {
 		t.Fatal(err)

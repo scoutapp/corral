@@ -18,8 +18,8 @@ func TestContainerNameForWorkspace(t *testing.T) {
 		t.Error("ContainerNameForWorkspace is not deterministic")
 	}
 	// Readable prefix retained.
-	if !strings.HasPrefix(a, "sandclaude_myapp_") {
-		t.Errorf("expected readable sandclaude_myapp_ prefix, got %q", a)
+	if !strings.HasPrefix(a, "corral_myapp_") {
+		t.Errorf("expected readable corral_myapp_ prefix, got %q", a)
 	}
 	// Docker-safe: allowed set only.
 	for _, name := range []string{
@@ -42,12 +42,12 @@ func TestTmuxSessionNameForContainer(t *testing.T) {
 		in   string
 		want string
 	}{
-		{"plain name unchanged", "sandclaude_myproject", "sandclaude_myproject"},
-		{"underscores preserved", "sandclaude_my_project", "sandclaude_my_project"},
-		{"dot dir name sanitized", "sandclaude_my.app", "sandclaude_my_app"},
-		{"leading-dot workspace sanitized", "sandclaude_.workspace", "sandclaude__workspace"},
-		{"colon sanitized", "sandclaude_a:b", "sandclaude_a_b"},
-		{"multiple dots", "sandclaude_a.b.c", "sandclaude_a_b_c"},
+		{"plain name unchanged", "corral_myproject", "corral_myproject"},
+		{"underscores preserved", "corral_my_project", "corral_my_project"},
+		{"dot dir name sanitized", "corral_my.app", "corral_my_app"},
+		{"leading-dot workspace sanitized", "corral_.workspace", "corral__workspace"},
+		{"colon sanitized", "corral_a:b", "corral_a_b"},
+		{"multiple dots", "corral_a.b.c", "corral_a_b_c"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -61,7 +61,7 @@ func TestTmuxSessionNameForContainer(t *testing.T) {
 // The sanitized name must never contain a tmux target separator, or downstream
 // has-session/capture/kill would mis-resolve.
 func TestTmuxSessionNameHasNoSeparators(t *testing.T) {
-	for _, in := range []string{"sandclaude_my.app", "sandclaude_a:b", "sandclaude_x.y:z"} {
+	for _, in := range []string{"corral_my.app", "corral_a:b", "corral_x.y:z"} {
 		got := TmuxSessionNameForContainer(in)
 		for _, sep := range []rune{'.', ':'} {
 			for _, r := range got {

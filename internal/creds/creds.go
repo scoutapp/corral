@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/scoutapp/corral/internal/config"
 )
 
 // CredentialHostnames returns the sorted set of hostnames that have an injected
@@ -49,13 +49,13 @@ func WriteCredentialHostsFile(path string, hosts []string) error {
 }
 
 // GlobalCredentialsPath returns the shared, cross-project credentials file
-// (~/.sandclaude/proxy-credentials.json).
+// (~/.corral/proxy-credentials.json).
 func GlobalCredentialsPath() string {
-	return filepath.Join(config.SandclaudeHome(), "proxy-credentials.json")
+	return filepath.Join(config.CorralHome(), "proxy-credentials.json")
 }
 
 // ProjectCredentialsPath returns the per-project credentials override
-// (<cwd>/.sandclaude/project/proxy-credentials.json).
+// (<cwd>/.corral/project/proxy-credentials.json).
 func ProjectCredentialsPath() string {
 	return filepath.Join(config.GetProjectDir(), "proxy-credentials.json")
 }
@@ -91,7 +91,7 @@ func WriteCredsMap(path string, creds map[string]map[string]string) error {
 }
 
 // ResolveCredentialsFile returns a best-effort credentials path WITHOUT creating a
-// temp file — used at construction time (NewSandClaude) where no lifecycle owner
+// temp file — used at construction time (NewCorral) where no lifecycle owner
 // exists to clean up. It prefers the global file, falling back to the project file.
 // startProxy re-resolves via ResolveCredentialsFileTracked, which performs the real
 // per-domain merge and records the temp file for cleanup on stopProxy.
@@ -154,7 +154,7 @@ func ResolveCredentialsFileTracked() (credsFile string, tempFile string) {
 		return globalPath, ""
 	}
 
-	tmp, err := os.CreateTemp("", "sandclaude-merged-creds-*.json")
+	tmp, err := os.CreateTemp("", "corral-merged-creds-*.json")
 	if err != nil {
 		log.Printf("Warning: failed to create temp credentials file: %v — using global only", err)
 		return globalPath, ""

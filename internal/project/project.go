@@ -1,5 +1,5 @@
-// Package project holds sandclaude's project-lifecycle logic that is shared
-// between the CLI (interactive `sandclaude init`) and the dashboard
+// Package project holds corral's project-lifecycle logic that is shared
+// between the CLI (interactive `corral init`) and the dashboard
 // (create-project flow). It lives in its own package because it needs both
 // config and creds, and creds already imports config — so this can't live in
 // config without an import cycle.
@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/creds"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/creds"
 )
 
 // InitOptions carries the non-interactive settings for a new project. The CLI
@@ -26,7 +26,7 @@ type InitOptions struct {
 	PassthroughFirewall bool // "permissive but observed" mode (proxy on, allow+log, direct TCP ok)
 }
 
-// InitProject creates a project's on-disk state under <workspace>/.sandclaude:
+// InitProject creates a project's on-disk state under <workspace>/.corral:
 // writes config.json, generates the allowlist encryption key, and seeds +
 // encrypts the allowlist. It is the non-interactive core factored out of the
 // CLI's cmdInit so the dashboard can create projects without stdin prompts.
@@ -90,7 +90,7 @@ func writeAllowlistKey(projectDir string) (string, error) {
 // seedAndEncryptAllowlist copies the shipped default allowlist into the project
 // (if absent) and writes its encrypted form, mirroring cmdInit.
 func seedAndEncryptAllowlist(workspace, keyHex string) error {
-	scDir := config.SandclaudeDirFor(workspace)
+	scDir := config.CorralDirFor(workspace)
 	if err := os.MkdirAll(scDir, 0755); err != nil {
 		return fmt.Errorf("create %s: %w", scDir, err)
 	}
@@ -101,7 +101,7 @@ func seedAndEncryptAllowlist(workspace, keyHex string) error {
 	if _, err := os.Stat(plaintextPath); os.IsNotExist(err) {
 		seed, rerr := os.ReadFile(seedPath)
 		if rerr != nil {
-			return fmt.Errorf("read allowlist seed %s: %w (is sandclaude installed? run install.sh)", seedPath, rerr)
+			return fmt.Errorf("read allowlist seed %s: %w (is corral installed? run install.sh)", seedPath, rerr)
 		}
 		if werr := os.WriteFile(plaintextPath, seed, 0644); werr != nil {
 			return fmt.Errorf("write %s: %w", plaintextPath, werr)

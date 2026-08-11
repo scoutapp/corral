@@ -9,15 +9,15 @@ func TestNormalizeRepo(t *testing.T) {
 		wantOK bool
 	}{
 		// GitHub short + URL forms collapse to owner/name.
-		{"scoutapp/sandclaude", "scoutapp/sandclaude", true},
-		{"  scoutapp/sandclaude  ", "scoutapp/sandclaude", true},
+		{"scoutapp/corral", "scoutapp/corral", true},
+		{"  scoutapp/corral  ", "scoutapp/corral", true},
 		{"https://github.com/foo/bar", "foo/bar", true},
 		{"https://github.com/foo/bar.git", "foo/bar", true},
 		{"github.com/foo/bar/", "foo/bar", true},
 		// Non-github hosts stay full base URLs.
 		{"https://git.acme.com/foo/bar", "https://git.acme.com/foo/bar", true},
 		{"https://git.acme.com/foo/bar/", "https://git.acme.com/foo/bar", true},
-		{"http://gitea.local/me/sandclaude.git", "http://gitea.local/me/sandclaude", true},
+		{"http://gitea.local/me/corral.git", "http://gitea.local/me/corral", true},
 		// Rejections.
 		{"", "", false},
 		{"nope", "", false},
@@ -36,9 +36,9 @@ func TestNormalizeRepo(t *testing.T) {
 
 func TestRepoToBaseURL(t *testing.T) {
 	cases := map[string]string{
-		"scoutapp/sandclaude":            "https://github.com/scoutapp/sandclaude",
+		"scoutapp/corral":            "https://github.com/scoutapp/corral",
 		"https://git.acme.com/foo/bar":   "https://git.acme.com/foo/bar",
-		"http://gitea.local/me/sandclaude": "http://gitea.local/me/sandclaude",
+		"http://gitea.local/me/corral": "http://gitea.local/me/corral",
 	}
 	for in, want := range cases {
 		if got := RepoToBaseURL(in); got != want {

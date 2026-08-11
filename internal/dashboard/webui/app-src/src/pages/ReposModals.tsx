@@ -169,7 +169,7 @@ export function NewProjectModal({ presetRepoId, onClose }: { presetRepoId?: stri
             </label>
             <div className="muted cfg-note">
               Parent directory for the new project. Use <code>~</code>, an absolute path, or a path relative to your home dir. Leave blank
-              to keep it in sandclaude's managed workspaces.
+              to keep it in corral's managed workspaces.
             </div>
           </>
         )}

@@ -5,7 +5,7 @@ Four tiers. Traffic and control flow between them shown below.
 ```
 ┌──────────────────────────────── HOST (macOS) ─────────────────────────────────┐
 │                                                                                │
-│   sandclaude (Go binary)                                                       │
+│   corral (Go binary)                                                       │
 │     ├─ starts mitmweb ──────────┐        ┌─ serves Web Dashboard :PORT         │
 │     │    -s proxy-addon.py      │        │    (projects, mitm flows, terminal, │
 │     │    (host mitm :9500+)     │        │     config) ── browser opens tab    │
@@ -70,7 +70,7 @@ holding only the keys chosen for that project, and only its socket is mounted in
         │  ssh-add (passphrase typed once,         │
         ▼   via foreground shell or dashboard PTY) │
   scoped ssh-agent ──── agent.sock ────────────────┼──▶ /ssh-agent.sock
-  (~/.sandclaude/agents/<projectID>/)   bind-mount  │     (SSH_AUTH_SOCK)
+  (~/.corral/agents/<projectID>/)   bind-mount  │     (SSH_AUTH_SOCK)
         ▲                                           │        │
         └─────────── sign request ─────────────────┼────────┘  git / ssh in the
                      (no key bytes cross)           │           container asks the
@@ -82,7 +82,7 @@ key file:
 
 - **Scoping** — the agent holds ONLY this project's keys, not everything in your
   real agent. Key selection is the union of the global default set
-  (`~/.sandclaude/ssh-keys.json`) and the project's extras (see
+  (`~/.corral/ssh-keys.json`) and the project's extras (see
   `ProjectConfig.ResolveSSHKeys`).
 - **No byte leak** — the ssh-agent protocol has no "export key" operation, so even
   an escaped container can request signatures but cannot copy the private key.
@@ -94,14 +94,14 @@ key file:
   owns (the foreground shell, or the dashboard's host-terminal). See
   [`docs/security.md`](security.md) and the `internal/ssh` package docs.
 
-macOS-first: the socket lives under `~/.sandclaude` (a Docker-Desktop shared path)
+macOS-first: the socket lives under `~/.corral` (a Docker-Desktop shared path)
 so virtiofs proxies the Unix-socket connection host → VM → container. Linux works
 too; its cross-project residual risk differs and is noted in the code.
 
 ## How the dashboard reaches a container
 
 ```
-browser (xterm.js)                    HOST: sandclaude dashboard
+browser (xterm.js)                    HOST: corral dashboard
   │  WebSocket                                       │
   │  ── you type (keystrokes) ───────────────────▶ PTY (host)
   │  ◀─ screen output ───────────────────────────── │       │
@@ -140,11 +140,11 @@ sessions, **tmux is a host dependency** — the installer adds it alongside mitm
 ## Where things live (repo layout by tier)
 
 ```
-cmd/sandclaude/        host CLI entrypoint (Go)
+cmd/corral/        host CLI entrypoint (Go)
 internal/              host CLI packages: config, creds, session, proxy,
                        dashboard, container, cli
   ssh/                   per-project scoped ssh-agent (start/adopt, key load,
-                         teardown); socket lives under ~/.sandclaude/agents/
+                         teardown); socket lives under ~/.corral/agents/
 host/                  HOST-tier assets loaded by host processes
   proxy-addon.py         → loaded by the host's mitmweb
 sandbox/               SANDBOX image build context + runtime mounts
@@ -159,5 +159,5 @@ sandbox/               SANDBOX image build context + runtime mounts
     docker (build wrapper), cert-injector (CA daemon)
 ```
 
-Installed layout mirrors this under `~/.sandclaude/assets/{sandbox,host}/`.
+Installed layout mirrors this under `~/.corral/assets/{sandbox,host}/`.
 

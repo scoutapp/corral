@@ -7,18 +7,18 @@ import (
 	"strings"
 )
 
-// SandclaudeHome returns the per-user data directory (~/.sandclaude), overridable
-// via $SANDCLAUDE_HOME. It holds the installed asset bundle (assets/) and the
+// CorralHome returns the per-user data directory (~/.corral), overridable
+// via $CORRAL_HOME. It holds the installed asset bundle (assets/) and the
 // global proxy-credentials.json.
-func SandclaudeHome() string {
-	if h := os.Getenv("SANDCLAUDE_HOME"); h != "" {
+func CorralHome() string {
+	if h := os.Getenv("CORRAL_HOME"); h != "" {
 		return h
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("Failed to get home directory: %v", err)
 	}
-	return filepath.Join(home, ".sandclaude")
+	return filepath.Join(home, ".corral")
 }
 
 // AssetsDir returns the SANDBOX asset bundle — the Docker build context and the
@@ -26,16 +26,16 @@ func SandclaudeHome() string {
 // allowlist-proxy/, setup/, dind/, skills/). It is the `sandbox/` tier only;
 // the host-tier proxy-addon.py is resolved separately by HostAssetsDir.
 // Resolution order:
-//  1. $SANDCLAUDE_HOME/assets/sandbox — only when SANDCLAUDE_HOME is set explicitly
+//  1. $CORRAL_HOME/assets/sandbox — only when CORRAL_HOME is set explicitly
 //  2. <bindir>/assets/sandbox         — installed next to the binary
-//  3. <bindir>/sandbox                — DEV MODE: ./sandclaude from the git checkout,
+//  3. <bindir>/sandbox                — DEV MODE: ./corral from the git checkout,
 //     where the sandbox/ dir sits beside the binary
-//  4. ~/.sandclaude/assets/sandbox    — default installed location
+//  4. ~/.corral/assets/sandbox    — default installed location
 //
 // The binary-adjacent cases (2 & 3) intentionally take precedence over the default
-// installed location (4) so that running ./sandclaude from a checkout keeps using the
-// live checkout assets even after an install created ~/.sandclaude/assets. An explicit
-// SANDCLAUDE_HOME (1) always wins for deliberate overrides.
+// installed location (4) so that running ./corral from a checkout keeps using the
+// live checkout assets even after an install created ~/.corral/assets. An explicit
+// CORRAL_HOME (1) always wins for deliberate overrides.
 func AssetsDir() string {
 	looksLikeSandbox := func(dir string) bool {
 		if _, err := os.Stat(filepath.Join(dir, "Dockerfile")); err != nil {
@@ -47,9 +47,9 @@ func AssetsDir() string {
 		return true
 	}
 
-	// 1. Explicit override via SANDCLAUDE_HOME.
-	if os.Getenv("SANDCLAUDE_HOME") != "" {
-		if cand := filepath.Join(SandclaudeHome(), "assets", "sandbox"); looksLikeSandbox(cand) {
+	// 1. Explicit override via CORRAL_HOME.
+	if os.Getenv("CORRAL_HOME") != "" {
+		if cand := filepath.Join(CorralHome(), "assets", "sandbox"); looksLikeSandbox(cand) {
 			return cand
 		}
 	}
@@ -67,7 +67,7 @@ func AssetsDir() string {
 
 	// 4. Default installed location. Returned even if it doesn't exist yet, so callers
 	// produce a clear "run install.sh" style error rather than an empty path.
-	return filepath.Join(SandclaudeHome(), "assets", "sandbox")
+	return filepath.Join(CorralHome(), "assets", "sandbox")
 }
 
 // HostAssetsDir returns the HOST-tier asset directory holding assets loaded by
@@ -79,8 +79,8 @@ func HostAssetsDir() string {
 		return err == nil
 	}
 
-	if os.Getenv("SANDCLAUDE_HOME") != "" {
-		if cand := filepath.Join(SandclaudeHome(), "assets", "host"); looksLikeHost(cand) {
+	if os.Getenv("CORRAL_HOME") != "" {
+		if cand := filepath.Join(CorralHome(), "assets", "host"); looksLikeHost(cand) {
 			return cand
 		}
 	}
@@ -93,27 +93,27 @@ func HostAssetsDir() string {
 			return cand // dev mode: checkout's host/ beside the binary
 		}
 	}
-	return filepath.Join(SandclaudeHome(), "assets", "host")
+	return filepath.Join(CorralHome(), "assets", "host")
 }
 
-// SandclaudeDir returns <cwd>/.sandclaude — the per-project directory holding the
+// CorralDir returns <cwd>/.corral — the per-project directory holding the
 // allowlist (allowed-domains.txt[.enc]), logs/, and project/ config.
-func SandclaudeDir() string {
+func CorralDir() string {
 	cwd, err := os.Getwd()
 	if err != nil {
 		log.Fatalf("Failed to get working directory: %v", err)
 	}
-	return filepath.Join(cwd, ".sandclaude")
+	return filepath.Join(cwd, ".corral")
 }
 
-// GetProjectDir returns <cwd>/.sandclaude/project/ — per-project config and state.
+// GetProjectDir returns <cwd>/.corral/project/ — per-project config and state.
 func GetProjectDir() string {
-	return filepath.Join(SandclaudeDir(), "project")
+	return filepath.Join(CorralDir(), "project")
 }
 
-// GetLogsDir returns <cwd>/.sandclaude/logs/ — host-side proxy/mitm logs for this project.
+// GetLogsDir returns <cwd>/.corral/logs/ — host-side proxy/mitm logs for this project.
 func GetLogsDir() string {
-	return filepath.Join(SandclaudeDir(), "logs")
+	return filepath.Join(CorralDir(), "logs")
 }
 
 // The following resolve the same per-project paths but under an EXPLICIT
@@ -121,14 +121,14 @@ func GetLogsDir() string {
 // workspace (cwd == workspace) and uses the cwd-based helpers above; the
 // dashboard creates projects in arbitrary workspaces and uses these.
 
-// SandclaudeDirFor returns <workspace>/.sandclaude.
-func SandclaudeDirFor(workspace string) string {
-	return filepath.Join(workspace, ".sandclaude")
+// CorralDirFor returns <workspace>/.corral.
+func CorralDirFor(workspace string) string {
+	return filepath.Join(workspace, ".corral")
 }
 
-// ProjectDirFor returns <workspace>/.sandclaude/project/.
+// ProjectDirFor returns <workspace>/.corral/project/.
 func ProjectDirFor(workspace string) string {
-	return filepath.Join(SandclaudeDirFor(workspace), "project")
+	return filepath.Join(CorralDirFor(workspace), "project")
 }
 
 // EnsureGitignored adds entry to <cwd>/.gitignore if not already present.

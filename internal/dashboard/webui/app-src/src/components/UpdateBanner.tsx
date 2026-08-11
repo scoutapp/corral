@@ -11,11 +11,11 @@ import { XtermPane } from "./XtermPane";
 //     (dismissing clears once a real answer arrives, so a later update still
 //     surfaces);
 //   - the update banner is dismissed PER VERSION, so a newer release re-shows it.
-// "Update…" opens a terminal running `sandclaude update` on the HOST (a real PTY,
+// "Update…" opens a terminal running `corral update` on the HOST (a real PTY,
 // so sudo/confirm prompts work) — the same consent model as the host shell.
 
-const UNREACHABLE_KEY = "sandclaude.update.unreachableDismissed";
-const VERSION_KEY = "sandclaude.update.dismissedVersion";
+const UNREACHABLE_KEY = "corral.update.unreachableDismissed";
+const VERSION_KEY = "corral.update.dismissedVersion";
 
 function lsGet(key: string): string {
   try {
@@ -84,7 +84,7 @@ export function UpdateBanner({ status }: { status: UpdateStatus | null }) {
     <>
       <div className="update-banner" role="status">
         <span className="update-banner-text">
-          A new sandclaude release is available — <strong>{status.latest}</strong>{" "}
+          A new corral release is available — <strong>{status.latest}</strong>{" "}
           <span className="muted">(you have {status.current})</span>
         </span>
         <span className="update-banner-actions">
@@ -98,16 +98,16 @@ export function UpdateBanner({ status }: { status: UpdateStatus | null }) {
       </div>
 
       {running && (
-        <Modal title={`Update sandclaude → ${status.latest}`} onClose={() => setRunning(false)}>
+        <Modal title={`Update corral → ${status.latest}`} onClose={() => setRunning(false)}>
           <p className="muted" style={{ marginTop: 0 }}>
-            Running <code>sandclaude update</code> on the host. If your binary lives somewhere that needs
+            Running <code>corral update</code> on the host. If your binary lives somewhere that needs
             elevated permissions, follow any printed <code>sudo</code> instruction in the terminal. Restart the
             dashboard afterward to pick up the new build.
           </p>
           <div className="populate-term" style={{ display: "block", height: 380 }}>
             <div className="screen-bar">
               <i className="screen-dot" />
-              sandclaude update
+              corral update
             </div>
             <XtermPane fullPath="/update/ws" />
           </div>

@@ -193,7 +193,7 @@ var (
 // PATH capture only helps when the launcher itself had claude on PATH — so we
 // probe several strategies, in cheapest-first order, and cache the result:
 //
-//  1. SANDCLAUDE_CLAUDE_BIN — absolute path captured by the launcher (best case)
+//  1. CORRAL_CLAUDE_BIN — absolute path captured by the launcher (best case)
 //  2. exec.LookPath — the daemon's own PATH
 //  3. known install locations — nvm node bins, ~/.claude, ~/.local/bin,
 //     homebrew, bun/deno, asdf shims
@@ -217,7 +217,7 @@ func resolveClaudeBin() (string, error) {
 
 func findClaudeBin() (string, error) {
 	// 1. Launch-time capture.
-	if p := os.Getenv("SANDCLAUDE_CLAUDE_BIN"); p != "" {
+	if p := os.Getenv("CORRAL_CLAUDE_BIN"); p != "" {
 		if isExecutable(p) {
 			return p, nil
 		}

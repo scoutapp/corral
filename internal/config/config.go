@@ -42,7 +42,7 @@ type ProjectConfig struct {
 	SeccompMode string `json:"seccomp_mode,omitempty"`
 
 	// SSHKeys is the per-project list of EXTRA private-key paths, added on top of
-	// the global default (~/.sandclaude/ssh-keys.json). The effective set loaded
+	// the global default (~/.corral/ssh-keys.json). The effective set loaded
 	// into the scoped ssh-agent is the union global ∪ project (see ResolveSSHKeys)
 	// — the project list adds to the global, it does not replace it. Empty/absent
 	// = no extras (the global default still loads). Paths may use ~ and are
@@ -125,10 +125,10 @@ func (c *ProjectConfig) MitmPortsOrDefault() []string {
 	return c.MitmPorts
 }
 
-// GlobalSSHKeysPath is ~/.sandclaude/ssh-keys.json — the cross-project default
+// GlobalSSHKeysPath is ~/.corral/ssh-keys.json — the cross-project default
 // key list, mirroring the global proxy-credentials.json pattern.
 func GlobalSSHKeysPath() string {
-	return filepath.Join(SandclaudeHome(), "ssh-keys.json")
+	return filepath.Join(CorralHome(), "ssh-keys.json")
 }
 
 // GlobalSSHKeys reads the global default key list (raw, unexpanded paths).
@@ -137,7 +137,7 @@ func GlobalSSHKeysPath() string {
 func GlobalSSHKeys() []string { return globalSSHKeys() }
 
 // WriteGlobalSSHKeys persists the global default key list to
-// ~/.sandclaude/ssh-keys.json (0600). Paths are stored as given (may be bare
+// ~/.corral/ssh-keys.json (0600). Paths are stored as given (may be bare
 // names / ~-relative); resolution happens at load time. Passing an empty slice
 // clears the global default.
 func WriteGlobalSSHKeys(keys []string) error {
@@ -148,7 +148,7 @@ func WriteGlobalSSHKeys(keys []string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(SandclaudeHome(), 0700); err != nil {
+	if err := os.MkdirAll(CorralHome(), 0700); err != nil {
 		return err
 	}
 	return os.WriteFile(GlobalSSHKeysPath(), data, 0600)
@@ -225,7 +225,7 @@ func ExpandSSHKeyPath(p string) string {
 func ReadConfig(projectDir string) (*ProjectConfig, error) {
 	data, err := os.ReadFile(filepath.Join(projectDir, "config.json"))
 	if err != nil {
-		return nil, fmt.Errorf("config not found — run: sandclaude init")
+		return nil, fmt.Errorf("config not found — run: corral init")
 	}
 	var cfg ProjectConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {

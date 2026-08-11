@@ -10,21 +10,21 @@ import (
 // DefaultUpdateRepo is the GitHub owner/name self-updates are pulled from unless
 // overridden in global settings. A fork that ships its own releases can point
 // here instead (see GlobalSettings.UpdateRepo).
-const DefaultUpdateRepo = "scoutapp/sandclaude"
+const DefaultUpdateRepo = "scoutapp/corral"
 
 // GlobalSettings holds cross-project, host-level preferences stored in
-// ~/.sandclaude/global-settings.json. It is intentionally small — individual
+// ~/.corral/global-settings.json. It is intentionally small — individual
 // concerns (ssh keys, credentials) keep their own files; this is the catch-all
 // for scalar host settings that don't warrant a dedicated file.
 type GlobalSettings struct {
-	// UpdateRepo is the GitHub "owner/name" that `sandclaude update` and the
+	// UpdateRepo is the GitHub "owner/name" that `corral update` and the
 	// dashboard update-check resolve releases from. Empty = DefaultUpdateRepo.
 	UpdateRepo string `json:"update_repo,omitempty"`
 }
 
-// GlobalSettingsPath is ~/.sandclaude/global-settings.json.
+// GlobalSettingsPath is ~/.corral/global-settings.json.
 func GlobalSettingsPath() string {
-	return filepath.Join(SandclaudeHome(), "global-settings.json")
+	return filepath.Join(CorralHome(), "global-settings.json")
 }
 
 // ReadGlobalSettings loads global settings; a missing or unparseable file
@@ -49,7 +49,7 @@ func WriteGlobalSettings(gs *GlobalSettings) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(SandclaudeHome(), 0700); err != nil {
+	if err := os.MkdirAll(CorralHome(), 0700); err != nil {
 		return err
 	}
 	return os.WriteFile(GlobalSettingsPath(), data, 0600)

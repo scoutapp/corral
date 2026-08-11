@@ -1,5 +1,5 @@
 // Dashboard browser tests. The dashboard is a host-side HTTP server (loopback
-// only, token-gated). global-setup's `sandclaude start` brings the daemon up
+// only, token-gated). global-setup's `corral start` brings the daemon up
 // (via startProxy -> EnsureDashboardRunning); here we ask the CLI for its
 // URL+token, visit it (the ?token= sets an auth cookie), and assert the project
 // this suite created is visible.
@@ -11,17 +11,17 @@
 
 import { test, expect } from '@playwright/test';
 import * as path from 'node:path';
-import { SANDCLAUDE_BIN, WORKSPACE, run } from '../lib/sandclaude';
+import { CORRAL_BIN, WORKSPACE, run } from '../lib/corral';
 
 const PROJECT_NAME = path.basename(WORKSPACE);
 
-// Resolved once for the whole file from `sandclaude dashboard`.
+// Resolved once for the whole file from `corral dashboard`.
 let baseURL = '';
 let token = '';
 let projectHref = '';
 
 test.beforeAll(async () => {
-  const res = await run(SANDCLAUDE_BIN, ['dashboard'], { cwd: WORKSPACE, timeoutMs: 30_000 });
+  const res = await run(CORRAL_BIN, ['dashboard'], { cwd: WORKSPACE, timeoutMs: 30_000 });
   // Line looks like: "Dashboard running at http://127.0.0.1:PORT/?token=HEX"
   const m = res.stdout.match(/Dashboard running at (http:\/\/127\.0\.0\.1:\d+)\/\?token=([0-9a-f]+)/);
   expect(m, `could not parse dashboard URL from:\n${res.stdout}\n${res.stderr}`).not.toBeNull();
@@ -33,9 +33,9 @@ test('landing page loads and is titled', async ({ page }) => {
   // Visiting with ?token= sets the auth cookie for subsequent same-origin requests.
   const resp = await page.goto(`${baseURL}/?token=${token}`);
   expect(resp?.status()).toBe(200);
-  await expect(page).toHaveTitle('sandclaude — control');
+  await expect(page).toHaveTitle('corral — control');
   // Brand marker is server-rendered and stable.
-  await expect(page.locator('.brand-name')).toHaveText('sandclaude');
+  await expect(page.locator('.brand-name')).toHaveText('corral');
 });
 
 test('static asset served', async ({ page }) => {
@@ -130,7 +130,7 @@ test('project page has the new tabs + terminal dock', async ({ page }) => {
 
 test('files tree + read return workspace contents', async ({ page }) => {
   const id = await projectId(page);
-  // Root tree lists the workspace; the fixture workspace contains .sandclaude at
+  // Root tree lists the workspace; the fixture workspace contains .corral at
   // least (created by init) — assert we get a non-empty entries array.
   const tree = await page.request.get(`${baseURL}/p/${id}/files/tree?path=`);
   expect(tree.status()).toBe(200);

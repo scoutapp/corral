@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/creds"
-	"github.com/jackrothrock/sandclaude/internal/session"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/creds"
+	"github.com/scoutapp/corral/internal/session"
 )
 
 // ----------------------------------------------------------------------------
@@ -22,7 +22,7 @@ import (
 // mitmweb (its addon watches the file). Neither restarts the container.
 // ----------------------------------------------------------------------------
 
-// CmdMonitor: sandclaude monitor [list|add <host>|remove <host>|clear]
+// CmdMonitor: corral monitor [list|add <host>|remove <host>|clear]
 // Manages the monitor-list — the hosts routed through mitm. Empty list = monitor
 // all allowed hosts (the default).
 func CmdMonitor(args []string) error {
@@ -50,7 +50,7 @@ func CmdMonitor(args []string) error {
 
 	case "add":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: sandclaude monitor add <host>")
+			return fmt.Errorf("usage: corral monitor add <host>")
 		}
 		host := strings.ToLower(strings.TrimSpace(args[1]))
 		if contains(cfg.MonitorHosts, host) {
@@ -67,7 +67,7 @@ func CmdMonitor(args []string) error {
 
 	case "remove":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: sandclaude monitor remove <host>")
+			return fmt.Errorf("usage: corral monitor remove <host>")
 		}
 		host := strings.ToLower(strings.TrimSpace(args[1]))
 		cfg.MonitorHosts = remove(cfg.MonitorHosts, host)
@@ -90,7 +90,7 @@ func CmdMonitor(args []string) error {
 	}
 }
 
-// CmdMitmPorts: sandclaude mitm-ports [list|add <port>|remove <port>|reset]
+// CmdMitmPorts: corral mitm-ports [list|add <port>|remove <port>|reset]
 func CmdMitmPorts(args []string) error {
 	cfg, err := config.ReadConfig(config.GetProjectDir())
 	if err != nil {
@@ -110,7 +110,7 @@ func CmdMitmPorts(args []string) error {
 
 	case "add":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: sandclaude mitm-ports add <port>")
+			return fmt.Errorf("usage: corral mitm-ports add <port>")
 		}
 		port := strings.TrimSpace(args[1])
 		if !isPort(port) {
@@ -131,7 +131,7 @@ func CmdMitmPorts(args []string) error {
 
 	case "remove":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: sandclaude mitm-ports remove <port>")
+			return fmt.Errorf("usage: corral mitm-ports remove <port>")
 		}
 		port := strings.TrimSpace(args[1])
 		cfg.MitmPorts = remove(cfg.MitmPortsOrDefault(), port)
@@ -154,12 +154,12 @@ func CmdMitmPorts(args []string) error {
 	}
 }
 
-// CmdSetCred: sandclaude set-cred <host> <header|url_param> <name> <value>
+// CmdSetCred: corral set-cred <host> <header|url_param> <name> <value>
 // Adds/updates an injected credential. Writes the project-scoped credentials file
 // and (since the addon watches it) the running mitmweb picks it up live.
 func CmdSetCred(args []string) error {
 	if len(args) < 4 {
-		return fmt.Errorf("usage: sandclaude set-cred <host> <header|url_param> <name> <value>")
+		return fmt.Errorf("usage: corral set-cred <host> <header|url_param> <name> <value>")
 	}
 	host := strings.ToLower(strings.TrimSpace(args[0]))
 	kind := args[1]
@@ -182,10 +182,10 @@ func CmdSetCred(args []string) error {
 	return ApplyProxyConfig(ApplyScope{Credentials: true})
 }
 
-// CmdUnsetCred: sandclaude unset-cred <host>
+// CmdUnsetCred: corral unset-cred <host>
 func CmdUnsetCred(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: sandclaude unset-cred <host>")
+		return fmt.Errorf("usage: corral unset-cred <host>")
 	}
 	host := strings.ToLower(strings.TrimSpace(args[0]))
 	path := creds.ProjectCredentialsPath()

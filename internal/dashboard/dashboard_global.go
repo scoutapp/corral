@@ -3,10 +3,10 @@ package dashboard
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/creds"
-	"github.com/jackrothrock/sandclaude/internal/session"
-	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/creds"
+	"github.com/scoutapp/corral/internal/session"
+	sshagent "github.com/scoutapp/corral/internal/ssh"
 	"net/http"
 	"os"
 	"os/exec"
@@ -19,11 +19,11 @@ import (
 // Global (cross-project) control plane.
 //
 // Two things live at the host level, above any single project:
-//   - Shared credentials: ~/.sandclaude/proxy-credentials.json, merged into every
+//   - Shared credentials: ~/.corral/proxy-credentials.json, merged into every
 //     project's proxy (project overrides win per-domain). Editing here reloads the
 //     mitmweb of every running project (each watches its creds file via mtime).
 //   - Defaults: monitor-list + mitm-ports that NEW projects inherit at init.
-//     Stored in ~/.sandclaude/defaults.json. Existing projects are untouched.
+//     Stored in ~/.corral/defaults.json. Existing projects are untouched.
 //
 // Credential values are shown partially masked (tail revealed) so you can tell
 // keys apart without exposing the secret — see maskTail.
@@ -35,7 +35,7 @@ type GlobalDefaults struct {
 }
 
 func globalDefaultsPath() string {
-	return filepath.Join(config.SandclaudeHome(), "defaults.json")
+	return filepath.Join(config.CorralHome(), "defaults.json")
 }
 
 func ReadGlobalDefaults() GlobalDefaults {
@@ -49,7 +49,7 @@ func ReadGlobalDefaults() GlobalDefaults {
 }
 
 func writeGlobalDefaults(d GlobalDefaults) error {
-	if err := os.MkdirAll(config.SandclaudeHome(), 0700); err != nil {
+	if err := os.MkdirAll(config.CorralHome(), 0700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(d, "", "  ")
@@ -88,7 +88,7 @@ type globalView struct {
 	MitmPorts    []string         `json:"mitm_ports"`
 	CredsPath    string           `json:"creds_path"`
 
-	// SSH default key set (~/.sandclaude/ssh-keys.json) — the always-on base for
+	// SSH default key set (~/.corral/ssh-keys.json) — the always-on base for
 	// every project. AvailableSSHKeys lets the picker render checkboxes.
 	SSHKeys         []string                `json:"ssh_keys"`
 	SSHKeysPath     string                  `json:"ssh_keys_path"`
@@ -137,7 +137,7 @@ func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Reques
 
 // handleGlobalApply writes global credential and default changes. Credential
 // edits reload every running project's mitmweb (each watches its own creds file,
-// and the global file is merged in). Defaults only affect future `sandclaude
+// and the global file is merged in). Defaults only affect future `corral
 // init`, so no reload is needed for them.
 func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -254,7 +254,7 @@ func reloadAllRunningProjectMitmweb() int {
 	return n
 }
 
-// handleGlobalPopulate spawns `sandclaude populate-proxy-credentials` in a
+// handleGlobalPopulate spawns `corral populate-proxy-credentials` in a
 // dedicated tmux session so the interactive `claude setup-token` flow (stdin +
 // browser auth) can run, and returns the id of a browser terminal the dashboard
 // can attach to. The user completes the prompts in that terminal pane.
@@ -270,7 +270,7 @@ func (d *dashboardServer) handleGlobalPopulate(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	session := "sandclaude-populate-creds"
+	session := "corral-populate-creds"
 	// Kill any prior populate session so a retry starts clean.
 	exec.Command("tmux", "kill-session", "-t", session).Run()
 

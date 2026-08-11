@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --quiet --script
 """
-Sandclaude Launcher - Starts Claude Code
+Corral Launcher - Starts Claude Code
 """
 
 import json
@@ -365,11 +365,11 @@ Do not attempt to contact any external agent sessions.\
 
 def start_issue_monitoring_teams():
     """Start a single Claude Code session with a 4-person issue-monitoring team."""
-    session = "sandclaude-issue-monitoring"
+    session = "corral-issue-monitoring"
 
-    system_path = "/tmp/sandclaude_issue_monitoring_system.txt"
-    start_path = "/tmp/sandclaude_issue_monitoring_start.txt"
-    script_path = "/tmp/sandclaude_issue_monitoring.sh"
+    system_path = "/tmp/corral_issue_monitoring_system.txt"
+    start_path = "/tmp/corral_issue_monitoring_start.txt"
+    script_path = "/tmp/corral_issue_monitoring.sh"
 
     with open(system_path, "w") as f:
         f.write(ISSUE_MONITORING_SYSTEM)
@@ -378,7 +378,7 @@ def start_issue_monitoring_teams():
 
     script_content = (
         "#!/bin/bash\n"
-        "# Sandclaude agent team: Issue Monitoring\n"
+        "# Corral agent team: Issue Monitoring\n"
         "export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1\n"
         "python3 /home/claude/bin/patch-claude-settings.py\n"
         "exec claude --dangerously-skip-permissions \\\n"
@@ -427,9 +427,9 @@ def write_agent_scripts():
     scripts = []
     for config in AGENT_CONFIGS:
         name = config["name"]
-        system_path = f"/tmp/sandclaude_{name}_system.txt"
-        start_path = f"/tmp/sandclaude_{name}_start.txt"
-        script_path = f"/tmp/sandclaude_{name}.sh"
+        system_path = f"/tmp/corral_{name}_system.txt"
+        start_path = f"/tmp/corral_{name}_start.txt"
+        script_path = f"/tmp/corral_{name}.sh"
 
         with open(system_path, "w") as f:
             f.write(config["system"])
@@ -438,7 +438,7 @@ def write_agent_scripts():
 
         script_content = (
             "#!/bin/bash\n"
-            f"# Sandclaude agent team: {config['label']}\n"
+            f"# Corral agent team: {config['label']}\n"
             f"export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1\n"
             f"python3 /home/claude/bin/patch-claude-settings.py\n"
             f"exec claude --dangerously-skip-permissions \\\n"
@@ -457,7 +457,7 @@ def write_agent_scripts():
 
 def start_agent_teams():
     """Start 3 Claude Code agent team sessions in a tmux session as side-by-side panes."""
-    session = "sandclaude-agents"
+    session = "corral-agents"
 
     logger.info("Preparing agent team scripts...")
     scripts = write_agent_scripts()
@@ -491,9 +491,9 @@ def start_agent_teams():
 
 
 def main():
-    """Main entry point for sandclaude launcher"""
+    """Main entry point for corral launcher"""
     logger.info("=" * 60)
-    logger.info("Sandclaude Launcher")
+    logger.info("Corral Launcher")
     logger.info("=" * 60)
 
     project_name = os.getenv('PROJECT_NAME', 'unknown')
@@ -535,7 +535,7 @@ def main():
             subprocess.run(['python3', '/home/claude/bin/patch-claude-settings.py'], check=True)
             if os.getenv('LAUNCH_TMUX') == '1':
                 logger.info("tmux launch enabled — starting claude in tmux session")
-                session = "sandclaude"
+                session = "corral"
                 claude_cmd = "exec claude --dangerously-skip-permissions --teammate-mode tmux"
                 subprocess.run(["tmux", "new-session", "-d", "-s", session], check=True)
                 subprocess.run(["tmux", "send-keys", "-t", f"{session}:0", claude_cmd, "Enter"])

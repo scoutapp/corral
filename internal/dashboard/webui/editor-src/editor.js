@@ -1,14 +1,14 @@
-// editor.js — entry point for the sandclaude CodeMirror 6 bundle.
+// editor.js — entry point for the corral CodeMirror 6 bundle.
 //
 // This is bundled by esbuild into ../static/codemirror.bundle.js as a single
-// self-contained IIFE that exposes its exports on `window.SandclaudeEditor`
-// (via esbuild's --global-name=SandclaudeEditor). The dashboard frontend is
+// self-contained IIFE that exposes its exports on `window.CorralEditor`
+// (via esbuild's --global-name=CorralEditor). The dashboard frontend is
 // plain vanilla JS with NO build step and a strict CSP, so everything must be
 // inlined into that one file.
 //
 // Public API (what dashboard files.js should call):
 //
-//   window.SandclaudeEditor.createEditor(opts) -> handle
+//   window.CorralEditor.createEditor(opts) -> handle
 //     opts:
 //       parent   : HTMLElement   (required) container to mount the editor in
 //       doc      : string        (optional, default "") initial document text
@@ -22,7 +22,7 @@
 //       setReadOnly(b)  -> void     toggle read-only at runtime
 //       view            -> EditorView (escape hatch; the raw CM6 view)
 //
-//   window.SandclaudeEditor.createDiff(opts) -> handle
+//   window.CorralEditor.createDiff(opts) -> handle
 //     Unified merge (diff) view — read-only display of old vs new.
 //     opts:
 //       parent   : HTMLElement   (required)
@@ -33,10 +33,10 @@
 //       destroy() -> void
 //       view      -> EditorView
 //
-//   window.SandclaudeEditor.languageForFilename(filename) -> string|null
+//   window.CorralEditor.languageForFilename(filename) -> string|null
 //     Introspection helper: the language key that would be picked, or null.
 //
-//   window.SandclaudeEditor.version -> string
+//   window.CorralEditor.version -> string
 
 import { basicSetup, EditorView } from "codemirror";
 import { EditorState, Compartment } from "@codemirror/state";
@@ -135,7 +135,7 @@ function languageExtension(filename) {
 function createEditor(opts) {
   opts = opts || {};
   const parent = opts.parent;
-  if (!parent) throw new Error("SandclaudeEditor.createEditor: opts.parent is required");
+  if (!parent) throw new Error("CorralEditor.createEditor: opts.parent is required");
 
   const doc = typeof opts.doc === "string" ? opts.doc : "";
   const onChange = typeof opts.onChange === "function" ? opts.onChange : null;
@@ -192,7 +192,7 @@ function createEditor(opts) {
 function createDiff(opts) {
   opts = opts || {};
   const parent = opts.parent;
-  if (!parent) throw new Error("SandclaudeEditor.createDiff: opts.parent is required");
+  if (!parent) throw new Error("CorralEditor.createDiff: opts.parent is required");
 
   const original = typeof opts.original === "string" ? opts.original : "";
   const modified = typeof opts.modified === "string" ? opts.modified : "";

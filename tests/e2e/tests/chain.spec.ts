@@ -25,15 +25,15 @@ import {
   hostGet,
   readInnerLog,
   bridgePublishedPort,
-} from '../lib/sandclaude';
+} from '../lib/corral';
 
 const FIXTURE_DIR = path.join(__dirname, '..', 'fixtures', 'web-app');
-const IMAGE = 'sandclaude-e2e-web';
+const IMAGE = 'corral-e2e-web';
 const CONTAINER = 'web';
 const INNER_DOCKER = 'unix:///var/run/dind/docker.sock';
 const ARTIFACTS_DIR = path.join(__dirname, '..', '.artifacts');
 
-test.describe.serial('sandclaude DinD chain', () => {
+test.describe.serial('corral DinD chain', () => {
   // When the base image (node:20-slim) can't be pulled from Docker Hub through
   // the mitmproxy — a transient CI-network/TLS flake, not a code defect — the
   // build test skips. The downstream tests depend on the image it builds, so
@@ -61,7 +61,7 @@ test.describe.serial('sandclaude DinD chain', () => {
     // Proxy build-args: inside a DinD build container the shell's HTTP(S)_PROXY
     // (host mitmweb, e.g. 192.168.65.254 on Docker Desktop) is unreachable. The
     // reachable proxy is the allowlist proxy on the DinD bridge gateway,
-    // 172.18.0.1:3128. sandclaude's own `startDocker` passes exactly these
+    // 172.18.0.1:3128. corral's own `startDocker` passes exactly these
     // build-args (see internal/container/docker.go); a build driven manually
     // (as here, and as a user would) must pass them too. NO_PROXY covers the
     // inner bridge + loopback so intra-DinD/registry-metadata calls stay direct.
@@ -73,7 +73,7 @@ test.describe.serial('sandclaude DinD chain', () => {
     //      from the build client's ENV. We override it in the exec env so the
     //      `FROM node:20-slim` manifest pull succeeds.
     //   2. The Dockerfile's RUN steps (npm install) read the PROXY *build-args*.
-    // sandclaude's own startDocker passes the same values (internal/container/docker.go).
+    // corral's own startDocker passes the same values (internal/container/docker.go).
     const proxyEnv =
       `HTTP_PROXY=http://172.18.0.1:3128 HTTPS_PROXY=http://172.18.0.1:3128 ` +
       `NO_PROXY=172.18.0.0/16,127.0.0.0/8,localhost`;
@@ -160,7 +160,7 @@ test.describe.serial('sandclaude DinD chain', () => {
       async () => {
         try {
           const r = await hostGet(`${base}/`, { timeoutMs: 4_000 });
-          return r.status === 200 && r.body.includes('sandclaude e2e ok') ? r : undefined;
+          return r.status === 200 && r.body.includes('corral e2e ok') ? r : undefined;
         } catch {
           return undefined;
         }
@@ -168,7 +168,7 @@ test.describe.serial('sandclaude DinD chain', () => {
       { timeoutMs: 60_000, intervalMs: 2_000 },
     );
     expect(rootRes.status).toBe(200);
-    expect(rootRes.body).toContain('sandclaude e2e ok');
+    expect(rootRes.body).toContain('corral e2e ok');
 
     // Health route returns JSON {status:"ok"}.
     const health = await hostGet(`${base}/healthz`, { timeoutMs: 5_000 });
@@ -177,7 +177,7 @@ test.describe.serial('sandclaude DinD chain', () => {
   });
 
   test('logs and boot evidence are correct', async () => {
-    // The captured `sandclaude start` output was stashed by global-setup. The
+    // The captured `corral start` output was stashed by global-setup. The
     // operational lines (Go's log package) go to STDERR while the tmux banner
     // goes to stdout, so assert against both streams combined.
     const startOut =

@@ -9,15 +9,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/release"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/release"
 )
 
 // Update-availability check for the dashboard banner.
 //
 // The dashboard is a long-lived daemon and every open tab polls this endpoint
 // (on load + every few hours), so we must NOT hit GitHub on every request. The
-// latest tag is cached to ~/.sandclaude/update-check.json and only re-fetched
+// latest tag is cached to ~/.corral/update-check.json and only re-fetched
 // when the cache is older than updateCheckTTL. GitHub is reached anonymously via
 // the redirect trick (release.LatestTag) with a short timeout; any failure falls
 // back to the cached value (or "unknown"), never blocking the UI.
@@ -35,7 +35,7 @@ type updateCache struct {
 var updateCheckMu sync.Mutex
 
 func updateCachePath() string {
-	return filepath.Join(config.SandclaudeHome(), "update-check.json")
+	return filepath.Join(config.CorralHome(), "update-check.json")
 }
 
 func readUpdateCache() updateCache {
@@ -49,7 +49,7 @@ func readUpdateCache() updateCache {
 }
 
 func writeUpdateCache(c updateCache) {
-	if err := os.MkdirAll(config.SandclaudeHome(), 0o700); err != nil {
+	if err := os.MkdirAll(config.CorralHome(), 0o700); err != nil {
 		return
 	}
 	if data, err := json.MarshalIndent(c, "", "  "); err == nil {
@@ -70,7 +70,7 @@ type updateStatusResp struct {
 	Error       string `json:"error,omitempty"`
 }
 
-// handleUpdateStatus reports whether a newer sandclaude release is available.
+// handleUpdateStatus reports whether a newer corral release is available.
 // It returns the cached latest tag, refreshing from GitHub only when the cache
 // is stale (or the configured repo changed). Errors are non-fatal — we serve the
 // last known value so the banner logic degrades to "no update" rather than an

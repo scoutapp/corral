@@ -7,19 +7,19 @@ import (
 	"testing"
 )
 
-// withHome points HOME + SANDCLAUDE_HOME at a temp dir for the duration of fn,
+// withHome points HOME + CORRAL_HOME at a temp dir for the duration of fn,
 // so ExpandSSHKeyPath (~ expansion) and GlobalSSHKeysPath are hermetic.
 func withHome(t *testing.T, fn func(home string)) {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("SANDCLAUDE_HOME", filepath.Join(home, ".sandclaude"))
+	t.Setenv("CORRAL_HOME", filepath.Join(home, ".corral"))
 	fn(home)
 }
 
 func writeGlobalKeys(t *testing.T, keys string) {
 	t.Helper()
-	dir := SandclaudeHome()
+	dir := CorralHome()
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}

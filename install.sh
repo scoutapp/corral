@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# install.sh — build sandclaude and install it as a global CLI.
+# install.sh — build corral and install it as a global CLI.
 #
 # Installs:
-#   - the sandclaude binary  -> $SANDCLAUDE_PREFIX (default /usr/local/bin)
-#   - the asset bundle       -> $SANDCLAUDE_HOME/assets (default ~/.sandclaude/assets)
+#   - the corral binary  -> $CORRAL_PREFIX (default /usr/local/bin)
+#   - the asset bundle       -> $CORRAL_HOME/assets (default ~/.corral/assets)
 #
 # The asset bundle is the Docker build context + support files the installed
 # binary needs at runtime, organized by tier:
@@ -12,26 +12,26 @@
 #                      (Dockerfile, entrypoint.sh, launcher.py, allowlist-proxy/,
 #                       setup/, dind/, skills/)
 #   assets/host/     — host-tier assets loaded by host processes (proxy-addon.py)
-# Per-project state lives in each project's ./.sandclaude/ directory, created by
-# `sandclaude init`.
+# Per-project state lives in each project's ./.corral/ directory, created by
+# `corral init`.
 #
 # Env overrides:
-#   SANDCLAUDE_PREFIX  directory on $PATH to install the binary  (default /usr/local/bin)
-#   SANDCLAUDE_HOME    per-user data dir for assets + global creds (default ~/.sandclaude)
+#   CORRAL_PREFIX  directory on $PATH to install the binary  (default /usr/local/bin)
+#   CORRAL_HOME    per-user data dir for assets + global creds (default ~/.corral)
 #
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
-PREFIX="${SANDCLAUDE_PREFIX:-/usr/local/bin}"
-HOME_DIR="${SANDCLAUDE_HOME:-$HOME/.sandclaude}"
+PREFIX="${CORRAL_PREFIX:-/usr/local/bin}"
+HOME_DIR="${CORRAL_HOME:-$HOME/.corral}"
 ASSETS_DIR="$HOME_DIR/assets"
 
-echo "==> Building sandclaude binary"
+echo "==> Building corral binary"
 if ! command -v go >/dev/null 2>&1; then
   echo "Error: 'go' is not installed. Install Go 1.21+ and re-run." >&2
   exit 1
 fi
-go build -o "$REPO_DIR/sandclaude" "$REPO_DIR/cmd/sandclaude"
+go build -o "$REPO_DIR/corral" "$REPO_DIR/cmd/corral"
 
 # The dashboard's Terminal tab is a self-contained PTY-over-WebSocket bridge built
 # into the binary (see internal/dashboard/terminal.go) — it no longer needs the
@@ -78,7 +78,7 @@ install_pkg() {
   esac
 }
 
-# mitmproxy provides `mitmweb`, the credential proxy every `sandclaude start`
+# mitmproxy provides `mitmweb`, the credential proxy every `corral start`
 # launches (see startProxy) — it terminates TLS to inject credentials and enforce
 # the allowlist. The most fundamental runtime dependency, so guard it at install
 # time. Package name is `mitmproxy` on both Homebrew and apt.
@@ -87,14 +87,14 @@ if ! command -v mitmweb >/dev/null 2>&1; then
   echo "    mitmproxy not found"
   if ! install_pkg "mitmproxy" "mitmproxy" "mitmproxy"; then
     echo "Error: could not install mitmproxy automatically." >&2
-    echo "       mitmweb is the credential proxy behind every 'sandclaude start'." >&2
+    echo "       mitmweb is the credential proxy behind every 'corral start'." >&2
     echo "         macOS:  brew install mitmproxy" >&2
     echo "         Linux:  apt-get install mitmproxy  (or see https://docs.mitmproxy.org)" >&2
     exit 1
   fi
 fi
 
-# tmux is a HOST dependency: sandclaude runs the interactive container inside a
+# tmux is a HOST dependency: corral runs the interactive container inside a
 # host tmux session (so it survives detach/reattach and the dashboard can attach
 # to it). Same package name on Homebrew and apt.
 echo "==> Checking for tmux (host terminal multiplexer)"
@@ -102,19 +102,19 @@ if ! command -v tmux >/dev/null 2>&1; then
   echo "    tmux not found"
   if ! install_pkg "tmux" "tmux" "tmux"; then
     echo "Error: could not install tmux automatically." >&2
-    echo "       tmux hosts the interactive session behind every 'sandclaude start'." >&2
+    echo "       tmux hosts the interactive session behind every 'corral start'." >&2
     echo "         macOS:  brew install tmux" >&2
     echo "         Linux:  apt-get install tmux" >&2
     exit 1
   fi
 fi
 
-echo "==> Installing binary to $PREFIX/sandclaude"
+echo "==> Installing binary to $PREFIX/corral"
 if [ -w "$PREFIX" ]; then
-  install -m 0755 "$REPO_DIR/sandclaude" "$PREFIX/sandclaude"
+  install -m 0755 "$REPO_DIR/corral" "$PREFIX/corral"
 else
-  echo "    $PREFIX is not writable; using sudo (set SANDCLAUDE_PREFIX=\$HOME/.local/bin to avoid sudo)"
-  sudo install -m 0755 "$REPO_DIR/sandclaude" "$PREFIX/sandclaude"
+  echo "    $PREFIX is not writable; using sudo (set CORRAL_PREFIX=\$HOME/.local/bin to avoid sudo)"
+  sudo install -m 0755 "$REPO_DIR/corral" "$PREFIX/corral"
 fi
 
 echo "==> Syncing asset bundle to $ASSETS_DIR"
@@ -149,16 +149,16 @@ fi
 
 echo ""
 echo "✅ Installed:"
-echo "   binary : $PREFIX/sandclaude"
+echo "   binary : $PREFIX/corral"
 echo "   assets : $ASSETS_DIR"
 echo ""
 echo "Next steps:"
 echo "   cd ~/any-project"
-echo "   sandclaude init"
-echo "   sandclaude populate-proxy-credentials   # global creds (~/.sandclaude/proxy-credentials.json)"
-echo "   sandclaude start"
+echo "   corral init"
+echo "   corral populate-proxy-credentials   # global creds (~/.corral/proxy-credentials.json)"
+echo "   corral start"
 echo ""
-if ! command -v sandclaude >/dev/null 2>&1; then
+if ! command -v corral >/dev/null 2>&1; then
   echo "Note: '$PREFIX' is not on your \$PATH. Add it, e.g.:"
   echo "   export PATH=\"$PREFIX:\$PATH\""
 fi

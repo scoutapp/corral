@@ -3,9 +3,9 @@ package dashboard
 import (
 	"bufio"
 	"encoding/json"
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/creds"
-	"github.com/jackrothrock/sandclaude/internal/session"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/creds"
+	"github.com/scoutapp/corral/internal/session"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -117,10 +117,10 @@ func (d *dashboardServer) handleConfigRead(w http.ResponseWriter, r *http.Reques
 // paths from a workspace argument rather than os.Getwd().
 // ----------------------------------------------------------------------------
 
-// sandclaudeDirForWorkspace is <workspace>/.sandclaude (the plaintext allowlist,
-// logs/, and project/ live under here). Mirrors the cwd-based config.SandclaudeDir().
-func sandclaudeDirForWorkspace(workspace string) string {
-	return filepath.Join(workspace, ".sandclaude")
+// corralDirForWorkspace is <workspace>/.corral (the plaintext allowlist,
+// logs/, and project/ live under here). Mirrors the cwd-based config.CorralDir().
+func corralDirForWorkspace(workspace string) string {
+	return filepath.Join(workspace, ".corral")
 }
 
 func readConfigForWorkspace(workspace string) (*config.ProjectConfig, error) {
@@ -130,7 +130,7 @@ func readConfigForWorkspace(workspace string) (*config.ProjectConfig, error) {
 // readAllowedHostsForWorkspace reads the plaintext allowlist (the human-editable
 // source; the .enc is derived from it). Returns nil if absent.
 func readAllowedHostsForWorkspace(workspace string) []string {
-	path := filepath.Join(sandclaudeDirForWorkspace(workspace), "allowed-domains.txt")
+	path := filepath.Join(corralDirForWorkspace(workspace), "allowed-domains.txt")
 	f, err := os.Open(path)
 	if err != nil {
 		return nil

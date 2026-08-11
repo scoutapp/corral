@@ -31,7 +31,7 @@ func makeOrigin(t *testing.T) string {
 }
 
 func TestReposAddFetchRemove(t *testing.T) {
-	t.Setenv("SANDCLAUDE_HOME", t.TempDir())
+	t.Setenv("CORRAL_HOME", t.TempDir())
 	origin := makeOrigin(t)
 
 	// Add → registered + a bare mirror cache created.

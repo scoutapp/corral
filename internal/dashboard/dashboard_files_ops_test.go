@@ -9,7 +9,7 @@ import (
 )
 
 func TestFilesMutations(t *testing.T) {
-	t.Setenv("SANDCLAUDE_HOME", t.TempDir())
+	t.Setenv("CORRAL_HOME", t.TempDir())
 	ws := t.TempDir()
 	if err := RegisterProject(ws); err != nil {
 		t.Fatal(err)
@@ -20,7 +20,7 @@ func TestFilesMutations(t *testing.T) {
 
 	do := func(method, path string) int {
 		req, _ := http.NewRequest(method, srv.URL+"/p/"+id+path, nil)
-		req.AddCookie(&http.Cookie{Name: "sc_dash_token", Value: "tok"})
+		req.AddCookie(&http.Cookie{Name: "corral_dash_token", Value: "tok"})
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("%s %s: %v", method, path, err)

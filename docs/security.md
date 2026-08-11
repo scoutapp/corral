@@ -1,6 +1,6 @@
 # Security model
 
-Sandclaude runs Claude in **dangerous mode** (no permission prompts) inside a
+Corral runs Claude in **dangerous mode** (no permission prompts) inside a
 sandbox: an ephemeral container with allowlisted egress and injected credentials.
 Here's what that boundary does and doesn't cover.
 
@@ -22,7 +22,7 @@ Here's what that boundary does and doesn't cover.
 - **Filesystem** — only the project workspace is mounted, not your home/SSH keys.
 - **SSH keys** — opt-in. You choose keys with a checklist (a global default set
   in Global settings, plus per-project extras in each project's Config tab; the
-  effective set is the union). When any are chosen, sandclaude runs a *scoped*
+  effective set is the union). When any are chosen, corral runs a *scoped*
   ssh-agent holding **only those keys** and bind-mounts just its **socket** (not
   any key file). The container can *use* the keys (sign, push) but never sees the
   private-key bytes — the agent protocol has no "export key" operation, so this is
@@ -30,7 +30,7 @@ Here's what that boundary does and doesn't cover.
   you didn't choose) is never forwarded. Keys live only in the agent's memory and
   are torn down with the container. On **macOS**, a passphrase you type once is
   stored in the **login Keychain** (`--apple-use-keychain`), so later loads are
-  silent — the passphrase lives in the OS Keychain, never in sandclaude, and keys
+  silent — the passphrase lives in the OS Keychain, never in corral, and keys
   stay scoped + torn-down per project. (Linux prompts each time; SSH is macOS-
   first.) See "SSH residual risk" below.
 - **Dashboard** — binds `127.0.0.1` only, every route requires a per-launch token.
@@ -68,11 +68,11 @@ risks. The chat panel is read-only by default.)
    shell, and edit workspace files — gated only by loopback + token.
    The dashboard can also **create projects host-side**: cloning repos (private
    ones use your ambient host git/`gh` credentials — no tokens are stored) into
-   `~/.sandclaude/workspaces/`, and **starting** a project's container by running
-   `sandclaude dev` on the host. These run with the operator's full host
+   `~/.corral/workspaces/`, and **starting** a project's container by running
+   `corral dev` on the host. These run with the operator's full host
    privileges (same loopback + token trust basis as the host shell). Adding a repo
    clones an operator-supplied URL — an outbound host action by design.
-   The **Update** button opens a host PTY running `sandclaude update` — it replaces
+   The **Update** button opens a host PTY running `corral update` — it replaces
    the running binary and rebuilds the image. If the install dir isn't user-writable
    it does NOT elevate on its own; it prints the exact `sudo install …` command for
    the operator to run. It's a real host shell, not a silent privileged endpoint,
@@ -109,8 +109,8 @@ risks. The chat panel is read-only by default.)
      the keys at all. This means any *local* process on your machine can also use a
      loaded key while its agent is alive (a single-user-Mac assumption). Still a
      signing oracle: no key bytes are exposed, it lives under the user-private
-     `~/.sandclaude`, and it's torn down with the container.
-   - **DinD cross-project (macOS).** The agent sockets live under `~/.sandclaude`
+     `~/.corral`, and it's torn down with the container.
+   - **DinD cross-project (macOS).** The agent sockets live under `~/.corral`
      (a Docker-shared path). With **DinD on** (`--privileged`), a container escape
      into the Docker VM can reach *another* running project's scoped agent socket
      and *use* its keys — still no byte theft, still confined to the VM (your Mac's

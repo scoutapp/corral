@@ -1,5 +1,5 @@
 #!/bin/bash
-# Sandclaude entrypoint - Starts Python launcher with Linear monitoring
+# Corral entrypoint - Starts Python launcher with Linear monitoring
 # After Claude exits, drop to an interactive bash shell
 
 # Cleanup inner dockerd and containers on exit
@@ -86,14 +86,14 @@ if [ -z "$DISABLE_FIREWALL" ]; then
     # Verify encrypted allowlist exists
     if [ ! -f "$ALLOWLIST_ENC" ]; then
         echo "ERROR: encrypted allowlist not found at $ALLOWLIST_ENC"
-        echo "       Run 'sandclaude firewall-reload' on the host"
+        echo "       Run 'corral firewall-reload' on the host"
         exit 1
     fi
 
     # Verify encryption key is provided
     if [ -z "$ALLOWLIST_KEY" ]; then
         echo "ERROR: ALLOWLIST_KEY environment variable is not set"
-        echo "       Run 'sandclaude init' to generate the key"
+        echo "       Run 'corral init' to generate the key"
         exit 1
     fi
 
@@ -127,7 +127,7 @@ if [ -z "$DISABLE_FIREWALL" ]; then
     # the file doesn't exist yet — the proxy treats an absent monitor file as
     # "monitor all" (the default). Seeding the flag unconditionally is what lets a
     # project ENABLE the monitor-list on a running container without a restart:
-    # `sandclaude proxy-apply`/the dashboard docker-cp the file in and SIGHUP, and
+    # `corral proxy-apply`/the dashboard docker-cp the file in and SIGHUP, and
     # the proxy (already watching that path) picks it up live.
     MONITOR_COPY="/tmp/monitor-hosts.txt"
     MONITOR_SRC="${HOME}/monitor-hosts.txt"
@@ -150,8 +150,8 @@ if [ -z "$DISABLE_FIREWALL" ]; then
 
     # mitm-ports: forwarded from the host config via env (default handled by the proxy).
     MITM_PORTS_ARG=""
-    if [ -n "$SANDCLAUDE_MITM_PORTS" ]; then
-        MITM_PORTS_ARG="--mitm-ports $SANDCLAUDE_MITM_PORTS"
+    if [ -n "$CORRAL_MITM_PORTS" ]; then
+        MITM_PORTS_ARG="--mitm-ports $CORRAL_MITM_PORTS"
     fi
 
     # Create log file with write permissions for proxyuser

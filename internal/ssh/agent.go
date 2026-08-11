@@ -15,7 +15,7 @@
 // the agent and removes the socket. A restart re-runs the whole flow (keys are
 // held only in the agent's memory and are re-prompted) — see docs/security.md.
 //
-// macOS-only reasoning: the socket lives under ~/.sandclaude (a Docker-Desktop
+// macOS-only reasoning: the socket lives under ~/.corral (a Docker-Desktop
 // shared path) so Docker Desktop's virtiofs proxies the Unix-socket connection
 // macOS -> VM -> container. On Linux this design still works but the cross-project
 // residual risk differs (privileged escape hits the real host, not a throwaway
@@ -30,7 +30,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/scoutapp/corral/internal/config"
 )
 
 // ContainerSocketPath is where the scoped-agent socket is mounted inside the
@@ -54,9 +54,9 @@ type Agent struct {
 	dir string
 }
 
-// AgentsRoot is ~/.sandclaude/agents — the parent of all per-project agent dirs.
+// AgentsRoot is ~/.corral/agents — the parent of all per-project agent dirs.
 func AgentsRoot() string {
-	return filepath.Join(config.SandclaudeHome(), "agents")
+	return filepath.Join(config.CorralHome(), "agents")
 }
 
 // agentDir is the per-project directory holding this project's socket. projectID
@@ -73,14 +73,14 @@ func socketPathFor(projectID string) (dir, sock string, err error) {
 	sock = filepath.Join(dir, "agent.sock")
 	if len(sock) > maxUnixSocketPath {
 		return "", "", fmt.Errorf("ssh-agent socket path too long (%d > %d): %s\n"+
-			"set SANDCLAUDE_HOME to a shorter directory", len(sock), maxUnixSocketPath, sock)
+			"set CORRAL_HOME to a shorter directory", len(sock), maxUnixSocketPath, sock)
 	}
 	return dir, sock, nil
 }
 
 // Ensure returns a scoped ssh-agent for the project, ADOPTING an already-running
 // one when its socket is live (so a dashboard pre-load survives the subsequent
-// `sandclaude dev`), or creating a fresh agent otherwise. It never tears down a
+// `corral dev`), or creating a fresh agent otherwise. It never tears down a
 // live agent — that's Stop()'s job. It does NOT load keys (loading is interactive
 // via a PTY the caller owns).
 //
@@ -113,7 +113,7 @@ func Ensure(projectID string, keys []string) (*Agent, error) {
 	// container can reach it: 0711 dir (traverse-only, contents not listable) and
 	// 0666 socket below. This only grants the ability to USE the loaded keys (the
 	// signing-oracle we intend to give the container); no key bytes are exposed,
-	// and it all lives under the user-private ~/.sandclaude.
+	// and it all lives under the user-private ~/.corral.
 	if err := os.MkdirAll(dir, 0711); err != nil {
 		return nil, fmt.Errorf("create agent dir %s: %w", dir, err)
 	}
@@ -288,8 +288,8 @@ func (a *Agent) Stop() {
 
 // StopAll kills every scoped ssh-agent this user has running (one per project
 // dir under AgentsRoot) and removes the agents root entirely. Best-effort and
-// idempotent: missing dirs/sockets are skipped. Used by `sandclaude uninstall`
-// to tear down all agent processes before wiping ~/.sandclaude. Returns the
+// idempotent: missing dirs/sockets are skipped. Used by `corral uninstall`
+// to tear down all agent processes before wiping ~/.corral. Returns the
 // number of agent sockets it attempted to stop.
 func StopAll() int {
 	root := AgentsRoot()

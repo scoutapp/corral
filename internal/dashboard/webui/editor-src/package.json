@@ -1,10 +1,10 @@
 {
-  "name": "sandclaude-editor",
+  "name": "corral-editor",
   "version": "1.0.0",
   "private": true,
-  "description": "Self-contained CodeMirror 6 bundle for the sandclaude dashboard (no-build vanilla frontend).",
+  "description": "Self-contained CodeMirror 6 bundle for the corral dashboard (no-build vanilla frontend).",
   "scripts": {
-    "build": "esbuild editor.js --bundle --format=iife --global-name=SandclaudeEditor --minify --outfile=../static/codemirror.bundle.js"
+    "build": "esbuild editor.js --bundle --format=iife --global-name=CorralEditor --minify --outfile=../static/codemirror.bundle.js"
   },
   "comment": "Dependencies are pinned to exact versions (no ^) on purpose: the built bundle is committed and go:embed-ed into the host binary, so it runs as trusted host-side code in the dashboard browser. Exact pins keep the bundle reproducible and prevent a stray npm install from pulling an unreviewed release. Update versions deliberately, then rebuild and review the bundle diff.",
   "devDependencies": {

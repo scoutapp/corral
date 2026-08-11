@@ -1,4 +1,4 @@
-module github.com/jackrothrock/sandclaude
+module github.com/scoutapp/corral
 
 go 1.21
 

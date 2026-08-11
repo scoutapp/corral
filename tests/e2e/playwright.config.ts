@@ -21,6 +21,6 @@ export default defineConfig({
     ['list'],
     ['html', { outputFolder: path.join(__dirname, 'playwright-report'), open: 'never' }],
   ],
-  // Deliberately no `webServer`: the "server" is the sandclaude sandbox brought
+  // Deliberately no `webServer`: the "server" is the corral sandbox brought
   // up by global-setup, not a process Playwright should manage.
 });

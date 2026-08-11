@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/jackrothrock/sandclaude/internal/repos"
+	"github.com/scoutapp/corral/internal/repos"
 )
 
 // handleRepos serves the repos list:

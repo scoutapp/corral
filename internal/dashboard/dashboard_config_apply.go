@@ -3,9 +3,9 @@ package dashboard
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/jackrothrock/sandclaude/internal/config"
-	"github.com/jackrothrock/sandclaude/internal/session"
-	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
+	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/session"
+	sshagent "github.com/scoutapp/corral/internal/ssh"
 	"net/http"
 	"os"
 	"os/exec"
@@ -20,7 +20,7 @@ import (
 // POST /p/<id>/config/diff  -> preview: what would change vs current config
 // POST /p/<id>/config/apply -> write + minimal-impact reload
 //
-// Apply runs the SAME sandclaude CLI subcommands the user would run by hand, with
+// Apply runs the SAME corral CLI subcommands the user would run by hand, with
 // the process Dir set to the target workspace. This gives exact CLI/dashboard
 // parity (one code path), avoids a process-global os.Chdir in a concurrent
 // server, and keeps the minimal-reload logic (applyProxyConfig) in one place.
@@ -98,7 +98,7 @@ func (d *dashboardServer) handleConfigApply(w http.ResponseWriter, r *http.Reque
 
 	exe, err := os.Executable()
 	if err != nil {
-		http.Error(w, "cannot resolve sandclaude binary: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "cannot resolve corral binary: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	run := func(args ...string) error {
@@ -230,7 +230,7 @@ func (d *dashboardServer) handleConfigRestart(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// SSH pre-load gate: the relaunched `sandclaude dev` runs detached (no TTY), so
+	// SSH pre-load gate: the relaunched `corral dev` runs detached (no TTY), so
 	// if this project has ssh keys configured but not loaded into its scoped agent,
 	// the child would fail on the passphrase prompt and the container would never
 	// come back. Detect that BEFORE tearing anything down, and tell the browser to
@@ -271,7 +271,7 @@ func (d *dashboardServer) handleConfigRestart(w http.ResponseWriter, r *http.Req
 	//
 	// Two bugs this fixes:
 	//   1. `docker kill` removes the --rm container but leaves the detached tmux
-	//      session `sandclaude_<name>` alive with a dead pane (remain-on-exit on).
+	//      session `corral_<name>` alive with a dead pane (remain-on-exit on).
 	//      The relaunch's `tmux new-session -s <sameName>` then fails ("duplicate
 	//      session") and the container never comes back — and the terminal tab is
 	//      still attached to the OLD dead-pane session. So kill the session too.
@@ -309,7 +309,7 @@ func (d *dashboardServer) handleConfigRestart(w http.ResponseWriter, r *http.Req
 	}
 	go func() { _ = startCmd.Wait() }() // detach; the status poll shows it come back
 
-	writeJSON(w, map[string]any{"results": []string{"✓ project restarting (container + tmux session killed, `sandclaude dev` relaunched)"}})
+	writeJSON(w, map[string]any{"results": []string{"✓ project restarting (container + tmux session killed, `corral dev` relaunched)"}})
 }
 
 // ----------------------------------------------------------------------------
@@ -443,7 +443,7 @@ func applyRestartFields(workspace string, edit configEdit) error {
 // writeAllowedHostsForWorkspace writes the plaintext allowlist (one host per
 // line). firewall-reload (run separately) re-encrypts + reloads from it.
 func writeAllowedHostsForWorkspace(workspace string, hosts []string) error {
-	path := sandclaudeDirForWorkspace(workspace) + "/allowed-domains.txt"
+	path := corralDirForWorkspace(workspace) + "/allowed-domains.txt"
 	content := strings.Join(hosts, "\n")
 	if content != "" {
 		content += "\n"

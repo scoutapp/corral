@@ -1,16 +1,16 @@
-# sandclaude e2e suite
+# corral e2e suite
 
-End-to-end Playwright/TypeScript tests that exercise the full `sandclaude`
+End-to-end Playwright/TypeScript tests that exercise the full `corral`
 chain against a **real, privileged sandbox** — no mocks:
 
 ```
-go build sandclaude
-  └─ sandclaude init      (proxy on, DinD on, ports 3000:3000, tmux off)
-      └─ sandclaude start (detached, privileged outer container + inner dockerd)
+go build corral
+  └─ corral init      (proxy on, DinD on, ports 3000:3000, tmux off)
+      └─ corral start (detached, privileged outer container + inner dockerd)
           └─ docker build the fixture web app INSIDE the inner DinD
               └─ docker run it, publish :3000 on the DinD bridge
                   └─ socat-bridge outer :3000 → inner gateway :3000
-                      └─ host GET localhost:3000  ==>  "sandclaude e2e ok"
+                      └─ host GET localhost:3000  ==>  "corral e2e ok"
 ```
 
 It must pass on **macOS** (Docker Desktop, local dev) and **Linux**
@@ -35,7 +35,7 @@ npx playwright install chromium
 npm test
 ```
 
-A **cold** run is slow: it builds the Go binary, builds the `sandclaude-stable`
+A **cold** run is slow: it builds the Go binary, builds the `corral-stable`
 Docker image, boots a privileged container + inner dockerd, then builds and runs
 a `node:20-slim` image inside DinD. Timeouts are sized for this (per-test 300s;
 the `start` step allows up to 15 min for the first image build).
@@ -60,15 +60,15 @@ npx playwright show-report playwright-report
      is listed.
   2. *host reaches inner :3000* — `docker run -d -p 3000:3000` the image in the
      inner daemon, install the socat bridge, then `GET localhost:3000` returns
-     `200` + `sandclaude e2e ok`, and `/healthz` returns `{"status":"ok"}`.
-  3. *logs and boot evidence* — asserts the captured `sandclaude start` stdout
+     `200` + `corral e2e ok`, and `/healthz` returns `{"status":"ok"}`.
+  3. *logs and boot evidence* — asserts the captured `corral start` stdout
      mentions DinD + the port mapping, and that the in-container logs that this
      config actually produces exist: `dockerd.log`, `cert-injector.log`,
      `proxy.log` (all read via `readInnerLog`).
 
 - **`tests/dashboard.spec.ts`** (Playwright/Chromium):
-  - Parses the URL+token from `sandclaude dashboard`.
-  - Landing page: `200`, `<title>sandclaude — control</title>`, brand marker.
+  - Parses the URL+token from `corral dashboard`.
+  - Landing page: `200`, `<title>corral — control</title>`, brand marker.
   - `/static/dashboard.css` served `200`.
   - `/status` JSON lists this suite's project by basename; `container_up` true.
   - Project page `/p/<id>`: `200`, title contains the workspace, `data-project-id`
@@ -82,7 +82,7 @@ npx playwright show-report playwright-report
 
 `init` is driven non-interactively with **proxy ON, DinD ON, `dind_ports`
 `3000:3000`, tmux OFF**. global-setup pipes the interactive answers **and** then
-overwrites `.sandclaude/project/config.json` with those exact fields for
+overwrites `.corral/project/config.json` with those exact fields for
 determinism.
 
 **Why proxy on, not `--disable-firewall`:** when DinD is enabled the entrypoint
@@ -98,10 +98,10 @@ token is injected); the suite never drives Claude.
 
 ## Logs this config produces
 
-- In-container (`<workspace>/.sandclaude/logs/`, mounted from the outer
+- In-container (`<workspace>/.corral/logs/`, mounted from the outer
   container's `/home/claude/logs/`, read via `readInnerLog`):
   `dockerd.log`, `cert-injector.log`, `proxy.log`.
-- Host-side (`<workspace>/.sandclaude/logs/`): `mitm.log` (mitmweb output, proxy
+- Host-side (`<workspace>/.corral/logs/`): `mitm.log` (mitmweb output, proxy
   mode). `proxy.log` is also visible here since that directory is the mount.
 - Suite artifacts (`tests/e2e/.artifacts/`): captured `go build` / `init` /
   `start` stdout+stderr, the resolved `config.json`, the inner build log, and (on
@@ -109,10 +109,10 @@ token is injected); the suite never drives Claude.
 
 ## Port-bridge mechanism
 
-`sandclaude start` publishes the outer container's `3000:3000` to the host. The
+`corral start` publishes the outer container's `3000:3000` to the host. The
 inner DinD container publishes onto the DinD bridge gateway `172.18.0.1:3000`.
 Nothing forwards between the two automatically, so the harness installs a `socat`
 bridge inside the outer container: `0.0.0.0:3000 → 172.18.0.1:3000`
-(`bridgePublishedPort` in `lib/sandclaude.ts`). This runs inside the Linux
+(`bridgePublishedPort` in `lib/corral.ts`). This runs inside the Linux
 container on both macOS and Linux, so the host assertion is platform-identical.
 ```

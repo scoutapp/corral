@@ -2,7 +2,7 @@
 // clones that back ephemeral, isolated project workspaces.
 //
 // Each added repo gets ONE bare `--mirror` cache clone under
-// ~/.sandclaude/repos/<slug>.git. The cache is fetch-only — never worked in — so
+// ~/.corral/repos/<slug>.git. The cache is fetch-only — never worked in — so
 // `git fetch` can never hit local-change/non-fast-forward problems. A project is
 // then created by `git clone --local` from the cache into its own workspace: own
 // .git + index (no shared-index locking like git worktrees), objects hardlinked
@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/scoutapp/corral/internal/config"
 )
 
 // Repo is one entry in the repos list.
@@ -30,7 +30,7 @@ type Repo struct {
 	URL           string `json:"url"`            // remote URL (empty for a local-path source)
 	LocalPath     string `json:"local_path"`     // local source path (empty for a URL source)
 	IsPrivate     bool   `json:"is_private"`     // hint: clone via host git/gh auth
-	CachePath     string `json:"cache_path"`     // ~/.sandclaude/repos/<slug>.git
+	CachePath     string `json:"cache_path"`     // ~/.corral/repos/<slug>.git
 	DefaultBranch string `json:"default_branch"` // best-effort, from the cache
 	LastFetched   string `json:"last_fetched"`   // RFC3339
 	AddedAt       string `json:"added_at"`       // RFC3339
@@ -40,8 +40,8 @@ type registry struct {
 	Repos []Repo `json:"repos"`
 }
 
-func reposDir() string     { return filepath.Join(config.SandclaudeHome(), "repos") }
-func registryPath() string { return filepath.Join(config.SandclaudeHome(), "repos.json") }
+func reposDir() string     { return filepath.Join(config.CorralHome(), "repos") }
+func registryPath() string { return filepath.Join(config.CorralHome(), "repos.json") }
 
 func readRegistry() (*registry, error) {
 	data, err := os.ReadFile(registryPath())
@@ -63,7 +63,7 @@ func writeRegistry(reg *registry) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(config.SandclaudeHome(), 0700); err != nil {
+	if err := os.MkdirAll(config.CorralHome(), 0700); err != nil {
 		return err
 	}
 	return os.WriteFile(registryPath(), data, 0600)

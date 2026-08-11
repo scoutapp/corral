@@ -13,7 +13,7 @@ FROM --platform=linux/amd64 ubuntu:24.04
 # Copy the static proxy binary from the builder stage
 COPY --from=proxy-builder /build/allowlist-proxy /usr/local/bin/allowlist-proxy
 
-# Copy Go toolchain so sandclaude can be rebuilt inside the container
+# Copy Go toolchain so corral can be rebuilt inside the container
 COPY --from=proxy-builder /usr/local/go /usr/local/go
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -42,7 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install proxy CA cert so subsequent curl/apt/npm HTTPS steps trust the MITM proxy.
-# PROXY_CA_CERT is base64-encoded PEM, injected at build time by sandclaude.
+# PROXY_CA_CERT is base64-encoded PEM, injected at build time by corral.
 ARG PROXY_CA_CERT=""
 RUN if [ -n "$PROXY_CA_CERT" ]; then \
         printf "%s" "$PROXY_CA_CERT" | base64 -d \

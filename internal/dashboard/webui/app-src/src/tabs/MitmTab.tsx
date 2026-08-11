@@ -5,7 +5,7 @@ import { Modal } from "../components/Modal";
 
 // localStorage flag: once the user acknowledges the CA-trust caveat with
 // "don't show again", the Monitor confirm modal is skipped on future clicks.
-const MONITOR_WARN_KEY = "sandclaude.monitorWarnAck";
+const MONITOR_WARN_KEY = "corral.monitorWarnAck";
 
 // Mitm tab: mitmweb's decrypted flows MERGED with the proxy log's direct-dialed
 // hosts, so every contacted host is visible. Decrypted rows expand to show

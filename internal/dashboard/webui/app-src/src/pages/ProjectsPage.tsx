@@ -141,7 +141,7 @@ export function ProjectsPage() {
   async function remove(p: StatusRow) {
     if (
       !window.confirm(
-        `Remove "${p.name}" from the dashboard?\n\nThis only unregisters it here — its .sandclaude/ config and logs are kept, and it reappears if you start it again.`,
+        `Remove "${p.name}" from the dashboard?\n\nThis only unregisters it here — its .corral/ config and logs are kept, and it reappears if you start it again.`,
       )
     )
       return;
@@ -161,7 +161,7 @@ export function ProjectsPage() {
       <nav className="sidebar">
         <div className="brand">
           <span className="brand-mark">◇</span>
-          <span className="brand-name">sandclaude</span>
+          <span className="brand-name">corral</span>
         </div>
         <button type="button" className={`nav-item${section === "projects" ? " active" : ""}`} onClick={() => setSection("projects")}>
           <span className="nav-ico">▤</span> Projects
@@ -252,7 +252,7 @@ export function ProjectsPage() {
               ))}
             {loaded && sorted.length === 0 && (
               <p className="empty">
-                No projects yet. Start one with <code>sandclaude init</code> then <code>sandclaude start</code>.
+                No projects yet. Start one with <code>corral init</code> then <code>corral start</code>.
               </p>
             )}
             {sorted.map((p) => {

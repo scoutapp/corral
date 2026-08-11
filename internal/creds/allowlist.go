@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jackrothrock/sandclaude/internal/config"
+	"github.com/scoutapp/corral/internal/config"
 )
 
 // ----------------------------------------------------------------------------
@@ -44,8 +44,8 @@ func AllowlistEncrypt(key [32]byte, plaintext []byte) ([]byte, error) {
 	return gcm.Seal(nonce, nonce, plaintext, nil), nil
 }
 
-// SyncEncryptedAllowlist encrypts <cwd>/.sandclaude/allowed-domains.txt →
-// allowed-domains.txt.enc using the key from .sandclaude/project/.allowlist-key.
+// SyncEncryptedAllowlist encrypts <cwd>/.corral/allowed-domains.txt →
+// allowed-domains.txt.enc using the key from .corral/project/.allowlist-key.
 // It is the single source of truth for keeping the encrypted file in step with the
 // plaintext, shared by startup (Run) and the firewall-reload command.
 func SyncEncryptedAllowlist() error {
@@ -54,7 +54,7 @@ func SyncEncryptedAllowlist() error {
 	keyPath := filepath.Join(projectDir, ".allowlist-key")
 	keyData, err := os.ReadFile(keyPath)
 	if err != nil {
-		return fmt.Errorf("read %s: %w\n\nRun 'sandclaude init' first to generate the encryption key", keyPath, err)
+		return fmt.Errorf("read %s: %w\n\nRun 'corral init' first to generate the encryption key", keyPath, err)
 	}
 
 	key, err := AllowlistDeriveKey(strings.TrimSpace(string(keyData)))
@@ -62,8 +62,8 @@ func SyncEncryptedAllowlist() error {
 		return err
 	}
 
-	plaintextPath := filepath.Join(config.SandclaudeDir(), "allowed-domains.txt")
-	encPath := filepath.Join(config.SandclaudeDir(), "allowed-domains.txt.enc")
+	plaintextPath := filepath.Join(config.CorralDir(), "allowed-domains.txt")
+	encPath := filepath.Join(config.CorralDir(), "allowed-domains.txt.enc")
 
 	plaintext, err := os.ReadFile(plaintextPath)
 	if err != nil {
