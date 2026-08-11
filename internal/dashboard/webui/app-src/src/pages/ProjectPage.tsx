@@ -24,14 +24,14 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "config", label: "Config" },
 ];
 
-const DOCK_KEY = "sandclaude.dockCollapsed";
-const CHAT_DOCK_KEY = "sandclaude.chatDock";
+const DOCK_KEY = "corral.dockCollapsed";
+const CHAT_DOCK_KEY = "corral.chatDock";
 // Panel sizes are shared across projects (a global preference); open-state is
 // per-project (keyed by id) so each project remembers whether you had its host
 // shell / chat open. Defaults roughly match the CSS starting sizes.
-const DOCK_W_KEY = "sandclaude.dockWidth";
-const HOST_H_KEY = "sandclaude.hostHeight";
-const CHAT_W_KEY = "sandclaude.chatWidth";
+const DOCK_W_KEY = "corral.dockWidth";
+const HOST_H_KEY = "corral.hostHeight";
+const CHAT_W_KEY = "corral.chatWidth";
 const DOCK_W_DEFAULT = 480;
 const HOST_H_DEFAULT = 320;
 const CHAT_W_DEFAULT = 420;
@@ -67,8 +67,8 @@ export function ProjectPage({ id }: { id: string }) {
   // navigation + reload). Sizes are global prefs.
   const [dockCollapsed, setDockCollapsed] = usePersistentState<boolean>(DOCK_KEY, false);
   const [dockSeen, setDockSeen] = useState(!dockCollapsed);
-  const [hostOpen, setHostOpen] = usePersistentState<boolean>(`sandclaude.hostOpen.${id}`, false);
-  const [chatOpen, setChatOpen] = usePersistentState<boolean>(`sandclaude.chatOpen.${id}`, false);
+  const [hostOpen, setHostOpen] = usePersistentState<boolean>(`corral.hostOpen.${id}`, false);
+  const [chatOpen, setChatOpen] = usePersistentState<boolean>(`corral.chatOpen.${id}`, false);
   const [chatSide, setChatSide] = usePersistentState<"left" | "right">(CHAT_DOCK_KEY, "right");
 
   // Persistent, drag-resizable panel sizes.

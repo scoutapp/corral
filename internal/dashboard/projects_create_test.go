@@ -48,7 +48,7 @@ func TestCreateProject(t *testing.T) {
 	defer srv.Close()
 	post := func(path, body string) (*http.Response, map[string]any) {
 		req, _ := http.NewRequest("POST", srv.URL+path, strings.NewReader(body))
-		req.AddCookie(&http.Cookie{Name: "sc_dash_token", Value: "tok"})
+		req.AddCookie(&http.Cookie{Name: "corral_dash_token", Value: "tok"})
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("POST %s: %v", path, err)

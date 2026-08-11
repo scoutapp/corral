@@ -18,7 +18,7 @@ func TestStartProjectRouting(t *testing.T) {
 
 	req := func(method, path string) int {
 		r, _ := http.NewRequest(method, srv.URL+path, strings.NewReader(""))
-		r.AddCookie(&http.Cookie{Name: "sc_dash_token", Value: "tok"})
+		r.AddCookie(&http.Cookie{Name: "corral_dash_token", Value: "tok"})
 		resp, err := http.DefaultClient.Do(r)
 		if err != nil {
 			t.Fatalf("%s %s: %v", method, path, err)

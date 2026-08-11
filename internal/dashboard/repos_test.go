@@ -55,7 +55,7 @@ func TestGitReposSiblings(t *testing.T) {
 	defer srv.Close()
 
 	req, _ := http.NewRequest("GET", srv.URL+"/p/"+id+"/git/repos", nil)
-	req.AddCookie(&http.Cookie{Name: "sc_dash_token", Value: "tok"})
+	req.AddCookie(&http.Cookie{Name: "corral_dash_token", Value: "tok"})
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

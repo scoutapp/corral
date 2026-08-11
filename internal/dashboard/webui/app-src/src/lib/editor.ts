@@ -1,5 +1,5 @@
 // Loader + types for the committed CodeMirror bundle (webui/static/codemirror.bundle.js),
-// which exposes a global SandclaudeEditor (IIFE, global-name build). Rather than
+// which exposes a global CorralEditor (IIFE, global-name build). Rather than
 // re-bundle CodeMirror into the React app, we reuse the already-built,
 // go:embed'd bundle: load it once on demand and call through the typed surface
 // below. This keeps the React bundle small and the editor behavior identical to
@@ -16,7 +16,7 @@ export interface DiffHandle {
   destroy(): void;
 }
 
-export interface SandclaudeEditorAPI {
+export interface CorralEditorAPI {
   createEditor(opts: {
     parent: HTMLElement;
     doc: string;
@@ -34,23 +34,23 @@ export interface SandclaudeEditorAPI {
 
 declare global {
   interface Window {
-    SandclaudeEditor?: SandclaudeEditorAPI;
+    CorralEditor?: CorralEditorAPI;
   }
 }
 
-let loadPromise: Promise<SandclaudeEditorAPI> | null = null;
+let loadPromise: Promise<CorralEditorAPI> | null = null;
 
 // loadEditor injects the committed bundle <script> once and resolves with the
 // global API. Subsequent calls return the same promise.
-export function loadEditor(): Promise<SandclaudeEditorAPI> {
-  if (window.SandclaudeEditor) return Promise.resolve(window.SandclaudeEditor);
+export function loadEditor(): Promise<CorralEditorAPI> {
+  if (window.CorralEditor) return Promise.resolve(window.CorralEditor);
   if (loadPromise) return loadPromise;
-  loadPromise = new Promise<SandclaudeEditorAPI>((resolve, reject) => {
+  loadPromise = new Promise<CorralEditorAPI>((resolve, reject) => {
     const s = document.createElement("script");
     s.src = "/static/codemirror.bundle.js";
     s.onload = () => {
-      if (window.SandclaudeEditor) resolve(window.SandclaudeEditor);
-      else reject(new Error("codemirror bundle loaded but SandclaudeEditor is missing"));
+      if (window.CorralEditor) resolve(window.CorralEditor);
+      else reject(new Error("codemirror bundle loaded but CorralEditor is missing"));
     };
     s.onerror = () => reject(new Error("failed to load codemirror bundle"));
     document.head.appendChild(s);

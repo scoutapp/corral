@@ -38,7 +38,7 @@ func TestReposEndpoints(t *testing.T) {
 	defer srv.Close()
 	do := func(method, path, body string) *http.Response {
 		req, _ := http.NewRequest(method, srv.URL+path, strings.NewReader(body))
-		req.AddCookie(&http.Cookie{Name: "sc_dash_token", Value: "tok"})
+		req.AddCookie(&http.Cookie{Name: "corral_dash_token", Value: "tok"})
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("%s %s: %v", method, path, err)

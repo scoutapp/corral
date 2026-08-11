@@ -122,7 +122,7 @@ export function GlobalPage() {
           <Link to="/" className="brand-back" title="Back to all projects">
             ←
           </Link>
-          <span className="brand-name">sandclaude</span>
+          <span className="brand-name">corral</span>
           <span className="brand-sub">global settings</span>
         </div>
       </header>
@@ -130,7 +130,7 @@ export function GlobalPage() {
       <main className="global-wrap">
         <p className="global-intro">
           Settings that apply across every project. Credentials here are shared by all projects (a project can still override per host).
-          Defaults are inherited by new projects when you run <code>sandclaude init</code>.
+          Defaults are inherited by new projects when you run <code>corral init</code>.
         </p>
         <div id="global-root">
           <section className="cfg-zone">
@@ -214,7 +214,7 @@ export function GlobalPage() {
 
           <section className="cfg-zone">
             <h3>
-              Defaults for new projects <span className="muted">— inherited at <code>sandclaude init</code></span>
+              Defaults for new projects <span className="muted">— inherited at <code>corral init</code></span>
             </h3>
             <div className="cfg-field">
               <div className="cfg-label">Default monitor-list</div>
@@ -281,7 +281,7 @@ export function GlobalPage() {
 
           <section className="cfg-zone">
             <h3>
-              Update source <span className="muted">— where <code>sandclaude update</code> pulls releases from</span>
+              Update source <span className="muted">— where <code>corral update</code> pulls releases from</span>
             </h3>
             <div className="cfg-field">
               <div className="cfg-label">Repo or URL</div>

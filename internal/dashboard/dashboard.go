@@ -271,7 +271,7 @@ func projectLiveStatus(workspace string) ProjectStatus {
 //go:embed all:webui/static
 var webuiFS embed.FS
 
-const dashboardCookieName = "sc_dash_token"
+const dashboardCookieName = "corral_dash_token"
 
 // ProjectID derives a short, stable, URL-safe id for a workspace path, so URLs
 // don't need to embed (and percent-encode) an absolute filesystem path.

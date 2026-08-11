@@ -177,7 +177,7 @@ export function FilesTab({ projectId }: { projectId: string }) {
   // Remember the last-opened file per project so navigating away and back
   // reopens it (the component unmounts on navigation, losing in-memory state).
   const [rememberedPath, setRememberedPath] = usePersistentState<string | null>(
-    `sandclaude.filesOpen.${projectId}`,
+    `corral.filesOpen.${projectId}`,
     null,
   );
   const restoredRef = useRef(false);

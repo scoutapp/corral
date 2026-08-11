@@ -44,7 +44,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const clearAll = useCallback(() => setItems([]), []);
 
-  // Ctrl-. clears all toasts (matches the old sandclaude:clear-notifications).
+  // Ctrl-. clears all toasts (matches the old corral:clear-notifications).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "." && (e.ctrlKey || e.metaKey)) clearAll();

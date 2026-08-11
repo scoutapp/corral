@@ -43,7 +43,7 @@ func TestChatSmoke(t *testing.T) {
 	}
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/p/" + id + "/chat/ws"
 	hdr := http.Header{
-		"Cookie": {"sc_dash_token=tok"},
+		"Cookie": {"corral_dash_token=tok"},
 		"Origin": {srv.URL}, // same-origin check in terminalUpgrader
 	}
 	c, resp2, err := websocket.DefaultDialer.Dial(wsURL, hdr)
@@ -107,7 +107,7 @@ func TestChatCancel(t *testing.T) {
 
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/p/" + id + "/chat/ws"
 	c, _, err := websocket.DefaultDialer.Dial(wsURL, http.Header{
-		"Cookie": {"sc_dash_token=tok"},
+		"Cookie": {"corral_dash_token=tok"},
 		"Origin": {srv.URL},
 	})
 	if err != nil {

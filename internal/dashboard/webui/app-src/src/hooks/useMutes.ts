@@ -3,9 +3,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // Per-project + global mute state, persisted in localStorage (survives reloads).
 // Cleared when the server boot_id changes, since project ids can be reused
 // across daemon restarts and a stale mute must not stick to an unrelated project.
-const MUTES_KEY = "sandclaude.muted"; // { "<projectId>": true }
-const GLOBAL_KEY = "sandclaude.mutedAll"; // "1" when everything is muted
-const BOOT_KEY = "sandclaude.bootId"; // last server boot id we saw
+const MUTES_KEY = "corral.muted"; // { "<projectId>": true }
+const GLOBAL_KEY = "corral.mutedAll"; // "1" when everything is muted
+const BOOT_KEY = "corral.bootId"; // last server boot id we saw
 
 function loadMutes(): Record<string, boolean> {
   try {
