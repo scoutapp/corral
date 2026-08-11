@@ -1,17 +1,41 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/jackrothrock/sandclaude/internal/config"
 	"github.com/jackrothrock/sandclaude/internal/dashboard"
 	sshagent "github.com/jackrothrock/sandclaude/internal/ssh"
 )
+
+// dockerTimeout bounds every docker call during uninstall. A wedged Docker daemon
+// (common after a privileged DinD container leaves the engine in a bad state) makes
+// even read-only calls like `docker volume ls` block forever — without a deadline
+// that hangs the whole uninstall with no output. On timeout we report it and move
+// on rather than freeze.
+const dockerTimeout = 20 * time.Second
+
+var errDockerHung = errors.New("docker did not respond (daemon may be hung — try restarting Docker)")
+
+// dockerOut runs `docker <args>` with a timeout, returning combined output. The
+// returned error is errDockerHung when the daemon didn't respond in time.
+func dockerOut(args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), dockerTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return string(out), errDockerHung
+	}
+	return string(out), err
+}
 
 // cmdUninstall removes everything sandclaude created on this machine and then
 // deletes the sandclaude binary itself (self-removal is last). It is deliberately
@@ -98,10 +122,10 @@ func cmdUninstall(args []string) error {
 	if !keepImages {
 		// 4. Remove the sandbox image.
 		log.Println("==> Removing image sandclaude-stable")
-		if out, err := exec.Command("docker", "rmi", "-f", "sandclaude-stable").CombinedOutput(); err != nil {
+		if out, err := dockerOut("rmi", "-f", "sandclaude-stable"); err != nil {
 			// Not fatal — the image may simply not exist.
-			if !strings.Contains(string(out), "No such image") {
-				log.Printf("    warning: docker rmi sandclaude-stable: %v", strings.TrimSpace(string(out)))
+			if !strings.Contains(out, "No such image") {
+				log.Printf("    warning: could not remove image sandclaude-stable: %v", dockerErr(err, out))
 			}
 		}
 
@@ -189,36 +213,69 @@ func killTmuxSessions() {
 }
 
 // removeContainers force-removes every container named sandclaude_* (running or
-// stopped). Matches on the name prefix so all per-workspace containers are caught.
+// stopped), one at a time so one stuck container can't hide the rest. Matches on
+// the name prefix so all per-workspace containers are caught.
 func removeContainers() {
-	out, err := exec.Command("docker", "ps", "-aq", "--filter", "name=^/sandclaude_").Output()
+	out, err := dockerOut("ps", "-aq", "--filter", "name=^/sandclaude_")
 	if err != nil {
-		log.Printf("    warning: could not list containers (is docker running?): %v", err)
+		log.Printf("    warning: could not list containers: %v", dockerErr(err, out))
 		return
 	}
-	ids := strings.Fields(strings.TrimSpace(string(out)))
-	if len(ids) == 0 {
-		return
-	}
-	args := append([]string{"rm", "-f"}, ids...)
-	if err := exec.Command("docker", args...).Run(); err != nil {
-		log.Printf("    warning: docker rm -f failed for some containers: %v", err)
+	forceRemoveContainers(strings.Fields(strings.TrimSpace(out)))
+}
+
+// forceRemoveContainers `docker rm -f`s each id individually, reporting which one
+// failed and why (a bare batch `rm -f` swallows this as "exit status 1").
+func forceRemoveContainers(ids []string) {
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if out, err := dockerOut("rm", "-f", id); err != nil {
+			log.Printf("    warning: could not remove container %s: %v", short(id), dockerErr(err, out))
+		}
 	}
 }
 
-// removeDindVolumes removes every Docker volume named sandclaude-dind-*.
+// removeDindVolumes removes every Docker volume named sandclaude-dind-*. A volume
+// that's still attached to a container can't be removed (and `volume rm` may block
+// on a wedged daemon), so we first force-remove any container holding it, then
+// remove the volume — each call bounded by a timeout.
 func removeDindVolumes() {
-	out, err := exec.Command("docker", "volume", "ls", "-q", "--filter", "name=sandclaude-dind-").Output()
+	out, err := dockerOut("volume", "ls", "-q", "--filter", "name=sandclaude-dind-")
 	if err != nil {
-		log.Printf("    warning: could not list volumes: %v", err)
+		log.Printf("    warning: could not list volumes: %v", dockerErr(err, out))
 		return
 	}
-	vols := strings.Fields(strings.TrimSpace(string(out)))
-	if len(vols) == 0 {
-		return
+	vols := strings.Fields(strings.TrimSpace(out))
+	for _, vol := range vols {
+		// Detach: force-remove any container still using this volume, or the
+		// removal below fails ("volume is in use") / hangs.
+		if usersOut, uerr := dockerOut("ps", "-aq", "--filter", "volume="+vol); uerr == nil {
+			forceRemoveContainers(strings.Fields(strings.TrimSpace(usersOut)))
+		}
+		if rmOut, rerr := dockerOut("volume", "rm", "-f", vol); rerr != nil {
+			log.Printf("    warning: could not remove volume %s: %v", vol, dockerErr(rerr, rmOut))
+		}
 	}
-	args := append([]string{"volume", "rm", "-f"}, vols...)
-	if err := exec.Command("docker", args...).Run(); err != nil {
-		log.Printf("    warning: docker volume rm failed for some volumes: %v", err)
+}
+
+// dockerErr formats a docker failure: the hung-daemon sentinel as-is, otherwise
+// the error plus any trimmed docker stderr for context.
+func dockerErr(err error, out string) error {
+	if errors.Is(err, errDockerHung) {
+		return err
 	}
+	if msg := strings.TrimSpace(out); msg != "" {
+		return fmt.Errorf("%v: %s", err, msg)
+	}
+	return err
+}
+
+// short truncates a docker id to the 12-char form docker displays.
+func short(id string) string {
+	if len(id) > 12 {
+		return id[:12]
+	}
+	return id
 }
