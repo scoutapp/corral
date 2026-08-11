@@ -131,6 +131,7 @@ main() {
   tar xzf "$tmp/assets.tar.gz" -C "$ASSETS_DIR"
 
   ensure_mitmproxy
+  ensure_tmux
 
   echo
   echo "✅ Installed sandclaude $version"
@@ -163,6 +164,27 @@ ensure_mitmproxy() {
       err "apt-get not found; install mitmproxy manually (see https://docs.mitmproxy.org)" ;;
   esac
   err "sandclaude needs mitmproxy for 'sandclaude start' — install it and re-run if start fails"
+}
+
+# tmux is a HOST dependency: sandclaude runs the interactive container inside a
+# host tmux session (so it survives detach/reattach and the dashboard can attach
+# to it). Install it the same cross-platform way as mitmproxy.
+ensure_tmux() {
+  command -v tmux >/dev/null 2>&1 && return 0
+  info "installing tmux (host terminal multiplexer)"
+  local os; os="$(uname -s)"
+  case "$os" in
+    Darwin)
+      if command -v brew >/dev/null 2>&1; then brew install tmux && return 0; fi
+      err "Homebrew not found; install tmux manually: brew install tmux" ;;
+    Linux)
+      local sudo=""; [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && sudo="sudo"
+      if command -v apt-get >/dev/null 2>&1; then
+        $sudo apt-get update -qq && $sudo apt-get install -y -qq tmux && return 0
+      fi
+      err "apt-get not found; install tmux manually (e.g. your distro's package manager)" ;;
+  esac
+  err "sandclaude needs tmux for 'sandclaude start' — install it and re-run if start fails"
 }
 
 main "$@"

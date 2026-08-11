@@ -43,6 +43,14 @@ func (d *dashboardServer) handleStartProject(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// tmux is a hard host dependency (the interactive container runs inside a host
+	// tmux session). Fail with a clear message instead of a cryptic downstream one.
+	if err := session.RequireTmux(); err != nil {
+		w.WriteHeader(http.StatusPreconditionFailed)
+		writeFilesJSON(w, map[string]any{"ok": false, "message": err.Error()})
+		return
+	}
+
 	// Pre-load gate: the child `sandclaude dev` runs detached (no TTY), so if this
 	// project has ssh keys configured but they aren't loaded into the scoped agent
 	// yet, the child would fail fast. Surface that here so the caller can send the

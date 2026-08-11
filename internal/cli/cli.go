@@ -254,6 +254,12 @@ func cmdDev(args []string) error {
 }
 
 func runStart(args []string, devMode bool) error {
+	// tmux is a hard host dependency (the interactive container runs inside a host
+	// tmux session). Fail early with an install hint rather than downstream.
+	if err := session.RequireTmux(); err != nil {
+		return err
+	}
+
 	disableFirewall := false
 	// Passthrough (proxy + mitm on, allow+log unknown domains, direct TCP ok) is
 	// now the DEFAULT. --enforce-allowlist opts into the old strict behavior

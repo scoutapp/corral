@@ -1,10 +1,31 @@
 package session
 
 import (
+	"fmt"
 	"os/exec"
+	"runtime"
 	"strings"
 	"syscall"
 )
+
+// RequireTmux returns a clear, actionable error when `tmux` isn't on PATH. tmux
+// is a hard host dependency: sandclaude runs the interactive container inside a
+// host tmux session (so it survives detach/reattach and the dashboard can attach
+// to it). Called as a preflight by start/dev/dashboard so a missing tmux fails
+// with an install hint instead of a cryptic "session not running" downstream.
+func RequireTmux() error {
+	if _, err := exec.LookPath("tmux"); err == nil {
+		return nil
+	}
+	hint := "install it and try again"
+	switch runtime.GOOS {
+	case "darwin":
+		hint = "install it with: brew install tmux"
+	case "linux":
+		hint = "install it with your package manager, e.g.: apt-get install tmux"
+	}
+	return fmt.Errorf("sandclaude needs tmux on the host but it isn't installed — %s", hint)
+}
 
 // DockerContainerRunning reports whether a container with the given name is
 // currently running. Mirrors the same `docker inspect --format={{.State.Running}}`

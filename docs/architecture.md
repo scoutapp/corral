@@ -98,6 +98,45 @@ macOS-first: the socket lives under `~/.sandclaude` (a Docker-Desktop shared pat
 so virtiofs proxies the Unix-socket connection host → VM → container. Linux works
 too; its cross-project residual risk differs and is noted in the code.
 
+## How the dashboard reaches a container
+
+```
+browser (xterm.js)                    HOST: sandclaude dashboard
+  │  WebSocket                                       │
+  │  ── you type (keystrokes) ───────────────────▶ PTY (host)
+  │  ◀─ screen output ───────────────────────────── │       │
+  │  ── window resized (cols×rows) ──────────────▶ resize   │
+  │                                                          ▼ helper command
+  │                                          ┌───────────────────────────────┐
+  │  Claude terminal   → tmux attach ────────┼─▶ the live Claude session      │
+  │                                           │   (the `docker run` process)   │
+  │  Container shell   → docker exec ─────────┼─▶ a shell INSIDE the container │
+  │  Host shell        → tmux attach ─────────┼─▶ a shell ON the host, in the  │
+  │                                           │   project folder               │
+  └───────────────────────────────────────────┘
+```
+
+The dashboard never connects *to* a container — it's sealed off (no network in).
+The host does the work: it runs a helper command in a PTY and pipes that PTY to
+the browser over a WebSocket (`bridgePTY`, internal/dashboard/terminal.go). Each
+terminal is just a different helper command — `tmux attach` for Claude, `docker
+exec` for the container shell, `tmux attach` for the host shell (which is a real,
+un-sandboxed shell on your machine).
+
+Because the sessions live in tmux, they outlast the browser: reload the page or
+leave the project and come back, and you're reattached to the same live terminals,
+right where you left off. The full chain stacks two PTYs — tmux and the docker
+client run on the host; only `claude` runs in the container:
+
+```
+xterm.js → dashboard(host) →PTY-A→ tmux → docker run -it →PTY-B→ claude(container)
+```
+
+Non-terminal data (files, git diff, mitm flows) mostly skips the container — the
+workspace is bind-mounted, so Files/Diff and logs are read on the host. All
+loopback-bound, token-gated, same-origin. Since the sessions are host tmux
+sessions, **tmux is a host dependency** — the installer adds it alongside mitmproxy.
+
 ## Where things live (repo layout by tier)
 
 ```
