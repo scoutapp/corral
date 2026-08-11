@@ -47,8 +47,25 @@ export function XtermPane({ projectId, wsPath, fullPath }: { projectId?: string;
     ws.onclose = () => {
       term.write("\r\n\x1b[90m[disconnected — reopen to reconnect]\x1b[0m\r\n");
     };
-    term.onData((d) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(new TextEncoder().encode(d));
+    const sendBytes = (s: string) => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(new TextEncoder().encode(s));
+    };
+    term.onData((d) => sendBytes(d));
+
+    // Enter handling, made explicit so it doesn't depend on xterm's keyboard-mode
+    // negotiation (which can leave a bare Enter producing a CSI-u sequence the app
+    // ignores — the "Enter does nothing" symptom):
+    //   • plain Enter          → CR (\r): submit
+    //   • Cmd/Ctrl/Alt+Enter   → ESC+CR (\x1b\r): the meta-return newline apps read
+    //     as "insert a newline, don't submit"
+    // Returning false stops xterm's own default so we don't double-send.
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type !== "keydown" || e.key !== "Enter") return true;
+      // preventDefault + returning false stops xterm from ALSO emitting its own
+      // \r for this key (which double-submitted).
+      e.preventDefault();
+      sendBytes(e.metaKey || e.ctrlKey || e.altKey ? "\x1b\r" : "\r");
+      return false;
     });
 
     let resizeTimer: number;
