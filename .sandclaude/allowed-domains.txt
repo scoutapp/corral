@@ -1,0 +1,62 @@
+# Default allowed domains
+registry.npmjs.org
+api.anthropic.com
+platform.claude.com
+downloads.claude.ai
+sentry.io
+statsig.anthropic.com
+statsig.com
+marketplace.visualstudio.com
+vscode.blob.core.windows.net
+update.code.visualstudio.com
+
+# Node.js package repositories
+registry.yarnpkg.com
+npm.pkg.github.com
+pkgs.dev.azure.com
+
+# Go package repositories
+proxy.golang.org
+sum.golang.org
+go.googlesource.com
+golang.org
+
+# Popular CDNs and registries
+cdn.jsdelivr.net
+unpkg.com
+registry.hub.docker.com
+index.docker.io
+auth.docker.io
+registry-1.docker.io
+production.cloudflare.docker.com
+ghcr.io
+quay.io
+
+# Google Cloud Storage and Chrome downloads
+storage.googleapis.com
+dl.google.com
+googlechromelabs.github.io
+
+# GitHub raw content
+raw.githubusercontent.com
+
+# Datadog log intake
+http-intake.logs.us5.datadoghq.com
+
+# General github
+github.comapi.github.com
+api.github.com
+github.com
+
+# Docker host gateway (local machine, not external)
+host.docker.internal
+
+production.cloudfront.docker.com
+archive.ubuntu.com
+security.ubuntu.com
+deb.nodesource.com
+cdn.playwright.dev
+download.docker.com
+astral.sh
+releases.astral.sh
+claude.ai

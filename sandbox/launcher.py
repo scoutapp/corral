@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --quiet --script
 """
-Sandclaude Launcher - Starts Claude Code
+Corral Launcher - Starts Claude Code
 """
 
 import json
@@ -378,7 +378,7 @@ def start_issue_monitoring_teams():
 
     script_content = (
         "#!/bin/bash\n"
-        "# Sandclaude agent team: Issue Monitoring\n"
+        "# Corral agent team: Issue Monitoring\n"
         "export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1\n"
         "python3 /home/claude/bin/patch-claude-settings.py\n"
         "exec claude --dangerously-skip-permissions \\\n"
@@ -438,7 +438,7 @@ def write_agent_scripts():
 
         script_content = (
             "#!/bin/bash\n"
-            f"# Sandclaude agent team: {config['label']}\n"
+            f"# Corral agent team: {config['label']}\n"
             f"export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1\n"
             f"python3 /home/claude/bin/patch-claude-settings.py\n"
             f"exec claude --dangerously-skip-permissions \\\n"
@@ -493,7 +493,7 @@ def start_agent_teams():
 def main():
     """Main entry point for corral launcher"""
     logger.info("=" * 60)
-    logger.info("Sandclaude Launcher")
+    logger.info("Corral Launcher")
     logger.info("=" * 60)
 
     project_name = os.getenv('PROJECT_NAME', 'unknown')

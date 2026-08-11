@@ -39,7 +39,7 @@ type Corral struct {
 	sshAgent                    *sshagent.Agent // non-nil when a scoped ssh-agent was started for this run (mounted + torn down on stop)
 }
 
-func NewSandClaude() (*Corral, error) {
+func NewCorral() (*Corral, error) {
 	// Get configuration from environment
 	proxyPort := os.Getenv("CORRAL_PROXY_PORT")
 	if proxyPort == "" {

@@ -1,24 +1,24 @@
-# Sandclaude
+# Corral
 
 Let Claude Code work on your project on autopilot — without worrying about what it
-might touch. Sandclaude runs Claude with permission prompts turned off, but inside
+might touch. Corral runs Claude with permission prompts turned off, but inside
 a safe bubble: it can only reach the sites you allow, it never sees your real
 credentials, and everything happens in a throwaway container that leaves your
 machine untouched. You watch it work in a live dashboard in your browser.
 
-![The Sandclaude dashboard — file browser and a live Claude terminal](docs/images/project-files.png)
+![The Corral dashboard — file browser and a live Claude terminal](docs/images/project-files.png)
 
 ## Try it
 
 ```bash
 # 1. install (Docker required; the installer adds its other host deps for you)
-curl -fsSL https://raw.githubusercontent.com/scoutapp/sandclaude/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/scoutapp/corral/main/scripts/install.sh | bash
 
 # 2. set up a project and start working
 cd ~/my-project
-sandclaude init                         # answer a few prompts, once per project
-sandclaude populate-proxy-credentials   # set your credentials once
-sandclaude start                        # start working — opens the dashboard
+corral init                         # answer a few prompts, once per project
+corral populate-proxy-credentials   # set your credentials once
+corral start                        # start working — opens the dashboard
 ```
 
 `start` prints a private link to the browser dashboard, where you watch Claude
@@ -55,33 +55,33 @@ The ones you'll use most:
 | `populate-proxy-credentials` | set your credentials (once) |
 | `start` | start Claude + open the dashboard |
 | `dashboard` | open the dashboard on its own |
-| `update` | update Sandclaude itself |
-| `uninstall` | remove Sandclaude from your machine |
+| `update` | update Corral itself |
+| `uninstall` | remove Corral from your machine |
 | `help` | full command list and options |
 
 For the complete list, see the [usage guide](docs/usage.md#command-reference) or
-run `sandclaude help`.
+run `corral help`.
 
 ## Good to know
 
 - You need [Docker](https://www.docker.com/) and Claude Code signed in (`claude`
   once). The installer pulls in its other host deps for you — `mitmproxy` (the
   credential proxy) and `tmux` (hosts the session) — via Homebrew or apt.
-- Everything for a project lives in `./.sandclaude/` (safe to delete to start over;
+- Everything for a project lives in `./.corral/` (safe to delete to start over;
   `init` git-ignores it for you).
-- Shared settings and credentials live in `~/.sandclaude/`.
-- Pin a version or change install locations with `SANDCLAUDE_VERSION`,
-  `SANDCLAUDE_PREFIX`, `SANDCLAUDE_HOME` before the install command.
+- Shared settings and credentials live in `~/.corral/`.
+- Pin a version or change install locations with `CORRAL_VERSION`,
+  `CORRAL_PREFIX`, `CORRAL_HOME` before the install command.
 
 ## For developers
 
-Curious how it works under the hood, or want to hack on Sandclaude itself? See
+Curious how it works under the hood, or want to hack on Corral itself? See
 [`docs/architecture.md`](docs/architecture.md) for the design, and:
 
 ```bash
-git clone https://github.com/scoutapp/sandclaude.git && cd sandclaude
+git clone https://github.com/scoutapp/corral.git && cd corral
 ./install.sh                     # build + install from source
-go build -o sandclaude ./cmd/sandclaude && ./sandclaude list   # or run from the checkout
+go build -o corral ./cmd/corral && ./corral list   # or run from the checkout
 go test ./... && (cd tests/e2e && npm test)                    # tests (e2e also runs in CI)
 ```
 

@@ -1,6 +1,6 @@
-# Using Sandclaude
+# Using Corral
 
-Sandclaude lets Claude Code work on your projects on autopilot — inside a safe
+Corral lets Claude Code work on your projects on autopilot — inside a safe
 bubble — and you drive the whole thing from a **browser dashboard**. This guide is
 dashboard-first; the CLI equivalents are noted alongside.
 
@@ -13,7 +13,7 @@ New here? [Install](../README.md#install) first, then come back.
 Everything starts with one command:
 
 ```bash
-sandclaude dashboard        # opens the dashboard, prints a private link
+corral dashboard        # opens the dashboard, prints a private link
 ```
 
 It runs on your machine only (loopback) and the link carries a token — **treat the
@@ -39,7 +39,7 @@ Click **+ New project**. You can start from scratch in a folder you pick, or clo
 a Git repo (private repos use your existing host `git`/`gh` login — no tokens are
 stored). New projects start automatically.
 
-> CLI equivalent: `cd ~/my-project && sandclaude init`.
+> CLI equivalent: `cd ~/my-project && corral init`.
 
 ### Spinning a project off a GitHub issue
 
@@ -48,7 +48,7 @@ GitHub issues:
 
 ![A repo's GitHub issues](images/repos-issues.png)
 
-Hit **Spawn** on any issue and Sandclaude offers to create a project for it —
+Hit **Spawn** on any issue and Corral offers to create a project for it —
 cloning the repo on a fresh branch, writing an `ISSUE.md`, and pre-typing a prompt
 into Claude so it can get straight to work. Nothing starts until you confirm:
 
@@ -108,7 +108,7 @@ Changes apply to the running container immediately — no restart.
 
 ![Config tab](images/project-config.png)
 
-> CLI: `sandclaude config` edits a project's config from the terminal.
+> CLI: `corral config` edits a project's config from the terminal.
 
 ### Ask Claude
 
@@ -126,7 +126,7 @@ The gear at the bottom-left holds settings shared across **every** project.
 
 ![Global settings](images/global-settings.png)
 
-- **Shared credentials** — the real API keys/tokens Sandclaude injects on your
+- **Shared credentials** — the real API keys/tokens Corral injects on your
   behalf. Claude never sees them; it runs with dummy values. Add them by hand, or
   **Populate from Claude…** to pull your Claude login automatically. Values are
   masked.
@@ -135,13 +135,13 @@ The gear at the bottom-left holds settings shared across **every** project.
 - **Default SSH keys** — keys loaded into every project. The container can *use*
   them (sign, push) but never reads the key bytes.
 
-> CLI: `sandclaude populate-proxy-credentials` sets credentials from the terminal.
+> CLI: `corral populate-proxy-credentials` sets credentials from the terminal.
 
 ---
 
-## Keeping Sandclaude up to date
+## Keeping Corral up to date
 
-Sandclaude checks for new releases and shows a banner across the top when one's
+Corral checks for new releases and shows a banner across the top when one's
 available — click **Update…** to run the update in a terminal (it may ask for your
 password if needed). If it can't reach the update source, you'll see a dismissible
 "couldn't check for updates" notice instead.
@@ -154,36 +154,36 @@ release URL.
 
 > CLI equivalents:
 > ```bash
-> sandclaude update --check                 # is there a newer release?
-> sandclaude update                         # update the CLI + image
-> sandclaude update --set-repo owner/name   # change the update source
+> corral update --check                 # is there a newer release?
+> corral update                         # update the CLI + image
+> corral update --set-repo owner/name   # change the update source
 > ```
 
 ---
 
 ## Prefer the terminal?
 
-The dashboard is the main way to drive Sandclaude, but everything has a CLI:
+The dashboard is the main way to drive Corral, but everything has a CLI:
 
 ```bash
-sandclaude init      # set up a project (once)
-sandclaude start     # start it (opens the dashboard)
-sandclaude dev       # start in the background: capture / send / attach
+corral init      # set up a project (once)
+corral start     # start it (opens the dashboard)
+corral dev       # start in the background: capture / send / attach
 ```
 
 By default `start` runs in **permissive** mode — the proxy and credential
 injection are on, but unknown sites are allowed and logged rather than blocked, so
-a new project works right away while Sandclaude learns what it actually needs. Once
+a new project works right away while Corral learns what it actually needs. Once
 you know, lock it down:
 
 ```bash
-sandclaude firewall-reload             # lock in the sites that were actually used
-sandclaude start --enforce-allowlist   # strict: block anything not on the allowlist
+corral firewall-reload             # lock in the sites that were actually used
+corral start --enforce-allowlist   # strict: block anything not on the allowlist
 ```
 
 ## Command reference
 
-Everything `sandclaude` accepts. Run `sandclaude help` for the same list with the
+Everything `corral` accepts. Run `corral help` for the same list with the
 full set of flags.
 
 | Command | What it does |
@@ -198,7 +198,7 @@ full set of flags.
 | `capture` / `send` / `attach` | Read output from / send a prompt to / attach to a `dev` session. |
 | `shell` | Open a shell inside the running sandbox container. |
 | `list` | Show this project's settings. |
-| `remove` | Delete this project's `./.sandclaude/`. |
+| `remove` | Delete this project's `./.corral/`. |
 | `dashboard` | Open the dashboard on its own (covers all projects). |
 | `populate-proxy-credentials` | Set your credentials; add `--project` for a per-project set. |
 | `set-cred` / `unset-cred` | Add or remove a single injected credential. |
@@ -207,8 +207,8 @@ full set of flags.
 | `firewall-monitor` | Watch the allowlist proxy log live. |
 | `proxy-apply` | Re-apply proxy/credential config to a running project. |
 | `rebuild` | Rebuild the sandbox image from scratch. |
-| `update` | Update Sandclaude itself (CLI + image); `--check` to just check. |
-| `uninstall` | Remove everything Sandclaude created, then the binary. |
+| `update` | Update Corral itself (CLI + image); `--check` to just check. |
+| `uninstall` | Remove everything Corral created, then the binary. |
 | `version` / `help` | Version info / the full command list. |
 
 ---

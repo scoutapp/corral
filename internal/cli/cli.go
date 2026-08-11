@@ -287,7 +287,7 @@ func runStart(args []string, devMode bool) error {
 		}
 	}
 
-	sc, err := container.NewSandClaude()
+	sc, err := container.NewCorral()
 	if err != nil {
 		return err
 	}
@@ -359,7 +359,7 @@ func cmdShell() error {
 	}
 
 	// Ensure image exists
-	sc, err := container.NewSandClaude()
+	sc, err := container.NewCorral()
 	if err != nil {
 		return err
 	}

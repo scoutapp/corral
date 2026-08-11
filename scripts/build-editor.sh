@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
 # build-editor.sh — build the self-contained CodeMirror 6 bundle for the
-# sandclaude dashboard.
+# corral dashboard.
 #
 # CodeMirror 6 is ES-modules-only; the dashboard frontend is plain (no-build)
 # vanilla JS behind a strict CSP. This script bundles editor-src/editor.js into
 # a single minified IIFE at internal/dashboard/webui/static/codemirror.bundle.js
-# exposing window.SandclaudeEditor.
+# exposing window.CorralEditor.
 #
 # Requires Node 20+ (esbuild / CM6). If you use nvm:
 #   export NVM_DIR="$HOME/.nvm" && . "$NVM_DIR/nvm.sh" && nvm use 20

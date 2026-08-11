@@ -1,0 +1,7 @@
+{
+  "workspace": "/Users/jackrothrock/claude_sandbox",
+  "proxy_enabled": true,
+  "dind_enabled": true,
+  "launch_tmux": true,
+  "created_at": "2026-07-27T18:20:23Z"
+}

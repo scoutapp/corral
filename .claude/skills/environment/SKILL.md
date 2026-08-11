@@ -27,7 +27,7 @@ This is a sandboxed environment for running Claude Code in "dangerous mode" (no 
 - **Tool**: Go allowlist-proxy (HTTP CONNECT proxy) + iptables egress enforcement
 - **Config**: `/home/claude/allowed-domains.txt.enc` (AES-256-GCM encrypted, bind-mounted from host)
 - **Logging**: `/home/claude/logs/proxy.log` (ALLOWED/BLOCKED entries per request)
-- **Hot-reload**: Send SIGHUP to allowlist-proxy or run `sandclaude firewall-reload` from host
+- **Hot-reload**: Send SIGHUP to allowlist-proxy or run `corral firewall-reload` from host
 
 ## Pre-approved Domains
 
@@ -78,7 +78,7 @@ When Claude Code needs to access a blocked domain, edit the allowlist and reload
 # Edit the plaintext allowlist
 vim allowlist-proxy/allowed-domains.txt
 # Encrypt and SIGHUP the proxy
-./sandclaude firewall-reload [project]
+./corral firewall-reload [project]
 ```
 
 **Method 2: Restart the container**
@@ -86,15 +86,15 @@ vim allowlist-proxy/allowed-domains.txt
 # Edit the plaintext allowlist
 vim allowlist-proxy/allowed-domains.txt
 # Re-encrypt
-./sandclaude firewall-reload
+./corral firewall-reload
 # Restart
-./sandclaude start [project]
+./corral start [project]
 ```
 
 ### Viewing the Proxy Log
 ```bash
 # From host
-./sandclaude firewall-monitor [project]
+./corral firewall-monitor [project]
 # Inside container
 tail -f ~/logs/proxy.log
 ```
@@ -110,7 +110,7 @@ tail -f ~/logs/proxy.log
 4. All traffic must flow through the proxy; ALLOWED/BLOCKED logged to `~/logs/proxy.log` (transparent entries are tagged `(transparent)`)
 
 **Hot-reload:**
-- Write new `.enc` file to host (via `sandclaude firewall-reload`)
+- Write new `.enc` file to host (via `corral firewall-reload`)
 - Bind mount means container sees it immediately
 - SIGHUP to allowlist-proxy atomically swaps the in-memory domain set
 
@@ -141,7 +141,7 @@ If Claude needs authenticated access:
 - GitHub: just use `gh` / `git` normally — the proxy injects the real token into
   `api.github.com` requests. You never need (and cannot read) the raw token.
 - Other services: their credentials are injected by the proxy too when configured
-  via `sandclaude set-cred` / `populate-proxy-credentials`.
+  via `corral set-cred` / `populate-proxy-credentials`.
 
 ## Docker-in-Docker (DinD)
 
@@ -154,10 +154,10 @@ When `DIND_ENABLED=1` is set in the environment, an inner Docker daemon is runni
 - Inner containers do their **own DNS resolution**. A `nat POSTROUTING MASQUERADE` rule (for `172.18.0.0/16 → non-inner`) SNATs their UDP/53 queries so DNS works without proxy env vars.
 - The allowlist proxy runs two listeners: the **explicit** HTTP CONNECT proxy on `0.0.0.0:3128` (used by the outer container's own processes via `HTTP_PROXY`, and as the `--upstream` chain target) and the **transparent** listener on `0.0.0.0:3129` (for REDIRECTed inner-container traffic).
 - The proxy forwards to mitmproxy, so inner containers must trust the mitmproxy CA cert for TLS interception. CA trust is handled at two points:
-  - **Build time** — the `~/bin/docker` wrapper (shadows `/usr/bin/docker`) intercepts `docker build` / `docker buildx build` and rewrites the Dockerfile **in memory** (the original on disk is never touched/committed): after every `FROM` it installs the mitm CA into the OS trust store (Debian/Alpine/RHEL-aware) and sets every toolchain's CA-override env (`NODE_EXTRA_CA_CERTS`, `REQUESTS_CA_BUNDLE`/`PIP_CERT`, `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `GIT_SSL_CAINFO`, `CARGO_HTTP_CAINFO`). This is why `RUN npm install` / `pip install` / `bundle` / `go mod` / `mix deps.get` work through the MITM proxy with no Dockerfile changes. The CA is passed in via a `--build-context` named `sandclaude-ca`. (This is needed because BuildKit has no supported way to inject a CA into build RUN steps, and Node/Python/Rust ship their own CA bundles that ignore the OS store.)
+  - **Build time** — the `~/bin/docker` wrapper (shadows `/usr/bin/docker`) intercepts `docker build` / `docker buildx build` and rewrites the Dockerfile **in memory** (the original on disk is never touched/committed): after every `FROM` it installs the mitm CA into the OS trust store (Debian/Alpine/RHEL-aware) and sets every toolchain's CA-override env (`NODE_EXTRA_CA_CERTS`, `REQUESTS_CA_BUNDLE`/`PIP_CERT`, `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `GIT_SSL_CAINFO`, `CARGO_HTTP_CAINFO`). This is why `RUN npm install` / `pip install` / `bundle` / `go mod` / `mix deps.get` work through the MITM proxy with no Dockerfile changes. The CA is passed in via a `--build-context` named `corral-ca`. (This is needed because BuildKit has no supported way to inject a CA into build RUN steps, and Node/Python/Rust ship their own CA bundles that ignore the OS store.)
   - **Run time** — the **cert-injector** sidecar watches docker events and injects the CA into new inner containers. **Caveat:** its create→start→restart model is racy for very short-lived `--rm` one-shot containers (they may exit before injection completes). Long-running service containers, and any container built via the wrapper (the CA is already baked into the image), are fine. For an ephemeral container that hits `SSL certificate problem` / `509 Certificate Verify Failed`, either mount the CA read-only (`-v /etc/proxy-ca.crt:/tmp/ca.crt:ro` and point the tool at it) or use the tool's insecure flag.
 - iptables allows `172.16.0.0/12` in the OUTPUT chain so the proxy can respond to inner container connections; a matching `nat POSTROUTING MASQUERADE` (also `172.16.0.0/12`) lets inner containers' own DNS reach the resolver. **Both must cover the full `/12`, not just the default bridge `172.18.0.0/16`** — docker-compose apps get networks like `172.19.x`/`172.20.x`, and scoping to `/16` silently breaks their DNS.
-- Inner containers are destroyed when sandclaude exits, but their **named volumes and pulled images persist**
+- Inner containers are destroyed when corral exits, but their **named volumes and pulled images persist**
 
 **Note on the outer container's own processes (Claude, curl, etc.):** these are NOT captured transparently — they use an explicit `HTTP_PROXY=127.0.0.1:3128` env var (set once in `entrypoint.sh`), enforced by the OUTPUT-chain REJECT. Transparent capture of locally-generated traffic does not work reliably inside Docker Desktop's LinuxKit VM, so only DinD inner containers are env-free. The dockerd daemon's own image pulls go through the proxy via `HTTP_PROXY` in its process environment (not injected into the containers it starts).
 
@@ -169,7 +169,7 @@ The inner docker data root (`/var/lib/docker-dind`) is bind-mounted from `./proj
 - **Pulled images** are cached — `docker pull` only runs on first use; subsequent starts reuse the cached layers
 - **Inner containers themselves** are destroyed on exit and must be restarted by Claude — but their volumes are intact, so databases come back with existing data
 
-**Which data belongs to which project?** The data dir is keyed to `./project/dind-data/` in the sandclaude repo directory. Each project has exactly one data dir — deterministic and isolated from other projects.
+**Which data belongs to which project?** The data dir is keyed to `./project/dind-data/` in the corral repo directory. Each project has exactly one data dir — deterministic and isolated from other projects.
 
 **To restart services after an outer container restart:**
 ```bash
@@ -202,18 +202,18 @@ docker exec -it rails bash
 docker logs rails -f
 
 # Port 3000 is accessible on the user's host machine at http://localhost:3000
-# (because the outer sandclaude container has -p 3000:3000)
+# (because the outer corral container has -p 3000:3000)
 ```
 
 **Inner container network access:**
 - Inner containers go through the same allowlist proxy as everything else (transparently — see DinD section above)
 - If an inner container needs a domain not in the allowlist, add it to the plaintext allowlist **on the host** and reload:
   ```bash
-  # On the host, in the sandclaude repo:
+  # On the host, in the corral repo:
   echo 'rubygems.org' >> allowlist-proxy/allowed-domains.txt
-  ./sandclaude firewall-reload   # re-encrypts and SIGHUPs the proxy
+  ./corral firewall-reload   # re-encrypts and SIGHUPs the proxy
   ```
-  (From inside the container you can append to `/home/claude/allowed-domains.txt`, which is bind-mounted to that same host file; the user still runs `sandclaude firewall-reload` to re-encrypt and reload.)
+  (From inside the container you can append to `/home/claude/allowed-domains.txt`, which is bind-mounted to that same host file; the user still runs `corral firewall-reload` to re-encrypt and reload.)
 - Common domains to add for Rails: `rubygems.org`, `index.rubygems.org`
 - Common domains to add for Django/Python: `pypi.org`, `files.pythonhosted.org`
 
@@ -255,7 +255,7 @@ If image builds fail with overlay2 errors, the `DIND_STORAGE_DRIVER=vfs` fallbac
 ### Starting a new project
 ```bash
 # From host
-./sandclaude start
+./corral start
 
 # Claude can now:
 # - Install npm/yarn packages (allowlist includes registries)
@@ -267,11 +267,11 @@ If image builds fail with overlay2 errors, the `DIND_STORAGE_DRIVER=vfs` fallbac
 ### Adding a domain on-the-fly (hot-reload)
 ```bash
 # Terminal 1: Run Claude
-./sandclaude start
+./corral start
 
 # Terminal 2: When a connection is blocked, add the domain and reload
 echo "api.example.com" >> allowlist-proxy/allowed-domains.txt
-./sandclaude firewall-reload
+./corral firewall-reload
 
 # Claude can now retry — no container restart needed
 ```
@@ -281,14 +281,14 @@ Use `--passthrough-firewall-and-write` to allow all outbound traffic while autom
 
 ```bash
 # Start in passthrough mode
-sandclaude start --passthrough-firewall-and-write
+corral start --passthrough-firewall-and-write
 
 # Inside the container, unknown domains are allowed and appended to:
 #   /home/claude/allowed-domains.txt  (bind-mounted from host at allowlist-proxy/allowed-domains.txt)
 
 # After your session, the host file allowlist-proxy/allowed-domains.txt
 # will contain all domains that were accessed. Review and reload:
-./sandclaude firewall-reload
+./corral firewall-reload
 ```
 
 **Note:** The passthrough log is mounted at `/home/claude/allowed-domains.txt` inside the container. This is the same file as `allowlist-proxy/allowed-domains.txt` on the host — changes are reflected immediately on both sides.
@@ -325,15 +325,15 @@ pkill -HUP -x allowlist-proxy
 ### Integrating into an existing project
 Copy files to your project using the built-in command:
 ```bash
-./sandclaude copy ~/my-project
+./corral copy ~/my-project
 # Edit Dockerfile to add project-specific tools
 # Edit allowlist-proxy/allowed-domains.txt to add project-specific domains
-# Run: ./sandclaude firewall-reload
+# Run: ./corral firewall-reload
 ```
 
 **Important:** If Claude attempts to access a site blocked by the proxy, Claude should:
 1. Add the domain to `/home/claude/allowed-domains.txt` — this file is always bind-mounted from `allowlist-proxy/allowed-domains.txt` on the host (read-write), so edits are immediately visible to the host
-2. Notify the user to run `sandclaude firewall-reload` from the host to encrypt the updated file and SIGHUP the proxy
+2. Notify the user to run `corral firewall-reload` from the host to encrypt the updated file and SIGHUP the proxy
 3. Retry the request once the user confirms the reload is done
 
 In passthrough mode (`--passthrough-firewall-and-write`), unknown domains are appended to `/home/claude/allowed-domains.txt` automatically — no manual editing needed.
@@ -342,7 +342,7 @@ In passthrough mode (`--passthrough-firewall-and-write`), unknown domains are ap
 
 **Symptom:** `curl: (7) Failed to connect` or HTTP 403 from proxy
 - **Cause:** Domain not in allowlist
-- **Fix:** Restart with `sandclaude start --passthrough-firewall-and-write` to auto-log needed domains, then `sandclaude firewall-reload` to lock it back down
+- **Fix:** Restart with `corral start --passthrough-firewall-and-write` to auto-log needed domains, then `corral firewall-reload` to lock it back down
 
 **Symptom:** DNS resolution fails
 - **Cause:** Firewall blocks DNS or Docker DNS broken
@@ -350,7 +350,7 @@ In passthrough mode (`--passthrough-firewall-and-write`), unknown domains are ap
 
 **Symptom:** Proxy fails to start — "decrypt allowlist" error
 - **Cause:** Wrong `ALLOWLIST_KEY` or corrupted `.enc` file
-- **Fix:** Re-run `sandclaude firewall-reload` with the correct `ALLOWLIST_KEY`
+- **Fix:** Re-run `corral firewall-reload` with the correct `ALLOWLIST_KEY`
 
 **Symptom:** Firewall not enforced (processes bypass proxy)
 - **Cause:** Container missing `NET_ADMIN` capability
@@ -383,7 +383,7 @@ In passthrough mode (`--passthrough-firewall-and-write`), unknown domains are ap
 ```bash
 # On host
 echo "api.stripe.com" >> allowlist-proxy/allowed-domains.txt
-./sandclaude firewall-reload
+./corral firewall-reload
 ```
 
 **Allowing all traffic (disable firewall):**

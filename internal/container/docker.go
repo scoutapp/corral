@@ -233,7 +233,7 @@ func (sc *Corral) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) erro
 	}
 
 	workspaceClaudeDir := filepath.Join(workspace, ".claude")
-	workspaceSandclaudeDir := filepath.Join(workspace, ".corral")
+	workspaceCorralDir := filepath.Join(workspace, ".corral")
 	if entries, err := os.ReadDir(workspaceClaudeDir); err == nil {
 		for _, e := range entries {
 			if e.IsDir() {
@@ -255,7 +255,7 @@ func (sc *Corral) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) erro
 
 			// Also check .corral for project-specific items (primarily for skills)
 			if subName == "skills" {
-				mountClaudeSubdirItems("workspace/.corral", workspaceSandclaudeDir, subName)
+				mountClaudeSubdirItems("workspace/.corral", workspaceCorralDir, subName)
 			}
 		} else if writableSubdirs[subName] {
 			// Writable subdirectories: mount from host with read-write access for persistence

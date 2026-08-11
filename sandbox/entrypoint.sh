@@ -1,5 +1,5 @@
 #!/bin/bash
-# Sandclaude entrypoint - Starts Python launcher with Linear monitoring
+# Corral entrypoint - Starts Python launcher with Linear monitoring
 # After Claude exits, drop to an interactive bash shell
 
 # Cleanup inner dockerd and containers on exit

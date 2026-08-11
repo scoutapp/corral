@@ -91,7 +91,7 @@ func WriteCredsMap(path string, creds map[string]map[string]string) error {
 }
 
 // ResolveCredentialsFile returns a best-effort credentials path WITHOUT creating a
-// temp file — used at construction time (NewSandClaude) where no lifecycle owner
+// temp file — used at construction time (NewCorral) where no lifecycle owner
 // exists to clean up. It prefers the global file, falling back to the project file.
 // startProxy re-resolves via ResolveCredentialsFileTracked, which performs the real
 // per-domain merge and records the temp file for cleanup on stopProxy.
