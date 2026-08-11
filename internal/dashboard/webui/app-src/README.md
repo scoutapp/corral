@@ -1,4 +1,4 @@
-# sandclaude dashboard (React + TypeScript)
+# corral dashboard (React + TypeScript)
 
 The dashboard UI. A Vite + React 18 + TypeScript app that builds to a **committed**
 bundle in `../static/app/`, which the Go binary serves via `go:embed`. Same model
@@ -11,7 +11,7 @@ install time**.
 ```sh
 npm install
 # Run the real dashboard so the API/WS endpoints exist, then:
-sandclaude dashboard            # serves on :7777 (default)
+corral dashboard            # serves on :7777 (default)
 npm run dev                     # Vite dev server with HMR, proxying API/WS to :7777
 ```
 
@@ -26,7 +26,7 @@ npm run build                   # tsc -b && vite build -> ../static/app/
 
 Then **commit the built output** under `../static/app/` along with your source
 changes. To deploy: `install.sh` (rebuilds the host binary, embedding the bundle)
-then `sandclaude dashboard stop` (restart the daemon). No image rebuild.
+then `corral dashboard stop` (restart the daemon). No image rebuild.
 
 ## Layout
 

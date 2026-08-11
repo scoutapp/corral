@@ -1,9 +1,9 @@
 {
-  "name": "sandclaude-dashboard",
+  "name": "corral-dashboard",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "React + TypeScript dashboard for sandclaude. Builds to a committed bundle in ../static, served by the Go binary's go:embed (same model as editor-src).",
+  "description": "React + TypeScript dashboard for corral. Builds to a committed bundle in ../static, served by the Go binary's go:embed (same model as editor-src).",
   "comment": "Dependencies are pinned to exact versions (no ^) on purpose: the built bundle is committed and go:embed-ed into the host binary, so it runs as trusted host-side code in the dashboard browser. Exact pins keep the bundle reproducible and prevent a stray npm install from pulling an unreviewed release. Update versions deliberately, then rebuild and review the bundle diff.",
   "scripts": {
     "build": "tsc -b && vite build",

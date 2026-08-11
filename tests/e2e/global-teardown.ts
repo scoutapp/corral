@@ -1,22 +1,22 @@
 // Playwright global teardown: best-effort cleanup of the shared sandbox.
 //
-// We intentionally do NOT call `sandclaude remove` (it prompts, and it deletes
-// the workspace's .sandclaude/logs that CI uploads as artifacts). Instead we:
+// We intentionally do NOT call `corral remove` (it prompts, and it deletes
+// the workspace's .corral/logs that CI uploads as artifacts). Instead we:
 //   - force-remove the outer container (its EXIT trap stops the inner dockerd +
 //     inner containers),
 //   - kill the host tmux session that owns the detached container,
 //   - stop the dashboard daemon.
-// Host-side logs under <workspace>/.sandclaude/logs and tests/e2e/.artifacts are
+// Host-side logs under <workspace>/.corral/logs and tests/e2e/.artifacts are
 // left intact for artifact upload. This function never throws.
 
 import {
   REPO_ROOT,
   WORKSPACE,
-  SANDCLAUDE_BIN,
+  CORRAL_BIN,
   outerContainerName,
   dindVolumeName,
   run,
-} from './lib/sandclaude';
+} from './lib/corral';
 
 function log(msg: string) {
   // eslint-disable-next-line no-console
@@ -44,13 +44,13 @@ export default async function globalTeardown() {
   );
 
   log('stopping dashboard daemon…');
-  await run(SANDCLAUDE_BIN, ['dashboard', 'stop'], { cwd: WORKSPACE, timeoutMs: 15_000 }).catch(
+  await run(CORRAL_BIN, ['dashboard', 'stop'], { cwd: WORKSPACE, timeoutMs: 15_000 }).catch(
     () => {},
   );
 
   // Remove ONLY this test workspace's DinD data volume (named deterministically
   // from the workspace path) so repeated local runs don't accumulate volumes.
-  // Other projects' sandclaude-dind-* volumes are never touched.
+  // Other projects' corral-dind-* volumes are never touched.
   const vol = dindVolumeName();
   log(`removing test DinD volume ${vol}…`);
   await run('docker', ['volume', 'rm', '-f', vol], { cwd: REPO_ROOT, timeoutMs: 15_000 }).catch(

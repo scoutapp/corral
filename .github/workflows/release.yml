@@ -3,7 +3,7 @@ name: release
 # Cut a release by pushing a semver tag:
 #   git tag v0.1.0 && git push origin v0.1.0
 # GoReleaser (see .goreleaser.yml) builds the per-platform binaries + the
-# sandclaude-assets.tar.gz bundle and publishes them to a GitHub Release (draft
+# corral-assets.tar.gz bundle and publishes them to a GitHub Release (draft
 # by default). The remote installer (scripts/install.sh) downloads from there.
 
 on:

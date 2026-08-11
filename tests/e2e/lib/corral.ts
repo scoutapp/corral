@@ -1,8 +1,8 @@
-// Orchestration helpers for the sandclaude e2e suite. These wrap the sandclaude
+// Orchestration helpers for the corral e2e suite. These wrap the corral
 // CLI, the inner DinD docker daemon, and the host-side log files so the specs
 // can read as a narrative ("start, build inside DinD, hit :3000, check logs").
 //
-// The suite runs against a REAL sandbox: `sandclaude start` launches a detached,
+// The suite runs against a REAL sandbox: `corral start` launches a detached,
 // privileged outer container that runs an inner dockerd. The harness then drives
 // the inner `docker build`/`docker run` itself (deterministic — no LLM in the
 // loop) and asserts the full chain.
@@ -15,17 +15,17 @@ import * as path from 'node:path';
 
 const execFileAsync = promisify(execFile);
 
-/** Repo root, derived from this file's location (tests/e2e/lib/sandclaude.ts). */
+/** Repo root, derived from this file's location (tests/e2e/lib/corral.ts). */
 export const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 
 /** The built host binary. install/build places it at the repo root. */
-export const SANDCLAUDE_BIN = process.env.SANDCLAUDE_BIN || path.join(REPO_ROOT, 'sandclaude');
+export const CORRAL_BIN = process.env.CORRAL_BIN || path.join(REPO_ROOT, 'corral');
 
 /**
- * The isolated workspace the test inits sandclaude into.
+ * The isolated workspace the test inits corral into.
  * NOTE: deliberately NOT a dot-directory. The basename becomes the container +
- * tmux session name (sandclaude_<basename>); a leading '.' produced
- * 'sandclaude_.workspace', and tmux treats '.' in a target as a window/pane
+ * tmux session name (corral_<basename>); a leading '.' produced
+ * 'corral_.workspace', and tmux treats '.' in a target as a window/pane
  * separator — so has-session / capture / send / attach all mis-resolved and the
  * detached launch broke on headless CI. A plain name avoids that entirely.
  */
@@ -77,32 +77,32 @@ export function run(
   });
 }
 
-/** Run the sandclaude CLI from the test workspace. */
-export function sandclaude(args: string[], opts: Parameters<typeof run>[2] = {}): Promise<RunResult> {
-  return run(SANDCLAUDE_BIN, args, opts);
+/** Run the corral CLI from the test workspace. */
+export function corral(args: string[], opts: Parameters<typeof run>[2] = {}): Promise<RunResult> {
+  return run(CORRAL_BIN, args, opts);
 }
 
 /**
- * The outer container name sandclaude derives for a workspace. MUST match Go's
- * session.ContainerNameForWorkspace: "sandclaude_" + sanitized basename + "_" +
+ * The outer container name corral derives for a workspace. MUST match Go's
+ * session.ContainerNameForWorkspace: "corral_" + sanitized basename + "_" +
  * first 4 bytes (8 hex chars) of sha256(workspace). The hash suffix makes the
  * name unique per workspace path so same-basename workspaces don't collide.
  */
 export function outerContainerName(workspace = WORKSPACE): string {
   const base = path.basename(workspace).replace(/[^a-zA-Z0-9_.-]/g, '_') || 'ws';
   const h = createHash('sha256').update(workspace).digest('hex').slice(0, 8);
-  return `sandclaude_${base}_${h}`;
+  return `corral_${base}_${h}`;
 }
 
 /**
- * The named DinD data volume sandclaude derives for a workspace. MUST match Go's
- * config.DindVolumeName: "sandclaude-dind-" + first 6 bytes (12 hex chars) of
+ * The named DinD data volume corral derives for a workspace. MUST match Go's
+ * config.DindVolumeName: "corral-dind-" + first 6 bytes (12 hex chars) of
  * sha256(workspace). Used by teardown to remove ONLY the test's volume, never
  * another project's.
  */
 export function dindVolumeName(workspace = WORKSPACE): string {
   const h = createHash('sha256').update(workspace).digest('hex').slice(0, 12);
-  return 'sandclaude-dind-' + h;
+  return 'corral-dind-' + h;
 }
 
 /** Exec a command as root inside the outer sandbox container. */
@@ -151,10 +151,10 @@ export async function innerDockerdUp(): Promise<boolean> {
   return r.code === 0;
 }
 
-/** Read a host-side log file from <workspace>/.sandclaude/logs/. Empty string if absent. */
+/** Read a host-side log file from <workspace>/.corral/logs/. Empty string if absent. */
 export async function readLog(name: string, workspace = WORKSPACE): Promise<string> {
   try {
-    return await readFile(path.join(workspace, '.sandclaude', 'logs', name), 'utf8');
+    return await readFile(path.join(workspace, '.corral', 'logs', name), 'utf8');
   } catch {
     return '';
   }

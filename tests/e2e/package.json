@@ -1,8 +1,8 @@
 {
-  "name": "sandclaude-e2e",
+  "name": "corral-e2e",
   "version": "1.0.0",
   "private": true,
-  "description": "End-to-end Playwright suite for the sandclaude CLI: build -> init -> start (privileged DinD) -> build+run a web app inside DinD -> reach it from the host -> dashboard checks.",
+  "description": "End-to-end Playwright suite for the corral CLI: build -> init -> start (privileged DinD) -> build+run a web app inside DinD -> reach it from the host -> dashboard checks.",
   "scripts": {
     "test": "playwright test",
     "typecheck": "tsc --noEmit",

@@ -8,7 +8,7 @@ const PORT = 3000;
 
 // The e2e assertion GETs / and checks for this exact marker.
 app.get('/', (_req, res) => {
-  res.status(200).send('sandclaude e2e ok');
+  res.status(200).send('corral e2e ok');
 });
 
 app.get('/healthz', (_req, res) => {
@@ -16,5 +16,5 @@ app.get('/healthz', (_req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`sandclaude-e2e web-app listening on :${PORT}`);
+  console.log(`corral-e2e web-app listening on :${PORT}`);
 });

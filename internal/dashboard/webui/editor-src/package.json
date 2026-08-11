@@ -1,8 +1,8 @@
 {
-  "name": "sandclaude-editor",
+  "name": "corral-editor",
   "version": "1.0.0",
   "private": true,
-  "description": "Self-contained CodeMirror 6 bundle for the sandclaude dashboard (no-build vanilla frontend).",
+  "description": "Self-contained CodeMirror 6 bundle for the corral dashboard (no-build vanilla frontend).",
   "scripts": {
     "build": "esbuild editor.js --bundle --format=iife --global-name=CorralEditor --minify --outfile=../static/codemirror.bundle.js"
   },

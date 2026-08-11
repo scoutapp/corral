@@ -1,13 +1,13 @@
-// Playwright global setup: bring up the real sandclaude sandbox once for the
+// Playwright global setup: bring up the real corral sandbox once for the
 // whole suite.
 //
 // Steps:
-//   1. Build the host binary (go build -o <REPO_ROOT>/sandclaude ./cmd/sandclaude).
+//   1. Build the host binary (go build -o <REPO_ROOT>/corral ./cmd/corral).
 //   2. Create a clean, isolated WORKSPACE.
-//   3. `sandclaude init` non-interactively: proxy ON, DinD ON, ports 3000:3000,
+//   3. `corral init` non-interactively: proxy ON, DinD ON, ports 3000:3000,
 //      tmux OFF. We pipe the interactive answers AND then overwrite config.json
 //      so the exact fields are guaranteed regardless of prompt drift.
-//   4. `sandclaude start` (detached, browser suppressed).
+//   4. `corral start` (detached, browser suppressed).
 //   5. Wait for the outer container to be Running and the inner dockerd to answer.
 //
 // WHY PROXY ON (firewall on), not --disable-firewall:
@@ -29,18 +29,18 @@ import { mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import {
   REPO_ROOT,
-  SANDCLAUDE_BIN,
+  CORRAL_BIN,
   WORKSPACE,
   APP_PORT,
   HOST_PORT,
   outerContainerName,
   run,
-  sandclaude,
+  corral,
   waitFor,
   outerRunning,
   innerDockerdUp,
   readInnerLog,
-} from './lib/sandclaude';
+} from './lib/corral';
 
 const execFileAsync = promisify(execFile);
 
@@ -61,23 +61,23 @@ async function stash(name: string, content: string) {
 export default async function globalSetup() {
   banner(`REPO_ROOT=${REPO_ROOT}`);
   banner(`WORKSPACE=${WORKSPACE}`);
-  banner(`SANDCLAUDE_BIN=${SANDCLAUDE_BIN}`);
+  banner(`CORRAL_BIN=${CORRAL_BIN}`);
 
   await mkdir(ARTIFACTS_DIR, { recursive: true });
 
-  // 1. Provide the host binary. When SANDCLAUDE_BIN is set (e.g. CI runs
-  //    install.sh first and points here at /usr/local/bin/sandclaude), trust the
+  // 1. Provide the host binary. When CORRAL_BIN is set (e.g. CI runs
+  //    install.sh first and points here at /usr/local/bin/corral), trust the
   //    caller's binary + its installed asset bundle and skip the build — this is
   //    how CI exercises the real install path. Otherwise build from source for a
   //    frictionless local `npm test`.
-  if (process.env.SANDCLAUDE_BIN) {
-    banner(`using pre-installed binary: ${SANDCLAUDE_BIN} (skipping go build)`);
+  if (process.env.CORRAL_BIN) {
+    banner(`using pre-installed binary: ${CORRAL_BIN} (skipping go build)`);
   } else {
-    banner('building sandclaude binary (go build)…');
+    banner('building corral binary (go build)…');
     try {
       const { stdout, stderr } = await execFileAsync(
         'go',
-        ['build', '-o', SANDCLAUDE_BIN, './cmd/sandclaude'],
+        ['build', '-o', CORRAL_BIN, './cmd/corral'],
         { cwd: REPO_ROOT, maxBuffer: 32 * 1024 * 1024 },
       );
       await stash('go-build.stdout.txt', stdout + '\n' + stderr);
@@ -99,20 +99,20 @@ export default async function globalSetup() {
   // run() defaults cwd to WORKSPACE, so the "current directory" workspace default
   // resolves to WORKSPACE.
   const portMapping = `${HOST_PORT}:${APP_PORT}`;
-  banner(`sandclaude init (proxy on, dind on, ports ${portMapping}, tmux off)…`);
+  banner(`corral init (proxy on, dind on, ports ${portMapping}, tmux off)…`);
   const initInput = ['y', 'n', 'y', portMapping, ''].join('\n') + '\n';
-  const init = await sandclaude(['init'], { cwd: WORKSPACE, input: initInput, timeoutMs: 120_000 });
+  const init = await corral(['init'], { cwd: WORKSPACE, input: initInput, timeoutMs: 120_000 });
   await stash('init.stdout.txt', init.stdout);
   await stash('init.stderr.txt', init.stderr);
   if (init.code !== 0) {
     throw new Error(
-      `sandclaude init exited ${init.code}\nSTDOUT:\n${init.stdout}\nSTDERR:\n${init.stderr}`,
+      `corral init exited ${init.code}\nSTDOUT:\n${init.stdout}\nSTDERR:\n${init.stderr}`,
     );
   }
 
   // 3b. Deterministically overwrite config.json with the exact fields we want,
   //     independent of any prompt drift. Preserve created_at if init wrote it.
-  const projectDir = path.join(WORKSPACE, '.sandclaude', 'project');
+  const projectDir = path.join(WORKSPACE, '.corral', 'project');
   const configPath = path.join(projectDir, 'config.json');
   let createdAt = new Date().toISOString();
   try {
@@ -134,18 +134,18 @@ export default async function globalSetup() {
   banner(`wrote ${configPath}`);
 
   // 4. start — detached by default; suppress the browser tab. This also builds
-  //    the sandclaude-stable image on first run (can take several minutes cold).
-  banner('sandclaude start (detached, no browser)… this builds the image on a cold run');
-  const start = await sandclaude(['start'], {
+  //    the corral-stable image on first run (can take several minutes cold).
+  banner('corral start (detached, no browser)… this builds the image on a cold run');
+  const start = await corral(['start'], {
     cwd: WORKSPACE,
-    env: { SANDCLAUDE_NO_BROWSER: '1' },
+    env: { CORRAL_NO_BROWSER: '1' },
     timeoutMs: 900_000, // cold image build can be slow
   });
   await stash('start.stdout.txt', start.stdout);
   await stash('start.stderr.txt', start.stderr);
   if (start.code !== 0) {
     throw new Error(
-      `sandclaude start exited ${start.code}\nSTDOUT:\n${start.stdout}\nSTDERR:\n${start.stderr}`,
+      `corral start exited ${start.code}\nSTDOUT:\n${start.stdout}\nSTDERR:\n${start.stderr}`,
     );
   }
 
@@ -192,7 +192,7 @@ export default async function globalSetup() {
 
 // Capture everything useful for debugging a failed boot. The container is
 // launched detached INSIDE a tmux session (startDetached), so a `docker run`
-// that fails or exits immediately is invisible to `sandclaude start` (which
+// that fails or exits immediately is invisible to `corral start` (which
 // returns 0 after creating the session). The tmux pane holds that output, and
 // `docker ps -a` shows whether the container exists / exited — both essential
 // on CI where we can't poke around interactively.

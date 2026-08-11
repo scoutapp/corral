@@ -22,7 +22,7 @@ export default defineConfig({
       input: resolve(__dirname, "index.html"),
     },
   },
-  // Dev server proxies API + WS to a locally running `sandclaude dashboard`
+  // Dev server proxies API + WS to a locally running `corral dashboard`
   // (default port 7777) so `npm run dev` gives HMR against the real backend.
   server: {
     proxy: {
