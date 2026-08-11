@@ -47,23 +47,20 @@ For the full trust model — including the deliberate trade-offs and residual ri
 
 ## Commands
 
+The ones you'll use most:
+
 | Command | What it does |
 |---|---|
-| `init` / `config` / `remove` | set up, edit, or delete a project |
+| `init` | set up a project (once) |
+| `populate-proxy-credentials` | set your credentials (once) |
 | `start` | start Claude + open the dashboard |
-| `start --foreground` | run it right in your terminal instead |
-| `start --enforce-allowlist` | strict mode — block anything not on the allowlist |
-| `dev` | run in the background (`capture` / `send` / `attach`) |
-| `list` | show this project's settings |
 | `dashboard` | open the dashboard on its own |
-| `firewall-reload` / `firewall-monitor` | lock in / watch what's allowed out |
-| `populate-proxy-credentials` | set your credentials (add `--project` for a per-project set) |
-| `shell` | open a shell inside the sandbox |
-| `update` | update Sandclaude itself (CLI + image) |
-| `rebuild` | rebuild the sandbox from scratch |
-| `version` / `help` | version info / full command list |
+| `update` | update Sandclaude itself |
+| `uninstall` | remove Sandclaude from your machine |
+| `help` | full command list and options |
 
-Run `sandclaude help` for the complete list and options.
+For the complete list, see the [usage guide](docs/usage.md#command-reference) or
+run `sandclaude help`.
 
 ## Good to know
 

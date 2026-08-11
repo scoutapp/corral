@@ -167,11 +167,8 @@ The dashboard is the main way to drive Sandclaude, but everything has a CLI:
 
 ```bash
 sandclaude init      # set up a project (once)
-sandclaude start     # start it (permissive by default: unknown sites are allowed + logged)
+sandclaude start     # start it (opens the dashboard)
 sandclaude dev       # start in the background: capture / send / attach
-sandclaude config    # edit this project's settings
-sandclaude list      # list projects
-sandclaude update    # update Sandclaude itself
 ```
 
 By default `start` runs in **permissive** mode — the proxy and credential
@@ -180,10 +177,39 @@ a new project works right away while Sandclaude learns what it actually needs. O
 you know, lock it down:
 
 ```bash
+sandclaude firewall-reload             # lock in the sites that were actually used
 sandclaude start --enforce-allowlist   # strict: block anything not on the allowlist
 ```
 
-Run `sandclaude` with no arguments for the full command list.
+## Command reference
+
+Everything `sandclaude` accepts. Run `sandclaude help` for the same list with the
+full set of flags.
+
+| Command | What it does |
+|---|---|
+| `init` | Set up a project in the current directory (once). |
+| `config` | Edit this project's settings (DinD, ports, tmux, …). |
+| `start` | Start Claude and open the dashboard. |
+| `start --foreground` | Run it in your terminal instead of the dashboard. |
+| `start --enforce-allowlist` | Strict mode — block anything not on the allowlist. |
+| `start --disable-dind` | Start without Docker-in-Docker. |
+| `dev` | Run in the background; drive it with `capture` / `send` / `attach`. |
+| `capture` / `send` / `attach` | Read output from / send a prompt to / attach to a `dev` session. |
+| `shell` | Open a shell inside the running sandbox container. |
+| `list` | Show this project's settings. |
+| `remove` | Delete this project's `./.sandclaude/`. |
+| `dashboard` | Open the dashboard on its own (covers all projects). |
+| `populate-proxy-credentials` | Set your credentials; add `--project` for a per-project set. |
+| `set-cred` / `unset-cred` | Add or remove a single injected credential. |
+| `monitor` / `mitm-ports` | Choose which hosts/ports are decrypted and inspected. |
+| `firewall-reload` | Lock in the sites discovered during permissive runs. |
+| `firewall-monitor` | Watch the allowlist proxy log live. |
+| `proxy-apply` | Re-apply proxy/credential config to a running project. |
+| `rebuild` | Rebuild the sandbox image from scratch. |
+| `update` | Update Sandclaude itself (CLI + image); `--check` to just check. |
+| `uninstall` | Remove everything Sandclaude created, then the binary. |
+| `version` / `help` | Version info / the full command list. |
 
 ---
 
