@@ -32,8 +32,15 @@ export const vscodeDarkTheme = EditorView.theme(
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
     },
     ".cm-cursor, .cm-dropCursor": { borderLeftColor: caret },
-    "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
-      { backgroundColor: selection },
+    // Selection background — cover BOTH the focused and unfocused draw paths, plus
+    // native ::selection. CodeMirror only applies the bright color under
+    // `.cm-focused` by default; without the unfocused rule a selection that loses
+    // focus (or is drawn before focus lands) falls back to a barely-visible gray.
+    // The selection layer sits behind the text, so glyphs stay readable.
+    ".cm-selectionBackground, .cm-content ::selection, .cm-line ::selection": {
+      backgroundColor: selection + " !important",
+    },
+    "&.cm-focused .cm-selectionBackground": { backgroundColor: selection + " !important" },
     ".cm-selectionMatch": { backgroundColor: selectionMatch },
     ".cm-activeLine": { backgroundColor: lineHighlight },
     ".cm-activeLineGutter": { backgroundColor: lineHighlight, color: gutterActiveFg },

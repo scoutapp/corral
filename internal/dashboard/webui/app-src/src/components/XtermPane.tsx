@@ -55,47 +55,52 @@ export function XtermPane({ projectId, wsPath, fullPath }: { projectId?: string;
     // Enter handling, made explicit so it doesn't depend on xterm's keyboard-mode
     // negotiation (which can leave a bare Enter producing a CSI-u sequence the app
     // ignores — the "Enter does nothing" symptom):
-    //   • plain Enter          → CR (\r): submit
-    //   • Cmd/Ctrl/Alt+Enter   → ESC+CR (\x1b\r): the meta-return newline apps read
-    //     as "insert a newline, don't submit"
+    //   • plain Enter                → CR (\r): submit
+    //   • Shift/Cmd/Ctrl/Alt+Enter   → ESC+CR (\x1b\r): the meta-return sequence
+    //     apps read as "insert a newline, don't submit" (Shift+Enter is the usual
+    //     newline key in Claude's composer and most chat inputs)
     // Returning false stops xterm's own default so we don't double-send.
     term.attachCustomKeyEventHandler((e) => {
       if (e.type !== "keydown" || e.key !== "Enter") return true;
       // preventDefault + returning false stops xterm from ALSO emitting its own
       // \r for this key (which double-submitted).
       e.preventDefault();
-      sendBytes(e.metaKey || e.ctrlKey || e.altKey ? "\x1b\r" : "\r");
+      sendBytes(e.shiftKey || e.metaKey || e.ctrlKey || e.altKey ? "\x1b\r" : "\r");
       return false;
     });
+
+    const doFit = () => {
+      // Only fit when the pane actually has a size. A hidden tab (display:none) or
+      // a not-yet-laid-out pane reports 0×0; fitting then and again on show is the
+      // visible resize flash (FOUC). Skip until there's real geometry.
+      const el = host.current;
+      if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
+      fit.fit();
+      sendResize();
+    };
 
     let resizeTimer: number;
     const onResize = () => {
       window.clearTimeout(resizeTimer);
-      resizeTimer = window.setTimeout(() => {
-        fit.fit();
-        sendResize();
-      }, 100);
+      resizeTimer = window.setTimeout(doFit, 100);
     };
     window.addEventListener("resize", onResize);
 
-    // Refit when the PANE's own box changes size — not just the window. This is
-    // what makes dragging the dock/overlay/chat resize handles actually reflow the
-    // terminal (cols/rows) instead of just stretching the container around a
-    // fixed-size grid. Debounced through the same timer as window resizes.
+    // Refit when the PANE's own box changes size — the window OR the tab becoming
+    // visible / a resize-handle drag. The 0×0 guard in doFit means the hidden→shown
+    // transition fits exactly once, at the final size, instead of flashing.
     const ro = new ResizeObserver(() => onResize());
     if (host.current) ro.observe(host.current);
 
-    // Fit again shortly after mount once layout settles.
-    const settle = window.setTimeout(() => {
-      fit.fit();
-      sendResize();
-    }, 50);
+    // Fit before the first paint once layout settles (rAF, not a timeout, so
+    // there's no visible intermediate frame at the wrong size).
+    const raf = requestAnimationFrame(doFit);
 
     return () => {
       window.removeEventListener("resize", onResize);
       ro.disconnect();
       window.clearTimeout(resizeTimer);
-      window.clearTimeout(settle);
+      cancelAnimationFrame(raf);
       try {
         ws.close();
       } catch {

@@ -213,8 +213,8 @@ export function ProjectPage({ id }: { id: string }) {
           <div id="tab-diff" className="tab-panel" style={{ display: tab === "diff" ? "flex" : "none", flex: "1 1 auto", minHeight: 0 }}>
             {seen.diff && <DiffTab projectId={id} />}
           </div>
-          <div id="tab-container" className="tab-panel" style={{ display: tab === "container" ? "block" : "none" }}>
-            <div className="screen-frame">
+          <div id="tab-container" className="tab-panel" style={{ display: tab === "container" ? "flex" : "none", flex: "1 1 auto", minHeight: 0 }}>
+            <div className="screen-frame screen-frame-fill">
               <div className="screen-bar">
                 <i className="screen-dot" />
                 container shell · {name}

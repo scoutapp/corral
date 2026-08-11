@@ -68,6 +68,8 @@ function BodySlot({ projectId, flowId, side, msg }: { projectId: string; flowId:
       setHtml("(empty)");
       return;
     }
+    // Don't flash back to "loading…" on a tab switch — keep the current text until
+    // the new body arrives, so switching Request/Response doesn't flicker.
     getText(api(projectId, `/mitm/flows/${flowId}/${side}/content`))
       .then((text) => {
         if (!alive) return;
