@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -221,17 +222,23 @@ func (d *dashboardServer) handleHostWS(w http.ResponseWriter, r *http.Request, i
 		if _, serr := os.Stat(workspace); serr != nil {
 			dir = "" // workspace gone; let tmux use the default cwd
 		}
-		args := []string{"new-session", "-d", "-s", sessionName}
+		// Create with a generous fixed size and window-size manual. tmux's
+		// client-driven resizing is unreliable here (a transient small measurement
+		// from xterm on remount pins the window tiny, and it never grows back —
+		// leaving dotted fill where the pane is smaller than xterm's viewport). A
+		// large manual window means tmux always fills at least what xterm shows;
+		// the resize hook in bridgeSessionWS then grows it further when needed.
+		args := []string{"new-session", "-d", "-s", sessionName, "-x", "220", "-y", "60"}
 		if dir != "" {
 			args = append(args, "-c", dir)
 		}
-		// Make the session feel like a plain terminal, not a tmux UI:
 		//   status off  — no tmux status bar
-		//   mouse on     — scroll wheel scrolls scrollback, click focuses a pane
-		//                  (xterm still gives native shift+drag select/copy)
+		//   mouse on     — scroll wheel scrolls scrollback (shift+drag = native copy)
+		//   window-size manual — tmux keeps our size, not the smallest client's
 		if err := exec.Command("tmux", args...).Run(); err == nil {
 			exec.Command("tmux", "set-option", "-t", sessionName, "status", "off").Run()
 			exec.Command("tmux", "set-option", "-t", sessionName, "mouse", "on").Run()
+			exec.Command("tmux", "set-option", "-t", sessionName, "window-size", "manual").Run()
 		}
 	}
 
@@ -285,8 +292,20 @@ func (d *dashboardServer) bridgeSessionWS(w http.ResponseWriter, r *http.Request
 		return
 	}
 	// -t forces a PTY; without it tmux refuses to attach ("open terminal failed:
-	// not a terminal").
-	d.bridgePTY(w, r, exec.Command("tmux", "attach-session", "-t", sessionName))
+	// not a terminal"). The onResize hook runs `tmux resize-window` so the window
+	// definitively matches the browser's size — SIGWINCH from the PTY resize alone
+	// leaves the window stuck at the 24-row attach default (rows below show dots).
+	d.bridgePTY(w, r, exec.Command("tmux", "attach-session", "-t", sessionName),
+		func(cols, rows uint16) {
+			// Ignore implausibly small sizes: xterm can briefly report a narrow grid
+			// on mount/remount, and shrinking the tmux window to it pins it there
+			// (dotted fill). Real dashboard terminals are far wider than 20 cols.
+			if cols < 20 || rows < 6 {
+				return
+			}
+			exec.Command("tmux", "resize-window", "-t", sessionName,
+				"-x", strconv.Itoa(int(cols)), "-y", strconv.Itoa(int(rows))).Run()
+		})
 }
 
 // bridgePTY upgrades to a WebSocket and bridges it to a PTY running the given
@@ -294,7 +313,11 @@ func (d *dashboardServer) bridgeSessionWS(w http.ResponseWriter, r *http.Request
 // JSON {"type":"resize"} control frame -> TIOCSWINSZ. Shared by the tmux-attach
 // terminal, the populate-credentials session, and the container shell (which
 // runs `docker exec -it`). The caller is responsible for any liveness precheck.
-func (d *dashboardServer) bridgePTY(w http.ResponseWriter, r *http.Request, cmd *exec.Cmd) {
+// onResize, if non-nil, is called with each new size AFTER the PTY is resized —
+// tmux sessions use it to `resize-window` explicitly, because SIGWINCH alone
+// doesn't reliably grow a tmux window's HEIGHT (the pane stays at the 24-row
+// attach default and rows below fill with tmux's "…" dots).
+func (d *dashboardServer) bridgePTY(w http.ResponseWriter, r *http.Request, cmd *exec.Cmd, onResize ...func(cols, rows uint16)) {
 	conn, err := terminalUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return // Upgrade already wrote an error response
@@ -360,6 +383,11 @@ func (d *dashboardServer) bridgePTY(w http.ResponseWriter, r *http.Request, cmd 
 			var msg terminalResize
 			if json.Unmarshal(data, &msg) == nil && msg.Type == "resize" && msg.Cols > 0 && msg.Rows > 0 {
 				pty.Setsize(ptmx, &pty.Winsize{Cols: msg.Cols, Rows: msg.Rows})
+				for _, f := range onResize {
+					if f != nil {
+						f(msg.Cols, msg.Rows)
+					}
+				}
 			}
 		}
 	}

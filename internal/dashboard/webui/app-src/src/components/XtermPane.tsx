@@ -104,15 +104,44 @@ export function XtermPane({ projectId, wsPath, fullPath, kind }: { projectId?: s
     const ro = new ResizeObserver(() => onResize());
     if (host.current) ro.observe(host.current);
 
-    // Fit before the first paint once layout settles (rAF, not a timeout, so
-    // there's no visible intermediate frame at the wrong size).
-    const raf = requestAnimationFrame(doFit);
+    // Fit as soon as the pane has real geometry. A single rAF isn't enough: if the
+    // pane mounts hidden or mid-animation it's 0×0 for the first frame(s), the fit
+    // is skipped, xterm keeps its default 80×24 grid, and it never sends a resize
+    // — so tmux stays at the attach size and the extra space fills with dots.
+    // Retry on rAF until doFit actually fits (up to ~1.5s), then stop.
+    let rafId = 0;
+    let tries = 0;
+    const settleTimers: number[] = [];
+    const fitWhenReady = () => {
+      const el = host.current;
+      const ready = el && el.clientWidth > 0 && el.clientHeight > 0;
+      if (ready) {
+        doFit();
+        // Re-fit a few times after layout settles. On mount the pane can report a
+        // transient (narrow) size — xterm fits to it, sends that resize, and tmux
+        // pins its window there; nothing later shrinks/grows so it stays, leaving
+        // dotted fill. These trailing fits re-measure once the real size lands.
+        [120, 350, 700].forEach((ms) => settleTimers.push(window.setTimeout(doFit, ms)));
+        return;
+      }
+      if (tries++ < 90) rafId = requestAnimationFrame(fitWhenReady);
+    };
+    rafId = requestAnimationFrame(fitWhenReady);
+
+    // Re-fit once web fonts are ready. FitAddon measures a character cell to
+    // compute cols/rows; if it runs before the monospace font loads it measures a
+    // fallback with a wider cell → far too few cols (e.g. 59 instead of ~180),
+    // leaving dotted fill. document.fonts.ready guarantees a correct re-measure.
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => doFit()).catch(() => {});
+    }
 
     return () => {
       window.removeEventListener("resize", onResize);
       ro.disconnect();
       window.clearTimeout(resizeTimer);
-      cancelAnimationFrame(raf);
+      settleTimers.forEach((t) => window.clearTimeout(t));
+      cancelAnimationFrame(rafId);
       try {
         ws.close();
       } catch {
