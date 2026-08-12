@@ -58,3 +58,10 @@ export function matchProject(path: string): string | null {
   const m = path.match(/^\/p\/([^/]+)/);
   return m ? m[1] : null;
 }
+
+// matchRepo returns the repo id when path is /repos/<id>[/...], else null. The
+// bare "/repos" list lives inside ProjectsPage; only /repos/<id> routes here.
+export function matchRepo(path: string): string | null {
+  const m = path.match(/^\/repos\/([^/]+)/);
+  return m ? m[1] : null;
+}

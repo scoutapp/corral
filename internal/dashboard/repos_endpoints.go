@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/scoutapp/corral/internal/prreview"
 	"github.com/scoutapp/corral/internal/repos"
 )
 
@@ -82,7 +83,57 @@ func (d *dashboardServer) handleRepoItem(w http.ResponseWriter, r *http.Request,
 			return
 		}
 		writeFilesJSON(w, map[string]any{"ok": true})
+	// PR Review (see internal/prreview). These read the shared DB and return
+	// empty lists until the repo has been analyzed / PRs fetched — the analysis
+	// and fetch writers land in later phases.
+	case action == "forensics" && r.Method == http.MethodGet:
+		d.handleRepoForensics(w, r, id)
+	case action == "prs" && r.Method == http.MethodGet:
+		d.handleRepoPRs(w, r, id)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// prreviewService opens the shared store and returns a PR Review service, or
+// writes a 500 and returns nil if the DB can't be opened.
+func (d *dashboardServer) prreviewService(w http.ResponseWriter, id string) *prreview.Service {
+	if _, err := repos.Get(id); err != nil {
+		http.Error(w, "unknown repo", http.StatusNotFound)
+		return nil
+	}
+	s, err := d.getStore()
+	if err != nil {
+		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
+		return nil
+	}
+	return prreview.New(s)
+}
+
+// handleRepoForensics: GET /repos/<id>/forensics — per-file hot list.
+func (d *dashboardServer) handleRepoForensics(w http.ResponseWriter, r *http.Request, id string) {
+	svc := d.prreviewService(w, id)
+	if svc == nil {
+		return
+	}
+	stats, err := svc.Forensics(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeFilesJSON(w, map[string]any{"files": stats})
+}
+
+// handleRepoPRs: GET /repos/<id>/prs — fetched pull requests for the repo.
+func (d *dashboardServer) handleRepoPRs(w http.ResponseWriter, r *http.Request, id string) {
+	svc := d.prreviewService(w, id)
+	if svc == nil {
+		return
+	}
+	prs, err := svc.PRs(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeFilesJSON(w, map[string]any{"prs": prs})
 }

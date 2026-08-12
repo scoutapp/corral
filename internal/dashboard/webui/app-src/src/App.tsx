@@ -1,6 +1,7 @@
-import { RouterProvider, useRouter, matchProject } from "./router";
+import { RouterProvider, useRouter, matchProject, matchRepo } from "./router";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { ProjectPage } from "./pages/ProjectPage";
+import { RepoPage } from "./pages/RepoPage";
 import { GlobalPage } from "./pages/GlobalPage";
 import { ToastProvider } from "./components/Toasts";
 import { UpdateBanner } from "./components/UpdateBanner";
@@ -11,6 +12,8 @@ function Routes() {
 
   const projectId = matchProject(path);
   if (projectId) return <ProjectPage id={projectId} />;
+  const repoId = matchRepo(path);
+  if (repoId) return <RepoPage id={repoId} />;
   if (path === "/global") return <GlobalPage />;
   return <ProjectsPage />;
 }

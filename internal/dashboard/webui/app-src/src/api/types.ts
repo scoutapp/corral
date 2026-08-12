@@ -272,3 +272,32 @@ export interface DirectHost {
   when: string; // "YYYY/MM/DD HH:MM:SS"
   ts: number; // Unix seconds (0 if unparseable) — for chronological interleave
 }
+
+// PR Review (internal/prreview). Mirrors the Go structs in
+// internal/prreview/types.go. Lists are empty until the repo is analyzed / PRs
+// are fetched (writers land in later phases).
+
+// GET /repos/<id>/forensics -> { files: PrFileStat[] }
+export interface PrFileStat {
+  id: number;
+  repoId: string;
+  filePath: string;
+  totalCommits: number;
+  fixCommits: number;
+  churnScore?: number;
+  lastAnalyzed?: string;
+}
+
+// GET /repos/<id>/prs -> { prs: PrItem[] }
+export interface PrItem {
+  id: number;
+  repoId: string;
+  number: number;
+  title?: string;
+  shortSummary?: string;
+  githubUrl?: string;
+  state?: string;
+  baseSha?: string;
+  headSha?: string;
+  fetchedAt?: string;
+}
