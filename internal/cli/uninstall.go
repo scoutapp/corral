@@ -198,18 +198,20 @@ func dirWritable(dir string) bool {
 	return true
 }
 
-// killTmuxSessions kills every tmux session named corral_*.
+// killTmuxSessions kills every corral_* session on the default tmux server, and
+// tears down the dedicated host-shell tmux server ("corral-host" socket) entirely.
 func killTmuxSessions() {
-	out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").Output()
-	if err != nil {
-		return // no tmux server running, or tmux absent — nothing to do
-	}
-	for _, name := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		name = strings.TrimSpace(name)
-		if strings.HasPrefix(name, "corral_") {
-			_ = exec.Command("tmux", "kill-session", "-t", name).Run()
+	if out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").Output(); err == nil {
+		for _, name := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			name = strings.TrimSpace(name)
+			if strings.HasPrefix(name, "corral_") {
+				_ = exec.Command("tmux", "kill-session", "-t", name).Run()
+			}
 		}
 	}
+	// The host-shell sessions live on their own tmux server (see internal/dashboard
+	// hostSocket) — kill that server outright; it holds only our host sessions.
+	_ = exec.Command("tmux", "-L", "corral-host", "kill-server").Run()
 }
 
 // removeContainers force-removes every container named corral_* (running or

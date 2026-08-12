@@ -117,10 +117,42 @@ func (d *dashboardServer) handleContainerWS(w http.ResponseWriter, r *http.Reque
 	d.bridgePTY(w, r, cmd)
 }
 
+// hostSocket is a DEDICATED tmux server (socket) for all host-shell sessions,
+// separate from the Claude dev sessions' default server. Sizing is per-server in
+// tmux: on a shared server, resizing one detached session's window cascades to
+// the others, so the narrow Claude dock (≈59 cols) was dragging the host shell to
+// 59 cols too — leaving the wide host xterm filled with tmux's "…" dots. An
+// isolated socket makes the host window sizing fully independent.
+const hostSocket = "corral-host"
+
+// hostTmux builds a tmux command bound to the host-shell socket. ALL host-shell
+// tmux operations (create/attach/has-session/list-panes/split/kill) must go
+// through this so they hit the isolated server.
+func hostTmux(args ...string) *exec.Cmd {
+	return exec.Command("tmux", append([]string{"-L", hostSocket}, args...)...)
+}
+
+// hostSessionLive reports whether the host session exists on the host socket with
+// a live (non-dead) pane — the socket-scoped equivalent of session.TmuxSessionLive.
+func hostSessionLive(sessionName string) bool {
+	if hostTmux("has-session", "-t", sessionName).Run() != nil {
+		return false
+	}
+	out, err := hostTmux("list-panes", "-t", sessionName, "-F", "#{pane_dead}").Output()
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if strings.TrimSpace(line) == "0" {
+			return true
+		}
+	}
+	return false
+}
+
 // hostShellSession returns the per-project tmux session name backing that
 // project's host shell. It's distinct from the Claude dev session
-// (TmuxSessionNameForWorkspace) — a "-host" suffix — so the integrated host
-// terminal is its own long-lived session that survives navigation and reloads.
+// (TmuxSessionNameForWorkspace) — a "-host" suffix — and lives on hostSocket.
 func hostShellSession(workspace string) string {
 	return session.TmuxSessionNameForWorkspace(workspace) + "-host"
 }
@@ -149,18 +181,22 @@ func (d *dashboardServer) handleTerminalAction(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Map the terminal kind to its tmux session.
+	// Map the terminal kind to its tmux session — and its SERVER. The host shell
+	// lives on the isolated host socket; the Claude session on the default socket.
 	var sess string
+	// mk builds a tmux command on the correct socket for this kind.
+	mk := func(a ...string) *exec.Cmd { return exec.Command("tmux", a...) }
 	switch body.Kind {
 	case "claude":
 		sess = session.TmuxSessionNameForWorkspace(workspace)
 	case "host":
 		sess = hostShellSession(workspace)
+		mk = hostTmux
 	default:
 		http.Error(w, "split/close not available for this terminal", http.StatusBadRequest)
 		return
 	}
-	if !session.TmuxSessionExists(sess) {
+	if mk("has-session", "-t", sess).Run() != nil {
 		http.Error(w, "terminal not running", http.StatusBadGateway)
 		return
 	}
@@ -188,7 +224,7 @@ func (d *dashboardServer) handleTerminalAction(w http.ResponseWriter, r *http.Re
 			args = append(args, "-c", workspace)
 		}
 	}
-	if out, err := exec.Command("tmux", args...).CombinedOutput(); err != nil {
+	if out, err := mk(args...).CombinedOutput(); err != nil {
 		http.Error(w, "tmux "+body.Action+" failed: "+strings.TrimSpace(string(out)), http.StatusInternalServerError)
 		return
 	}
@@ -214,37 +250,37 @@ func (d *dashboardServer) handleHostWS(w http.ResponseWriter, r *http.Request, i
 	}
 	sessionName := hostShellSession(workspace)
 
-	// Create the session detached if it doesn't exist yet, rooted in the project
-	// dir so the shell lands there. `tmux new-session -d` is a no-op error if it
-	// already exists; we gate on has-session to avoid clobbering a live one.
-	if !session.TmuxSessionExists(sessionName) {
+	// Create the session (on the isolated host socket) if it doesn't exist yet,
+	// rooted in the project dir so the shell lands there.
+	if hostTmux("has-session", "-t", sessionName).Run() != nil {
 		dir := workspace
 		if _, serr := os.Stat(workspace); serr != nil {
 			dir = "" // workspace gone; let tmux use the default cwd
 		}
-		// Create with a generous fixed size and window-size manual. tmux's
-		// client-driven resizing is unreliable here (a transient small measurement
-		// from xterm on remount pins the window tiny, and it never grows back —
-		// leaving dotted fill where the pane is smaller than xterm's viewport). A
-		// large manual window means tmux always fills at least what xterm shows;
-		// the resize hook in bridgeSessionWS then grows it further when needed.
-		args := []string{"new-session", "-d", "-s", sessionName, "-x", "220", "-y", "60"}
+		args := []string{"new-session", "-d", "-s", sessionName}
 		if dir != "" {
 			args = append(args, "-c", dir)
 		}
-		//   status off  — no tmux status bar
-		//   mouse on     — scroll wheel scrolls scrollback (shift+drag = native copy)
-		//   window-size manual — tmux keeps our size, not the smallest client's
-		if err := exec.Command("tmux", args...).Run(); err == nil {
-			exec.Command("tmux", "set-option", "-t", sessionName, "status", "off").Run()
-			exec.Command("tmux", "set-option", "-t", sessionName, "mouse", "on").Run()
-			exec.Command("tmux", "set-option", "-t", sessionName, "window-size", "manual").Run()
+		//   status off — no tmux status bar (reads as a plain terminal)
+		//   mouse on   — scroll wheel scrolls scrollback (shift+drag = native copy)
+		if hostTmux(args...).Run() == nil {
+			hostTmux("set-option", "-t", sessionName, "status", "off").Run()
+			hostTmux("set-option", "-t", sessionName, "mouse", "on").Run()
 		}
 	}
 
-	// Attach (forces a PTY via -t inside bridgeSessionWS). Detaching on tab close
-	// leaves the session alive for next time.
-	d.bridgeSessionWS(w, r, sessionName, "could not start host shell")
+	// Attach on the host socket, forcing a PTY. The onResize hook resizes this
+	// session's window on the host server — isolated from the Claude sessions, so
+	// no cross-session size cascade (the dots). Detaching on tab close leaves the
+	// session alive for next time.
+	d.bridgePTY(w, r, hostTmux("attach-session", "-t", sessionName),
+		func(cols, rows uint16) {
+			if cols < 20 || rows < 6 {
+				return
+			}
+			hostTmux("resize-window", "-t", sessionName,
+				"-x", strconv.Itoa(int(cols)), "-y", strconv.Itoa(int(rows))).Run()
+		})
 }
 
 // handleUpdateWS bridges a browser terminal to `corral update` running on
@@ -292,20 +328,8 @@ func (d *dashboardServer) bridgeSessionWS(w http.ResponseWriter, r *http.Request
 		return
 	}
 	// -t forces a PTY; without it tmux refuses to attach ("open terminal failed:
-	// not a terminal"). The onResize hook runs `tmux resize-window` so the window
-	// definitively matches the browser's size — SIGWINCH from the PTY resize alone
-	// leaves the window stuck at the 24-row attach default (rows below show dots).
-	d.bridgePTY(w, r, exec.Command("tmux", "attach-session", "-t", sessionName),
-		func(cols, rows uint16) {
-			// Ignore implausibly small sizes: xterm can briefly report a narrow grid
-			// on mount/remount, and shrinking the tmux window to it pins it there
-			// (dotted fill). Real dashboard terminals are far wider than 20 cols.
-			if cols < 20 || rows < 6 {
-				return
-			}
-			exec.Command("tmux", "resize-window", "-t", sessionName,
-				"-x", strconv.Itoa(int(cols)), "-y", strconv.Itoa(int(rows))).Run()
-		})
+	// not a terminal").
+	d.bridgePTY(w, r, exec.Command("tmux", "attach-session", "-t", sessionName))
 }
 
 // bridgePTY upgrades to a WebSocket and bridges it to a PTY running the given
