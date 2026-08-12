@@ -473,18 +473,23 @@ func (sc *Corral) startDetached(containerName string, args []string) error {
 	// applies before the pane can die, keeps the pane (and thus the session)
 	// around after its process exits — so a failed `docker run` is inspectable via
 	// capture-pane instead of vanishing. Belt-and-suspenders with the sizing fix.
-	// Deliberately NO `mouse on` for the Claude session. With tmux mouse mode on,
-	// tmux captures the scroll wheel (entering its copy-mode) and the mouse drag —
-	// which (a) breaks native browser drag-select/copy in the dashboard terminal
-	// and (b) interferes with the container app's alternate-screen switch, leaving
-	// the boot logs visible above Claude's TUI. With mouse OFF, the xterm client
-	// owns scroll (its own 10k-line scrollback scrolls naturally on wheel) and
-	// selection (native drag-to-copy), and tmux is just the detach/attach plumbing
-	// — which is the plain-terminal feel we want here. (The HOST shell keeps mouse
-	// on + split; see terminal.go.)
+	// Deliberately NO `mouse on` for the Claude session, and `status off`, so it
+	// reads as a plain terminal:
+	//   • mouse off — with mouse ON, tmux captures the scroll wheel and the drag
+	//     (entering its copy-mode), which breaks native browser drag-select/copy in
+	//     the dashboard terminal AND interferes with the container app's
+	//     alternate-screen switch (leaving boot logs above Claude's TUI). With it
+	//     off, the xterm client owns scroll (its own 10k-line scrollback scrolls on
+	//     the wheel) and selection (native drag-to-copy); tmux is just the
+	//     detach/attach plumbing.
+	//   • status off — hide tmux's status bar. Otherwise the default (status on)
+	//     shows a tmux badge in the corner (incl. the copy-mode "[0/180]" scroll
+	//     indicator) — the "tmux sign" that shouldn't appear on a plain terminal.
+	// (The HOST shell already sets status off + mouse on + split; see terminal.go.)
 	newSession := exec.Command(
 		"tmux", "new-session", "-d", "-x", "200", "-y", "50", "-s", sessionName, dockerCmdStr,
 		";", "set-option", "-g", "remain-on-exit", "on",
+		";", "set-option", "-t", sessionName, "status", "off",
 	)
 	if out, err := newSession.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to create tmux session '%s': %w\n%s\n\nIs tmux installed?", sessionName, err, string(out))
