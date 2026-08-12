@@ -25,7 +25,15 @@ export function XtermPane({ projectId, wsPath, fullPath, kind }: { projectId?: s
       cursorBlink: true,
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
       fontSize: 13,
-      theme: { background: "#0B0E14" },
+      // selectionBackground/foreground: without these, xterm's selection layer
+      // is nearly invisible against the dark background, so drag-to-copy gives no
+      // visual feedback. Match the editor's selection blue (vscode-dark.js) for a
+      // consistent, readable highlight across the terminal and file editor.
+      theme: {
+        background: "#0B0E14",
+        selectionBackground: "#2e5aa0",
+        selectionForeground: "#ffffff",
+      },
       scrollback: 10000,
     });
     termRef.current = term;
