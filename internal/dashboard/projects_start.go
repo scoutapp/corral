@@ -96,6 +96,12 @@ func (d *dashboardServer) handleStartProject(w http.ResponseWriter, r *http.Requ
 	}
 	cmd := exec.Command(shell, "-lc", `exec "$0" dev`, exe)
 	cmd.Dir = workspace
+	// The user triggered this FROM the dashboard, so they're already in the
+	// browser. `corral dev` normally pops a browser window to the project (its
+	// browser-first behavior for the CLI). Suppress that here — otherwise starting
+	// a project from the UI opens a redundant second window that just flashes and
+	// is discarded. CORRAL_NO_BROWSER is honored by config.OpenBrowser.
+	cmd.Env = append(os.Environ(), "CORRAL_NO_BROWSER=1")
 	if err := cmd.Start(); err != nil {
 		http.Error(w, "start failed: "+err.Error(), http.StatusInternalServerError)
 		return
