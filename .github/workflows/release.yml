@@ -2,9 +2,19 @@ name: release
 
 # Cut a release by pushing a semver tag:
 #   git tag v0.1.0 && git push origin v0.1.0
-# GoReleaser (see .goreleaser.yml) builds the per-platform binaries + the
-# corral-assets.tar.gz bundle and publishes them to a GitHub Release (draft
-# by default). The remote installer (scripts/install.sh) downloads from there.
+#
+# corral links SQLite via cgo (CGO_ENABLED=1). cgo can't cross-compile to macOS
+# from Linux, so the build is SPLIT across native runners and the GitHub Release
+# is assembled by the publish job with `gh` (GoReleaser's own --split/--merge is
+# a Pro feature, so we don't rely on it):
+#   build-macos → .goreleaser.darwin.yml  → darwin/amd64 + darwin/arm64
+#   build-linux → .goreleaser.linux.yml   → linux/amd64 + linux/arm64 (static)
+#   publish     → gh release create        → one release with all archives
+#
+# Each build job runs `goreleaser release --skip=publish,validate`, producing
+# the per-platform archives + a partial checksums file, and uploads them as a
+# workflow artifact. The publish job downloads both, builds the asset bundle,
+# concatenates the checksums, and creates the Release.
 
 on:
   push:
@@ -16,24 +26,120 @@ permissions:
   contents: write # create releases + upload assets
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  build-macos:
+    runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # GoReleaser needs full history + tags for changelog/version
+          fetch-depth: 0 # full history + tags for changelog/version
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
 
-      - name: Run GoReleaser
+      # Native clang builds both darwin arches (arm64 host, amd64 via -target).
+      - name: GoReleaser (darwin)
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: '~> v2'
-          args: release --clean
+          args: release --config .goreleaser.darwin.yml --clean --skip=publish,validate
+
+      - name: Upload darwin artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-darwin
+          path: |
+            dist/*.tar.gz
+            dist/checksums-darwin.txt
+          if-no-files-found: error
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      # aarch64 cross-compiler for the static linux/arm64 cgo build. Native gcc
+      # covers linux/amd64.
+      - name: Install aarch64 cross-toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: GoReleaser (linux)
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --config .goreleaser.linux.yml --clean --skip=publish,validate
+
+      - name: Upload linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-linux
+          path: |
+            dist/*.tar.gz
+            dist/checksums-linux.txt
+          if-no-files-found: error
+
+  publish:
+    needs: [build-macos, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download darwin artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-darwin
+          path: release
+
+      - name: Download linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-linux
+          path: release
+
+      # Runtime asset bundle (sandbox/ + host/) shipped alongside the binaries;
+      # the from-clone install.sh syncs the same layout to ~/.corral/assets.
+      # Excludes project-specific/secret artifacts that must never ship.
+      - name: Build asset bundle
+        run: |
+          tar czf release/corral-assets.tar.gz \
+            --exclude='allowed-domains.txt.enc' \
+            --exclude='*.pem' --exclude='*.key' --exclude='.allowlist-key' \
+            --exclude='__pycache__' --exclude='*.pyc' \
+            sandbox host
+
+      # One checksums.txt over every published asset — including the asset
+      # bundle, which install.sh verifies against checksums.txt. Runs AFTER the
+      # bundle is built so corral-assets.tar.gz is covered. The per-slice
+      # checksums-*.txt files are intermediate and not published.
+      - name: Combine checksums
+        working-directory: release
+        run: |
+          rm -f checksums-darwin.txt checksums-linux.txt
+          sha256sum *.tar.gz > checksums.txt
+          cat checksums.txt
+
+      - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$TAG" \
+            --generate-notes \
+            release/*.tar.gz release/checksums.txt

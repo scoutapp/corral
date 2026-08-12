@@ -1,0 +1,50 @@
+# GoReleaser config — DARWIN slice of the split cgo build.
+#
+# corral links SQLite via cgo (CGO_ENABLED=1), which can't cross-compile to
+# macOS from Linux, so the release is split across native runners (see
+# .github/workflows/release.yml) and this file builds ONLY the darwin binaries
+# on macos-latest. The linux slice is .goreleaser.linux.yml. Keep the two files
+# in sync except for the goos/overrides that differ per platform.
+#
+# Build jobs run `goreleaser release --skip=publish,validate`: they produce the
+# per-platform archives + a partial checksums file into dist/, but do NOT create
+# the GitHub Release. The publish job assembles everything with `gh`.
+version: 2
+
+project_name: corral
+
+builds:
+  - id: corral
+    main: ./cmd/corral
+    binary: corral
+    env:
+      - CGO_ENABLED=1
+    goos: [darwin]
+    goarch: [amd64, arm64]
+    # Native clang links libSystem; portable across supported macOS versions.
+    tags:
+      - sqlite_omit_load_extension
+    ldflags:
+      - -s -w
+      - -X github.com/scoutapp/corral/internal/config.Version={{.Version}}
+      - -X github.com/scoutapp/corral/internal/config.Commit={{.ShortCommit}}
+      - -X github.com/scoutapp/corral/internal/config.Date={{.Date}}
+
+archives:
+  - id: corral
+    ids: [corral]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    files:
+      - README.md
+
+# Per-platform checksums file; the publish job concatenates the two into one
+# checksums.txt on the release.
+checksum:
+  name_template: checksums-darwin.txt
+
+# No release: section — the build jobs never publish (--skip=publish). The
+# publish job in release.yml creates the GitHub Release via `gh`.
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot-{{ .ShortCommit }}"

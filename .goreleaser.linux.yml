@@ -1,0 +1,53 @@
+# GoReleaser config — LINUX slice of the split cgo build.
+#
+# Builds ONLY the linux binaries on ubuntu-latest (the darwin slice is
+# .goreleaser.darwin.yml). SQLite is linked statically so the binary runs on
+# older glibc than the runner's; linux/arm64 is cross-compiled with the aarch64
+# gcc the workflow installs. Keep in sync with the darwin file except for the
+# goos/overrides that differ per platform. See .github/workflows/release.yml.
+version: 2
+
+project_name: corral
+
+builds:
+  - id: corral
+    main: ./cmd/corral
+    binary: corral
+    env:
+      - CGO_ENABLED=1
+    goos: [linux]
+    goarch: [amd64, arm64]
+    tags:
+      - sqlite_omit_load_extension
+    # Static SQLite/libc link so the artifact isn't tied to the runner's glibc.
+    # amd64 uses the native gcc; arm64 uses the cross-compiler.
+    overrides:
+      - goos: linux
+        goarch: amd64
+        env:
+          - CGO_ENABLED=1
+          - CC=gcc
+      - goos: linux
+        goarch: arm64
+        env:
+          - CGO_ENABLED=1
+          - CC=aarch64-linux-gnu-gcc
+    ldflags:
+      - -s -w -linkmode external -extldflags "-static"
+      - -X github.com/scoutapp/corral/internal/config.Version={{.Version}}
+      - -X github.com/scoutapp/corral/internal/config.Commit={{.ShortCommit}}
+      - -X github.com/scoutapp/corral/internal/config.Date={{.Date}}
+
+archives:
+  - id: corral
+    ids: [corral]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    files:
+      - README.md
+
+checksum:
+  name_template: checksums-linux.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot-{{ .ShortCommit }}"
