@@ -35,6 +35,12 @@ export function XtermPane({ projectId, wsPath, fullPath, kind }: { projectId?: s
         selectionForeground: "#ffffff",
       },
       scrollback: 10000,
+      // Selection escape hatch for full-screen apps: Claude's TUI enables mouse
+      // reporting, so a plain drag is forwarded to the app instead of selecting
+      // text. xterm's built-in Shift+drag bypass still selects natively; this adds
+      // Option/Alt+drag on macOS as a second bypass. (Our right-click opens the
+      // context menu, so xterm's rightClickSelectsWord wouldn't fire — omitted.)
+      macOptionClickForcesSelection: true,
     });
     termRef.current = term;
     const fit = new FitAddon();
@@ -194,16 +200,18 @@ export function XtermPane({ projectId, wsPath, fullPath, kind }: { projectId?: s
       case "split-h":
       case "split-v":
       case "kill-pane":
-        if (kind === "claude" || kind === "host") {
+        // Host-only (see canSplit) — the Claude session must not be split.
+        if (kind === "host") {
           await postJSON(`/p/${projectId}/terminal/action`, { kind, action }).catch(() => {});
         }
         return;
     }
   };
 
-  // Only the tmux-backed terminals can split/close. projectId is required for any
-  // backend action.
-  const canSplit = (kind === "claude" || kind === "host") && !!projectId;
+  // Only the HOST terminal offers split/close. The Claude terminal is a single
+  // container PTY (docker run inside tmux) — splitting that session spawns a stray
+  // host shell in it and corrupts the layout, so it's host-only.
+  const canSplit = kind === "host" && !!projectId;
 
   return (
     <div

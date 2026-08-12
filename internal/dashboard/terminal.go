@@ -201,6 +201,15 @@ func (d *dashboardServer) handleTerminalAction(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Split/close are HOST-only. The Claude session is a single container PTY
+	// (docker run inside tmux); splitting it spawns a stray host shell in that
+	// session and corrupts the layout. The Claude terminal's menu only ever sends
+	// `clear`, but guard the endpoint too so a stray request can't split it.
+	if body.Kind == "claude" && (body.Action == "split-h" || body.Action == "split-v" || body.Action == "kill-pane") {
+		http.Error(w, "split/close not available for the Claude terminal", http.StatusBadRequest)
+		return
+	}
+
 	// Translate the action to a tmux command targeting the session's active pane.
 	// -h = split into left|right, -v = split into top/bottom (tmux's axis naming
 	// is the opposite of the visual, hence the labels the UI uses).

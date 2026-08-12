@@ -473,12 +473,18 @@ func (sc *Corral) startDetached(containerName string, args []string) error {
 	// applies before the pane can die, keeps the pane (and thus the session)
 	// around after its process exits — so a failed `docker run` is inspectable via
 	// capture-pane instead of vanishing. Belt-and-suspenders with the sizing fix.
+	// Deliberately NO `mouse on` for the Claude session. With tmux mouse mode on,
+	// tmux captures the scroll wheel (entering its copy-mode) and the mouse drag —
+	// which (a) breaks native browser drag-select/copy in the dashboard terminal
+	// and (b) interferes with the container app's alternate-screen switch, leaving
+	// the boot logs visible above Claude's TUI. With mouse OFF, the xterm client
+	// owns scroll (its own 10k-line scrollback scrolls naturally on wheel) and
+	// selection (native drag-to-copy), and tmux is just the detach/attach plumbing
+	// — which is the plain-terminal feel we want here. (The HOST shell keeps mouse
+	// on + split; see terminal.go.)
 	newSession := exec.Command(
 		"tmux", "new-session", "-d", "-x", "200", "-y", "50", "-s", sessionName, dockerCmdStr,
 		";", "set-option", "-g", "remain-on-exit", "on",
-		// mouse on: scroll wheel scrolls scrollback in the dashboard terminal
-		// (falls through to Claude's own mouse handling when it grabs the mouse).
-		";", "set-option", "-t", sessionName, "mouse", "on",
 	)
 	if out, err := newSession.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to create tmux session '%s': %w\n%s\n\nIs tmux installed?", sessionName, err, string(out))
