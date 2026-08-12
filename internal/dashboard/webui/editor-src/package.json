@@ -8,7 +8,7 @@
   },
   "comment": "Dependencies are pinned to exact versions (no ^) on purpose: the built bundle is committed and go:embed-ed into the host binary, so it runs as trusted host-side code in the dashboard browser. Exact pins keep the bundle reproducible and prevent a stray npm install from pulling an unreviewed release. Update versions deliberately, then rebuild and review the bundle diff.",
   "devDependencies": {
-    "esbuild": "0.24.2"
+    "esbuild": "0.28.1"
   },
   "dependencies": {
     "@codemirror/commands": "6.10.4",
