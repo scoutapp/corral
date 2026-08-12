@@ -163,7 +163,7 @@ export function ProjectPage({ id }: { id: string }) {
   const flipChatSide = () => setChatSide((s) => (s === "left" ? "right" : "left"));
 
   return (
-    <>
+    <div className="project-page">
       <header>
           <Link to="/" className="back">
             ← All projects
@@ -305,6 +305,6 @@ export function ProjectPage({ id }: { id: string }) {
           }}
         />
       )}
-    </>
+    </div>
   );
 }

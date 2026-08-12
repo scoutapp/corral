@@ -43,6 +43,26 @@ export function XtermPane({ projectId, wsPath, fullPath, kind }: { projectId?: s
       macOptionClickForcesSelection: true,
     });
     termRef.current = term;
+
+    // OSC 52 clipboard: apps inside tmux (with set-clipboard=external) and Claude
+    // itself request a clipboard write by emitting an OSC 52 escape. xterm.js
+    // ignores OSC 52 by default (no clipboard addon loaded), so those copies —
+    // including tmux copy-mode and Claude's own copy — silently went nowhere
+    // ("sent N chars via osc 52" but nothing landed). Handle it: decode the
+    // base64 payload and write it to the browser clipboard. Payload arrives as
+    // "<selection>;<base64>" (e.g. "c;<b64>"); returning true marks it handled.
+    term.parser.registerOscHandler(52, (data) => {
+      const b64 = data.slice(data.indexOf(";") + 1);
+      if (!b64 || b64 === "?") return true; // "?" is a read request; ignore.
+      try {
+        const text = new TextDecoder().decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
+        void navigator.clipboard?.writeText(text).catch(() => {});
+      } catch {
+        /* malformed base64 — ignore */
+      }
+      return true;
+    });
+
     const fit = new FitAddon();
     term.loadAddon(fit);
     if (host.current) {

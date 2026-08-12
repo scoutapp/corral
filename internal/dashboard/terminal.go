@@ -132,6 +132,25 @@ func hostTmux(args ...string) *exec.Cmd {
 	return exec.Command("tmux", append([]string{"-L", hostSocket}, args...)...)
 }
 
+// enableTmuxClipboard makes a tmux session forward an inner app's OSC 52
+// clipboard write out to the attached (browser/xterm.js) client, so copy inside
+// Claude / the shell reaches the system clipboard.
+//
+//   - set-clipboard on: tmux itself sets the client clipboard via OSC 52 (rather
+//     than only stashing into its own paste buffer).
+//   - terminal-overrides Ms: tmux only emits the clipboard OSC 52 to a client
+//     whose terminal advertises the `Ms` capability. The daemon's PTY TERM
+//     wouldn't reliably carry it, so force it on for every client — xterm.js
+//     handles the forwarded sequence (see XtermPane's OSC 52 handler).
+//
+// `mk` is the socket-scoped tmux builder (plain `tmux …` for the Claude server,
+// hostTmux for the host server). Best-effort: clipboard is a nicety, not fatal.
+func enableTmuxClipboard(mk func(...string) *exec.Cmd, sessionName string) {
+	mk("set-option", "-t", sessionName, "set-clipboard", "on").Run()
+	// Ms = "set clipboard"; %p1%s is the selection, %p2%s the base64 payload.
+	mk("set-option", "-t", sessionName, "-a", "terminal-overrides", ",*:Ms=\\E]52;%p1%s;%p2%s\\007").Run()
+}
+
 // hostSessionLive reports whether the host session exists on the host socket with
 // a live (non-dead) pane — the socket-scoped equivalent of session.TmuxSessionLive.
 func hostSessionLive(sessionName string) bool {
@@ -275,6 +294,7 @@ func (d *dashboardServer) handleHostWS(w http.ResponseWriter, r *http.Request, i
 		if hostTmux(args...).Run() == nil {
 			hostTmux("set-option", "-t", sessionName, "status", "off").Run()
 			hostTmux("set-option", "-t", sessionName, "mouse", "on").Run()
+			enableTmuxClipboard(hostTmux, sessionName)
 		}
 	}
 
@@ -356,6 +376,27 @@ func (d *dashboardServer) bridgePTY(w http.ResponseWriter, r *http.Request, cmd 
 		return // Upgrade already wrote an error response
 	}
 	defer conn.Close()
+
+	// Advertise the client terminal as xterm to the process we attach (tmux/shell).
+	// tmux only forwards an app's OSC 52 clipboard write to a client whose $TERM
+	// matches its `terminal-features` xterm* entry (…:clipboard:…). The daemon runs
+	// detached with a stripped/absent TERM, so without this tmux silently drops the
+	// copy ("sent N chars via osc 52" but nothing lands). xterm.js honors the
+	// forwarded OSC 52 via the handler in XtermPane. Only set it if the caller
+	// hasn't already specified a TERM.
+	if cmd.Env == nil {
+		cmd.Env = os.Environ()
+	}
+	hasTerm := false
+	for _, e := range cmd.Env {
+		if strings.HasPrefix(e, "TERM=") {
+			hasTerm = true
+			break
+		}
+	}
+	if !hasTerm {
+		cmd.Env = append(cmd.Env, "TERM=xterm-256color")
+	}
 
 	ptmx, err := pty.Start(cmd)
 	if err != nil {

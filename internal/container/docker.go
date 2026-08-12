@@ -490,6 +490,13 @@ func (sc *Corral) startDetached(containerName string, args []string) error {
 		"tmux", "new-session", "-d", "-x", "200", "-y", "50", "-s", sessionName, dockerCmdStr,
 		";", "set-option", "-g", "remain-on-exit", "on",
 		";", "set-option", "-t", sessionName, "status", "off",
+		// Forward an inner app's OSC 52 clipboard write out to the browser/xterm.js
+		// client so copy inside Claude reaches the system clipboard. set-clipboard
+		// on makes tmux emit the OSC 52; the terminal-overrides Ms entry forces the
+		// "set clipboard" capability on for every client (the daemon's PTY TERM
+		// wouldn't reliably carry it). xterm.js handles the forwarded sequence.
+		";", "set-option", "-t", sessionName, "set-clipboard", "on",
+		";", "set-option", "-t", sessionName, "-a", "terminal-overrides", ",*:Ms=\\E]52;%p1%s;%p2%s\\007",
 	)
 	if out, err := newSession.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to create tmux session '%s': %w\n%s\n\nIs tmux installed?", sessionName, err, string(out))
