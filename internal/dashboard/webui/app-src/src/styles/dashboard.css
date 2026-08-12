@@ -726,7 +726,17 @@ table.projects th, table.projects td {
 }
 .term-dock-handle:hover { background: var(--con-working); }
 .project-layout.dock-collapsed .term-dock { display: none; }
-.term-dock .screen-frame, .term-dock .screen-iframe { height: 100%; }
+.term-dock .screen-iframe { height: 100%; }
+/* The dock's screen-frame must be a flex COLUMN so the header bar takes its own
+   height and the terminal fills the remainder. Without this the .term-fill sized
+   itself to xterm's row count and spilled past the frame's bottom (clipped by
+   overflow:hidden) — the "inner terminal content cut off" bug. */
+.term-dock .screen-frame {
+  height: 100%;
+  display: flex; flex-direction: column; min-height: 0;
+}
+.term-dock .screen-bar { flex: none; }
+.term-dock .term-fill { flex: 1 1 auto; min-height: 0; }
 
 /* Files tab: tree | editor */
 /* Files tab styled to sit flush with the VS Code "Dark Modern" editor the
