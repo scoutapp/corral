@@ -68,6 +68,8 @@ function BodySlot({ projectId, flowId, side, msg }: { projectId: string; flowId:
       setHtml("(empty)");
       return;
     }
+    // Don't flash back to "loading…" on a tab switch — keep the current text until
+    // the new body arrives, so switching Request/Response doesn't flicker.
     getText(api(projectId, `/mitm/flows/${flowId}/${side}/content`))
       .then((text) => {
         if (!alive) return;
@@ -106,6 +108,31 @@ function HeaderTable({ headers }: { headers?: [string, string][] }) {
         ))}
       </tbody>
     </table>
+  );
+}
+
+// FlowDetail is the expanded gutter for a decrypted flow, split into Request /
+// Response tabs (each shows that side's headers + body) so the request isn't
+// buried above the response. Defaults to Response — usually what you're inspecting
+// — but the request (the exact payload sent, e.g. to Anthropic) is one click away.
+function FlowDetail({ projectId, flowId, req, resp }: { projectId: string; flowId: string; req: MitmMessage; resp: MitmMessage }) {
+  const [side, setSide] = useState<"request" | "response">("response");
+  const msg = side === "request" ? req : resp;
+  return (
+    <div className="mitm-detail">
+      <div className="mitm-tabs">
+        <button type="button" className={`mitm-tab${side === "request" ? " active" : ""}`} onClick={() => setSide("request")}>
+          Request
+        </button>
+        <button type="button" className={`mitm-tab${side === "response" ? " active" : ""}`} onClick={() => setSide("response")}>
+          Response
+        </button>
+      </div>
+      <div className="mitm-sec">Headers</div>
+      <HeaderTable headers={msg.headers} />
+      <div className="mitm-sec">Body</div>
+      <BodySlot projectId={projectId} flowId={flowId} side={side} msg={msg} />
+    </div>
   );
 }
 
@@ -358,16 +385,7 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
                     {open && (
                       <tr className="m-detailrow">
                         <td colSpan={8}>
-                          <div className="mitm-detail">
-                            <div className="mitm-sec">Request headers</div>
-                            <HeaderTable headers={req.headers} />
-                            <div className="mitm-sec">Request body</div>
-                            <BodySlot projectId={projectId} flowId={f.id} side="request" msg={req} />
-                            <div className="mitm-sec">Response headers</div>
-                            <HeaderTable headers={resp.headers} />
-                            <div className="mitm-sec">Response body</div>
-                            <BodySlot projectId={projectId} flowId={f.id} side="response" msg={resp} />
-                          </div>
+                          <FlowDetail projectId={projectId} flowId={f.id} req={req} resp={resp} />
                         </td>
                       </tr>
                     )}

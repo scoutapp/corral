@@ -345,6 +345,18 @@ table.projects th, table.projects td {
   padding: 0.5rem 0.75rem 0.75rem;
   overflow: hidden;
 }
+/* Request / Response tab toggle inside the expanded flow gutter. */
+.mitm-tabs {
+  display: flex; gap: 0.25rem; margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.mitm-tab {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer;
+  padding: 0.25rem 0.6rem; margin-bottom: -1px;
+}
+.mitm-tab:hover { color: var(--fg); }
+.mitm-tab.active { color: var(--fg); border-bottom-color: var(--accent); }
 .mitm-sec {
   font-size: 11px;
   text-transform: uppercase;
@@ -364,6 +376,9 @@ table.projects th, table.projects td {
 .mitm-body {
   margin: 0;
   padding: 0.5rem;
+  /* min-height keeps the gutter from collapsing/jumping when switching between the
+     Request and Response tabs (bodies differ in size). */
+  min-height: 4.5rem;
   max-height: 40vh;
   overflow: auto;
   background: var(--bg);
@@ -596,6 +611,29 @@ table.projects th, table.projects td {
   overflow: hidden;
   background: var(--bg);
 }
+/* Right-click terminal context menu. Fixed-positioned at the cursor. */
+.term-menu {
+  position: fixed; z-index: 60; min-width: 172px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  padding: 4px; box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+  font-size: 13px; color: var(--fg);
+}
+.term-menu-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+  width: 100%; text-align: left; background: none; border: none; color: inherit;
+  padding: 0.4rem 0.6rem; border-radius: 5px; cursor: pointer; font: inherit;
+}
+.term-menu-item:hover { background: rgba(255,255,255,0.07); }
+.term-menu-danger:hover { background: rgba(255,90,90,0.15); color: #ff6b6b; }
+.term-menu-key { color: var(--muted); font-size: 11px; }
+.term-menu-sep { height: 1px; background: var(--border); margin: 4px 2px; }
+/* Fill the tab area (bar on top, terminal below) with a stable height, so a lazily
+   mounted xterm sizes correctly on first show instead of flashing 0 → full. */
+.screen-frame-fill {
+  flex: 1 1 auto; min-height: 0; width: 100%;
+  display: flex; flex-direction: column;
+}
+.screen-frame-fill .term-fill { flex: 1 1 auto; min-height: 0; }
 .screen-bar {
   display: flex; align-items: center; gap: 0.45rem;
   padding: 6px 11px;

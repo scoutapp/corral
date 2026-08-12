@@ -245,7 +245,10 @@ func projectLiveStatus(workspace string) ProjectStatus {
 	}
 
 	status.ContainerUp = session.DockerContainerRunning(status.Container)
-	status.TmuxUp = session.TmuxSessionExists(status.Session)
+	// Live (not dead-pane) so the dashboard doesn't connect the Claude terminal to
+	// a session whose container has exited — attaching to a dead pane shows tmux's
+	// blank "Pane is dead" fill instead of a terminal.
+	status.TmuxUp = session.TmuxSessionLive(status.Session)
 
 	if state, err := readProxyRuntimeStateFor(workspace); err != nil {
 		config.Debugf("Warning: failed to read proxy runtime state for %s: %v", workspace, err)
@@ -386,9 +389,14 @@ func (d *dashboardServer) serveSPA(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// The shell references hashed assets, so it can be cached briefly; but keep it
-	// revalidating so a redeploy is picked up promptly.
-	w.Header().Set("Cache-Control", "no-cache")
+	// NEVER cache the shell: it references content-hashed asset filenames, so after
+	// a redeploy (install + dashboard restart) a plain browser reload must pick up
+	// the NEW index.html to load the new bundle. A cached shell points at stale
+	// assets — the recurring "I reinstalled but still see the old UI" problem. The
+	// hashed /static/app/assets/* files are immutable and cache fine on their own.
+	w.Header().Set("Cache-Control", "no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 	w.Write(html)
 }
 
@@ -495,6 +503,8 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.serveSPA(w, r)
 	case sub == "terminal/ws":
 		d.handleTerminalWS(w, r, id)
+	case sub == "terminal/action":
+		d.handleTerminalAction(w, r, id)
 	case sub == "config":
 		d.handleConfigRead(w, r, id)
 	case sub == "config/diff":

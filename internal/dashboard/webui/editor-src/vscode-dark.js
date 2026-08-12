@@ -10,12 +10,12 @@ import { tags as t } from "@lezer/highlight";
 const bg = "#1e1e1e";
 const fg = "#d4d4d4";
 const caret = "#aeafad";
-// Selection: VS Code uses #264f78, but on the active line CodeMirror's
-// active-line background (painted on the line, in front of the selection layer)
-// washes a small selection out so it reads the same as the line. Use a brighter
-// blue AND lift the selection layer above the active line (below) so a partial
-// selection stays clearly visible on the current line.
-const selection = "#3163ad";
+// Selection: VS Code's editor.selectionBackground. The selection layer sits
+// BEHIND the text (CodeMirror's default), so the highlighted characters stay
+// readable — do NOT raise its z-index (that paints the selection over the text).
+// A slightly brighter-than-VS-Code blue keeps a small selection distinct from the
+// active-line highlight without hiding the glyphs.
+const selection = "#2e5aa0";
 const selectionMatch = "#3a3d41";
 const lineHighlight = "#2a2d2e";
 const gutterBg = "#1e1e1e";
@@ -32,11 +32,22 @@ export const vscodeDarkTheme = EditorView.theme(
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
     },
     ".cm-cursor, .cm-dropCursor": { borderLeftColor: caret },
-    "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
-      { backgroundColor: selection },
-    // Lift the selection layer above the active-line background so a selection on
-    // the current line is drawn ON TOP of the line highlight, not behind it.
-    ".cm-selectionLayer": { zIndex: "1 !important" },
+    // Selection background — cover BOTH the focused and unfocused draw paths, plus
+    // native ::selection. CodeMirror only applies the bright color under
+    // `.cm-focused` by default; without the unfocused rule a selection that loses
+    // focus (or is drawn before focus lands) falls back to a barely-visible gray.
+    // The selection layer sits behind the text, so glyphs stay readable.
+    ".cm-selectionBackground, .cm-content ::selection, .cm-line ::selection": {
+      backgroundColor: selection + " !important",
+    },
+    "&.cm-focused .cm-selectionBackground": { backgroundColor: selection + " !important" },
+    // The ACTIVE line has its own background, and its ::selection renders with a
+    // browser default that's invisible against it — so a selection on the current
+    // line looked like nothing. Color it explicitly (this is the rule that actually
+    // fixes "can't see what I'm highlighting").
+    ".cm-activeLine::selection, .cm-activeLine ::selection": {
+      backgroundColor: selection + " !important",
+    },
     ".cm-selectionMatch": { backgroundColor: selectionMatch },
     ".cm-activeLine": { backgroundColor: lineHighlight },
     ".cm-activeLineGutter": { backgroundColor: lineHighlight, color: gutterActiveFg },
