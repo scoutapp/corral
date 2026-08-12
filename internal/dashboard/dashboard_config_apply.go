@@ -303,6 +303,10 @@ func (d *dashboardServer) handleConfigRestart(w http.ResponseWriter, r *http.Req
 	}
 	startCmd := exec.Command(shell, "-lc", `exec "$0" dev`, exe)
 	startCmd.Dir = workspace
+	// Triggered from the dashboard — suppress `corral dev`'s browser-first window
+	// so a restart doesn't pop a redundant second browser tab. (See
+	// handleStartProject; CORRAL_NO_BROWSER is honored by config.OpenBrowser.)
+	startCmd.Env = append(os.Environ(), "CORRAL_NO_BROWSER=1")
 	if err := startCmd.Start(); err != nil {
 		http.Error(w, "restart failed: "+err.Error(), http.StatusInternalServerError)
 		return
