@@ -697,7 +697,19 @@ table.projects th, table.projects td {
 .power-spin { display: inline-block; animation: power-spin 0.9s linear infinite; }
 @keyframes power-spin { to { transform: rotate(360deg); } }
 
-.project-layout { display: flex; gap: 0; height: calc(100vh - 64px); }
+/* Full-viewport flex column: the header takes its natural (possibly wrapped)
+   height and .project-layout fills whatever is left. Anchored with fixed/inset:0
+   so it fills the real viewport regardless of the body's 1.5rem padding — a plain
+   `height:100vh` on a padded, offset element overflowed the bottom and cut off the
+   Claude dock. This also replaces a hardcoded `calc(100vh - 64px)` that assumed a
+   fixed 64px header. Padding restores the page gutter the body padding used to give. */
+.project-page {
+  position: fixed; inset: 0; z-index: 1;
+  display: flex; flex-direction: column; overflow: hidden;
+  padding: 1.5rem; background: var(--bg);
+}
+.project-page > header { flex: none; }
+.project-layout { display: flex; gap: 0; flex: 1 1 auto; min-height: 0; }
 .tab-area { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
 .term-dock {
   /* flex-basis is set inline (drag-resizable, persisted). Keep a floor; the drag
@@ -714,7 +726,17 @@ table.projects th, table.projects td {
 }
 .term-dock-handle:hover { background: var(--con-working); }
 .project-layout.dock-collapsed .term-dock { display: none; }
-.term-dock .screen-frame, .term-dock .screen-iframe { height: 100%; }
+.term-dock .screen-iframe { height: 100%; }
+/* The dock's screen-frame must be a flex COLUMN so the header bar takes its own
+   height and the terminal fills the remainder. Without this the .term-fill sized
+   itself to xterm's row count and spilled past the frame's bottom (clipped by
+   overflow:hidden) — the "inner terminal content cut off" bug. */
+.term-dock .screen-frame {
+  height: 100%;
+  display: flex; flex-direction: column; min-height: 0;
+}
+.term-dock .screen-bar { flex: none; }
+.term-dock .term-fill { flex: 1 1 auto; min-height: 0; }
 
 /* Files tab: tree | editor */
 /* Files tab styled to sit flush with the VS Code "Dark Modern" editor the

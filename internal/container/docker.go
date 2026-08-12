@@ -473,12 +473,30 @@ func (sc *Corral) startDetached(containerName string, args []string) error {
 	// applies before the pane can die, keeps the pane (and thus the session)
 	// around after its process exits — so a failed `docker run` is inspectable via
 	// capture-pane instead of vanishing. Belt-and-suspenders with the sizing fix.
+	// Deliberately NO `mouse on` for the Claude session, and `status off`, so it
+	// reads as a plain terminal:
+	//   • mouse off — with mouse ON, tmux captures the scroll wheel and the drag
+	//     (entering its copy-mode), which breaks native browser drag-select/copy in
+	//     the dashboard terminal AND interferes with the container app's
+	//     alternate-screen switch (leaving boot logs above Claude's TUI). With it
+	//     off, the xterm client owns scroll (its own 10k-line scrollback scrolls on
+	//     the wheel) and selection (native drag-to-copy); tmux is just the
+	//     detach/attach plumbing.
+	//   • status off — hide tmux's status bar. Otherwise the default (status on)
+	//     shows a tmux badge in the corner (incl. the copy-mode "[0/180]" scroll
+	//     indicator) — the "tmux sign" that shouldn't appear on a plain terminal.
+	// (The HOST shell already sets status off + mouse on + split; see terminal.go.)
 	newSession := exec.Command(
 		"tmux", "new-session", "-d", "-x", "200", "-y", "50", "-s", sessionName, dockerCmdStr,
 		";", "set-option", "-g", "remain-on-exit", "on",
-		// mouse on: scroll wheel scrolls scrollback in the dashboard terminal
-		// (falls through to Claude's own mouse handling when it grabs the mouse).
-		";", "set-option", "-t", sessionName, "mouse", "on",
+		";", "set-option", "-t", sessionName, "status", "off",
+		// Forward an inner app's OSC 52 clipboard write out to the browser/xterm.js
+		// client so copy inside Claude reaches the system clipboard. set-clipboard
+		// on makes tmux emit the OSC 52; the terminal-overrides Ms entry forces the
+		// "set clipboard" capability on for every client (the daemon's PTY TERM
+		// wouldn't reliably carry it). xterm.js handles the forwarded sequence.
+		";", "set-option", "-t", sessionName, "set-clipboard", "on",
+		";", "set-option", "-t", sessionName, "-a", "terminal-overrides", ",*:Ms=\\E]52;%p1%s;%p2%s\\007",
 	)
 	if out, err := newSession.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to create tmux session '%s': %w\n%s\n\nIs tmux installed?", sessionName, err, string(out))

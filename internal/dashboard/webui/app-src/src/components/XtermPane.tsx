@@ -35,8 +35,34 @@ export function XtermPane({ projectId, wsPath, fullPath, kind }: { projectId?: s
         selectionForeground: "#ffffff",
       },
       scrollback: 10000,
+      // Selection escape hatch for full-screen apps: Claude's TUI enables mouse
+      // reporting, so a plain drag is forwarded to the app instead of selecting
+      // text. xterm's built-in Shift+drag bypass still selects natively; this adds
+      // Option/Alt+drag on macOS as a second bypass. (Our right-click opens the
+      // context menu, so xterm's rightClickSelectsWord wouldn't fire — omitted.)
+      macOptionClickForcesSelection: true,
     });
     termRef.current = term;
+
+    // OSC 52 clipboard: apps inside tmux (with set-clipboard=external) and Claude
+    // itself request a clipboard write by emitting an OSC 52 escape. xterm.js
+    // ignores OSC 52 by default (no clipboard addon loaded), so those copies —
+    // including tmux copy-mode and Claude's own copy — silently went nowhere
+    // ("sent N chars via osc 52" but nothing landed). Handle it: decode the
+    // base64 payload and write it to the browser clipboard. Payload arrives as
+    // "<selection>;<base64>" (e.g. "c;<b64>"); returning true marks it handled.
+    term.parser.registerOscHandler(52, (data) => {
+      const b64 = data.slice(data.indexOf(";") + 1);
+      if (!b64 || b64 === "?") return true; // "?" is a read request; ignore.
+      try {
+        const text = new TextDecoder().decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
+        void navigator.clipboard?.writeText(text).catch(() => {});
+      } catch {
+        /* malformed base64 — ignore */
+      }
+      return true;
+    });
+
     const fit = new FitAddon();
     term.loadAddon(fit);
     if (host.current) {
@@ -194,16 +220,18 @@ export function XtermPane({ projectId, wsPath, fullPath, kind }: { projectId?: s
       case "split-h":
       case "split-v":
       case "kill-pane":
-        if (kind === "claude" || kind === "host") {
+        // Host-only (see canSplit) — the Claude session must not be split.
+        if (kind === "host") {
           await postJSON(`/p/${projectId}/terminal/action`, { kind, action }).catch(() => {});
         }
         return;
     }
   };
 
-  // Only the tmux-backed terminals can split/close. projectId is required for any
-  // backend action.
-  const canSplit = (kind === "claude" || kind === "host") && !!projectId;
+  // Only the HOST terminal offers split/close. The Claude terminal is a single
+  // container PTY (docker run inside tmux) — splitting that session spawns a stray
+  // host shell in it and corrupts the layout, so it's host-only.
+  const canSplit = kind === "host" && !!projectId;
 
   return (
     <div
