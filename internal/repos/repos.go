@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -34,6 +35,7 @@ type Repo struct {
 	DefaultBranch string `json:"default_branch"` // best-effort, from the cache
 	LastFetched   string `json:"last_fetched"`   // RFC3339
 	AddedAt       string `json:"added_at"`       // RFC3339
+	Pinned        bool   `json:"pinned"`         // pinned repos sort to the top of the list
 }
 
 type registry struct {
@@ -78,7 +80,28 @@ func List() ([]Repo, error) {
 	if reg.Repos == nil {
 		return []Repo{}, nil
 	}
-	return reg.Repos, nil
+	// Pinned repos first (stable within each group, preserving registry order).
+	out := make([]Repo, len(reg.Repos))
+	copy(out, reg.Repos)
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].Pinned && !out[j].Pinned
+	})
+	return out, nil
+}
+
+// SetPinned toggles a repo's pinned flag and persists it.
+func SetPinned(id string, pinned bool) error {
+	reg, err := readRegistry()
+	if err != nil {
+		return err
+	}
+	for i := range reg.Repos {
+		if reg.Repos[i].ID == id {
+			reg.Repos[i].Pinned = pinned
+			return writeRegistry(reg)
+		}
+	}
+	return fmt.Errorf("repo not found: %s", id)
 }
 
 // Get returns the repo with the given id.

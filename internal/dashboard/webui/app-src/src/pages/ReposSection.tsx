@@ -67,6 +67,16 @@ export function ReposSection({ search, reloadKey }: { search: string; reloadKey:
             <div className="repo-item" key={rp.id}>
               <div className="repo-row">
                 <div className="repo-meta">
+                  <button
+                    type="button"
+                    className={`repo-pin${rp.pinned ? " on" : ""}`}
+                    title={rp.pinned ? "Unpin" : "Pin to top"}
+                    onClick={() =>
+                      postRaw(`/repos/${encodeURIComponent(rp.id)}/pin`, { pinned: !rp.pinned }).then(load)
+                    }
+                  >
+                    {rp.pinned ? "★" : "☆"}
+                  </button>
                   <Link className="repo-name" to={`/repos/${encodeURIComponent(rp.id)}`}>
                     {rp.name}
                   </Link>

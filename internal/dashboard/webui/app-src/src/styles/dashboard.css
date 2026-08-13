@@ -1108,6 +1108,12 @@ table.projects th, table.projects td {
 }
 .repo-meta { display: flex; align-items: baseline; gap: 0.6rem; min-width: 0; }
 .repo-name { color: var(--con-text); font-weight: 600; }
+.repo-pin {
+  background: none; border: none; cursor: pointer; padding: 0 0.3rem 0 0;
+  font-size: 0.95rem; color: var(--con-muted); line-height: 1;
+}
+.repo-pin.on { color: #d6a419; }
+.repo-pin:hover { color: #d6a419; }
 .repo-src { color: var(--con-muted); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, monospace; }
 .repo-badge { flex: none; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--con-waiting); border: 1px solid var(--con-waiting); border-radius: 999px; padding: 0 0.4rem; }
 .repo-actions { display: flex; gap: 0.3rem; flex: none; }
