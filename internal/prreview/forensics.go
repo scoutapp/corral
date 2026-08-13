@@ -83,7 +83,8 @@ type AnalyzeResult struct {
 	CallgraphOK bool       `json:"callgraphOk"`
 }
 
-// AnalyzeRepo runs forensics AND the tree-sitter callgraph for a repo. The
+// AnalyzeRepo runs forensics AND the tree-sitter callgraph for a repo, then
+// records the analyzed HEAD commit so the UI can later detect new commits. The
 // callgraph is best-effort: if it fails (e.g. `git archive`/parse trouble on a
 // large or unusual repo) the forensics result is still returned, with
 // CallgraphOK=false, so hotness gracefully falls back to churn-only.
@@ -97,7 +98,33 @@ func (s *Service) AnalyzeRepo(ctx context.Context, repoID, gitDir, defaultBranch
 	if cgErr == nil {
 		res.Nodes, res.Edges, res.CallgraphOK = nodes, edges, true
 	}
+
+	// Record the commit analyzed so staleness can be detected later. Non-fatal:
+	// a failure here doesn't invalidate the analysis we just did.
+	if sha := headSHA(gitDir, defaultBranch); sha != "" {
+		_, _ = s.db.Exec(`
+			INSERT INTO pr_repo_analysis (repo_id, head_sha, branch, analyzed_at, cg_nodes, cg_edges)
+			VALUES (?, ?, ?, datetime('now'), ?, ?)
+			ON CONFLICT(repo_id) DO UPDATE SET
+			    head_sha=excluded.head_sha, branch=excluded.branch,
+			    analyzed_at=excluded.analyzed_at,
+			    cg_nodes=excluded.cg_nodes, cg_edges=excluded.cg_edges`,
+			repoID, sha, defaultBranch, res.Nodes, res.Edges)
+	}
 	return res, nil
+}
+
+// headSHA returns the commit sha at branch (or HEAD) in the bare mirror, or "".
+func headSHA(gitDir, branch string) string {
+	ref := branch
+	if ref == "" {
+		ref = "HEAD"
+	}
+	out, err := exec.Command("git", "--git-dir", gitDir, "rev-parse", ref).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // churnScore = total_commits / age_in_days, with a 1-day floor to avoid
