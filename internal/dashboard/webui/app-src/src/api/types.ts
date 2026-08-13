@@ -301,3 +301,20 @@ export interface PrItem {
   headSha?: string;
   fetchedAt?: string;
 }
+
+// GET /prs/<prId>/blocks -> { blocks: PrBlock[] }
+export interface PrBlock {
+  id: number;
+  prId: number;
+  orderIndex: number;
+  priority: number;
+  filePath: string;
+  lineStart: number;
+  lineEnd: number;
+  diffHunk?: string;
+  title?: string;
+  explanation?: string;
+  codebaseContext?: string;
+  hotnessScore?: number;
+  isTest: boolean;
+}

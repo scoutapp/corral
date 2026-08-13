@@ -1333,6 +1333,53 @@ table.projects th, table.projects td {
   margin-left: auto; font-size: 0.72rem; text-transform: uppercase;
   letter-spacing: 0.12em; color: var(--con-muted);
 }
+.pr-row { display: block; padding: 0; }
+.pr-head {
+  width: 100%; display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.55rem 0; background: none; border: none; color: var(--con-fg);
+  cursor: pointer; text-align: left; font-size: inherit;
+}
+.pr-head:hover { color: var(--con-working); }
+
+/* Block carousel (a PR's hotness-ranked blocks) */
+.block-carousel { padding: 0.4rem 0 1rem; }
+.block-nav { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem; }
+.block-nav button {
+  background: var(--con-panel); color: var(--con-fg);
+  border: 1px solid var(--con-line); border-radius: 4px;
+  padding: 0.1rem 0.5rem; cursor: pointer;
+}
+.block-nav button:disabled { opacity: 0.4; cursor: default; }
+.block-pos { font-size: 0.8rem; color: var(--con-muted); }
+.block-dots { display: inline-flex; gap: 0.3rem; margin-left: 0.4rem; }
+.block-dots .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--con-line); display: inline-block;
+}
+.block-dots .dot.on { background: var(--con-working); }
+
+.block-card {
+  border: 1px solid var(--con-line); border-radius: 6px;
+  background: var(--con-panel); padding: 0.9rem 1rem;
+}
+.block-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem;
+  font-size: 0.78rem; color: var(--con-muted); margin-bottom: 0.5rem;
+}
+.block-prio { color: var(--con-waiting); font-weight: 600; }
+.block-loc { font-family: ui-monospace, monospace; }
+.block-badge, .block-hot {
+  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.1em;
+}
+.block-title { margin: 0.2rem 0 0.6rem; font-size: 0.98rem; }
+.block-h { margin: 0.8rem 0 0.2rem; font-size: 0.75rem; color: var(--con-muted);
+  text-transform: uppercase; letter-spacing: 0.1em; }
+.block-diff {
+  overflow-x: auto; max-height: 22rem; margin: 0.3rem 0;
+  padding: 0.6rem 0.8rem; border-radius: 4px;
+  background: #0b0e14; border: 1px solid var(--con-line);
+  font-family: ui-monospace, monospace; font-size: 0.78rem; line-height: 1.45;
+}
 
 .forensics-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .forensics-table th, .forensics-table td {
