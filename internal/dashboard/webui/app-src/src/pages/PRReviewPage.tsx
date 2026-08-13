@@ -226,6 +226,23 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
   const [nonce, setNonce] = useState(0); // bumped after re-analyze to remount panels
   const [chatOpen, setChatOpen] = useState(false);
   const [startOpen, setStartOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Force a re-pull from GitHub: re-fetches the PR (body + diff) and re-extracts
+  // blocks. Use when the stored copy is stale (e.g. the PR was updated, or was
+  // fetched before a new field like the description existed).
+  const refresh = () => {
+    setRefreshing(true);
+    setErr(null);
+    postJSON<{ pr: PrItem }>(`/repos/${encodeURIComponent(repoId)}/prs/fetch`, { number })
+      .then((r) => {
+        setPr(r.pr);
+        clearFileStatsCache(r.pr.id);
+        setNonce((n) => n + 1);
+      })
+      .catch((e) => setErr((e as Error).message))
+      .finally(() => setRefreshing(false));
+  };
 
   useEffect(() => {
     getJSON<{ repos: CachedRepo[] }>("/repos")
@@ -273,6 +290,15 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
         </div>
         {pr && (
           <>
+            <button
+              type="button"
+              className="dock-toggle"
+              disabled={refreshing}
+              title="Re-pull this PR from GitHub (description, diff) and re-extract blocks"
+              onClick={refresh}
+            >
+              {refreshing ? "Refreshing…" : "↻ Refresh from GitHub"}
+            </button>
             <VerifyLaunch repoId={repoId} pr={pr} repoName={repo?.name} />
             <button
               type="button"
