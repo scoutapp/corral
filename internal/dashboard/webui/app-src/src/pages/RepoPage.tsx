@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "../router";
+import { Link, useRouter } from "../router";
 import { getJSON, postJSON, wsURL } from "../api/client";
 import type {
   CachedRepo,
@@ -88,15 +88,15 @@ export function RepoPage({ id }: { id: string }) {
 }
 
 function PRsTab({ repoId }: { repoId: string }) {
-  // Live open PRs from GitHub (gh pr list), plus the PRs already fetched into the
-  // DB (so we can show an "analyzed" marker and expand their block carousel).
+  // Live open PRs from GitHub (gh pr list), plus the PRs already fetched into
+  // the DB (to show a "✓ viewed" marker). Clicking a PR navigates to its
+  // dedicated review page, which Views it (fetch + blocks) on arrival.
+  const { navigate } = useRouter();
   const [open, setOpen] = useState<OpenPr[] | null>(null);
   const [openUnavailable, setOpenUnavailable] = useState<string | null>(null);
   const [fetched, setFetched] = useState<PrItem[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [num, setNum] = useState("");
-  const [busyNum, setBusyNum] = useState<number | null>(null); // PR # currently analyzing
-  const [expanded, setExpanded] = useState<number | null>(null); // PR db-id expanded
 
   const loadFetched = useCallback(
     () =>
@@ -126,31 +126,16 @@ function PRsTab({ repoId }: { repoId: string }) {
     loadFetched();
   }, [loadOpen, loadFetched]);
 
-  // Map PR number -> already-fetched DB record (for markers + expansion).
+  // Map PR number -> already-fetched DB record (for the "viewed" marker).
   const fetchedByNum = new Map(fetched.map((p) => [p.number, p]));
 
-  // View a PR by number: fetch its diff + extract hotness-ranked blocks (no AI,
-  // reusing the repo's churn+callgraph), then expand its carousel.
-  const view = useCallback(
-    (n: number) => {
-      setBusyNum(n);
-      setErr(null);
-      postJSON<{ pr: PrItem }>(`/repos/${encodeURIComponent(repoId)}/prs/fetch`, { number: n })
-        .then((d) => loadFetched().then(() => setExpanded(d.pr.id)))
-        .catch((e) => setErr((e as Error).message))
-        .finally(() => setBusyNum(null));
-    },
-    [repoId, loadFetched],
-  );
-
-  const viewManual = () => {
+  const openManual = () => {
     const n = parseInt(num, 10);
     if (!Number.isFinite(n) || n <= 0) {
       setErr("enter a positive PR number");
       return;
     }
-    setNum("");
-    view(n);
+    navigate(`/repos/${encodeURIComponent(repoId)}/prs/${n}`);
   };
 
   return (
@@ -169,35 +154,20 @@ function PRsTab({ repoId }: { repoId: string }) {
         <ul className="pr-list">
           {open.map((p) => {
             const rec = fetchedByNum.get(p.number);
-            const isBusy = busyNum === p.number;
             return (
               <li key={p.number} className="pr-row">
                 <div className="pr-head-row">
-                  <button
-                    type="button"
+                  <Link
                     className="pr-head"
-                    disabled={!rec}
-                    title={rec ? "Show blocks" : "Not viewed yet"}
-                    onClick={() => rec && setExpanded(expanded === rec.id ? null : rec.id)}
+                    to={`/repos/${encodeURIComponent(repoId)}/prs/${p.number}`}
                   >
                     <span className="pr-num">#{p.number}</span>{" "}
                     {rec?.shortSummary || p.title || "(untitled)"}
                     {p.isDraft && <span className="pr-state">draft</span>}
                     {rec && <span className="pr-analyzed" title="Viewed">✓</span>}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn tiny"
-                    disabled={isBusy}
-                    onClick={() => view(p.number)}
-                  >
-                    {isBusy ? "Loading…" : rec ? "Refresh" : "View"}
-                  </button>
+                  </Link>
                 </div>
-                <div className="pr-byline">
-                  {p.author && <span>@{p.author}</span>}
-                </div>
-                {rec && expanded === rec.id && <BlockCarousel prId={rec.id} />}
+                <div className="pr-byline">{p.author && <span>@{p.author}</span>}</div>
               </li>
             );
           })}
@@ -205,19 +175,18 @@ function PRsTab({ repoId }: { repoId: string }) {
       )}
 
       <div className="pr-manual">
-        <span className="pr-manual-h">View a specific PR (e.g. closed/old):</span>
+        <span className="pr-manual-h">Open a specific PR (e.g. closed/old):</span>
         <input
           className="pr-num-input"
           type="number"
           min="1"
           placeholder="PR #"
           value={num}
-          disabled={busyNum !== null}
           onChange={(e) => setNum(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && viewManual()}
+          onKeyDown={(e) => e.key === "Enter" && openManual()}
         />
-        <button type="button" className="btn" disabled={busyNum !== null} onClick={viewManual}>
-          View
+        <button type="button" className="btn" onClick={openManual}>
+          Open
         </button>
       </div>
     </>
@@ -231,7 +200,7 @@ function PRsTab({ repoId }: { repoId: string }) {
 // (see prreview placeholderAnalysis). Used to show the "Add AI analysis" prompt.
 const PLACEHOLDER_EXPLANATION = "This block modifies the file. Claude analysis is unavailable.";
 
-function BlockCarousel({ prId }: { prId: number }) {
+export function BlockCarousel({ prId }: { prId: number }) {
   const [blocks, setBlocks] = useState<PrBlock[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [i, setI] = useState(0);

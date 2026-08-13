@@ -422,6 +422,22 @@ func (d *dashboardServer) serveSPA(w http.ResponseWriter, _ *http.Request) {
 	w.Write(html)
 }
 
+// isPRPagePath reports whether rest (the part after "/repos/") is the navigable
+// PR review page path "<id>/prs/<number>" (number = all digits) rather than an
+// API action. Used to serve the SPA shell for that page on a hard reload.
+func isPRPagePath(rest string) bool {
+	parts := strings.Split(rest, "/")
+	if len(parts) != 3 || parts[1] != "prs" || parts[2] == "" {
+		return false
+	}
+	for _, c := range parts[2] {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	if path == "/" {
@@ -474,10 +490,12 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasPrefix(path, "/repos/") {
 		rest := strings.TrimPrefix(path, "/repos/")
-		// A bare GET /repos/<id> is browser navigation to the repo-hub page
-		// (RepoPage) — serve the SPA shell so a hard reload lands correctly.
-		// Sub-actions (/repos/<id>/prs, …) and non-GET verbs are API calls.
-		if r.Method == http.MethodGet && !strings.Contains(rest, "/") {
+		// Browser navigation to a repo-hub page (RepoPage) or a dedicated PR
+		// review page (PRReviewPage at /repos/<id>/prs/<number>) — serve the SPA
+		// shell so a hard reload lands correctly. Everything else under
+		// /repos/<id>/ (prs, prs/open, forensics, analyze, …) and non-GET verbs
+		// are API calls handled by handleRepoItem.
+		if r.Method == http.MethodGet && (!strings.Contains(rest, "/") || isPRPagePath(rest)) {
 			d.serveSPA(w, r)
 			return
 		}

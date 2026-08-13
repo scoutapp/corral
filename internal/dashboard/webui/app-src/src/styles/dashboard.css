@@ -1354,6 +1354,9 @@ table.projects th, table.projects td {
 }
 .pr-manual-h { margin-right: 0.2rem; }
 
+/* Dedicated PR review page (/repos/<id>/prs/<number>) */
+.pr-review-page { padding: 1.1rem 1.6rem; max-width: 60rem; }
+
 /* Block carousel (a PR's hotness-ranked blocks) */
 .block-carousel { padding: 0.4rem 0 1rem; }
 .enrich-bar {

@@ -65,3 +65,11 @@ export function matchRepo(path: string): string | null {
   const m = path.match(/^\/repos\/([^/]+)/);
   return m ? m[1] : null;
 }
+
+// matchPRReview returns {repoId, number} for /repos/<id>/prs/<number>, else
+// null — the dedicated PR review page. Checked before matchRepo (which also
+// matches this prefix) so the PR page wins.
+export function matchPRReview(path: string): { repoId: string; number: number } | null {
+  const m = path.match(/^\/repos\/([^/]+)\/prs\/(\d+)$/);
+  return m ? { repoId: m[1], number: parseInt(m[2], 10) } : null;
+}
