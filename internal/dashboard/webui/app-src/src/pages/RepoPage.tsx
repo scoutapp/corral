@@ -5,6 +5,7 @@ import type {
   AnalysisStatus,
   CachedRepo,
   FileForensic,
+  GhIssue,
   LinkSuggestion,
   OpenPr,
   PrBlock,
@@ -17,7 +18,7 @@ import type {
 import { useBodyClass } from "../hooks/useBodyClass";
 import { loadEditor, type DiffHandle, type DiffEditorView } from "../lib/editor";
 import { splitUnifiedHunk } from "../lib/diffHunk";
-import { relDate } from "../lib/repos";
+import { relDate, ghOwnerName } from "../lib/repos";
 
 // RepoPage is the repo-as-hub detail view (/repos/<id>). A repo owns three
 // tabs: PR Review (grokker-derived PR intelligence), Projects (Corral sandbox
@@ -27,10 +28,11 @@ import { relDate } from "../lib/repos";
 // return empty lists until the analysis/fetch writers land (Phases 1–2). The
 // empty states describe what each tab will do.
 
-type Tab = "prs" | "projects" | "forensics";
+type Tab = "prs" | "issues" | "projects" | "forensics";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "prs", label: "PR Review" },
+  { key: "issues", label: "Issues" },
   { key: "projects", label: "Projects" },
   { key: "forensics", label: "Forensics" },
 ];
@@ -80,6 +82,9 @@ export function RepoPage({ id }: { id: string }) {
 
         <div className="tab-panel" style={{ display: tab === "prs" ? "block" : "none" }}>
           <PRsTab repoId={id} />
+        </div>
+        <div className="tab-panel" style={{ display: tab === "issues" ? "block" : "none" }}>
+          <IssuesTab repoUrl={repo?.url} />
         </div>
         <div className="tab-panel" style={{ display: tab === "projects" ? "block" : "none" }}>
           <ProjectsTab repoId={id} />
@@ -1049,6 +1054,86 @@ function ForensicsTab({ repoId }: { repoId: string }) {
           ))}
         </tbody>
       </table>
+    </>
+  );
+}
+
+// IssuesTab lists the repo's open GitHub issues (GET /gh/issues?repo=owner/name,
+// the same endpoint the create-from-issue flow uses), with in-memory search.
+// Each links to GitHub; "Start project" spawns a project seeded from the issue.
+function IssuesTab({ repoUrl }: { repoUrl?: string }) {
+  const owner = ghOwnerName(repoUrl);
+  const [issues, setIssues] = useState<GhIssue[] | null>(null);
+  const [reason, setReason] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const now = Date.now();
+
+  useEffect(() => {
+    if (!owner) {
+      setReason("not a GitHub remote");
+      setIssues([]);
+      return;
+    }
+    getJSON<{ available: boolean; issues?: GhIssue[]; reason?: string }>(
+      `/gh/issues?repo=${encodeURIComponent(owner)}`,
+    )
+      .then((d) => {
+        setIssues(d.issues || []);
+        setReason(d.available ? null : d.reason || "unavailable");
+      })
+      .catch((e) => setReason((e as Error).message));
+  }, [owner]);
+
+  if (issues === null) return <p className="tab-note">Loading issues…</p>;
+  if (reason && issues.length === 0)
+    return <p className="tab-note">Couldn't list issues ({reason}).</p>;
+  if (issues.length === 0) return <p className="tab-note">No open issues.</p>;
+
+  const q = query.trim().toLowerCase();
+  const visible = q
+    ? issues.filter(
+        (i) =>
+          String(i.number).includes(q) ||
+          i.title.toLowerCase().includes(q) ||
+          (i.author?.login || "").toLowerCase().includes(q),
+      )
+    : issues;
+
+  return (
+    <>
+      <div className="pr-toolbar">
+        <input
+          className="pr-search"
+          type="search"
+          placeholder="🔎 filter issues by #, title, author…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <span className="pr-toolbar-count">
+          {visible.length} of {issues.length}
+        </span>
+      </div>
+      <ul className="pr-list">
+        {visible.map((i) => (
+          <li key={i.number} className="pr-row">
+            <div className="pr-head-row">
+              <a
+                className="pr-head"
+                href={i.url}
+                target="_blank"
+                rel="noreferrer"
+                title="Open on GitHub"
+              >
+                <span className="pr-num">#{i.number}</span> {i.title}
+              </a>
+            </div>
+            <div className="pr-byline">
+              {i.author?.login && <span>@{i.author.login}</span>}
+              {i.createdAt && <span> · opened {relDate(i.createdAt, now)}</span>}
+            </div>
+          </li>
+        ))}
+      </ul>
     </>
   );
 }
