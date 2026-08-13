@@ -103,6 +103,8 @@ func (d *dashboardServer) handleRepoItem(w http.ResponseWriter, r *http.Request,
 		d.handleRepoPRFetch(w, r, id)
 	case action == "projects" && r.Method == http.MethodGet:
 		d.handleRepoProjects(w, r, id)
+	case action == "pin" && r.Method == http.MethodPost:
+		d.handleRepoPin(w, r, id)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -170,6 +172,20 @@ func (d *dashboardServer) handleRepoAnalyze(w http.ResponseWriter, r *http.Reque
 		"cgEdges":     res.Edges,
 		"callgraphOk": res.CallgraphOK,
 	})
+}
+
+// handleRepoPin: POST /repos/<id>/pin {pinned: bool} — pin/unpin a repo so it
+// sorts to the top of the repos list.
+func (d *dashboardServer) handleRepoPin(w http.ResponseWriter, r *http.Request, id string) {
+	var body struct {
+		Pinned bool `json:"pinned"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	if err := repos.SetPinned(id, body.Pinned); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeFilesJSON(w, map[string]any{"ok": true, "pinned": body.Pinned})
 }
 
 // handleRepoAnalysisStatus: GET /repos/<id>/analysis-status — whether the repo's

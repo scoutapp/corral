@@ -211,6 +211,7 @@ export interface CachedRepo {
   url?: string;
   local_path?: string;
   is_private?: boolean;
+  pinned?: boolean;
 }
 
 // GET /gh/repos -> { available: bool, repos: GhRepo[] }
