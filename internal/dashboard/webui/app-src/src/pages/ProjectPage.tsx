@@ -231,7 +231,21 @@ export function ProjectPage({ id }: { id: string }) {
           <div id="tab-diff" className="tab-panel" style={{ display: tab === "diff" ? "flex" : "none", flex: "1 1 auto", minHeight: 0 }}>
             {seen.diff && <DiffTab projectId={id} />}
           </div>
-          <div id="tab-container" className="tab-panel" style={{ display: tab === "container" ? "flex" : "none", flex: "1 1 auto", minHeight: 0 }}>
+          <div id="tab-container" className="tab-panel" style={{ display: tab === "container" ? "flex" : "none", flexDirection: "column", flex: "1 1 auto", minHeight: 0 }}>
+            {me?.workspace && (
+              <p className="container-mount-note">
+                Workspace is mounted at the same path inside the container (not
+                under <code>~</code>):{" "}
+                <code
+                  className="container-mount-path"
+                  title="Click to copy"
+                  onClick={() => navigator.clipboard?.writeText(me.workspace)}
+                >
+                  {me.workspace}
+                </code>{" "}
+                — the shell already starts here.
+              </p>
+            )}
             <div className="screen-frame screen-frame-fill">
               <div className="screen-bar">
                 <i className="screen-dot" />

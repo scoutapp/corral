@@ -634,6 +634,17 @@ table.projects th, table.projects td {
   display: flex; flex-direction: column;
 }
 .screen-frame-fill .term-fill { flex: 1 1 auto; min-height: 0; }
+/* Note above the container shell: where the workspace is mounted. */
+.container-mount-note {
+  margin: 0 0 0.5rem; font-size: 0.78rem; color: var(--muted); line-height: 1.5;
+}
+.container-mount-note code {
+  font-family: ui-monospace, Menlo, monospace;
+  background: var(--panel); padding: 1px 5px; border-radius: 4px; color: var(--fg);
+}
+.container-mount-path { cursor: pointer; }
+.container-mount-path:hover { outline: 1px solid var(--border); }
+
 .screen-bar {
   display: flex; align-items: center; gap: 0.45rem;
   padding: 6px 11px;
