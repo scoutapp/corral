@@ -115,9 +115,11 @@ export function ChatPanel({ wsPath }: { wsPath: string }) {
           break;
         }
         case "result": {
+          // Show the model on a completed turn, but not the per-turn cost — this
+          // runs the user's local Claude Code (their subscription), so a dollar
+          // figure is noise here.
           if (m.isError) setMsgs((x) => [...x, { role: "meta", text: "Claude reported an error for this turn.", error: true }]);
-          else if (m.costUsd || m.model)
-            setMsgs((x) => [...x, { role: "meta", text: `${(m.model as string) || "claude"}${m.costUsd ? " · " + m.costUsd : ""}` }]);
+          else if (m.model) setMsgs((x) => [...x, { role: "meta", text: m.model as string }]);
           break;
         }
         case "error":
