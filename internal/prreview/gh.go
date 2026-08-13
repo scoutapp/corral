@@ -32,6 +32,61 @@ type ghPRView struct {
 	HeadRefOid string `json:"headRefOid"`
 }
 
+// OpenPR is a lightweight entry from `gh pr list` — the repo's live open PRs,
+// independent of what has been fetched/analyzed into the DB.
+type OpenPR struct {
+	Number    int    `json:"number"`
+	Title     string `json:"title"`
+	URL       string `json:"url"`
+	Author    string `json:"author"`
+	CreatedAt string `json:"createdAt"`
+	Draft     bool   `json:"isDraft"`
+}
+
+// ghPRListItem mirrors one `gh pr list --json` row.
+type ghPRListItem struct {
+	Number    int    `json:"number"`
+	Title     string `json:"title"`
+	URL       string `json:"url"`
+	CreatedAt string `json:"createdAt"`
+	IsDraft   bool   `json:"isDraft"`
+	Author    struct {
+		Login string `json:"login"`
+	} `json:"author"`
+}
+
+// ListOpenPRs returns the repo's open pull requests via `gh pr list` (reusing
+// corral's GitHub token injection — no token handling here). This is a live
+// GitHub read; it does not touch the DB. ownerName is "owner/name".
+func ListOpenPRs(ownerName string, limit int) ([]OpenPR, error) {
+	ghBin, err := exec.LookPath("gh")
+	if err != nil {
+		return nil, fmt.Errorf("prreview: gh CLI not found on PATH")
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	out, err := exec.Command(ghBin, "pr", "list",
+		"--repo", ownerName, "--state", "open", "--limit", fmt.Sprint(limit),
+		"--json", "number,title,url,createdAt,isDraft,author",
+	).Output()
+	if err != nil {
+		return nil, fmt.Errorf("prreview: gh pr list: %w", err)
+	}
+	var items []ghPRListItem
+	if err := json.Unmarshal(out, &items); err != nil {
+		return nil, fmt.Errorf("prreview: parse gh pr list: %w", err)
+	}
+	prs := make([]OpenPR, 0, len(items))
+	for _, it := range items {
+		prs = append(prs, OpenPR{
+			Number: it.Number, Title: it.Title, URL: it.URL,
+			Author: it.Author.Login, CreatedAt: it.CreatedAt, Draft: it.IsDraft,
+		})
+	}
+	return prs, nil
+}
+
 // FetchPR pulls a PR's metadata and raw diff via the `gh` CLI (reusing corral's
 // GitHub token injection — no token handling here) and upserts it into `prs`.
 // ownerName is "owner/name". Returns the stored PR.

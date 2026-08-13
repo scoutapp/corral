@@ -94,6 +94,8 @@ func (d *dashboardServer) handleRepoItem(w http.ResponseWriter, r *http.Request,
 		d.handleRepoAnalyze(w, r, id)
 	case action == "prs" && r.Method == http.MethodGet:
 		d.handleRepoPRs(w, r, id)
+	case action == "prs/open" && r.Method == http.MethodGet:
+		d.handleRepoOpenPRs(w, r, id)
 	case action == "prs/fetch" && r.Method == http.MethodPost:
 		d.handleRepoPRFetch(w, r, id)
 	case action == "projects" && r.Method == http.MethodGet:
@@ -434,6 +436,28 @@ func (d *dashboardServer) handlePRAnalyze(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeFilesJSON(w, map[string]any{"risk": v})
+}
+
+// handleRepoOpenPRs: GET /repos/<id>/prs/open — the repo's live open PRs via
+// `gh pr list`. A live GitHub read (no DB); returns {available:false} if the
+// repo isn't a GitHub remote or gh fails, so the UI can degrade to manual fetch.
+func (d *dashboardServer) handleRepoOpenPRs(w http.ResponseWriter, r *http.Request, id string) {
+	repo, err := repos.Get(id)
+	if err != nil {
+		http.Error(w, "unknown repo", http.StatusNotFound)
+		return
+	}
+	ownerName := prreview.OwnerName(repo.URL)
+	if ownerName == "" {
+		writeFilesJSON(w, map[string]any{"available": false, "reason": "not a GitHub remote"})
+		return
+	}
+	prs, err := prreview.ListOpenPRs(ownerName, 100)
+	if err != nil {
+		writeFilesJSON(w, map[string]any{"available": false, "reason": err.Error()})
+		return
+	}
+	writeFilesJSON(w, map[string]any{"available": true, "prs": prs})
 }
 
 // handleRepoPRs: GET /repos/<id>/prs — fetched pull requests for the repo.

@@ -302,6 +302,16 @@ export interface PrItem {
   fetchedAt?: string;
 }
 
+// GET /repos/<id>/prs/open -> { available: bool, prs: OpenPr[], reason?: string }
+export interface OpenPr {
+  number: number;
+  title: string;
+  url: string;
+  author: string;
+  createdAt: string;
+  isDraft: boolean;
+}
+
 // GET /repos/<id>/projects -> { projects: RepoProject[] }
 export interface RepoProject {
   id: string;
