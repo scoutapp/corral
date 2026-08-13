@@ -128,8 +128,9 @@ function PRsTab({ repoId }: { repoId: string }) {
   // Map PR number -> already-fetched DB record (for markers + expansion).
   const fetchedByNum = new Map(fetched.map((p) => [p.number, p]));
 
-  // Analyze a PR by number: fetch its diff + blocks, then expand its carousel.
-  const analyze = useCallback(
+  // View a PR by number: fetch its diff + extract hotness-ranked blocks (no AI,
+  // reusing the repo's churn+callgraph), then expand its carousel.
+  const view = useCallback(
     (n: number) => {
       setBusyNum(n);
       setErr(null);
@@ -141,14 +142,14 @@ function PRsTab({ repoId }: { repoId: string }) {
     [repoId, loadFetched],
   );
 
-  const analyzeManual = () => {
+  const viewManual = () => {
     const n = parseInt(num, 10);
     if (!Number.isFinite(n) || n <= 0) {
       setErr("enter a positive PR number");
       return;
     }
     setNum("");
-    analyze(n);
+    view(n);
   };
 
   return (
@@ -175,21 +176,21 @@ function PRsTab({ repoId }: { repoId: string }) {
                     type="button"
                     className="pr-head"
                     disabled={!rec}
-                    title={rec ? "Show analysis" : "Not analyzed yet"}
+                    title={rec ? "Show blocks" : "Not viewed yet"}
                     onClick={() => rec && setExpanded(expanded === rec.id ? null : rec.id)}
                   >
                     <span className="pr-num">#{p.number}</span>{" "}
                     {rec?.shortSummary || p.title || "(untitled)"}
                     {p.isDraft && <span className="pr-state">draft</span>}
-                    {rec && <span className="pr-analyzed" title="Analyzed">✓</span>}
+                    {rec && <span className="pr-analyzed" title="Viewed">✓</span>}
                   </button>
                   <button
                     type="button"
                     className="btn tiny"
                     disabled={isBusy}
-                    onClick={() => analyze(p.number)}
+                    onClick={() => view(p.number)}
                   >
-                    {isBusy ? "Analyzing…" : rec ? "Re-analyze" : "Analyze"}
+                    {isBusy ? "Loading…" : rec ? "Refresh" : "View"}
                   </button>
                 </div>
                 <div className="pr-byline">
@@ -203,7 +204,7 @@ function PRsTab({ repoId }: { repoId: string }) {
       )}
 
       <div className="pr-manual">
-        <span className="pr-manual-h">Fetch a specific PR (e.g. closed/old):</span>
+        <span className="pr-manual-h">View a specific PR (e.g. closed/old):</span>
         <input
           className="pr-num-input"
           type="number"
@@ -212,10 +213,10 @@ function PRsTab({ repoId }: { repoId: string }) {
           value={num}
           disabled={busyNum !== null}
           onChange={(e) => setNum(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && analyzeManual()}
+          onKeyDown={(e) => e.key === "Enter" && viewManual()}
         />
-        <button type="button" className="btn" disabled={busyNum !== null} onClick={analyzeManual}>
-          Fetch
+        <button type="button" className="btn" disabled={busyNum !== null} onClick={viewManual}>
+          View
         </button>
       </div>
     </>
@@ -225,12 +226,17 @@ function PRsTab({ repoId }: { repoId: string }) {
 // BlockCarousel shows a PR's hotness-ranked blocks one at a time with ←/→
 // navigation, mirroring the reference block-carousel wireframe: diff hunk, what
 // it does, codebase context, and a hotness badge.
+// A block's explanation matches this placeholder when it hasn't been AI-enriched
+// (see prreview placeholderAnalysis). Used to show the "Add AI analysis" prompt.
+const PLACEHOLDER_EXPLANATION = "This block modifies the file. Claude analysis is unavailable.";
+
 function BlockCarousel({ prId }: { prId: number }) {
   const [blocks, setBlocks] = useState<PrBlock[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [i, setI] = useState(0);
+  const [enriching, setEnriching] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     getJSON<{ blocks: PrBlock[] }>(`/prs/${prId}/blocks`)
       .then((d) => {
         setBlocks(d.blocks || []);
@@ -238,15 +244,43 @@ function BlockCarousel({ prId }: { prId: number }) {
       })
       .catch((e) => setErr((e as Error).message));
   }, [prId]);
+  useEffect(() => load(), [load]);
+
+  const enrich = () => {
+    setEnriching(true);
+    setErr(null);
+    postJSON<{ blocks: PrBlock[] }>(`/prs/${prId}/enrich`)
+      .then((d) => setBlocks(d.blocks || []))
+      .catch((e) => setErr((e as Error).message))
+      .finally(() => setEnriching(false));
+  };
 
   if (err) return <p className="tab-note err">Failed to load blocks: {err}</p>;
   if (blocks === null) return <p className="tab-note">Loading blocks…</p>;
   if (blocks.length === 0)
     return <p className="tab-note">No blocks extracted for this PR.</p>;
 
+  // "Enriched" if any block carries a non-placeholder explanation.
+  const enriched = blocks.some(
+    (bl) => bl.explanation && bl.explanation !== PLACEHOLDER_EXPLANATION,
+  );
+
   const b = blocks[Math.min(i, blocks.length - 1)];
   return (
     <div className="block-carousel">
+      <div className="enrich-bar">
+        {enriched ? (
+          <span className="enrich-note">✓ AI analysis added</span>
+        ) : (
+          <span className="enrich-note">
+            Blocks ranked by hotness (churn × callgraph). Add Claude's per-block
+            explanations, edge cases, and a summary:
+          </span>
+        )}
+        <button type="button" className="btn" disabled={enriching} onClick={enrich}>
+          {enriching ? "Analyzing…" : enriched ? "Re-run AI" : "+ Add AI analysis"}
+        </button>
+      </div>
       <RiskCard prId={prId} />
       <div className="block-nav">
         <button type="button" disabled={i <= 0} onClick={() => setI(i - 1)}>

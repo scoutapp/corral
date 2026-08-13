@@ -1356,6 +1356,13 @@ table.projects th, table.projects td {
 
 /* Block carousel (a PR's hotness-ranked blocks) */
 .block-carousel { padding: 0.4rem 0 1rem; }
+.enrich-bar {
+  display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap;
+  margin-bottom: 0.7rem; padding: 0.5rem 0.7rem;
+  border: 1px dashed var(--con-line); border-radius: 6px;
+}
+.enrich-note { font-size: 0.8rem; color: var(--con-muted); flex: 1 1 14rem; }
+.enrich-bar .btn { white-space: nowrap; }
 .block-nav { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem; }
 .block-nav button {
   background: var(--con-panel); color: var(--con-text);
