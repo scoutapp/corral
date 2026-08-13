@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/scoutapp/corral/internal/prreview"
@@ -320,45 +321,45 @@ type inboxPR struct {
 	PR       prreview.OpenPR `json:"pr"`
 }
 
-// handlePRInbox: GET /prs/inbox — open PRs aggregated across every repo that has
-// a Corral project (workspace remote matching the repo). One `gh pr list` per
-// such repo; repos with no matching project or no GitHub remote are skipped.
+// handlePRInbox: GET /prs/inbox — open PRs aggregated across EVERY GitHub repo
+// in the Repos list (a cross-repo review queue). One `gh pr list` per repo, run
+// concurrently; repos without a GitHub remote are skipped. Best-effort per repo:
+// a repo whose gh call fails is simply omitted.
 func (d *dashboardServer) handlePRInbox(w http.ResponseWriter, r *http.Request) {
 	repoList, err := repos.List()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	reg, err := readRegistry()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
 
-	out := []inboxPR{}
+	type result struct {
+		repo repos.Repo
+		prs  []prreview.OpenPR
+	}
+	var wg sync.WaitGroup
+	results := make([]result, len(repoList))
 	for i := range repoList {
-		repo := &repoList[i]
+		repo := repoList[i]
 		ownerName := prreview.OwnerName(repo.URL)
 		if ownerName == "" {
 			continue // not a GitHub remote
 		}
-		// Does any known project's workspace clone from this repo?
-		hasProject := false
-		for _, p := range reg.Projects {
-			if workspaceMatchesRepo(p.Workspace, repo, ownerName) {
-				hasProject = true
-				break
+		wg.Add(1)
+		go func(idx int, repo repos.Repo, ownerName string) {
+			defer wg.Done()
+			prs, err := prreview.ListOpenPRs(ownerName, 100)
+			if err != nil {
+				return
 			}
-		}
-		if !hasProject {
-			continue
-		}
-		prs, err := prreview.ListOpenPRs(ownerName, 100)
-		if err != nil {
-			continue // best-effort per repo
-		}
-		for _, pr := range prs {
-			out = append(out, inboxPR{RepoID: repo.ID, RepoName: repo.Name, PR: pr})
+			results[idx] = result{repo: repo, prs: prs}
+		}(i, repo, ownerName)
+	}
+	wg.Wait()
+
+	out := []inboxPR{}
+	for _, res := range results {
+		for _, pr := range res.prs {
+			out = append(out, inboxPR{RepoID: res.repo.ID, RepoName: res.repo.Name, PR: pr})
 		}
 	}
 	writeFilesJSON(w, map[string]any{"prs": out})
