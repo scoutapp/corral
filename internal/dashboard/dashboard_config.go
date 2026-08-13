@@ -67,6 +67,9 @@ type configView struct {
 	// Live status, so the panel can show whether a reload will actually reach a
 	// running proxy or is just being saved for next start.
 	ContainerUp bool `json:"container_up"`
+
+	// Source: the PR/issue this project was spawned from (back-link), or nil.
+	Source *config.ProjectSource `json:"source,omitempty"`
 }
 
 func (d *dashboardServer) handleConfigRead(w http.ResponseWriter, r *http.Request, id string) {
@@ -100,6 +103,7 @@ func (d *dashboardServer) handleConfigRead(w http.ResponseWriter, r *http.Reques
 		SSHKeys:          cfg.SSHKeys,
 		SSHKeysGlobal:    config.GlobalSSHKeys(),
 		SSHKeysEffective: cfg.ResolveSSHKeys(),
+		Source:           cfg.Source,
 	}
 
 	view.AllowedHosts = readAllowedHostsForWorkspace(workspace)

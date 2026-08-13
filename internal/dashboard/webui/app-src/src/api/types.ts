@@ -64,6 +64,17 @@ export interface ConfigView {
   ssh_keys_global: string[];
   ssh_keys_effective: string[];
   container_up: boolean;
+  source?: ProjectSource;
+}
+
+// What a project was spawned from (a PR or issue), for the two-way back-link.
+export interface ProjectSource {
+  kind: string; // "pr" | "issue"
+  repo_id?: string;
+  repo?: string;
+  number?: number;
+  url?: string;
+  title?: string;
 }
 
 // POST /p/<id>/config/apply | /config/restart payload (only changed fields).

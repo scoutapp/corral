@@ -24,6 +24,7 @@ type InitOptions struct {
 	DindEnabled         bool
 	DindPorts           []string
 	PassthroughFirewall bool // "permissive but observed" mode (proxy on, allow+log, direct TCP ok)
+	Source              *config.ProjectSource // PR/issue this project was spawned from
 }
 
 // InitProject creates a project's on-disk state under <workspace>/.corral:
@@ -56,6 +57,7 @@ func InitProject(workspace string, opts InitOptions) (*config.ProjectConfig, err
 		DindEnabled:         opts.DindEnabled,
 		DindPorts:           opts.DindPorts,
 		PassthroughFirewall: opts.PassthroughFirewall,
+		Source:              opts.Source,
 		CreatedAt:           time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := config.WriteConfig(projectDir, cfg); err != nil {

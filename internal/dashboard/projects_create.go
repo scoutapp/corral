@@ -118,6 +118,8 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 		Dind             bool     `json:"dind"`
 		Tmux             bool     `json:"tmux"`
 		Ports            []string `json:"ports"`
+		// Source records a PR/issue this project was spawned from (back-link).
+		Source *config.ProjectSource `json:"source"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -157,6 +159,7 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 			// Passthrough is the default; only strict when the caller opts in AND the
 			// proxy is on (passthrough is meaningless without the proxy).
 			PassthroughFirewall: proxy && !body.EnforceAllowlist,
+			Source:              body.Source,
 		}); err != nil {
 			http.Error(w, "init project: "+err.Error(), http.StatusInternalServerError)
 			return

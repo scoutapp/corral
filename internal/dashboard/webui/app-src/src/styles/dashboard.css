@@ -1455,6 +1455,11 @@ table.projects th, table.projects td {
   color: var(--con-muted);
 }
 .repo-chip.warn { color: var(--con-waiting); border-color: var(--con-waiting); }
+.proj-source-link {
+  font-size: 0.78rem; color: var(--con-working); text-decoration: none;
+  border: 1px solid var(--con-line); border-radius: 999px; padding: 0.1rem 0.5rem;
+}
+.proj-source-link:hover { border-color: var(--con-working); }
 
 /* Block carousel (a PR's hotness-ranked blocks) */
 .block-carousel { padding: 0.4rem 0 1rem; }
