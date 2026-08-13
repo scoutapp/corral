@@ -8,6 +8,7 @@ import { SSHLoadModal } from "../components/SSHLoadModal";
 import { postRaw } from "../api/client";
 import type { StatusRow } from "../api/types";
 import { ReposSection } from "./ReposSection";
+import { PRInboxSection } from "./PRInboxSection";
 import { NewProjectModal, AddRepoModal } from "./ReposModals";
 import { useBodyClass } from "../hooks/useBodyClass";
 
@@ -56,7 +57,7 @@ export function ProjectsPage() {
   const [sshFor, setSshFor] = useState<{ id: string; name: string } | null>(null);
 
   // Sections + landing-page modals (Repos, New project, Add repo).
-  const [section, setSection] = useState<"projects" | "repos">("projects");
+  const [section, setSection] = useState<"projects" | "repos" | "prs">("projects");
   const [reposSearch, setReposSearch] = useState("");
   const [reposReload, setReposReload] = useState(0);
   const [newProject, setNewProject] = useState(false);
@@ -169,6 +170,9 @@ export function ProjectsPage() {
         <button type="button" className={`nav-item${section === "repos" ? " active" : ""}`} onClick={() => setSection("repos")}>
           <span className="nav-ico">◧</span> Repos
         </button>
+        <button type="button" className={`nav-item${section === "prs" ? " active" : ""}`} onClick={() => setSection("prs")}>
+          <span className="nav-ico">⑃</span> PRs
+        </button>
         <div className="sidebar-spacer" />
         <button type="button" className="sidebar-cta" title="Create a new project" onClick={() => setNewProject(true)}>
           + New project
@@ -180,7 +184,9 @@ export function ProjectsPage() {
 
       <div className="content">
         <header className="content-head">
-          <h1 id="section-title">{section === "repos" ? "Repos" : "Projects"}</h1>
+          <h1 id="section-title">
+            {section === "repos" ? "Repos" : section === "prs" ? "PRs" : "Projects"}
+          </h1>
           <div className="head-right">
             <div className="legend">
               <span className="legend-item">
@@ -225,6 +231,12 @@ export function ProjectsPage() {
               </button>
             </div>
             <ReposSection search={reposSearch} reloadKey={reposReload} />
+          </section>
+        )}
+
+        {section === "prs" && (
+          <section className="section active">
+            <PRInboxSection />
           </section>
         )}
 

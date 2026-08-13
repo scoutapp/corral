@@ -313,6 +313,57 @@ func (d *dashboardServer) handleRepoPRFetch(w http.ResponseWriter, r *http.Reque
 	writeFilesJSON(w, map[string]any{"pr": pr})
 }
 
+// inboxPR is one open PR in the cross-project inbox, tagged with its repo.
+type inboxPR struct {
+	RepoID   string          `json:"repoId"`
+	RepoName string          `json:"repoName"`
+	PR       prreview.OpenPR `json:"pr"`
+}
+
+// handlePRInbox: GET /prs/inbox — open PRs aggregated across every repo that has
+// a Corral project (workspace remote matching the repo). One `gh pr list` per
+// such repo; repos with no matching project or no GitHub remote are skipped.
+func (d *dashboardServer) handlePRInbox(w http.ResponseWriter, r *http.Request) {
+	repoList, err := repos.List()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	reg, err := readRegistry()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	out := []inboxPR{}
+	for i := range repoList {
+		repo := &repoList[i]
+		ownerName := prreview.OwnerName(repo.URL)
+		if ownerName == "" {
+			continue // not a GitHub remote
+		}
+		// Does any known project's workspace clone from this repo?
+		hasProject := false
+		for _, p := range reg.Projects {
+			if workspaceMatchesRepo(p.Workspace, repo, ownerName) {
+				hasProject = true
+				break
+			}
+		}
+		if !hasProject {
+			continue
+		}
+		prs, err := prreview.ListOpenPRs(ownerName, 100)
+		if err != nil {
+			continue // best-effort per repo
+		}
+		for _, pr := range prs {
+			out = append(out, inboxPR{RepoID: repo.ID, RepoName: repo.Name, PR: pr})
+		}
+	}
+	writeFilesJSON(w, map[string]any{"prs": out})
+}
+
 // handlePRItem serves per-PR actions parsed from the path after "/prs/":
 //
 //	GET  /prs/<prId>/blocks   — hotness-ranked blocks for a fetched PR

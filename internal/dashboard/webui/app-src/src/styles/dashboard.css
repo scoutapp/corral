@@ -1332,6 +1332,19 @@ table.projects th, table.projects td {
 
 .pr-list { list-style: none; margin: 0; padding: 0; }
 
+/* Cross-project PR inbox */
+.inbox-divider {
+  font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--con-muted); margin: 0.9rem 0 0.3rem; padding-top: 0.5rem;
+  border-top: 1px solid var(--con-line);
+}
+.inbox-divider.new { color: var(--con-working); border-top-color: var(--con-working); }
+.inbox-repo {
+  font-family: ui-monospace, monospace; font-size: 0.74rem;
+  color: var(--con-muted); border: 1px solid var(--con-line);
+  border-radius: 4px; padding: 0.02rem 0.35rem; margin-right: 0.1rem;
+}
+
 /* PR overview toolbar (search / sort / hide-drafts) + richer PR cards. */
 .pr-toolbar { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
 .pr-search {

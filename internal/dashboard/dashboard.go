@@ -502,6 +502,12 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleRepoItem(w, r, rest)
 		return
 	}
+	// Cross-project PR inbox: open PRs aggregated across repos that have a
+	// project. Must precede /prs/<prId>/… (which parses a numeric id).
+	if path == "/prs/inbox" {
+		d.handlePRInbox(w, r)
+		return
+	}
 	// PR Review per-PR actions (GET /prs/<prId>/blocks). PR-review reads/writes
 	// keyed by repo live under /repos/<id>/…; this handles the PR-scoped ones.
 	if strings.HasPrefix(path, "/prs/") {

@@ -345,6 +345,13 @@ export interface FileForensic {
   repoAnalyzed: boolean;
 }
 
+// GET /prs/inbox -> { prs: InboxPr[] } — open PRs across repos that have a project
+export interface InboxPr {
+  repoId: string;
+  repoName: string;
+  pr: OpenPr;
+}
+
 // GET /repos/<id>/prs/open -> { available: bool, prs: OpenPr[], reason?: string }
 export interface OpenPr {
   number: number;
