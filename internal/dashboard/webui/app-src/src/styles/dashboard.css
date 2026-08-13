@@ -1376,6 +1376,36 @@ table.projects th, table.projects td {
 }
 .ff-chip.warn { color: var(--con-waiting); border-color: var(--con-waiting); }
 .ff-chip.cool { color: var(--con-muted); opacity: 0.85; }
+
+/* PR page top panel: files changed + forensics, with skeleton loaders. */
+.pr-files {
+  border: 1px solid var(--con-line); border-radius: 6px;
+  background: var(--con-panel); padding: 0.7rem 0.9rem; margin-bottom: 0.9rem;
+}
+.pr-files-h {
+  margin: 0 0 0.5rem; font-size: 0.75rem; color: var(--con-muted);
+  text-transform: uppercase; letter-spacing: 0.1em;
+}
+.pr-files-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.pr-file-row { display: flex; flex-direction: column; gap: 0.25rem; }
+.pr-file-name {
+  font-family: ui-monospace, monospace; font-size: 0.82rem;
+  color: var(--con-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Skeleton shimmer */
+.sk {
+  display: inline-block; height: 0.9rem; border-radius: 4px;
+  background: linear-gradient(90deg, var(--con-line) 25%, var(--con-panel-hi, #2a2f3a) 50%, var(--con-line) 75%);
+  background-size: 200% 100%; animation: sk-shimmer 1.2s ease-in-out infinite;
+}
+.sk-name { width: 40%; height: 1rem; margin-bottom: 0.15rem; }
+.sk-chip { width: 4.5rem; margin-right: 0.4rem; }
+.pr-file-row.skeleton { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 0.3rem; }
+.pr-file-row.skeleton .sk-name { flex-basis: 100%; }
+@keyframes sk-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
 .block-nav { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem; }
 .block-nav button {
   background: var(--con-panel); color: var(--con-text);

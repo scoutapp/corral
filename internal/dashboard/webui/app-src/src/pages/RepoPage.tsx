@@ -300,7 +300,6 @@ export function BlockCarousel({ prId }: { prId: number }) {
             <p>{b.codebaseContext}</p>
           </>
         )}
-        <FileForensicsRow prId={prId} filePath={b.filePath} />
       </div>
 
       <BlockChat prId={prId} blockId={b.id} blockLabel={b.title || b.filePath} />
@@ -366,54 +365,100 @@ function getFileStats(prId: number): Promise<FileForensic[]> {
   return p;
 }
 
-function FileForensicsRow({ prId, filePath }: { prId: number; filePath: string }) {
-  const [stat, setStat] = useState<FileForensic | null>(null);
-  useEffect(() => {
-    let live = true;
-    getFileStats(prId)
-      .then((files) => live && setStat(files.find((f) => f.filePath === filePath) || null))
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [prId, filePath]);
-
-  if (!stat) return null;
+// FileForensicsChips renders the git/callgraph stat chips for one file. Files
+// with no commit history (repo not analyzed, or a brand-new file) show a muted
+// "not analyzed" chip instead of misleading zeros.
+function FileForensicsChips({ stat }: { stat: FileForensic }) {
+  const analyzed = stat.totalCommits > 0 || stat.daysOld != null;
+  if (!analyzed) {
+    return (
+      <div className="file-forensics">
+        <span className="ff-chip cool" title="no git history for this file yet">
+          not analyzed
+        </span>
+        {stat.refCount > 0 && <span className="ff-chip">🔗 {stat.refCount} refs</span>}
+      </div>
+    );
+  }
   const sole = stat.authorCount === 1;
   const stale = stat.daysSinceEdit != null && stat.daysSinceEdit > 180;
   return (
-    <>
-      <h4 className="block-h">File forensics</h4>
-      <div className="file-forensics">
-        <span className="ff-chip" title="fix commits / total commits">
-          🔧 {stat.fixCommits}/{stat.totalCommits} fixes ({stat.fixPct}%)
+    <div className="file-forensics">
+      <span className="ff-chip" title="fix commits / total commits">
+        🔧 {stat.fixCommits}/{stat.totalCommits} fixes ({stat.fixPct}%)
+      </span>
+      <span className={`ff-chip${sole ? " warn" : ""}`} title="distinct commit authors">
+        👤 {stat.authorCount} author{stat.authorCount === 1 ? "" : "s"}
+        {sole ? " (sole)" : ""}
+      </span>
+      {stat.refCount > 0 && (
+        <span className="ff-chip" title="other files that call into this file (callgraph)">
+          🔗 {stat.refCount} refs
         </span>
-        <span className={`ff-chip${sole ? " warn" : ""}`} title="distinct commit authors">
-          👤 {stat.authorCount} author{stat.authorCount === 1 ? "" : "s"}
-          {sole ? " (sole)" : ""}
+      )}
+      {stat.velocityPerWeek > 0 && (
+        <span className="ff-chip" title="commits per week over the file's life">
+          ⚡ {stat.velocityPerWeek}/wk
         </span>
-        {stat.refCount > 0 && (
-          <span className="ff-chip" title="other files that call into this file (callgraph)">
-            🔗 {stat.refCount} refs
-          </span>
-        )}
-        {stat.velocityPerWeek > 0 && (
-          <span className="ff-chip" title="commits per week over the file's life">
-            ⚡ {stat.velocityPerWeek}/wk
-          </span>
-        )}
-        {stat.daysOld != null && (
-          <span className="ff-chip" title="age since first commit">
-            📅 {stat.daysOld}d old
-          </span>
-        )}
-        {stat.daysSinceEdit != null && (
-          <span className={`ff-chip${stale ? " cool" : ""}`} title="days since last edit">
-            🕐 edited {stat.daysSinceEdit}d ago{stale ? " (stale)" : ""}
-          </span>
-        )}
-      </div>
-    </>
+      )}
+      {stat.daysOld != null && (
+        <span className="ff-chip" title="age since first commit">
+          📅 {stat.daysOld}d old
+        </span>
+      )}
+      {stat.daysSinceEdit != null && (
+        <span className={`ff-chip${stale ? " cool" : ""}`} title="days since last edit">
+          🕐 edited {stat.daysSinceEdit}d ago{stale ? " (stale)" : ""}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// PRFilesForensics is the page-top panel listing every file the PR touches with
+// its forensics. Shows skeleton rows while /file-stats resolves so the page
+// renders immediately (the fetch is the slow part). Used by PRReviewPage.
+export function PRFilesForensics({ prId }: { prId: number }) {
+  const [files, setFiles] = useState<FileForensic[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    getFileStats(prId)
+      .then((f) => live && setFiles(f))
+      .catch(() => live && setFiles([]));
+    return () => {
+      live = false;
+    };
+  }, [prId]);
+
+  return (
+    <div className="pr-files">
+      <h3 className="pr-files-h">Files changed</h3>
+      {files === null ? (
+        <div className="pr-files-list">
+          {[0, 1, 2].map((i) => (
+            <div className="pr-file-row skeleton" key={i}>
+              <span className="sk sk-name" />
+              <span className="sk sk-chip" />
+              <span className="sk sk-chip" />
+              <span className="sk sk-chip" />
+            </div>
+          ))}
+        </div>
+      ) : files.length === 0 ? (
+        <p className="tab-note">No file forensics for this PR.</p>
+      ) : (
+        <div className="pr-files-list">
+          {files.map((f) => (
+            <div className="pr-file-row" key={f.filePath}>
+              <span className="pr-file-name" title={f.filePath}>
+                {f.filePath}
+              </span>
+              <FileForensicsChips stat={f} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

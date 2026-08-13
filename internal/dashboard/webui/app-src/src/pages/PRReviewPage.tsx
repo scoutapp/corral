@@ -3,7 +3,7 @@ import { Link } from "../router";
 import { getJSON, postJSON } from "../api/client";
 import type { CachedRepo, PrItem } from "../api/types";
 import { useBodyClass } from "../hooks/useBodyClass";
-import { BlockCarousel } from "./RepoPage";
+import { BlockCarousel, PRFilesForensics } from "./RepoPage";
 
 // PRReviewPage is the dedicated full-page PR review at /repos/<id>/prs/<number>
 // (the reference's PRView, not an inline popout). Navigating here Views the PR
@@ -69,7 +69,10 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
         ) : !pr ? (
           <p className="tab-note">Loading PR #{number}…</p>
         ) : (
-          <BlockCarousel prId={pr.id} />
+          <>
+            <PRFilesForensics prId={pr.id} />
+            <BlockCarousel prId={pr.id} />
+          </>
         )}
       </div>
     </>
