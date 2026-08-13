@@ -267,3 +267,85 @@ func TestBlocksStaleness(t *testing.T) {
 		t.Fatalf("after re-analyze to new sha: want stale=true, got %+v", st)
 	}
 }
+
+// TestRerankPreservesAI verifies Rerank refreshes hotness from current repo data
+// while keeping the AI titles/explanations/edge-cases (no Claude calls), and
+// clears the stale flag.
+func TestRerankPreservesAI(t *testing.T) {
+	svc, _ := newService(t)
+	prID := seedPR(t, svc, "r1", sampleDiff)
+
+	// 1) Extract WITH AI while repo is unanalyzed → AI text set, hotness = fallback.
+	ai := fakeAI{
+		blockJSON: `{"title":"Idempotency key","explanation":"adds a key param","codebase_context":"charge path","edge_cases":[{"description":"empty key","severity":"high"}],"importance":2}`,
+		summary:   "Prevent dup charges",
+	}
+	blocks, err := svc.ExtractBlocks(context.Background(), prID, ai)
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	var chargeHot0 float64
+	for _, b := range blocks {
+		if b.FilePath == "src/charge.ts" && b.HotnessScore != nil {
+			chargeHot0 = *b.HotnessScore
+		}
+	}
+
+	// 2) Now analyze the repo: give charge.ts real churn + callgraph in-degree.
+	svc.db.Exec(`INSERT INTO pr_repo_analysis (repo_id, head_sha) VALUES ('r1','SHA1')`)
+	svc.db.Exec(`INSERT INTO pr_file_stats (repo_id, file_path, total_commits, fix_commits, churn_score, author_count)
+	             VALUES ('r1','src/charge.ts',80,40,8.0,5)`)
+	svc.db.Exec(`INSERT INTO pr_cg_nodes (id,repo_id,file_path,symbol_name,kind,line_start,line_end)
+	             VALUES (1,'r1','src/charge.ts','charge','function',47,89),
+	                    (2,'r1','src/x.ts','x','function',1,3),(3,'r1','src/y.ts','y','function',1,3)`)
+	svc.db.Exec(`INSERT INTO pr_cg_edges (repo_id,caller_id,callee_id) VALUES ('r1',2,1),('r1',3,1)`)
+
+	// Blocks are now stale (ranked against "" not SHA1).
+	st, _ := svc.BlocksStatusFor(prID)
+	if !st.Stale {
+		t.Fatal("expected stale before rerank")
+	}
+
+	// 3) Rerank (no AI runner passed) → hotness refreshed, AI text preserved.
+	reranked, err := svc.Rerank(context.Background(), prID)
+	if err != nil {
+		t.Fatalf("rerank: %v", err)
+	}
+	var charge *Block
+	for i := range reranked {
+		if reranked[i].FilePath == "src/charge.ts" {
+			charge = &reranked[i]
+		}
+	}
+	if charge == nil {
+		t.Fatal("charge block missing after rerank")
+	}
+	// AI text preserved:
+	if charge.Title != "Idempotency key" || charge.Explanation != "adds a key param" {
+		t.Errorf("AI text NOT preserved: title=%q expl=%q", charge.Title, charge.Explanation)
+	}
+	if charge.CodebaseContext != "charge path" {
+		t.Errorf("codebase context lost: %q", charge.CodebaseContext)
+	}
+	// Hotness refreshed (now uses churn 8 × (6-2) × (1+2 indeg) = 96, up from fallback):
+	if charge.HotnessScore == nil || *charge.HotnessScore <= chargeHot0 {
+		t.Errorf("hotness not refreshed: was %v now %v", chargeHot0, charge.HotnessScore)
+	}
+	// Edge cases preserved:
+	var ec int
+	svc.db.QueryRow(`SELECT COUNT(*) FROM pr_block_edge_cases`).Scan(&ec)
+	if ec == 0 {
+		t.Error("edge cases lost on rerank")
+	}
+	// Summary preserved:
+	var summary string
+	svc.db.QueryRow(`SELECT short_summary FROM prs WHERE id=?`, prID).Scan(&summary)
+	if summary != "Prevent dup charges" {
+		t.Errorf("summary lost: %q", summary)
+	}
+	// No longer stale:
+	st, _ = svc.BlocksStatusFor(prID)
+	if st.Stale {
+		t.Error("still stale after rerank")
+	}
+}

@@ -326,6 +326,8 @@ func (d *dashboardServer) handlePRItem(w http.ResponseWriter, r *http.Request, r
 		d.handlePRFileStats(w, r, prID)
 	case action == "enrich" && r.Method == http.MethodPost:
 		d.handlePREnrich(w, r, prID)
+	case action == "rerank" && r.Method == http.MethodPost:
+		d.handlePRRerank(w, r, prID)
 	case action == "risk" && r.Method == http.MethodGet:
 		d.handlePRRiskGet(w, r, prID)
 	case action == "analyze" && r.Method == http.MethodPost:
@@ -425,6 +427,25 @@ func (d *dashboardServer) handlePRBlocks(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	status, _ := svc.BlocksStatusFor(prID) // best-effort freshness signal
+	writeFilesJSON(w, map[string]any{"blocks": blocks, "status": status})
+}
+
+// handlePRRerank: POST /prs/<id>/rerank — recompute block hotness against the
+// repo's current churn + callgraph, preserving existing AI analysis (no Claude
+// calls). Used when a repo was (re)analyzed after the PR's blocks were ranked.
+func (d *dashboardServer) handlePRRerank(w http.ResponseWriter, r *http.Request, prID int64) {
+	s, err := d.getStore()
+	if err != nil {
+		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	svc := prreview.New(s)
+	blocks, err := svc.Rerank(r.Context(), prID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	status, _ := svc.BlocksStatusFor(prID)
 	writeFilesJSON(w, map[string]any{"blocks": blocks, "status": status})
 }
 
