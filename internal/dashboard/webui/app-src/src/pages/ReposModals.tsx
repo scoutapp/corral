@@ -403,9 +403,10 @@ export function SpawnModal({ repo, ownerName, issue, onClose }: { repo: CachedRe
   const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [ssh, setSsh] = useState<{ id: string; prompt: string } | null>(null);
+  const [autoSubmit, setAutoSubmit] = useState(false);
 
   function navigate(id: string, prompt: string) {
-    if (prompt) postRaw(`/p/${id}/populate-prompt`, { prompt }).catch(() => {});
+    if (prompt) postRaw(`/p/${id}/populate-prompt`, { prompt, submit: autoSubmit }).catch(() => {});
     window.location.href = `/p/${id}/`;
   }
 
@@ -464,6 +465,11 @@ export function SpawnModal({ repo, ownerName, issue, onClose }: { repo: CachedRe
             clones {ownerName} on a new branch, writes ISSUE.md, and pre-types a prompt into Claude.
           </div>
         </div>
+
+        <label className="row spawn-fw" style={{ marginBottom: "0.5rem" }}>
+          <input type="checkbox" checked={autoSubmit} onChange={(e) => setAutoSubmit(e.target.checked)} />
+          <span>Auto-start — submit the pre-typed prompt to Claude automatically (don't wait for you to press Enter).</span>
+        </label>
 
         <details className="spawn-advanced">
           <summary>Advanced</summary>
