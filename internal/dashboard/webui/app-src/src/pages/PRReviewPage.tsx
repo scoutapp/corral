@@ -3,6 +3,7 @@ import { Link } from "../router";
 import { getJSON, postJSON } from "../api/client";
 import type { CachedRepo, PrItem } from "../api/types";
 import { useBodyClass } from "../hooks/useBodyClass";
+import { ChatPanel } from "../components/ChatPanel";
 import {
   AnalysisStatusBanner,
   BlockCarousel,
@@ -23,6 +24,7 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
   const [pr, setPr] = useState<PrItem | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0); // bumped after re-analyze to remount panels
+  const [chatOpen, setChatOpen] = useState(false);
 
   useEffect(() => {
     getJSON<{ repos: CachedRepo[] }>("/repos")
@@ -68,6 +70,16 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
             </a>
           )}
         </div>
+        {pr && (
+          <button
+            type="button"
+            className={`dock-toggle${chatOpen ? " on" : ""}`}
+            title="Ask Claude about this PR — a host claude chat"
+            onClick={() => setChatOpen((v) => !v)}
+          >
+            💬 Ask Claude
+          </button>
+        )}
       </header>
 
       <div className="pr-review-page">
@@ -98,6 +110,27 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
           </>
         )}
       </div>
+
+      {/* Ask-Claude drawer — reuses the projects-page ChatPanel + chrome,
+          scoped to this PR (the server injects PR summary + hot-file context). */}
+      {pr && chatOpen && (
+        <div className="chat-panel" id="chat-panel">
+          <div className="chat-panel-bar">
+            <span>
+              <i className="screen-dot" />
+              ask claude · PR #{number}
+            </span>
+            <span className="chat-panel-actions">
+              <button type="button" title="Close" onClick={() => setChatOpen(false)}>
+                ✕
+              </button>
+            </span>
+          </div>
+          <div className="chat-panel-iframe">
+            <ChatPanel wsPath={`/prs/${pr.id}/chat/ws`} />
+          </div>
+        </div>
+      )}
     </>
   );
 }

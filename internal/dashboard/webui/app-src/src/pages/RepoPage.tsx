@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useRouter } from "../router";
-import { getJSON, postJSON, wsURL } from "../api/client";
+import { getJSON, postJSON } from "../api/client";
 import type {
   AnalysisStatus,
   CachedRepo,
@@ -363,7 +363,6 @@ export function BlockCarousel({ prId }: { prId: number }) {
         )}
       </div>
 
-      <BlockChat prId={prId} blockId={b.id} blockLabel={b.title || b.filePath} />
       <LinkedPRs prId={prId} />
     </div>
   );
@@ -694,112 +693,6 @@ export function RiskCard({ prId }: { prId: number }) {
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-// BlockChat is a lightweight, block-scoped chat over /prs/<id>/chat/ws. It
-// speaks the same server frame protocol as the project Ask-Claude panel
-// (text/error/turn_end) but is scoped to the current block via ?block=. The
-// server injects PR/block context into the first turn. Collapsed by default.
-function BlockChat({ prId, blockId, blockLabel }: { prId: number; blockId: number; blockLabel: string }) {
-  const [open, setOpen] = useState(false);
-  const [msgs, setMsgs] = useState<{ role: "user" | "assistant" | "meta"; text: string }[]>([]);
-  const [input, setInput] = useState("");
-  const [ready, setReady] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
-  const curIdx = useRef<number | null>(null);
-
-  // A fresh socket per (block, open) so context is re-injected for the block
-  // being viewed. Closing the drawer tears the socket down.
-  useEffect(() => {
-    if (!open) return;
-    setMsgs([]);
-    const ws = new WebSocket(wsURL(`/prs/${prId}/chat/ws?block=${blockId}`));
-    wsRef.current = ws;
-    ws.onopen = () => setReady(true);
-    ws.onclose = () => {
-      setReady(false);
-      setBusy(false);
-    };
-    ws.onmessage = (ev) => {
-      let m: { type?: string; text?: string };
-      try {
-        m = JSON.parse(ev.data);
-      } catch {
-        return;
-      }
-      if (m.type === "text" && m.text) {
-        setMsgs((prev) => {
-          const next = [...prev];
-          if (curIdx.current == null) {
-            curIdx.current = next.length;
-            next.push({ role: "assistant", text: m.text || "" });
-          } else {
-            next[curIdx.current] = {
-              role: "assistant",
-              text: (next[curIdx.current]?.text || "") + m.text,
-            };
-          }
-          return next;
-        });
-      } else if (m.type === "error") {
-        setMsgs((prev) => [...prev, { role: "meta", text: m.text || "error" }]);
-      } else if (m.type === "turn_end") {
-        setBusy(false);
-        curIdx.current = null;
-      }
-    };
-    return () => ws.close();
-  }, [open, prId, blockId]);
-
-  const send = () => {
-    const text = input.trim();
-    if (!text || !ready || busy) return;
-    wsRef.current?.send(JSON.stringify({ prompt: text }));
-    setMsgs((prev) => [...prev, { role: "user", text }]);
-    setInput("");
-    setBusy(true);
-  };
-
-  if (!open) {
-    return (
-      <button type="button" className="btn block-chat-toggle" onClick={() => setOpen(true)}>
-        💬 Ask about this block
-      </button>
-    );
-  }
-
-  return (
-    <div className="block-chat">
-      <div className="block-chat-head">
-        <span>Ask Claude · {blockLabel}</span>
-        <button type="button" className="block-chat-x" onClick={() => setOpen(false)}>
-          ✕
-        </button>
-      </div>
-      <div className="block-chat-log">
-        {msgs.map((m, k) => (
-          <div key={k} className={`chat-msg ${m.role}`}>
-            {m.text}
-          </div>
-        ))}
-        {!ready && <div className="chat-msg meta">connecting…</div>}
-      </div>
-      <div className="block-chat-input">
-        <input
-          value={input}
-          placeholder="Ask about this block…"
-          disabled={!ready || busy}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && send()}
-        />
-        <button type="button" className="btn primary" disabled={!ready || busy} onClick={send}>
-          {busy ? "…" : "Send"}
-        </button>
-      </div>
-      <p className="block-chat-note">Runs your host Claude (not sandboxed).</p>
     </div>
   );
 }
