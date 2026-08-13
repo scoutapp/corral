@@ -6,10 +6,10 @@ import { relDate } from "../lib/repos";
 
 const LAST_SEEN_KEY = "corral.prInbox.lastSeen";
 
-// PRInboxSection is the cross-project PR review queue: open PRs aggregated
-// across every repo that has a Corral project. PRs updated since your last
-// visit sort above a "New" divider; the rest below. Client-side search filters
-// the loaded list. Clicking a PR opens its review page.
+// PRInboxSection is the cross-repo PR review queue: open PRs aggregated across
+// every GitHub repo in your Repos list. PRs updated since your last visit sort
+// above a "New" divider; the rest below. Client-side search filters the loaded
+// list. Clicking a PR opens its review page.
 export function PRInboxSection() {
   const { navigate } = useRouter();
   const [items, setItems] = useState<InboxPr[] | null>(null);
@@ -38,8 +38,8 @@ export function PRInboxSection() {
   if (items.length === 0)
     return (
       <p className="tab-note">
-        No open PRs. This lists open PRs from repos you have a project for — start
-        a project on a repo to see its PRs here.
+        No open PRs across your repos. Add a GitHub repo (Repos tab) to see its
+        open PRs here.
       </p>
     );
 
