@@ -67,11 +67,21 @@ function RepoRow({
 }
 
 // New-project modal: From repo(s) / Blank dir / Existing dir.
-export function NewProjectModal({ presetRepoId, onClose }: { presetRepoId?: string; onClose: () => void }) {
+export function NewProjectModal({
+  presetRepoId,
+  presetBranch,
+  presetName,
+  onClose,
+}: {
+  presetRepoId?: string;
+  presetBranch?: string;
+  presetName?: string;
+  onClose: () => void;
+}) {
   const { repos: ghRepos, loaded } = useGhRepos();
   const [mode, setMode] = useState<"clone" | "new" | "existing">("clone");
   const [rows, setRows] = useState<{ text: string; branch: string }[]>([{ text: "", branch: "" }]);
-  const [name, setName] = useState("");
+  const [name, setName] = useState(presetName || "");
   const [path, setPath] = useState("");
   const [enforceAllowlist, setEnforceAllowlist] = useState(false); // opt-in strict; default is passthrough
   const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
@@ -103,7 +113,7 @@ export function NewProjectModal({ presetRepoId, onClose }: { presetRepoId?: stri
     else if (mode === "existing") body = { mode: "existing", path: path.trim() };
     else {
       const specs: RepoSpec[] = [];
-      if (presetRepoId) specs.push({ repoId: presetRepoId });
+      if (presetRepoId) specs.push({ repoId: presetRepoId, branch: presetBranch || undefined });
       for (const r of rows) {
         const s = toSpec(r.text.trim(), r.branch.trim(), ghRepos);
         if (s) specs.push(s);
