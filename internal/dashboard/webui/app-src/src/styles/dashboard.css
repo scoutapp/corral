@@ -1576,15 +1576,21 @@ table.projects th, table.projects td {
   height: 22rem; overflow: hidden; font-size: 0.78rem;
 }
 
-/* Line-comment affordance on the block diff. */
+/* Line-comment affordance on the block diff. The '+' is pinned to the hovered
+   row INSIDE the scroll host (which is position:relative) so moving the cursor
+   onto it never leaves the hover target — the disappearing-button bug. */
 .block-diff-wrap { position: relative; }
+.block-diff-host { position: relative; }
 .line-comment-add {
-  position: absolute; left: -0.65rem; z-index: 3;
-  width: 1.15rem; height: 1.15rem; line-height: 1; padding: 0;
+  position: absolute; left: 2px; z-index: 4;
+  width: 1.3rem; height: 1.3rem; margin-top: -0.05rem;
+  line-height: 1; padding: 0; font-size: 0.95rem;
+  display: flex; align-items: center; justify-content: center;
   border-radius: 4px; border: none; cursor: pointer;
   background: var(--con-working); color: #06210f; font-weight: 700;
+  box-shadow: 0 0 0 2px var(--con-ground);
 }
-.line-comment-add:hover { filter: brightness(1.1); }
+.line-comment-add:hover { filter: brightness(1.12); }
 .line-comment-box {
   margin: 0.4rem 0 0.6rem; border: 1px solid var(--con-line); border-radius: 6px;
   background: var(--con-panel); padding: 0.5rem 0.6rem;

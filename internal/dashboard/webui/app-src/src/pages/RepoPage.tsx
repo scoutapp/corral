@@ -485,6 +485,7 @@ function BlockDiff({
   useEffect(() => {
     let handle: DiffHandle | null = null;
     let cancelled = false;
+    let scrollCleanup: (() => void) | null = null;
     const { original, modified } = splitUnifiedHunk(hunk);
     loadEditor()
       .then((editor) => {
@@ -497,33 +498,47 @@ function BlockDiff({
           filename: filePath,
         });
         viewRef.current = handle.view || null;
+        // While the diff scrolls, the pinned '+' would point at the wrong row
+        // (no mousemove fires) — hide it until the next hover.
+        const scroller = handle.view?.dom.querySelector(".cm-scroller");
+        if (scroller) {
+          const onScroll = () => setHoverLine(null);
+          scroller.addEventListener("scroll", onScroll, { passive: true });
+          scrollCleanup = () => scroller.removeEventListener("scroll", onScroll);
+        }
       })
       .catch(() => !cancelled && setFailed(true));
     return () => {
       cancelled = true;
+      scrollCleanup?.();
       handle?.destroy();
       viewRef.current = null;
     };
   }, [hunk, filePath]);
 
-  // Track which line the cursor is over so we can offer a '+' comment button.
+  // Track which line the cursor is over so we can pin a '+' comment button to
+  // that row (GitHub-style). The button lives INSIDE the scroll host, so moving
+  // toward it never leaves the hover target. We update on move but only clear
+  // when the cursor leaves the whole wrapper.
   const onMove = (e: React.MouseEvent) => {
     const view = viewRef.current;
     const host = hostRef.current;
     if (!view || !host) return;
-    const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
-    if (pos == null) {
-      setHoverLine(null);
-      return;
-    }
+    // Snap to the row at the cursor's y, using the host's left edge so hovering
+    // over the gutter/button still resolves to the right line.
+    const hostRect = host.getBoundingClientRect();
+    const pos = view.posAtCoords({ x: hostRect.left + 12, y: e.clientY });
+    if (pos == null) return;
     const cmLine = view.state.doc.lineAt(pos).number; // 1-based
     const coords = view.coordsAtPos(pos);
-    if (!coords) {
-      setHoverLine(null);
-      return;
-    }
-    const hostRect = host.getBoundingClientRect();
-    setHoverLine({ cmLine, top: coords.top - hostRect.top + host.scrollTop });
+    if (!coords) return;
+    // Viewport-relative row top → offset within the host. The button is absolute
+    // inside .block-diff-host (which doesn't itself scroll — CM scrolls inside),
+    // so this tracks the row's on-screen position without adding scrollTop.
+    const rowTop = coords.top - hostRect.top;
+    setHoverLine((cur) =>
+      cur?.cmLine === cmLine && Math.abs(cur.top - rowTop) < 1 ? cur : { cmLine, top: rowTop },
+    );
   };
 
   if (failed) return <pre className="diff-pre">{hunk}</pre>;
@@ -539,19 +554,20 @@ function BlockDiff({
         onMouseLeave={() => setHoverLine(null)}
       >
         <div className="diff-body" ref={bodyRef} />
+        {/* "+" pinned to the hovered row, inside the scroll host so it stays
+            clickable as the cursor moves onto it. */}
+        {hoverLine && commentLine == null && (
+          <button
+            type="button"
+            className="line-comment-add"
+            style={{ top: `${hoverLine.top}px` }}
+            title={`Comment on line ${realLine(hoverLine.cmLine)}`}
+            onClick={() => setCommentLine(hoverLine.cmLine)}
+          >
+            +
+          </button>
+        )}
       </div>
-      {/* Floating "+" comment affordance on the hovered line. */}
-      {hoverLine && commentLine == null && (
-        <button
-          type="button"
-          className="line-comment-add"
-          style={{ top: `${hoverLine.top}px` }}
-          title={`Comment on line ${realLine(hoverLine.cmLine)}`}
-          onClick={() => setCommentLine(hoverLine.cmLine)}
-        >
-          +
-        </button>
-      )}
       {commentLine != null && (
         <LineCommentBox
           prId={prId}
