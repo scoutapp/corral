@@ -99,6 +99,12 @@ func analyzeBlock(ctx context.Context, ai aiRunner, diffHunk, filePath, prTitle 
 	return a
 }
 
+// PlaceholderExplanation is the block explanation used when no AI analysis is
+// available (the View step, or claude unavailable). The frontend matches it to
+// show "new file"/"not analyzed"; Rerank matches it to skip preserving
+// placeholder text. Keep the three in sync.
+const PlaceholderExplanation = "This block modifies the file. Claude analysis is unavailable."
+
 func placeholderAnalysis(filePath string) blockAnalysis {
 	base := filePath
 	if i := strings.LastIndexByte(base, '/'); i >= 0 {
@@ -106,7 +112,7 @@ func placeholderAnalysis(filePath string) blockAnalysis {
 	}
 	return blockAnalysis{
 		Title:           "Changes in " + base,
-		Explanation:     "This block modifies the file. Claude analysis is unavailable.",
+		Explanation:     PlaceholderExplanation,
 		CodebaseContext: "Context unavailable without the claude CLI.",
 		Importance:      3,
 	}
