@@ -1318,7 +1318,7 @@ table.projects th, table.projects td {
 .tab-actions { display: flex; gap: 0.6rem; margin-bottom: 0.9rem; align-items: center; }
 .pr-num-input {
   width: 6.5rem; padding: 0.3rem 0.5rem;
-  background: var(--con-panel); color: var(--con-fg);
+  background: var(--con-panel); color: var(--con-text);
   border: 1px solid var(--con-line); border-radius: 4px;
   font-family: ui-monospace, monospace;
 }
@@ -1336,7 +1336,7 @@ table.projects th, table.projects td {
 .pr-row { display: block; padding: 0; }
 .pr-head {
   width: 100%; display: flex; align-items: center; gap: 0.6rem;
-  padding: 0.55rem 0; background: none; border: none; color: var(--con-fg);
+  padding: 0.55rem 0; background: none; border: none; color: var(--con-text);
   cursor: pointer; text-align: left; font-size: inherit;
 }
 .pr-head:hover { color: var(--con-working); }
@@ -1345,7 +1345,7 @@ table.projects th, table.projects td {
 .block-carousel { padding: 0.4rem 0 1rem; }
 .block-nav { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem; }
 .block-nav button {
-  background: var(--con-panel); color: var(--con-fg);
+  background: var(--con-panel); color: var(--con-text);
   border: 1px solid var(--con-line); border-radius: 4px;
   padding: 0.1rem 0.5rem; cursor: pointer;
 }
@@ -1380,6 +1380,59 @@ table.projects th, table.projects td {
   background: #0b0e14; border: 1px solid var(--con-line);
   font-family: ui-monospace, monospace; font-size: 0.78rem; line-height: 1.45;
 }
+
+/* PR risk card */
+.risk-card {
+  border: 1px solid var(--con-line); border-radius: 6px;
+  background: var(--con-panel); padding: 0.7rem 0.9rem; margin-bottom: 0.8rem;
+}
+.risk-head { display: flex; align-items: center; gap: 0.6rem; }
+.risk-title { font-weight: 600; }
+.risk-head .btn { margin-left: auto; }
+.risk-pill {
+  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.1em;
+  padding: 0.1rem 0.45rem; border-radius: 999px; border: 1px solid var(--con-line);
+}
+.risk-pill.high { color: var(--con-waiting); border-color: var(--con-waiting); }
+.risk-pill.medium { color: #d6a419; }
+.risk-pill.low { color: var(--con-working); border-color: var(--con-working); }
+.risk-body { margin-top: 0.5rem; font-size: 0.85rem; line-height: 1.5; }
+.risk-body p { margin: 0.25rem 0; }
+.risk-summary { font-weight: 600; }
+.risk-files { list-style: none; margin: 0.4rem 0 0; padding: 0; font-size: 0.8rem; }
+.risk-files li { padding: 0.15rem 0; }
+.risk-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 0.35rem; }
+.risk-dot.high { background: var(--con-waiting); }
+.risk-dot.medium { background: #d6a419; }
+.risk-dot.low { background: var(--con-working); }
+
+/* Block-scoped chat drawer */
+.block-chat-toggle { margin-top: 0.7rem; }
+.block-chat {
+  margin-top: 0.8rem; border: 1px solid var(--con-line); border-radius: 6px;
+  background: var(--con-panel); display: flex; flex-direction: column;
+  max-height: 22rem;
+}
+.block-chat-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.4rem 0.7rem; border-bottom: 1px solid var(--con-line);
+  font-size: 0.82rem; color: var(--con-muted);
+}
+.block-chat-x { background: none; border: none; color: var(--con-muted); cursor: pointer; }
+.block-chat-log { flex: 1 1 auto; overflow-y: auto; padding: 0.6rem 0.7rem; }
+.chat-msg { margin: 0.35rem 0; font-size: 0.85rem; line-height: 1.5; white-space: pre-wrap; }
+.chat-msg.user { color: var(--con-text); }
+.chat-msg.user::before { content: "You: "; color: var(--con-muted); }
+.chat-msg.assistant { color: var(--con-text); }
+.chat-msg.assistant::before { content: "Claude: "; color: var(--con-working); }
+.chat-msg.meta { color: var(--con-muted); font-style: italic; }
+.block-chat-input { display: flex; gap: 0.5rem; padding: 0.5rem 0.7rem; border-top: 1px solid var(--con-line); }
+.block-chat-input input {
+  flex: 1 1 auto; padding: 0.35rem 0.5rem;
+  background: var(--con-ground); color: var(--con-text);
+  border: 1px solid var(--con-line); border-radius: 4px;
+}
+.block-chat-note { margin: 0 0 0.5rem 0.7rem; font-size: 0.7rem; color: var(--con-muted); }
 
 .forensics-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .forensics-table th, .forensics-table td {
