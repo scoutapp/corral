@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "../router";
 import { getJSON, postRaw } from "../api/client";
 import type { CachedRepo, GhIssue } from "../api/types";
 import { ghOwnerName, relDate } from "../lib/repos";
@@ -66,7 +67,9 @@ export function ReposSection({ search, reloadKey }: { search: string; reloadKey:
             <div className="repo-item" key={rp.id}>
               <div className="repo-row">
                 <div className="repo-meta">
-                  <span className="repo-name">{rp.name}</span>
+                  <Link className="repo-name" to={`/repos/${encodeURIComponent(rp.id)}`}>
+                    {rp.name}
+                  </Link>
                   <span className="repo-src">{rp.url || rp.local_path || ""}</span>
                   {rp.is_private && <span className="repo-badge">private</span>}
                 </div>

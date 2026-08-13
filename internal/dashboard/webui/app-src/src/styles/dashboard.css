@@ -1305,3 +1305,34 @@ table.projects th, table.projects td {
   font-size: 0.9rem; line-height: 1; padding: 0.2rem 0.35rem;
 }
 .update-banner-dismiss:hover { color: var(--fg); }
+
+/* --- Repo hub (RepoPage: /repos/<id>) ---------------------------------- */
+/* The repo-as-hub detail view. Reuses .console-header/.brand and the shared
+   .tabs/.tab-btn/.tab-panel tab styling; these rules just pad the body and give
+   the empty/loading states and the two lists a readable look. */
+.repo-hub { padding: 1.1rem 1.6rem; }
+.repo-hub .repo-url { text-transform: none; letter-spacing: 0; }
+.repo-hub .tab-panel { padding-top: 1rem; }
+.tab-note { color: var(--con-muted); max-width: 60ch; line-height: 1.5; }
+.tab-note.err { color: var(--con-waiting); }
+
+.pr-list { list-style: none; margin: 0; padding: 0; }
+.pr-list li {
+  padding: 0.5rem 0; border-bottom: 1px solid var(--con-line);
+  display: flex; align-items: center; gap: 0.6rem;
+}
+.pr-list .pr-num { color: var(--con-muted); font-family: ui-monospace, monospace; }
+.pr-list .pr-state {
+  margin-left: auto; font-size: 0.72rem; text-transform: uppercase;
+  letter-spacing: 0.12em; color: var(--con-muted);
+}
+
+.forensics-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.forensics-table th, .forensics-table td {
+  text-align: left; padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--con-line);
+}
+.forensics-table th { color: var(--con-muted); font-weight: 600; }
+.forensics-table td:nth-child(2), .forensics-table td:nth-child(3) {
+  font-family: ui-monospace, monospace;
+}

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"github.com/scoutapp/corral/internal/config"
 	"github.com/scoutapp/corral/internal/session"
+	"github.com/scoutapp/corral/internal/store"
 	"io"
 	"io/fs"
 	"log"
@@ -304,11 +305,32 @@ type dashboardServer struct {
 	// surfaced in /status so the browser can tell when the server has restarted
 	// and drop stale per-project UI state (e.g. mute prefs keyed by project id).
 	bootID string
+	// store is the shared Corral database (~/.corral/corral.db). It backs the PR
+	// Review feature and is opened lazily on first use so the dashboard still
+	// starts if the DB can't be opened; PR-review endpoints then report the error.
+	store *store.Store
 }
 
 func newDashboardServer(token string) *dashboardServer {
 	boot, _ := randomToken()
 	return &dashboardServer{terms: make(map[*termSession]struct{}), token: token, bootID: boot}
+}
+
+// getStore opens the shared Corral database on first use and caches the handle.
+// Opening runs migrations, so it is deferred out of newDashboardServer to keep
+// dashboard startup independent of DB health.
+func (d *dashboardServer) getStore() (*store.Store, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.store != nil {
+		return d.store, nil
+	}
+	s, err := store.Open()
+	if err != nil {
+		return nil, err
+	}
+	d.store = s
+	return s, nil
 }
 
 // requireAuth gates every route but /healthz behind a random per-launch token.
@@ -445,13 +467,21 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Repos list (cross-project). /repos (GET list, POST add) and
-	// /repos/<id>[/fetch] (DELETE remove, POST fetch).
+	// /repos/<id>[/fetch|/prs|/forensics] (item actions).
 	if path == "/repos" {
 		d.handleRepos(w, r)
 		return
 	}
 	if strings.HasPrefix(path, "/repos/") {
-		d.handleRepoItem(w, r, strings.TrimPrefix(path, "/repos/"))
+		rest := strings.TrimPrefix(path, "/repos/")
+		// A bare GET /repos/<id> is browser navigation to the repo-hub page
+		// (RepoPage) — serve the SPA shell so a hard reload lands correctly.
+		// Sub-actions (/repos/<id>/prs, …) and non-GET verbs are API calls.
+		if r.Method == http.MethodGet && !strings.Contains(rest, "/") {
+			d.serveSPA(w, r)
+			return
+		}
+		d.handleRepoItem(w, r, rest)
 		return
 	}
 	if path == "/projects/create" {
