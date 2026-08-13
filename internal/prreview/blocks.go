@@ -177,6 +177,10 @@ func (s *Service) ExtractBlocks(ctx context.Context, prID int64, ai aiRunner) ([
 		rows.Close()
 	}
 
+	// Callgraph in-degree per file (max in-degree of any node in the file), when
+	// a callgraph has been built. Empty map ⇒ hotness stays churn-only.
+	indeg, _ := s.InDegrees(repoID)
+
 	groups := groupHunks(parseDiffHunks(rawDiff))
 
 	var items []builtBlock
@@ -212,7 +216,11 @@ func (s *Service) ExtractBlocks(ctx context.Context, prID int64, ai aiRunner) ([
 		if c == 0 {
 			c = 1.0
 		}
-		hotness := c * float64(6-importance)
+		// Hotness blends churn, AI importance, and callgraph in-degree: a change
+		// in a heavily-called, high-churn, important file is hottest. The
+		// (1 + in_degree) factor is 1 when no callgraph exists, so this degrades
+		// cleanly to the churn-only formula from Phase 2.
+		hotness := c * float64(6-importance) * float64(1+indeg[filePath])
 
 		items = append(items, builtBlock{
 			b: Block{

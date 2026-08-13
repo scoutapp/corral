@@ -1316,6 +1316,7 @@ table.projects th, table.projects td {
 .tab-note { color: var(--con-muted); max-width: 60ch; line-height: 1.5; }
 .tab-note.err { color: var(--con-waiting); }
 .tab-actions { display: flex; gap: 0.6rem; margin-bottom: 0.9rem; align-items: center; }
+.cg-stat { font-size: 0.78rem; color: var(--con-muted); }
 .pr-num-input {
   width: 6.5rem; padding: 0.3rem 0.5rem;
   background: var(--con-panel); color: var(--con-text);
