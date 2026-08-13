@@ -14,6 +14,8 @@ import type {
   RepoProject,
 } from "../api/types";
 import { useBodyClass } from "../hooks/useBodyClass";
+import { loadEditor, type DiffHandle } from "../lib/editor";
+import { splitUnifiedHunk } from "../lib/diffHunk";
 
 // RepoPage is the repo-as-hub detail view (/repos/<id>). A repo owns three
 // tabs: PR Review (grokker-derived PR intelligence), Projects (Corral sandbox
@@ -285,7 +287,7 @@ export function BlockCarousel({ prId }: { prId: number }) {
           )}
         </div>
         {b.title && <h3 className="block-title">{b.title}</h3>}
-        {b.diffHunk && <pre className="block-diff">{b.diffHunk}</pre>}
+        {b.diffHunk && <BlockDiff hunk={b.diffHunk} filePath={b.filePath} />}
         {b.explanation && (
           <>
             <h4 className="block-h">What this does</h4>
@@ -305,6 +307,41 @@ export function BlockCarousel({ prId }: { prId: number }) {
       <LinkedPRs prId={prId} />
     </div>
   );
+}
+
+// BlockDiff renders a block's unified diff hunk as a real syntax-highlighted,
+// side-by-side diff using the committed CodeMirror bundle (same one the Diff
+// tab uses) — restoring highlighting that the plain <pre> lost. The hunk is
+// split into before/after text; if the editor bundle fails to load, we fall
+// back to the raw hunk in a <pre>.
+function BlockDiff({ hunk, filePath }: { hunk: string; filePath: string }) {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let handle: DiffHandle | null = null;
+    let cancelled = false;
+    const { original, modified } = splitUnifiedHunk(hunk);
+    loadEditor()
+      .then((editor) => {
+        if (cancelled || !hostRef.current) return;
+        hostRef.current.innerHTML = "";
+        handle = editor.createDiff({
+          parent: hostRef.current,
+          original,
+          modified,
+          filename: filePath,
+        });
+      })
+      .catch(() => !cancelled && setFailed(true));
+    return () => {
+      cancelled = true;
+      handle?.destroy();
+    };
+  }, [hunk, filePath]);
+
+  if (failed) return <pre className="block-diff">{hunk}</pre>;
+  return <div className="block-diff-cm" ref={hostRef} />;
 }
 
 // FileForensicsRow shows the git/callgraph forensics for the block's file:
