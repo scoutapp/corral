@@ -1044,10 +1044,14 @@ table.projects th, table.projects td {
 /* ---- Landing page: sidebar shell + repos + new-project modal ------------- */
 .app-shell { display: flex; min-height: calc(100vh - 46px); }
 
-/* Left sidebar nav */
+/* Left sidebar nav. Sticky + viewport-height so it stays pinned as the content
+   column scrolls — the "New project" CTA (pushed down by .sidebar-spacer) is
+   always visible without scrolling to the bottom of a long project list. The
+   sidebar scrolls internally if its own items overflow a short viewport. */
 .sidebar {
   flex: 0 0 210px; display: flex; flex-direction: column; gap: 0.25rem;
   padding: 1.1rem 0.8rem; border-right: 1px solid var(--con-line); background: var(--con-panel);
+  position: sticky; top: 0; height: 100vh; overflow-y: auto; align-self: flex-start;
 }
 .sidebar .brand { padding: 0 0.5rem 1rem; }
 .sidebar-spacer { flex: 1 1 auto; }
