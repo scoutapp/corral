@@ -83,11 +83,11 @@ func (d *dashboardServer) handleRepoItem(w http.ResponseWriter, r *http.Request,
 			return
 		}
 		writeFilesJSON(w, map[string]any{"ok": true})
-	// PR Review (see internal/prreview). These read the shared DB and return
-	// empty lists until the repo has been analyzed / PRs fetched — the analysis
-	// and fetch writers land in later phases.
+	// PR Review (see internal/prreview).
 	case action == "forensics" && r.Method == http.MethodGet:
 		d.handleRepoForensics(w, r, id)
+	case action == "analyze" && r.Method == http.MethodPost:
+		d.handleRepoAnalyze(w, r, id)
 	case action == "prs" && r.Method == http.MethodGet:
 		d.handleRepoPRs(w, r, id)
 	default:
@@ -117,6 +117,33 @@ func (d *dashboardServer) handleRepoForensics(w http.ResponseWriter, r *http.Req
 		return
 	}
 	stats, err := svc.Forensics(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeFilesJSON(w, map[string]any{"files": stats})
+}
+
+// handleRepoAnalyze: POST /repos/<id>/analyze — run git forensics over the
+// repo's cache mirror and (re)populate pr_file_stats. Synchronous for now (the
+// UI shows a spinner), mirroring how repo Add/Fetch are handled; a progress
+// stream is a future enhancement.
+func (d *dashboardServer) handleRepoAnalyze(w http.ResponseWriter, r *http.Request, id string) {
+	repo, err := repos.Get(id)
+	if err != nil {
+		http.Error(w, "unknown repo", http.StatusNotFound)
+		return
+	}
+	if repo.CachePath == "" {
+		http.Error(w, "repo has no local cache to analyze", http.StatusBadRequest)
+		return
+	}
+	s, err := d.getStore()
+	if err != nil {
+		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	stats, err := prreview.New(s).Analyze(id, repo.CachePath)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
