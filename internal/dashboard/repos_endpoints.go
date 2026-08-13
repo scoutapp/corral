@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/scoutapp/corral/internal/prreview"
 	"github.com/scoutapp/corral/internal/repos"
@@ -298,6 +299,8 @@ func (d *dashboardServer) handlePRItem(w http.ResponseWriter, r *http.Request, r
 		return
 	case action == "blocks" && r.Method == http.MethodGet:
 		d.handlePRBlocks(w, r, prID)
+	case action == "file-stats" && r.Method == http.MethodGet:
+		d.handlePRFileStats(w, r, prID)
 	case action == "enrich" && r.Method == http.MethodPost:
 		d.handlePREnrich(w, r, prID)
 	case action == "risk" && r.Method == http.MethodGet:
@@ -398,6 +401,23 @@ func (d *dashboardServer) handlePRBlocks(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	writeFilesJSON(w, map[string]any{"blocks": blocks})
+}
+
+// handlePRFileStats: GET /prs/<id>/file-stats — rich per-file forensics for the
+// files this PR touches (fix ratio, author diversity, staleness, velocity,
+// callgraph ref count).
+func (d *dashboardServer) handlePRFileStats(w http.ResponseWriter, r *http.Request, prID int64) {
+	s, err := d.getStore()
+	if err != nil {
+		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	stats, err := prreview.New(s).FileForensics(prID, time.Now().Unix())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeFilesJSON(w, map[string]any{"files": stats})
 }
 
 // handlePREnrich: POST /prs/<id>/enrich — the ENRICH step. Re-extracts the PR's

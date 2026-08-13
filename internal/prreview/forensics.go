@@ -19,7 +19,9 @@ var fixPattern = regexp.MustCompile(`(?i)\b(fix|bug|hotfix|patch|bugfix)\b`)
 type fileAgg struct {
 	total   int
 	fix     int
-	firstTS int64 // earliest commit unix ts touching the file
+	firstTS int64           // earliest commit unix ts touching the file
+	lastTS  int64           // most recent commit unix ts touching the file
+	authors map[string]bool // distinct author emails
 }
 
 // Analyze computes per-file forensics for a repo and writes them to
@@ -51,8 +53,9 @@ func (s *Service) Analyze(repoID, gitDir string) ([]FileStat, error) {
 	}
 	stmt, err := tx.Prepare(`
 		INSERT INTO pr_file_stats
-		    (repo_id, file_path, total_commits, fix_commits, churn_score, last_analyzed)
-		VALUES (?, ?, ?, ?, ?, ?)
+		    (repo_id, file_path, total_commits, fix_commits, churn_score,
+		     author_count, first_commit, last_commit, last_analyzed)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return nil, err
@@ -61,7 +64,8 @@ func (s *Service) Analyze(repoID, gitDir string) ([]FileStat, error) {
 
 	for path, a := range aggs {
 		churn := churnScore(a.total, a.firstTS, now)
-		if _, err := stmt.Exec(repoID, path, a.total, a.fix, churn, nowRFC); err != nil {
+		if _, err := stmt.Exec(repoID, path, a.total, a.fix, churn,
+			len(a.authors), a.firstTS, a.lastTS, nowRFC); err != nil {
 			return nil, err
 		}
 	}
@@ -107,10 +111,10 @@ func churnScore(total int, firstTS, nowTS int64) float64 {
 }
 
 // gitLogAggregate walks every commit once, attributing each touched file a
-// commit (and a fix-commit if the subject matches) and tracking the earliest
-// timestamp seen per file.
+// commit (and a fix-commit if the subject matches) and tracking, per file, the
+// earliest/latest commit timestamps and the set of distinct author emails.
 //
-// The git format emits, per commit: a \x01 sentinel, then "<unixts> <subject>",
+// The git format emits, per commit: a \x01 sentinel, then "<unixts>|<email>|<subject>",
 // a newline, then the name-only file list. -z makes that file list
 // NUL-delimited (so paths with spaces/newlines are safe). We split the whole
 // output on \x01 into per-commit records and parse each.
@@ -118,7 +122,7 @@ func gitLogAggregate(gitDir string) (map[string]*fileAgg, error) {
 	cmd := exec.Command("git",
 		"--git-dir", gitDir,
 		"log", "--no-merges", "-z",
-		"--format=%x01%at %s", "--name-only",
+		"--format=%x01%at|%ae|%s", "--name-only",
 	)
 	out, err := cmd.Output()
 	if err != nil {
@@ -130,22 +134,30 @@ func gitLogAggregate(gitDir string) (map[string]*fileAgg, error) {
 		if rec == "" {
 			continue
 		}
-		// rec = "<ts> <subject>\n<NUL-separated file paths>"
+		// rec = "<ts>|<email>|<subject>\n<NUL-separated file paths>"
 		nl := strings.IndexByte(rec, '\n')
 		if nl < 0 {
 			continue // a commit that touched no files (shouldn't happen with --no-merges)
 		}
 		header, rest := rec[:nl], rec[nl+1:]
 
-		sp := strings.IndexByte(header, ' ')
-		if sp < 0 {
+		// header: <ts>|<email>|<subject> — split on the first two pipes only, so
+		// a '|' in the subject is preserved.
+		p1 := strings.IndexByte(header, '|')
+		if p1 < 0 {
 			continue
 		}
-		ts, err := strconv.ParseInt(header[:sp], 10, 64)
+		p2 := strings.IndexByte(header[p1+1:], '|')
+		if p2 < 0 {
+			continue
+		}
+		p2 += p1 + 1
+		ts, err := strconv.ParseInt(header[:p1], 10, 64)
 		if err != nil {
 			continue
 		}
-		isFix := fixPattern.MatchString(header[sp+1:])
+		email := header[p1+1 : p2]
+		isFix := fixPattern.MatchString(header[p2+1:])
 
 		for _, path := range strings.Split(rest, "\x00") {
 			path = strings.Trim(path, "\n")
@@ -154,7 +166,7 @@ func gitLogAggregate(gitDir string) (map[string]*fileAgg, error) {
 			}
 			a := aggs[path]
 			if a == nil {
-				a = &fileAgg{firstTS: ts}
+				a = &fileAgg{firstTS: ts, lastTS: ts, authors: map[string]bool{}}
 				aggs[path] = a
 			}
 			a.total++
@@ -164,6 +176,10 @@ func gitLogAggregate(gitDir string) (map[string]*fileAgg, error) {
 			if ts < a.firstTS {
 				a.firstTS = ts
 			}
+			if ts > a.lastTS {
+				a.lastTS = ts
+			}
+			a.authors[email] = true
 		}
 	}
 	return aggs, nil

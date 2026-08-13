@@ -302,6 +302,20 @@ export interface PrItem {
   fetchedAt?: string;
 }
 
+// GET /prs/<prId>/file-stats -> { files: FileForensic[] }
+export interface FileForensic {
+  filePath: string;
+  totalCommits: number;
+  fixCommits: number;
+  fixPct: number;
+  authorCount: number;
+  daysOld?: number;
+  daysSinceEdit?: number;
+  velocityPerWeek: number;
+  refCount: number;
+  churnScore?: number;
+}
+
 // GET /repos/<id>/prs/open -> { available: bool, prs: OpenPr[], reason?: string }
 export interface OpenPr {
   number: number;

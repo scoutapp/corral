@@ -1363,6 +1363,16 @@ table.projects th, table.projects td {
 }
 .enrich-note { font-size: 0.8rem; color: var(--con-muted); flex: 1 1 14rem; }
 .enrich-bar .btn { white-space: nowrap; }
+
+/* Per-file forensics chips (inside a block card) */
+.file-forensics { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.3rem; }
+.ff-chip {
+  font-size: 0.74rem; color: var(--con-muted);
+  border: 1px solid var(--con-line); border-radius: 999px;
+  padding: 0.1rem 0.5rem; white-space: nowrap;
+}
+.ff-chip.warn { color: var(--con-waiting); border-color: var(--con-waiting); }
+.ff-chip.cool { color: var(--con-muted); opacity: 0.85; }
 .block-nav { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem; }
 .block-nav button {
   background: var(--con-panel); color: var(--con-text);

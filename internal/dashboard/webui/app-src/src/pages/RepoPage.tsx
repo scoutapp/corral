@@ -3,6 +3,7 @@ import { Link } from "../router";
 import { getJSON, postJSON, wsURL } from "../api/client";
 import type {
   CachedRepo,
+  FileForensic,
   LinkSuggestion,
   OpenPr,
   PrBlock,
@@ -328,11 +329,77 @@ function BlockCarousel({ prId }: { prId: number }) {
             <p>{b.codebaseContext}</p>
           </>
         )}
+        <FileForensicsRow prId={prId} filePath={b.filePath} />
       </div>
 
       <BlockChat prId={prId} blockId={b.id} blockLabel={b.title || b.filePath} />
       <LinkedPRs prId={prId} />
     </div>
+  );
+}
+
+// FileForensicsRow shows the git/callgraph forensics for the block's file:
+// fix ratio, author diversity (sole-contributor flag), age + staleness, edit
+// velocity, and callgraph reference count. Fetches the PR's file-stats once and
+// caches them on the PR id so switching blocks doesn't refetch.
+const fileStatsCache = new Map<number, Promise<FileForensic[]>>();
+function getFileStats(prId: number): Promise<FileForensic[]> {
+  let p = fileStatsCache.get(prId);
+  if (!p) {
+    p = getJSON<{ files: FileForensic[] }>(`/prs/${prId}/file-stats`).then((d) => d.files || []);
+    fileStatsCache.set(prId, p);
+  }
+  return p;
+}
+
+function FileForensicsRow({ prId, filePath }: { prId: number; filePath: string }) {
+  const [stat, setStat] = useState<FileForensic | null>(null);
+  useEffect(() => {
+    let live = true;
+    getFileStats(prId)
+      .then((files) => live && setStat(files.find((f) => f.filePath === filePath) || null))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [prId, filePath]);
+
+  if (!stat) return null;
+  const sole = stat.authorCount === 1;
+  const stale = stat.daysSinceEdit != null && stat.daysSinceEdit > 180;
+  return (
+    <>
+      <h4 className="block-h">File forensics</h4>
+      <div className="file-forensics">
+        <span className="ff-chip" title="fix commits / total commits">
+          🔧 {stat.fixCommits}/{stat.totalCommits} fixes ({stat.fixPct}%)
+        </span>
+        <span className={`ff-chip${sole ? " warn" : ""}`} title="distinct commit authors">
+          👤 {stat.authorCount} author{stat.authorCount === 1 ? "" : "s"}
+          {sole ? " (sole)" : ""}
+        </span>
+        {stat.refCount > 0 && (
+          <span className="ff-chip" title="other files that call into this file (callgraph)">
+            🔗 {stat.refCount} refs
+          </span>
+        )}
+        {stat.velocityPerWeek > 0 && (
+          <span className="ff-chip" title="commits per week over the file's life">
+            ⚡ {stat.velocityPerWeek}/wk
+          </span>
+        )}
+        {stat.daysOld != null && (
+          <span className="ff-chip" title="age since first commit">
+            📅 {stat.daysOld}d old
+          </span>
+        )}
+        {stat.daysSinceEdit != null && (
+          <span className={`ff-chip${stale ? " cool" : ""}`} title="days since last edit">
+            🕐 edited {stat.daysSinceEdit}d ago{stale ? " (stale)" : ""}
+          </span>
+        )}
+      </div>
+    </>
   );
 }
 

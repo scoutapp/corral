@@ -20,7 +20,25 @@ type FileStat struct {
 	TotalCommits int      `json:"totalCommits"`
 	FixCommits   int      `json:"fixCommits"`
 	ChurnScore   *float64 `json:"churnScore,omitempty"`
+	AuthorCount  int      `json:"authorCount"`
+	FirstCommit  *int64   `json:"firstCommit,omitempty"` // unix ts
+	LastCommit   *int64   `json:"lastCommit,omitempty"`  // unix ts
 	LastAnalyzed *string  `json:"lastAnalyzed,omitempty"`
+}
+
+// FileForensic is the rich per-file view for the PR page's forensics panel:
+// FileStat plus derived staleness/velocity and callgraph reference count.
+type FileForensic struct {
+	FilePath        string   `json:"filePath"`
+	TotalCommits    int      `json:"totalCommits"`
+	FixCommits      int      `json:"fixCommits"`
+	FixPct          int      `json:"fixPct"`      // fix/total as a percentage
+	AuthorCount     int      `json:"authorCount"` // 1 ⇒ sole contributor
+	DaysOld         *int     `json:"daysOld,omitempty"`
+	DaysSinceEdit   *int     `json:"daysSinceEdit,omitempty"` // staleness
+	VelocityPerWeek float64  `json:"velocityPerWeek"`
+	RefCount        int      `json:"refCount"` // distinct other files calling into this one
+	ChurnScore      *float64 `json:"churnScore,omitempty"`
 }
 
 // PR is a fetched pull request.
