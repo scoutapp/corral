@@ -58,15 +58,23 @@ func (s *Service) FileForensics(prID int64, nowTS int64) ([]FileForensic, error)
 	if err := s.db.QueryRow(`SELECT repo_id FROM prs WHERE id = ?`, prID).Scan(&repoID); err != nil {
 		return nil, err
 	}
-	fileRows, err := s.db.Query(
-		`SELECT DISTINCT file_path FROM pr_blocks WHERE pr_id = ?`, prID)
+	// Files the PR touches, HOTTEST FIRST: order by each file's max block
+	// hotness (a file's hottest change region), then by path for stability. This
+	// puts the highest-signal files at the top of the "Files changed" panel.
+	fileRows, err := s.db.Query(`
+		SELECT file_path, MAX(COALESCE(hotness_score, 0)) AS hot
+		  FROM pr_blocks
+		 WHERE pr_id = ?
+		 GROUP BY file_path
+		 ORDER BY hot DESC, file_path ASC`, prID)
 	if err != nil {
 		return nil, err
 	}
 	var files []string
 	for fileRows.Next() {
 		var p string
-		if err := fileRows.Scan(&p); err != nil {
+		var hot float64
+		if err := fileRows.Scan(&p, &hot); err != nil {
 			fileRows.Close()
 			return nil, err
 		}

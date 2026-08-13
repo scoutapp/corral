@@ -204,3 +204,27 @@ func TestViewThenEnrich(t *testing.T) {
 		t.Errorf("summary not updated on enrich: %q", summary)
 	}
 }
+
+// TestFileForensicsHottestFirst verifies the "Files changed" list is ordered by
+// each file's max block hotness, so the panel leads with the highest-signal file.
+func TestFileForensicsHottestFirst(t *testing.T) {
+	svc, _ := newService(t)
+	now := int64(1_700_000_000)
+	svc.db.Exec(`INSERT INTO pr_repo_analysis (repo_id, head_sha) VALUES ('r','x')`)
+	prID := seedPR(t, svc, "r", sampleDiff)
+
+	// Two blocks on two files with different hotness (cold=1, hot=50).
+	svc.db.Exec(`INSERT INTO pr_blocks (pr_id, order_index, priority, file_path, line_start, line_end, hotness_score, is_test)
+	             VALUES (?,0,1,'src/cold.ts',1,2,1.0,0),(?,1,2,'src/hot.ts',1,2,50.0,0)`, prID, prID)
+
+	stats, err := svc.FileForensics(prID, now)
+	if err != nil {
+		t.Fatalf("FileForensics: %v", err)
+	}
+	if len(stats) != 2 {
+		t.Fatalf("want 2 files, got %d", len(stats))
+	}
+	if stats[0].FilePath != "src/hot.ts" {
+		t.Errorf("first file = %s, want src/hot.ts (hottest first)", stats[0].FilePath)
+	}
+}

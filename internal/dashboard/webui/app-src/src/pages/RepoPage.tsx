@@ -514,11 +514,16 @@ export function AnalysisStatusBanner({
   );
 }
 
-// PRFilesForensics is the page-top panel listing every file the PR touches with
-// its forensics. Shows skeleton rows while /file-stats resolves so the page
-// renders immediately (the fetch is the slow part). Used by PRReviewPage.
+// How many files the "Files changed" panel shows before "view more".
+const FILES_COLLAPSED = 5;
+
+// PRFilesForensics is the page-top panel listing the files the PR touches with
+// their forensics, HOTTEST FIRST (server-ordered by max block hotness). Collapsed
+// to the top few by default with a "view more" toggle. Shows skeleton rows while
+// /file-stats resolves so the page renders immediately. Used by PRReviewPage.
 export function PRFilesForensics({ prId }: { prId: number }) {
   const [files, setFiles] = useState<FileForensic[] | null>(null);
+  const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     let live = true;
     getFileStats(prId)
@@ -529,9 +534,15 @@ export function PRFilesForensics({ prId }: { prId: number }) {
     };
   }, [prId]);
 
+  const total = files?.length ?? 0;
+  const shown = files && !expanded ? files.slice(0, FILES_COLLAPSED) : files;
+  const hidden = total - (shown?.length ?? 0);
+
   return (
     <div className="pr-files">
-      <h3 className="pr-files-h">Files changed</h3>
+      <h3 className="pr-files-h">
+        Files changed{files ? ` (${total})` : ""}
+      </h3>
       {files === null ? (
         <div className="pr-files-list">
           {[0, 1, 2].map((i) => (
@@ -546,16 +557,27 @@ export function PRFilesForensics({ prId }: { prId: number }) {
       ) : files.length === 0 ? (
         <p className="tab-note">No file forensics for this PR.</p>
       ) : (
-        <div className="pr-files-list">
-          {files.map((f) => (
-            <div className="pr-file-row" key={f.filePath}>
-              <span className="pr-file-name" title={f.filePath}>
-                {f.filePath}
-              </span>
-              <FileForensicsChips stat={f} />
-            </div>
-          ))}
-        </div>
+        <>
+          <div className="pr-files-list">
+            {shown!.map((f) => (
+              <div className="pr-file-row" key={f.filePath}>
+                <span className="pr-file-name" title={f.filePath}>
+                  {f.filePath}
+                </span>
+                <FileForensicsChips stat={f} />
+              </div>
+            ))}
+          </div>
+          {total > FILES_COLLAPSED && (
+            <button
+              type="button"
+              className="pr-files-more"
+              onClick={() => setExpanded((v) => !v)}
+            >
+              {expanded ? "Show less" : `View ${hidden} more file${hidden === 1 ? "" : "s"}`}
+            </button>
+          )}
+        </>
       )}
     </div>
   );

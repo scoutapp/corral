@@ -1412,6 +1412,11 @@ table.projects th, table.projects td {
   font-family: ui-monospace, monospace; font-size: 0.82rem;
   color: var(--con-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.pr-files-more {
+  margin-top: 0.6rem; background: none; border: none; cursor: pointer;
+  color: var(--con-working); font-size: 0.8rem; padding: 0.2rem 0;
+}
+.pr-files-more:hover { text-decoration: underline; }
 /* Skeleton shimmer */
 .sk {
   display: inline-block; height: 0.9rem; border-radius: 4px;
