@@ -302,6 +302,18 @@ export interface PrItem {
   fetchedAt?: string;
 }
 
+// GET /repos/<id>/analysis-status -> AnalysisStatus
+export interface AnalysisStatus {
+  analyzed: boolean;
+  analyzedAt?: string;
+  analyzedSha?: string;
+  currentSha?: string;
+  upToDate: boolean;
+  newCommits?: { sha: string; subject: string }[];
+  cgNodes: number;
+  cgEdges: number;
+}
+
 // GET /prs/<prId>/file-stats -> { files: FileForensic[] }
 export interface FileForensic {
   filePath: string;

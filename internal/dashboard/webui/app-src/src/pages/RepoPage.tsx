@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useRouter } from "../router";
 import { getJSON, postJSON, wsURL } from "../api/client";
 import type {
+  AnalysisStatus,
   CachedRepo,
   FileForensic,
   LinkSuggestion,
@@ -365,6 +366,12 @@ function getFileStats(prId: number): Promise<FileForensic[]> {
   return p;
 }
 
+// clearFileStatsCache drops a PR's cached file-stats so the next fetch re-reads
+// (e.g. after a repo Re-analyze refreshes the underlying forensics).
+export function clearFileStatsCache(prId: number) {
+  fileStatsCache.delete(prId);
+}
+
 // FileForensicsChips renders the git/callgraph stat chips for one file. Files
 // with no commit history (repo not analyzed, or a brand-new file) show a muted
 // "not analyzed" chip instead of misleading zeros.
@@ -411,6 +418,86 @@ function FileForensicsChips({ stat }: { stat: FileForensic }) {
           🕐 edited {stat.daysSinceEdit}d ago{stale ? " (stale)" : ""}
         </span>
       )}
+    </div>
+  );
+}
+
+// AnalysisStatusBanner surfaces repo-analysis freshness: an "Analyze repo"
+// prompt when never analyzed, or a "N new commits since analysis" notice (with
+// the commit list) + Re-analyze when the mirror has moved on. Nothing when
+// up to date. Re-analyze runs the repo forensics + callgraph (POST
+// /repos/<id>/analyze) and calls onAnalyzed so callers can refresh. Reused by
+// the Forensics tab and the PR page.
+export function AnalysisStatusBanner({
+  repoId,
+  onAnalyzed,
+}: {
+  repoId: string;
+  onAnalyzed?: () => void;
+}) {
+  const [st, setSt] = useState<AnalysisStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    getJSON<AnalysisStatus>(`/repos/${encodeURIComponent(repoId)}/analysis-status`)
+      .then(setSt)
+      .catch(() => {});
+  }, [repoId]);
+  useEffect(() => load(), [load]);
+
+  const analyze = () => {
+    setBusy(true);
+    setErr(null);
+    postJSON(`/repos/${encodeURIComponent(repoId)}/analyze`)
+      .then(() => {
+        load();
+        onAnalyzed?.();
+      })
+      .catch((e) => setErr((e as Error).message))
+      .finally(() => setBusy(false));
+  };
+
+  if (!st) return null;
+  if (st.analyzed && st.upToDate) return null; // nothing to nag about
+
+  if (!st.analyzed) {
+    return (
+      <div className="analysis-banner">
+        <span>
+          This repo hasn't been analyzed. Run forensics + the callgraph to power
+          hotness ranking and file stats.
+        </span>
+        <button type="button" className="btn primary" disabled={busy} onClick={analyze}>
+          {busy ? "Analyzing…" : "Analyze repo"}
+        </button>
+        {err && <span className="tab-note err">{err}</span>}
+      </div>
+    );
+  }
+
+  const n = st.newCommits?.length || 0;
+  return (
+    <div className="analysis-banner warn">
+      <div className="analysis-banner-head">
+        <span>
+          ⚠ {n > 0 ? `${n}${n >= 25 ? "+" : ""} new commit${n === 1 ? "" : "s"}` : "New commits"}{" "}
+          since analysis (at {st.analyzedSha}). Ranking &amp; file stats may be out of date.
+        </span>
+        <button type="button" className="btn" disabled={busy} onClick={analyze}>
+          {busy ? "Analyzing…" : "Re-analyze"}
+        </button>
+      </div>
+      {st.newCommits && st.newCommits.length > 0 && (
+        <ul className="analysis-commits">
+          {st.newCommits.map((c) => (
+            <li key={c.sha}>
+              <span className="ac-sha">{c.sha}</span> {c.subject}
+            </li>
+          ))}
+        </ul>
+      )}
+      {err && <span className="tab-note err">{err}</span>}
     </div>
   );
 }
@@ -693,6 +780,7 @@ function ForensicsTab({ repoId }: { repoId: string }) {
   }
   return (
     <>
+      <AnalysisStatusBanner repoId={repoId} onAnalyzed={load} />
       <div className="tab-actions">{analyzeBtn}</div>
       <table className="forensics-table">
         <thead>

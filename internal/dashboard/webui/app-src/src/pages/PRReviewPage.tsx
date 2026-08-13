@@ -3,7 +3,7 @@ import { Link } from "../router";
 import { getJSON, postJSON } from "../api/client";
 import type { CachedRepo, PrItem } from "../api/types";
 import { useBodyClass } from "../hooks/useBodyClass";
-import { BlockCarousel, PRFilesForensics } from "./RepoPage";
+import { AnalysisStatusBanner, BlockCarousel, PRFilesForensics, clearFileStatsCache } from "./RepoPage";
 
 // PRReviewPage is the dedicated full-page PR review at /repos/<id>/prs/<number>
 // (the reference's PRView, not an inline popout). Navigating here Views the PR
@@ -16,6 +16,7 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
   const [repo, setRepo] = useState<CachedRepo | null>(null);
   const [pr, setPr] = useState<PrItem | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [nonce, setNonce] = useState(0); // bumped after re-analyze to remount panels
 
   useEffect(() => {
     getJSON<{ repos: CachedRepo[] }>("/repos")
@@ -70,8 +71,15 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
           <p className="tab-note">Loading PR #{number}…</p>
         ) : (
           <>
-            <PRFilesForensics prId={pr.id} />
-            <BlockCarousel prId={pr.id} />
+            <AnalysisStatusBanner
+              repoId={repoId}
+              onAnalyzed={() => {
+                clearFileStatsCache(pr.id);
+                setNonce((n) => n + 1);
+              }}
+            />
+            <PRFilesForensics key={`ff-${nonce}`} prId={pr.id} />
+            <BlockCarousel key={`bc-${nonce}`} prId={pr.id} />
           </>
         )}
       </div>

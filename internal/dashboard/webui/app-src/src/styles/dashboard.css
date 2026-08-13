@@ -1377,6 +1377,26 @@ table.projects th, table.projects td {
 .ff-chip.warn { color: var(--con-waiting); border-color: var(--con-waiting); }
 .ff-chip.cool { color: var(--con-muted); opacity: 0.85; }
 
+/* Repo-analysis freshness banner (never-analyzed / new-commits-since). */
+.analysis-banner {
+  display: flex; flex-direction: column; gap: 0.5rem;
+  border: 1px solid var(--con-line); border-radius: 6px;
+  padding: 0.6rem 0.8rem; margin-bottom: 0.9rem;
+  font-size: 0.85rem; color: var(--con-muted);
+}
+.analysis-banner.warn { border-color: var(--con-waiting); }
+.analysis-banner .btn { align-self: flex-start; }
+.analysis-banner-head {
+  display: flex; align-items: center; gap: 0.8rem; justify-content: space-between;
+}
+.analysis-banner-head .btn { align-self: auto; white-space: nowrap; }
+.analysis-commits {
+  list-style: none; margin: 0; padding: 0.3rem 0 0;
+  font-size: 0.8rem; max-height: 9rem; overflow-y: auto;
+}
+.analysis-commits li { padding: 0.12rem 0; }
+.ac-sha { font-family: ui-monospace, monospace; color: var(--con-working); margin-right: 0.4rem; }
+
 /* PR page top panel: files changed + forensics, with skeleton loaders. */
 .pr-files {
   border: 1px solid var(--con-line); border-radius: 6px;

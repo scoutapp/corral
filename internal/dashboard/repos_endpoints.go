@@ -93,6 +93,8 @@ func (d *dashboardServer) handleRepoItem(w http.ResponseWriter, r *http.Request,
 		d.handleRepoForensics(w, r, id)
 	case action == "analyze" && r.Method == http.MethodPost:
 		d.handleRepoAnalyze(w, r, id)
+	case action == "analysis-status" && r.Method == http.MethodGet:
+		d.handleRepoAnalysisStatus(w, r, id)
 	case action == "prs" && r.Method == http.MethodGet:
 		d.handleRepoPRs(w, r, id)
 	case action == "prs/open" && r.Method == http.MethodGet:
@@ -168,6 +170,27 @@ func (d *dashboardServer) handleRepoAnalyze(w http.ResponseWriter, r *http.Reque
 		"cgEdges":     res.Edges,
 		"callgraphOk": res.CallgraphOK,
 	})
+}
+
+// handleRepoAnalysisStatus: GET /repos/<id>/analysis-status — whether the repo's
+// stored analysis is current vs the mirror HEAD, and the new commits if not.
+func (d *dashboardServer) handleRepoAnalysisStatus(w http.ResponseWriter, r *http.Request, id string) {
+	repo, err := repos.Get(id)
+	if err != nil {
+		http.Error(w, "unknown repo", http.StatusNotFound)
+		return
+	}
+	s, err := d.getStore()
+	if err != nil {
+		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	st, err := prreview.New(s).AnalysisStatusFor(id, repo.CachePath, repo.DefaultBranch)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeFilesJSON(w, st)
 }
 
 // repoProject is a Corral project whose workspace git remote matches this repo.
