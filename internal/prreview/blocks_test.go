@@ -2,6 +2,7 @@ package prreview
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -275,9 +276,9 @@ func TestRerankPreservesAI(t *testing.T) {
 	svc, _ := newService(t)
 	prID := seedPR(t, svc, "r1", sampleDiff)
 
-	// 1) Extract WITH AI while repo is unanalyzed → AI text set, hotness = fallback.
+	// 1) Extract WITH AI → AI text set, hotness = the AI risk_score (72).
 	ai := fakeAI{
-		blockJSON: `{"title":"Idempotency key","explanation":"adds a key param","codebase_context":"charge path","edge_cases":[{"description":"empty key","severity":"high"}],"importance":2}`,
+		blockJSON: `{"title":"Idempotency key","explanation":"adds a key param","codebase_context":"charge path","edge_cases":[{"description":"empty key","severity":"high"}],"importance":2,"risk_score":72}`,
 		summary:   "Prevent dup charges",
 	}
 	blocks, err := svc.ExtractBlocks(context.Background(), prID, ai)
@@ -327,9 +328,13 @@ func TestRerankPreservesAI(t *testing.T) {
 	if charge.CodebaseContext != "charge path" {
 		t.Errorf("codebase context lost: %q", charge.CodebaseContext)
 	}
-	// Hotness refreshed (now uses churn 8 × (6-2) × (1+2 indeg) = 96, up from fallback):
-	if charge.HotnessScore == nil || *charge.HotnessScore <= chargeHot0 {
-		t.Errorf("hotness not refreshed: was %v now %v", chargeHot0, charge.HotnessScore)
+	// AI risk score preserved as hotness (72), NOT recomputed mechanically —
+	// rerank keeps the AI's informed ranking without re-running Claude.
+	if chargeHot0 != 72 {
+		t.Fatalf("initial AI hotness = %v, want 72 (risk_score)", chargeHot0)
+	}
+	if charge.HotnessScore == nil || *charge.HotnessScore != 72 {
+		t.Errorf("AI risk-score hotness not preserved on rerank: was 72 now %v", charge.HotnessScore)
 	}
 	// Edge cases preserved:
 	var ec int
@@ -347,5 +352,68 @@ func TestRerankPreservesAI(t *testing.T) {
 	st, _ = svc.BlocksStatusFor(prID)
 	if st.Stale {
 		t.Error("still stale after rerank")
+	}
+}
+
+// riskByFileAI returns a per-file risk_score, so a test can model "churny file
+// but well-guarded code = low risk" vs "calm file but dangerous change = high".
+type riskByFileAI struct {
+	riskByPath map[string]int
+	summary    string
+}
+
+func (f riskByFileAI) Run(_ context.Context, prompt string) (string, error) {
+	if strings.Contains(prompt, "Summarize this pull request") {
+		return f.summary, nil
+	}
+	// The prompt embeds "File: <path>"; pick the matching risk.
+	for path, risk := range f.riskByPath {
+		if strings.Contains(prompt, "File: "+path) {
+			return fmt.Sprintf(`{"title":"t","explanation":"e","importance":3,"risk_score":%d}`, risk), nil
+		}
+	}
+	return `{"title":"t","explanation":"e","importance":3,"risk_score":10}`, nil
+}
+
+// TestAIRiskDrivesRanking is the #5617 scenario: charge.ts has HIGH churn/fixes
+// (mechanically it'd rank hottest), but its change is well-guarded → AI gives it
+// a LOW risk_score; a calm file's dangerous change gets a HIGH risk_score. With
+// AI, the risk score wins, so the calm-but-dangerous block ranks first.
+func TestAIRiskDrivesRanking(t *testing.T) {
+	svc, _ := newService(t)
+	// charge.ts: heavily churned/fixed (mechanical hotness would be huge).
+	svc.db.Exec(`INSERT INTO pr_file_stats (repo_id, file_path, total_commits, fix_commits, churn_score, author_count)
+	             VALUES ('r1','src/charge.ts',300,89,9.0,24)`)
+	// calm.ts: barely touched.
+	svc.db.Exec(`INSERT INTO pr_file_stats (repo_id, file_path, total_commits, fix_commits, churn_score, author_count)
+	             VALUES ('r1','src/calm.ts',3,0,0.1,1)`)
+
+	diff := "+++ b/src/charge.ts\n@@ -47,2 +47,3 @@\n+  const key = k // guarded, additive\n" +
+		"+++ b/src/calm.ts\n@@ -1,2 +1,3 @@\n+  deleteAllUserData() // dangerous\n"
+	prID := seedPRWithDiff(t, svc, "r1", 9, diff)
+
+	ai := riskByFileAI{
+		riskByPath: map[string]int{
+			"src/charge.ts": 15, // churny file, but well-guarded change → low risk
+			"src/calm.ts":   90, // calm file, but dangerous change → high risk
+		},
+		summary: "s",
+	}
+	blocks, err := svc.ExtractBlocks(context.Background(), prID, ai)
+	if err != nil {
+		t.Fatalf("ExtractBlocks: %v", err)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("want 2 blocks, got %d", len(blocks))
+	}
+	// The dangerous calm.ts block ranks FIRST despite charge.ts's churn.
+	if blocks[0].FilePath != "src/calm.ts" {
+		t.Errorf("hottest block = %s, want src/calm.ts (AI risk beats raw churn)", blocks[0].FilePath)
+	}
+	if blocks[0].HotnessScore == nil || *blocks[0].HotnessScore != 90 {
+		t.Errorf("calm.ts hotness = %v, want 90 (its risk_score)", blocks[0].HotnessScore)
+	}
+	if blocks[1].HotnessScore == nil || *blocks[1].HotnessScore != 15 {
+		t.Errorf("charge.ts hotness = %v, want 15 (its risk_score, not its churn)", blocks[1].HotnessScore)
 	}
 }

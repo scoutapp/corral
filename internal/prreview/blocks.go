@@ -162,24 +162,14 @@ func (s *Service) ExtractBlocks(ctx context.Context, prID int64, ai aiRunner) ([
 		return []Block{}, nil
 	}
 
-	// File churn baseline for hotness (default 1.0 when unanalyzed).
-	churn := map[string]float64{}
-	if rows, err := s.db.Query(
-		`SELECT file_path, COALESCE(churn_score, 1.0) FROM pr_file_stats WHERE repo_id = ?`, repoID,
-	); err == nil {
-		for rows.Next() {
-			var p string
-			var c float64
-			if rows.Scan(&p, &c) == nil {
-				churn[p] = c
-			}
-		}
-		rows.Close()
-	}
-
 	// Callgraph in-degree per file (max in-degree of any node in the file), when
 	// a callgraph has been built. Empty map ⇒ hotness stays churn-only.
 	indeg, _ := s.InDegrees(repoID)
+
+	// Full per-file heuristics (churn, fix/total commits, authors, staleness) +
+	// in-degree — passed into the AI prompt AND used for the mechanical fallback
+	// ranking. Files with no row default to churn 1.0.
+	heur := s.fileHeuristics(repoID, indeg)
 
 	groups := groupHunks(parseDiffHunks(rawDiff))
 
@@ -200,7 +190,11 @@ func (s *Service) ExtractBlocks(ctx context.Context, prID int64, ai aiRunner) ([
 		}
 		diff := strings.Join(combined, "\n")
 
-		a := analyzeBlock(ctx, ai, diff, filePath, title)
+		fh := heur[filePath]
+		if fh.Churn == 0 {
+			fh.Churn = 1.0
+		}
+		a := analyzeBlock(ctx, ai, diff, filePath, title, fh)
 		importance := a.Importance
 		switch {
 		case isCommentOnlyDiff(diff):
@@ -212,15 +206,17 @@ func (s *Service) ExtractBlocks(ctx context.Context, prID int64, ai aiRunner) ([
 		case importance == 5:
 			importance = 3 // Claude called real code trivial → moderate
 		}
-		c := churn[filePath]
-		if c == 0 {
-			c = 1.0
+		// Hotness: when AI analysis is present, use its INFORMED risk score (0-100)
+		// as the primary ranking signal — it weighs the heuristics against the
+		// actual code (a well-guarded change in a churny file scores low). Without
+		// AI (the View step), fall back to the mechanical heuristic formula:
+		// churn × (6-importance) × (1+in_degree).
+		var hotness float64
+		if ai != nil && a.RiskScore > 0 {
+			hotness = float64(a.RiskScore)
+		} else {
+			hotness = fh.Churn * float64(6-importance) * float64(1+fh.InDegree)
 		}
-		// Hotness blends churn, AI importance, and callgraph in-degree: a change
-		// in a heavily-called, high-churn, important file is hottest. The
-		// (1 + in_degree) factor is 1 when no callgraph exists, so this degrades
-		// cleanly to the churn-only formula from Phase 2.
-		hotness := c * float64(6-importance) * float64(1+indeg[filePath])
 
 		items = append(items, builtBlock{
 			b: Block{

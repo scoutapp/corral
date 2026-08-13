@@ -397,11 +397,12 @@ export function BlockCarousel({ prId }: { prId: number }) {
       )}
       <div className="enrich-bar">
         {enriched ? (
-          <span className="enrich-note">✓ AI analysis added</span>
+          <span className="enrich-note">✓ AI analysis added — blocks re-ranked by AI risk</span>
         ) : (
           <span className="enrich-note">
-            Blocks ranked by hotness (churn × callgraph). Add Claude's per-block
-            explanations, edge cases, and a summary:
+            Blocks ranked by heuristics (churn × callgraph). Add AI analysis to
+            re-rank by an informed risk score (weighs the heuristics against how
+            well-guarded the actual change is):
           </span>
         )}
         <button type="button" className="btn" disabled={enriching} onClick={enrich}>
@@ -437,9 +438,16 @@ export function BlockCarousel({ prId }: { prId: number }) {
           </span>
           {b.isTest && <span className="block-badge">test</span>}
           {b.diffHunk && <BlockDiffStat hunk={b.diffHunk} />}
-          {b.hotnessScore != null && (
-            <span className="block-hot">hotness {b.hotnessScore.toFixed(1)}</span>
-          )}
+          {b.hotnessScore != null &&
+            (enriched ? (
+              <span className="block-hot" title="AI risk score (0-100): likelihood this change causes an issue">
+                risk {Math.round(b.hotnessScore)}/100
+              </span>
+            ) : (
+              <span className="block-hot" title="heuristic hotness (churn × callgraph)">
+                hotness {b.hotnessScore.toFixed(1)}
+              </span>
+            ))}
         </div>
         {b.title && <h3 className="block-title">{b.title}</h3>}
         {b.diffHunk && (
