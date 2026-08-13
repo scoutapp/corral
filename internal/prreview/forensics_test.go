@@ -191,3 +191,55 @@ func TestFileForensics(t *testing.T) {
 		t.Errorf("velocityPerWeek = %v, want > 0", charge.VelocityPerWeek)
 	}
 }
+
+func TestFileForensicsNewVsUnanalyzed(t *testing.T) {
+	svc, _ := newService(t)
+	now := int64(1_700_000_000)
+
+	// Repo r-analyzed: has an analysis marker + one file with history. The PR
+	// touches that file AND a brand-new file.
+	svc.db.Exec(`INSERT INTO pr_repo_analysis (repo_id, head_sha) VALUES ('r-an','abc')`)
+	svc.db.Exec(`INSERT INTO pr_file_stats
+	  (repo_id, file_path, total_commits, fix_commits, churn_score, author_count, first_commit, last_commit)
+	  VALUES ('r-an','app/models/org.rb',306,30,0.5,24,?,?)`, now-4050*86400, now-9*86400)
+
+	diff := "+++ b/app/models/org.rb\n@@ -1 +1 @@\n+x\n" +
+		"+++ b/app/jobs/new_job.rb\n@@ -0,0 +1 @@\n+brand new\n"
+	prID := seedPRWithDiff(t, svc, "r-an", 5, diff)
+	svc.ExtractBlocks(context.Background(), prID, nil)
+
+	stats, err := svc.FileForensics(prID, now)
+	if err != nil {
+		t.Fatalf("FileForensics: %v", err)
+	}
+	by := map[string]FileForensic{}
+	for _, f := range stats {
+		by[f.FilePath] = f
+	}
+	org := by["app/models/org.rb"]
+	if !org.RepoAnalyzed || org.NewFile || org.TotalCommits != 306 {
+		t.Errorf("org.rb should be analyzed existing file: %+v", org)
+	}
+	nw := by["app/jobs/new_job.rb"]
+	if !nw.RepoAnalyzed {
+		t.Errorf("new file's repoAnalyzed should be true (repo IS analyzed)")
+	}
+	if !nw.NewFile {
+		t.Errorf("new_job.rb should be flagged NewFile (added by the PR), got %+v", nw)
+	}
+
+	// Repo r-none: never analyzed. A touched file is 'not analyzed', not 'new'.
+	diff2 := "+++ b/lib/thing.rb\n@@ -1 +1 @@\n+x\n"
+	prID2 := seedPRWithDiff(t, svc, "r-none", 6, diff2)
+	svc.ExtractBlocks(context.Background(), prID2, nil)
+	stats2, _ := svc.FileForensics(prID2, now)
+	if len(stats2) != 1 {
+		t.Fatalf("want 1 file, got %d", len(stats2))
+	}
+	if stats2[0].RepoAnalyzed {
+		t.Errorf("r-none repoAnalyzed should be false")
+	}
+	if stats2[0].NewFile {
+		t.Errorf("un-analyzed repo file should NOT be flagged NewFile")
+	}
+}

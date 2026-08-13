@@ -78,6 +78,10 @@ func (s *Service) FileForensics(prID int64, nowTS int64) ([]FileForensic, error)
 	// a caller of a node defined in this file.
 	refCounts, _ := s.refCounts(repoID)
 
+	// Has the repo been analyzed at all? Distinguishes a new file (analyzed repo,
+	// no row for this path ⇒ PR adds it) from "repo never analyzed".
+	repoAnalyzed := s.repoAnalyzed(repoID)
+
 	out := []FileForensic{}
 	for _, fp := range files {
 		var total, fix, authors int
@@ -90,13 +94,19 @@ func (s *Service) FileForensics(prID int64, nowTS int64) ([]FileForensic, error)
 			repoID, fp,
 		).Scan(&total, &fix, &authors, &churn, &first, &last)
 		if err != nil {
-			// Not analyzed / new file — show zeros rather than dropping it.
-			out = append(out, FileForensic{FilePath: fp, RefCount: refCounts[fp]})
+			// No stats row. If the repo is analyzed, this file has no history on
+			// the analyzed branch — i.e. the PR adds it (NewFile). Otherwise the
+			// repo simply hasn't been analyzed yet.
+			out = append(out, FileForensic{
+				FilePath: fp, RefCount: refCounts[fp],
+				NewFile: repoAnalyzed, RepoAnalyzed: repoAnalyzed,
+			})
 			continue
 		}
 		f := FileForensic{
 			FilePath: fp, TotalCommits: total, FixCommits: fix,
 			AuthorCount: authors, ChurnScore: churn, RefCount: refCounts[fp],
+			RepoAnalyzed: repoAnalyzed,
 		}
 		if total > 0 {
 			f.FixPct = int(float64(fix) / float64(total) * 100)
@@ -115,6 +125,22 @@ func (s *Service) FileForensics(prID int64, nowTS int64) ([]FileForensic, error)
 		out = append(out, f)
 	}
 	return out, nil
+}
+
+// repoAnalyzed reports whether the repo has a recorded analysis. Prefers the
+// pr_repo_analysis marker; falls back to "any pr_file_stats rows exist" so a
+// forensics run recorded before the marker migration still counts.
+func (s *Service) repoAnalyzed(repoID string) bool {
+	var n int
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM pr_repo_analysis WHERE repo_id = ?`, repoID,
+	).Scan(&n); err == nil && n > 0 {
+		return true
+	}
+	_ = s.db.QueryRow(
+		`SELECT COUNT(*) FROM pr_file_stats WHERE repo_id = ? LIMIT 1`, repoID,
+	).Scan(&n)
+	return n > 0
 }
 
 // refCounts maps file_path → number of distinct other files that call into it
