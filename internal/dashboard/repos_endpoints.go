@@ -418,12 +418,14 @@ func (d *dashboardServer) handlePRBlocks(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	blocks, err := prreview.New(s).Blocks(prID)
+	svc := prreview.New(s)
+	blocks, err := svc.Blocks(prID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeFilesJSON(w, map[string]any{"blocks": blocks})
+	status, _ := svc.BlocksStatusFor(prID) // best-effort freshness signal
+	writeFilesJSON(w, map[string]any{"blocks": blocks, "status": status})
 }
 
 // handlePRFileStats: GET /prs/<id>/file-stats — rich per-file forensics for the

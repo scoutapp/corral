@@ -228,3 +228,42 @@ func TestFileForensicsHottestFirst(t *testing.T) {
 		t.Errorf("first file = %s, want src/hot.ts (hottest first)", stats[0].FilePath)
 	}
 }
+
+// TestBlocksStaleness verifies block-ranking freshness detection: unranked when
+// the repo isn't analyzed, current right after extraction, stale once the repo
+// is (re)analyzed to a new sha, current again after re-extraction.
+func TestBlocksStaleness(t *testing.T) {
+	svc, _ := newService(t)
+	prID := seedPR(t, svc, "r1", sampleDiff)
+
+	// No analysis yet → extract → not analyzed, not stale.
+	svc.ExtractBlocks(context.Background(), prID, nil)
+	st, err := svc.BlocksStatusFor(prID)
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if st.RepoAnalyzed || st.Stale {
+		t.Fatalf("pre-analysis: want repoAnalyzed=false stale=false, got %+v", st)
+	}
+
+	// Repo analyzed at sha AAA; existing blocks were ranked against "" → stale.
+	svc.db.Exec(`INSERT INTO pr_repo_analysis (repo_id, head_sha) VALUES ('r1','AAA')`)
+	st, _ = svc.BlocksStatusFor(prID)
+	if !st.RepoAnalyzed || !st.Stale {
+		t.Fatalf("after analyze, pre-rerank: want analyzed=true stale=true, got %+v", st)
+	}
+
+	// Re-extract now that the repo is analyzed → current.
+	svc.ExtractBlocks(context.Background(), prID, nil)
+	st, _ = svc.BlocksStatusFor(prID)
+	if !st.RepoAnalyzed || st.Stale {
+		t.Fatalf("after rerank: want analyzed=true stale=false, got %+v", st)
+	}
+
+	// Repo re-analyzed to a NEW sha → stale again.
+	svc.db.Exec(`UPDATE pr_repo_analysis SET head_sha='BBB' WHERE repo_id='r1'`)
+	st, _ = svc.BlocksStatusFor(prID)
+	if !st.Stale {
+		t.Fatalf("after re-analyze to new sha: want stale=true, got %+v", st)
+	}
+}
