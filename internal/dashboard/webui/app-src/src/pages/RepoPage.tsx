@@ -79,6 +79,8 @@ export function RepoPage({ id }: { id: string }) {
 function PRsTab({ repoId }: { repoId: string }) {
   const [prs, setPrs] = useState<PrItem[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [num, setNum] = useState("");
+  const [fetching, setFetching] = useState(false);
 
   const load = useCallback(() => {
     getJSON<{ prs: PrItem[] }>(`/repos/${encodeURIComponent(repoId)}/prs`)
@@ -87,26 +89,64 @@ function PRsTab({ repoId }: { repoId: string }) {
   }, [repoId]);
   useEffect(() => load(), [load]);
 
-  if (err) return <p className="tab-note err">Failed to load PRs: {err}</p>;
-  if (prs === null) return <p className="tab-note">Loading…</p>;
-  if (prs.length === 0) {
-    return (
-      <p className="tab-note">
-        No pull requests fetched yet. Fetching a PR will pull its diff, split it
-        into hotness-ranked blocks, and summarize it — the block-carousel review
-        lands here.
-      </p>
-    );
-  }
+  const fetchPR = useCallback(() => {
+    const n = parseInt(num, 10);
+    if (!Number.isFinite(n) || n <= 0) {
+      setErr("enter a positive PR number");
+      return;
+    }
+    setFetching(true);
+    setErr(null);
+    postJSON<{ pr: PrItem }>(`/repos/${encodeURIComponent(repoId)}/prs/fetch`, { number: n })
+      .then(() => {
+        setNum("");
+        load();
+      })
+      .catch((e) => setErr((e as Error).message))
+      .finally(() => setFetching(false));
+  }, [num, repoId, load]);
+
+  const fetchBar = (
+    <div className="tab-actions">
+      <input
+        className="pr-num-input"
+        type="number"
+        min="1"
+        placeholder="PR #"
+        value={num}
+        disabled={fetching}
+        onChange={(e) => setNum(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && fetchPR()}
+      />
+      <button type="button" className="btn primary" disabled={fetching} onClick={fetchPR}>
+        {fetching ? "Fetching…" : "Fetch PR"}
+      </button>
+    </div>
+  );
+
   return (
-    <ul className="pr-list">
-      {prs.map((p) => (
-        <li key={p.id}>
-          <span className="pr-num">#{p.number}</span> {p.title || p.shortSummary || "(untitled)"}
-          {p.state && <span className="pr-state">{p.state}</span>}
-        </li>
-      ))}
-    </ul>
+    <>
+      {fetchBar}
+      {err && <p className="tab-note err">Failed: {err}</p>}
+      {prs === null ? (
+        <p className="tab-note">Loading…</p>
+      ) : prs.length === 0 ? (
+        <p className="tab-note">
+          No pull requests fetched yet. Enter a PR number above to pull its diff.
+          Hotness-ranked blocks and an AI summary land in a later phase.
+        </p>
+      ) : (
+        <ul className="pr-list">
+          {prs.map((p) => (
+            <li key={p.id}>
+              <span className="pr-num">#{p.number}</span>{" "}
+              {p.title || p.shortSummary || "(untitled)"}
+              {p.state && <span className="pr-state">{p.state}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 

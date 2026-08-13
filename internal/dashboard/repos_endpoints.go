@@ -90,6 +90,8 @@ func (d *dashboardServer) handleRepoItem(w http.ResponseWriter, r *http.Request,
 		d.handleRepoAnalyze(w, r, id)
 	case action == "prs" && r.Method == http.MethodGet:
 		d.handleRepoPRs(w, r, id)
+	case action == "prs/fetch" && r.Method == http.MethodPost:
+		d.handleRepoPRFetch(w, r, id)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -149,6 +151,39 @@ func (d *dashboardServer) handleRepoAnalyze(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeFilesJSON(w, map[string]any{"files": stats})
+}
+
+// handleRepoPRFetch: POST /repos/<id>/prs/fetch { "number": N } — fetch a PR's
+// metadata + diff via `gh` and store it. Synchronous (UI shows a spinner).
+func (d *dashboardServer) handleRepoPRFetch(w http.ResponseWriter, r *http.Request, id string) {
+	repo, err := repos.Get(id)
+	if err != nil {
+		http.Error(w, "unknown repo", http.StatusNotFound)
+		return
+	}
+	ownerName := prreview.OwnerName(repo.URL)
+	if ownerName == "" {
+		http.Error(w, "repo is not a GitHub remote (need owner/name to fetch PRs)", http.StatusBadRequest)
+		return
+	}
+	var body struct {
+		Number int `json:"number"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Number <= 0 {
+		http.Error(w, "a positive PR number is required", http.StatusBadRequest)
+		return
+	}
+	s, err := d.getStore()
+	if err != nil {
+		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	pr, err := prreview.New(s).FetchPR(id, ownerName, body.Number)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeFilesJSON(w, map[string]any{"pr": pr})
 }
 
 // handleRepoPRs: GET /repos/<id>/prs — fetched pull requests for the repo.
