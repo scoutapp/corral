@@ -1355,7 +1355,30 @@ table.projects th, table.projects td {
 .pr-manual-h { margin-right: 0.2rem; }
 
 /* Dedicated PR review page (/repos/<id>/prs/<number>) */
-.pr-review-page { padding: 1.1rem 1.6rem; max-width: 60rem; }
+.pr-review-page { padding: 1.1rem 1.6rem; max-width: 72rem; }
+/* Two-column top: Risk (left) + Files changed (right). Stacks Risk-first when
+   the viewport is narrow. Each column's card already has its own margin. */
+.pr-top { display: flex; gap: 1rem; align-items: flex-start; flex-wrap: wrap; }
+.pr-top-left { flex: 1 1 22rem; min-width: 0; }
+.pr-top-right { flex: 1 1 24rem; min-width: 0; }
+.pr-top-left > .risk-card, .pr-top-right > .pr-files { margin-bottom: 0; }
+
+/* "Re-rank blocks" / not-analyzed notice inside the carousel. */
+.rerank-bar {
+  display: flex; align-items: center; gap: 0.8rem; justify-content: space-between;
+  flex-wrap: wrap; margin-bottom: 0.7rem; padding: 0.5rem 0.8rem;
+  border: 1px solid var(--con-waiting); border-radius: 6px;
+  font-size: 0.82rem; color: var(--con-muted);
+}
+.rerank-bar .btn { white-space: nowrap; }
+
+/* Repo header status chip (not analyzed / out of date). */
+.repo-chip {
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 0.1rem 0.45rem; border-radius: 999px; border: 1px solid var(--con-line);
+  color: var(--con-muted);
+}
+.repo-chip.warn { color: var(--con-waiting); border-color: var(--con-waiting); }
 
 /* Block carousel (a PR's hotness-ranked blocks) */
 .block-carousel { padding: 0.4rem 0 1rem; }
