@@ -1477,6 +1477,38 @@ table.projects th, table.projects td {
 /* Dedicated PR review page (/repos/<id>/prs/<number>) */
 .pr-review-page { padding: 1.1rem 1.6rem; max-width: 72rem; }
 
+/* PR description (markdown body from GitHub) */
+.pr-desc {
+  border: 1px solid var(--con-line); border-radius: 6px;
+  background: var(--con-panel); padding: 0.7rem 0.9rem; margin-bottom: 0.9rem;
+}
+.pr-desc-head {
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--con-muted); margin-bottom: 0.4rem;
+}
+.pr-desc-body { font-size: 0.87rem; line-height: 1.55; color: var(--con-text); }
+.pr-desc-body p { margin: 0 0 0.6rem; }
+.pr-desc-body > :first-child { margin-top: 0; }
+.pr-desc-body > :last-child { margin-bottom: 0; }
+.pr-desc-body code:not(pre code) {
+  font-family: ui-monospace, monospace; font-size: 0.85em;
+  background: var(--con-ground); padding: 1px 5px; border-radius: 4px;
+}
+.pr-desc-body pre {
+  background: #0b0e14; border: 1px solid var(--con-line); border-radius: 4px;
+  padding: 0.5rem 0.7rem; overflow-x: auto; font-size: 0.8rem;
+}
+.pr-desc.clamped .pr-desc-body {
+  max-height: 11rem; overflow: hidden;
+  -webkit-mask-image: linear-gradient(180deg, #000 70%, transparent);
+  mask-image: linear-gradient(180deg, #000 70%, transparent);
+}
+.pr-desc-more {
+  margin-top: 0.4rem; background: none; border: none; cursor: pointer;
+  color: var(--con-working); font-size: 0.8rem; padding: 0.2rem 0;
+}
+.pr-desc-more:hover { text-decoration: underline; }
+
 /* PR write-action bar (approve / comment / request changes / merge). */
 .pr-actions { margin-bottom: 0.9rem; }
 .pr-actions-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }

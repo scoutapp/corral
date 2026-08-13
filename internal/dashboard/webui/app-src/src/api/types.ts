@@ -307,6 +307,7 @@ export interface PrItem {
   repoId: string;
   number: number;
   title?: string;
+  body?: string; // PR description (markdown)
   shortSummary?: string;
   githubUrl?: string;
   state?: string;

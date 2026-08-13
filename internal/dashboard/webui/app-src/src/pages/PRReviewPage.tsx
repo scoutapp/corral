@@ -5,6 +5,7 @@ import type { CachedRepo, PrItem } from "../api/types";
 import { useBodyClass } from "../hooks/useBodyClass";
 import { ChatPanel } from "../components/ChatPanel";
 import { NewProjectModal } from "./ReposModals";
+import { renderMarkdown } from "../lib/markdown";
 import {
   AnalysisStatusBanner,
   BlockCarousel,
@@ -194,6 +195,29 @@ function VerifyLaunch({
   );
 }
 
+// PRDescription renders the PR's markdown body, collapsed by default when long
+// (GitHub descriptions can be huge — templates, checklists) with a show-more.
+function PRDescription({ body }: { body?: string }) {
+  const [open, setOpen] = useState(false);
+  const text = (body || "").trim();
+  if (!text) return null;
+  const long = text.length > 600;
+  return (
+    <div className={`pr-desc${long && !open ? " clamped" : ""}`}>
+      <div className="pr-desc-head">Description</div>
+      <div
+        className="pr-desc-body markdown"
+        dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }}
+      />
+      {long && (
+        <button type="button" className="pr-desc-more" onClick={() => setOpen((v) => !v)}>
+          {open ? "Show less" : "Show more"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function PRReviewPage({ repoId, number }: { repoId: string; number: number }) {
   useBodyClass("console");
   const [repo, setRepo] = useState<CachedRepo | null>(null);
@@ -285,6 +309,7 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
                 setNonce((n) => n + 1);
               }}
             />
+            <PRDescription body={pr.body} />
             {/* Top: Risk (left) + Files changed (right); stacks Risk-first when
                 too narrow. Then the block carousel full-width below. */}
             <div className="pr-top">
