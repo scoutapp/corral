@@ -18,6 +18,110 @@ import {
 // renders the full-width block carousel with its risk card, file forensics,
 // chat, and linked-PRs panels. AI enrichment is an explicit action in the
 // carousel.
+// PRActions is the write-action bar at the top of the PR page: approve,
+// comment, request changes, merge — thin `gh` wrappers. Each opens an inline
+// panel (body / merge-method) and confirms before submitting, since all of
+// these write to GitHub.
+type ActionKind = "approve" | "comment" | "request-changes" | "merge" | null;
+function PRActions({ prId }: { prId: number }) {
+  const [open, setOpen] = useState<ActionKind>(null);
+  const [body, setBody] = useState("");
+  const [method, setMethod] = useState("squash");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
+
+  const submit = (kind: Exclude<ActionKind, null>) => {
+    setBusy(true);
+    setMsg(null);
+    const payload =
+      kind === "merge" ? { method } : kind === "approve" ? { body } : { body };
+    postJSON(`/prs/${prId}/${kind}`, payload)
+      .then(() => {
+        setMsg({ text: labelFor(kind) + " ✓", err: false });
+        setOpen(null);
+        setBody("");
+      })
+      .catch((e) => setMsg({ text: (e as Error).message, err: true }))
+      .finally(() => setBusy(false));
+  };
+
+  const toggle = (kind: Exclude<ActionKind, null>) => {
+    setMsg(null);
+    setOpen((cur) => (cur === kind ? null : kind));
+  };
+
+  return (
+    <div className="pr-actions">
+      <div className="pr-actions-row">
+        <button type="button" className={`btn${open === "approve" ? " primary" : ""}`} onClick={() => toggle("approve")}>
+          ✓ Approve
+        </button>
+        <button type="button" className={`btn${open === "comment" ? " primary" : ""}`} onClick={() => toggle("comment")}>
+          💬 Comment
+        </button>
+        <button type="button" className={`btn${open === "request-changes" ? " primary" : ""}`} onClick={() => toggle("request-changes")}>
+          ✗ Request changes
+        </button>
+        <button type="button" className={`btn${open === "merge" ? " primary" : ""}`} onClick={() => toggle("merge")}>
+          ⑃ Merge
+        </button>
+        {msg && <span className={`pr-actions-msg${msg.err ? " err" : ""}`}>{msg.text}</span>}
+      </div>
+
+      {open === "merge" ? (
+        <div className="pr-action-panel">
+          <span>Merge method:</span>
+          <select value={method} onChange={(e) => setMethod(e.target.value)}>
+            <option value="squash">Squash and merge</option>
+            <option value="merge">Create a merge commit</option>
+            <option value="rebase">Rebase and merge</option>
+          </select>
+          <button type="button" className="btn primary" disabled={busy} onClick={() => submit("merge")}>
+            {busy ? "Merging…" : "Confirm merge"}
+          </button>
+          <span className="pr-action-warn">This merges the PR on GitHub.</span>
+        </div>
+      ) : open ? (
+        <div className="pr-action-panel col">
+          <textarea
+            className="pr-action-body"
+            placeholder={
+              open === "request-changes"
+                ? "Describe the changes you're requesting (required)…"
+                : open === "approve"
+                  ? "Optional approval note…"
+                  : "Comment…"
+            }
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+          />
+          <div className="pr-action-panel">
+            <button type="button" className="btn primary" disabled={busy} onClick={() => submit(open)}>
+              {busy ? "Submitting…" : `Confirm ${labelFor(open).toLowerCase()}`}
+            </button>
+            <button type="button" className="btn" onClick={() => setOpen(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function labelFor(kind: Exclude<ActionKind, null>): string {
+  switch (kind) {
+    case "approve":
+      return "Approved";
+    case "comment":
+      return "Commented";
+    case "request-changes":
+      return "Requested changes";
+    case "merge":
+      return "Merged";
+  }
+}
+
 export function PRReviewPage({ repoId, number }: { repoId: string; number: number }) {
   useBodyClass("console");
   const [repo, setRepo] = useState<CachedRepo | null>(null);
@@ -83,6 +187,7 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
       </header>
 
       <div className="pr-review-page">
+        {pr && <PRActions prId={pr.id} />}
         {err ? (
           <p className="tab-note err">Failed to load PR #{number}: {err}</p>
         ) : !pr ? (

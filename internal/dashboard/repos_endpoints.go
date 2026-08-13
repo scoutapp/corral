@@ -328,6 +328,16 @@ func (d *dashboardServer) handlePRItem(w http.ResponseWriter, r *http.Request, r
 		d.handlePREnrich(w, r, prID)
 	case action == "rerank" && r.Method == http.MethodPost:
 		d.handlePRRerank(w, r, prID)
+	case action == "approve" && r.Method == http.MethodPost:
+		d.handlePRAction(w, r, prID, "approve")
+	case action == "request-changes" && r.Method == http.MethodPost:
+		d.handlePRAction(w, r, prID, "request-changes")
+	case action == "comment" && r.Method == http.MethodPost:
+		d.handlePRAction(w, r, prID, "comment")
+	case action == "merge" && r.Method == http.MethodPost:
+		d.handlePRAction(w, r, prID, "merge")
+	case action == "line-comment" && r.Method == http.MethodPost:
+		d.handlePRLineComment(w, r, prID)
 	case action == "risk" && r.Method == http.MethodGet:
 		d.handlePRRiskGet(w, r, prID)
 	case action == "analyze" && r.Method == http.MethodPost:
@@ -428,6 +438,88 @@ func (d *dashboardServer) handlePRBlocks(w http.ResponseWriter, r *http.Request,
 	}
 	status, _ := svc.BlocksStatusFor(prID) // best-effort freshness signal
 	writeFilesJSON(w, map[string]any{"blocks": blocks, "status": status})
+}
+
+// ownerNameForPR resolves a stored PR's GitHub "owner/name" from its repo's
+// remote URL. Returns "" if the repo/URL isn't a GitHub remote.
+func (d *dashboardServer) ownerNameForPR(s *prreview.Service, prID int64) string {
+	repoID, err := s.RepoIDForPR(prID)
+	if err != nil {
+		return ""
+	}
+	repo, err := repos.Get(repoID)
+	if err != nil {
+		return ""
+	}
+	return prreview.OwnerName(repo.URL)
+}
+
+// handlePRAction runs a write action (approve / request-changes / comment /
+// merge) against GitHub via `gh`. Body is JSON: {body?, method?}.
+func (d *dashboardServer) handlePRAction(w http.ResponseWriter, r *http.Request, prID int64, action string) {
+	var body struct {
+		Body   string `json:"body"`
+		Method string `json:"method"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	s, err := d.getStore()
+	if err != nil {
+		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	svc := prreview.New(s)
+	ownerName := d.ownerNameForPR(svc, prID)
+	if ownerName == "" {
+		http.Error(w, "repo is not a GitHub remote", http.StatusBadRequest)
+		return
+	}
+
+	switch action {
+	case "approve":
+		err = svc.Approve(prID, ownerName, body.Body)
+	case "request-changes":
+		err = svc.RequestChanges(prID, ownerName, body.Body)
+	case "comment":
+		err = svc.Comment(prID, ownerName, body.Body)
+	case "merge":
+		err = svc.Merge(prID, ownerName, body.Method)
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeFilesJSON(w, map[string]any{"ok": true})
+}
+
+// handlePRLineComment posts a review comment on a diff line.
+func (d *dashboardServer) handlePRLineComment(w http.ResponseWriter, r *http.Request, prID int64) {
+	var body struct {
+		Body string `json:"body"`
+		Path string `json:"path"`
+		Line int    `json:"line"`
+		Side string `json:"side"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Path == "" || body.Line <= 0 {
+		http.Error(w, "path and line are required", http.StatusBadRequest)
+		return
+	}
+	s, err := d.getStore()
+	if err != nil {
+		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	svc := prreview.New(s)
+	ownerName := d.ownerNameForPR(svc, prID)
+	if ownerName == "" {
+		http.Error(w, "repo is not a GitHub remote", http.StatusBadRequest)
+		return
+	}
+	if err := svc.LineComment(prID, ownerName, body.Body, body.Path, body.Line, body.Side); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeFilesJSON(w, map[string]any{"ok": true})
 }
 
 // handlePRRerank: POST /prs/<id>/rerank — recompute block hotness against the

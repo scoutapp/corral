@@ -1356,6 +1356,28 @@ table.projects th, table.projects td {
 
 /* Dedicated PR review page (/repos/<id>/prs/<number>) */
 .pr-review-page { padding: 1.1rem 1.6rem; max-width: 72rem; }
+
+/* PR write-action bar (approve / comment / request changes / merge). */
+.pr-actions { margin-bottom: 0.9rem; }
+.pr-actions-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.pr-actions-msg { font-size: 0.8rem; color: var(--con-working); }
+.pr-actions-msg.err { color: var(--con-waiting); }
+.pr-action-panel {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  margin-top: 0.6rem;
+}
+.pr-action-panel.col { flex-direction: column; align-items: stretch; }
+.pr-action-body {
+  width: 100%; min-height: 4.5rem; resize: vertical;
+  padding: 0.5rem 0.6rem; border-radius: 4px;
+  background: var(--con-ground); color: var(--con-text);
+  border: 1px solid var(--con-line); font-family: inherit; font-size: 0.85rem;
+}
+.pr-action-panel select {
+  padding: 0.3rem 0.5rem; background: var(--con-ground); color: var(--con-text);
+  border: 1px solid var(--con-line); border-radius: 4px;
+}
+.pr-action-warn { font-size: 0.78rem; color: var(--con-waiting); }
 /* Two-column top: Risk (left) + Files changed (right). Stacks Risk-first when
    the viewport is narrow. Each column's card already has its own margin. */
 .pr-top { display: flex; gap: 1rem; align-items: flex-start; flex-wrap: wrap; }
