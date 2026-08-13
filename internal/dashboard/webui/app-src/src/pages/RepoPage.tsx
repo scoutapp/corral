@@ -340,8 +340,16 @@ function BlockDiff({ hunk, filePath }: { hunk: string; filePath: string }) {
     };
   }, [hunk, filePath]);
 
-  if (failed) return <pre className="block-diff">{hunk}</pre>;
-  return <div className="block-diff-cm" ref={hostRef} />;
+  if (failed) return <pre className="diff-pre">{hunk}</pre>;
+  // Reuse the projects-pane diff structure so the block diff inherits the same
+  // CodeMirror-merge styling (add/delete gutter colors, changed-line wash).
+  // .block-diff-host just bounds the height (the Diff tab's .diff-view fills a
+  // pane; here it sits inside a scrolling card).
+  return (
+    <div className="block-diff-host diff-view">
+      <div className="diff-body" ref={hostRef} />
+    </div>
+  );
 }
 
 // FileForensicsRow shows the git/callgraph forensics for the block's file:
