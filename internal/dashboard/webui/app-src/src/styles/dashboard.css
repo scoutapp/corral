@@ -1332,6 +1332,38 @@ table.projects th, table.projects td {
 
 .pr-list { list-style: none; margin: 0; padding: 0; }
 
+/* Per-repo color labels (Repos + PRs pages) */
+.repo-color-chip {
+  font-family: ui-monospace, monospace; font-size: 0.72rem;
+  border: 1px solid var(--con-line); border-radius: 4px;
+  padding: 0.02rem 0.4rem; margin-right: 0.1rem; white-space: nowrap;
+}
+.repo-color-dot {
+  width: 9px; height: 9px; border-radius: 50%; display: inline-block;
+  margin-right: 0.35rem; flex: 0 0 auto;
+}
+
+/* Repo settings tab — label color picker */
+.repo-settings { padding: 0.3rem 0; max-width: 34rem; }
+.repo-settings-h { margin: 0 0 0.3rem; font-size: 0.95rem; }
+.color-swatches { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.6rem 0; }
+.color-swatch {
+  width: 1.6rem; height: 1.6rem; border-radius: 6px; cursor: pointer;
+  border: 2px solid transparent;
+}
+.color-swatch.on { border-color: var(--con-text); box-shadow: 0 0 0 2px var(--con-ground); }
+.color-custom { display: flex; align-items: center; gap: 0.6rem; margin: 0.6rem 0; flex-wrap: wrap; }
+.color-custom input[type="color"] {
+  width: 2.2rem; height: 2rem; padding: 0; border: 1px solid var(--con-line);
+  border-radius: 4px; background: none; cursor: pointer;
+}
+.color-hex {
+  width: 7rem; padding: 0.3rem 0.5rem; font-family: ui-monospace, monospace;
+  background: var(--con-ground); color: var(--con-text);
+  border: 1px solid var(--con-line); border-radius: 4px;
+}
+.color-actions { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.5rem; }
+
 /* Cross-project PR inbox */
 .inbox-divider {
   font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.08em;

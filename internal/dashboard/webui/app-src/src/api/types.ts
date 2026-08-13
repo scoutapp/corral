@@ -223,6 +223,7 @@ export interface CachedRepo {
   local_path?: string;
   is_private?: boolean;
   pinned?: boolean;
+  color?: string; // label color (hex)
 }
 
 // GET /gh/repos -> { available: bool, repos: GhRepo[] }
@@ -349,6 +350,7 @@ export interface FileForensic {
 export interface InboxPr {
   repoId: string;
   repoName: string;
+  repoColor?: string;
   pr: OpenPr;
 }
 

@@ -28,13 +28,14 @@ import { relDate, ghOwnerName } from "../lib/repos";
 // return empty lists until the analysis/fetch writers land (Phases 1–2). The
 // empty states describe what each tab will do.
 
-type Tab = "prs" | "issues" | "projects" | "forensics";
+type Tab = "prs" | "issues" | "projects" | "forensics" | "settings";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "prs", label: "PR Review" },
   { key: "issues", label: "Issues" },
   { key: "projects", label: "Projects" },
   { key: "forensics", label: "Forensics" },
+  { key: "settings", label: "Settings" },
 ];
 
 export function RepoPage({ id }: { id: string }) {
@@ -42,13 +43,14 @@ export function RepoPage({ id }: { id: string }) {
   const [tab, setTab] = useState<Tab>("prs");
   const [repo, setRepo] = useState<CachedRepo | null>(null);
 
-  // Find this repo in the cached list for its header (name/url). The repos list
-  // is small; a dedicated GET /repos/<id> can come later if needed.
-  useEffect(() => {
+  // Find this repo in the cached list for its header (name/url/color). The repos
+  // list is small; a dedicated GET /repos/<id> can come later if needed.
+  const loadRepo = useCallback(() => {
     getJSON<{ repos: CachedRepo[] }>("/repos")
       .then((d) => setRepo((d.repos || []).find((r) => r.id === id) || null))
       .catch(() => setRepo(null));
   }, [id]);
+  useEffect(() => loadRepo(), [loadRepo]);
 
   return (
     <>
@@ -57,7 +59,9 @@ export function RepoPage({ id }: { id: string }) {
           <Link to="/" className="back">
             ← All repos
           </Link>
-          <span className="brand-name">{repo ? repo.name : id}</span>
+          <span className="brand-name" style={repo?.color ? { color: repo.color } : undefined}>
+            {repo ? repo.name : id}
+          </span>
           {repo?.url && (
             <a className="brand-sub repo-url" href={repo.url} target="_blank" rel="noreferrer">
               {repo.url.replace(/^https?:\/\//, "")}
@@ -91,6 +95,9 @@ export function RepoPage({ id }: { id: string }) {
         </div>
         <div className="tab-panel" style={{ display: tab === "forensics" ? "block" : "none" }}>
           <ForensicsTab repoId={id} />
+        </div>
+        <div className="tab-panel" style={{ display: tab === "settings" ? "block" : "none" }}>
+          <SettingsTab repoId={id} repo={repo} onSaved={loadRepo} />
         </div>
       </div>
     </>
@@ -967,6 +974,96 @@ interface AnalyzeResp {
   cgNodes?: number;
   cgEdges?: number;
   callgraphOk?: boolean;
+}
+
+// The default palette (must match the backend order in repos/colors.go) so the
+// swatches offer the same well-spaced choices. The native color input covers
+// anything else.
+const REPO_PALETTE = [
+  "#e8833a", "#a05cff", "#37b7c3", "#e05c8a", "#5ce68a",
+  "#e6c34a", "#5c8aff", "#e6605c", "#8ad35c", "#c37ad3",
+  "#4ac3a0", "#d38a5c", "#7a9de6", "#d3c15c", "#5cd3c1",
+];
+
+// SettingsTab: per-repo settings — currently the label color, shown on the
+// Repos and PRs pages. Picks from the palette swatches or any custom hex, saved
+// via POST /repos/<id>/color.
+function SettingsTab({
+  repoId,
+  repo,
+  onSaved,
+}: {
+  repoId: string;
+  repo: CachedRepo | null;
+  onSaved: () => void;
+}) {
+  const [color, setColor] = useState(repo?.color || "#a05cff");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  // Sync when the repo (and thus its saved color) loads/changes.
+  useEffect(() => {
+    if (repo?.color) setColor(repo.color);
+  }, [repo?.color]);
+
+  const save = () => {
+    setBusy(true);
+    setMsg(null);
+    postJSON(`/repos/${encodeURIComponent(repoId)}/color`, { color })
+      .then(() => {
+        setMsg("saved ✓");
+        onSaved();
+      })
+      .catch((e) => setMsg((e as Error).message))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="repo-settings">
+      <h3 className="repo-settings-h">Label color</h3>
+      <p className="tab-note">
+        The color used for this repo's label on the Repos and PRs pages.
+      </p>
+      <div className="color-swatches">
+        {REPO_PALETTE.map((c) => (
+          <button
+            key={c}
+            type="button"
+            className={`color-swatch${color.toLowerCase() === c ? " on" : ""}`}
+            style={{ background: c }}
+            title={c}
+            onClick={() => setColor(c)}
+          />
+        ))}
+      </div>
+      <div className="color-custom">
+        <input
+          type="color"
+          value={color.length === 7 ? color : "#a05cff"}
+          onChange={(e) => setColor(e.target.value)}
+        />
+        <input
+          className="color-hex"
+          type="text"
+          value={color}
+          spellCheck={false}
+          onChange={(e) => setColor(e.target.value)}
+        />
+        <span
+          className="repo-color-chip"
+          style={{ borderColor: color, color }}
+        >
+          {repo?.name || "preview"}
+        </span>
+      </div>
+      <div className="color-actions">
+        <button type="button" className="btn primary" disabled={busy} onClick={save}>
+          {busy ? "Saving…" : "Save color"}
+        </button>
+        {msg && <span className="tab-note">{msg}</span>}
+      </div>
+    </div>
+  );
 }
 
 function ForensicsTab({ repoId }: { repoId: string }) {
