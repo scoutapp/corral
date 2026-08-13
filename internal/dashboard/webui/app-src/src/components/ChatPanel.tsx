@@ -38,7 +38,11 @@ function prettyJson(s: string): string {
   }
 }
 
-export function ChatPanel({ projectId }: { projectId: string }) {
+// ChatPanel is the host-Claude chat used by the project drawer and the PR-review
+// drawer. It's WS-URL-agnostic: pass the chat WebSocket path (e.g.
+// `/p/<id>/chat/ws?tools=…` or `/prs/<id>/chat/ws`). The server streams the same
+// typed frames (text/tool_use/tool_result/result/error/turn_end) in both cases.
+export function ChatPanel({ wsPath }: { wsPath: string }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [ready, setReady] = useState(false);
@@ -58,7 +62,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
   }, []);
 
   useEffect(() => {
-    const ws = new WebSocket(wsURL(`/p/${projectId}/chat/ws?tools=Read,Grep,Glob`));
+    const ws = new WebSocket(wsURL(wsPath));
     wsRef.current = ws;
     ws.onopen = () => setReady(true);
     ws.onclose = () => {
@@ -137,7 +141,7 @@ export function ChatPanel({ projectId }: { projectId: string }) {
         /* ignore */
       }
     };
-  }, [projectId, scroll]);
+  }, [wsPath, scroll]);
 
   const submit = () => {
     const text = input.trim();

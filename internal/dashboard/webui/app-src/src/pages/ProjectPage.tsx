@@ -291,7 +291,7 @@ export function ProjectPage({ id }: { id: string }) {
             </span>
           </div>
           <div className="chat-panel-iframe">
-            <ChatPanel projectId={id} />
+            <ChatPanel wsPath={`/p/${id}/chat/ws?tools=Read,Grep,Glob`} />
           </div>
         </div>
       )}

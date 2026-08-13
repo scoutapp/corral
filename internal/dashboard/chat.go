@@ -284,17 +284,28 @@ func isExecutable(path string) bool {
 // the browser via send. Returns the (possibly updated) session id to thread into
 // the next turn's --resume, and whether the turn was canceled (ctx done — the
 // caller kills the process via the context).
-func (d *dashboardServer) runChatTurn(ctx context.Context, claudeBin, workspace string, tools []string, prompt, sessionID string, send func(chatServerMsg) error) (string, bool) {
+// buildClaudeArgs assembles the `claude -p` argv for one chat turn. It omits
+// --allowedTools entirely when no tools are granted: a bare "--allowedTools"
+// with no following value is a malformed flag that makes `claude` fail — the
+// bug that broke the PR-review chat (which grants no tools).
+func buildClaudeArgs(prompt string, tools []string, sessionID string) []string {
 	args := []string{
 		"-p", prompt,
 		"--output-format", "stream-json", "--verbose",
 		"--permission-mode", "default",
-		"--allowedTools",
 	}
-	args = append(args, tools...)
+	if len(tools) > 0 {
+		args = append(args, "--allowedTools")
+		args = append(args, tools...)
+	}
 	if sessionID != "" {
 		args = append(args, "--resume", sessionID)
 	}
+	return args
+}
+
+func (d *dashboardServer) runChatTurn(ctx context.Context, claudeBin, workspace string, tools []string, prompt, sessionID string, send func(chatServerMsg) error) (string, bool) {
+	args := buildClaudeArgs(prompt, tools, sessionID)
 
 	cmd := exec.CommandContext(ctx, claudeBin, args...)
 	if _, serr := os.Stat(workspace); serr == nil {
