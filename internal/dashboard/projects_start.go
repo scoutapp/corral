@@ -159,12 +159,12 @@ func claudeReady(pane string) bool {
 		strings.Contains(pane, "shift+tab to cycle")
 }
 
-// handlePopulatePrompt types a prompt INTO the project's Claude input without
-// submitting it (tmux send-keys, no Enter), once the container's dev session is
-// up. Used after spawning a project off a GitHub issue: the user reviews the
-// pre-typed prompt and presses Enter themselves.
+// handlePopulatePrompt types a prompt INTO the project's Claude input once the
+// container's dev session is up. By default it does NOT submit (send-keys, no
+// Enter) so the user reviews the pre-typed prompt and presses Enter themselves;
+// with {submit:true} it also sends Enter to auto-start Claude on the prompt.
 //
-//	POST /p/<id>/populate-prompt   { "prompt": "..." }
+//	POST /p/<id>/populate-prompt   { "prompt": "...", "submit": false }
 //
 // The session may not exist yet (the container is still booting), so we poll in
 // the background and return immediately; the prompt lands whenever Claude's
@@ -181,6 +181,7 @@ func (d *dashboardServer) handlePopulatePrompt(w http.ResponseWriter, r *http.Re
 	}
 	var body struct {
 		Prompt string `json:"prompt"`
+		Submit bool   `json:"submit"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Prompt == "" {
 		http.Error(w, "prompt is required", http.StatusBadRequest)
@@ -189,6 +190,7 @@ func (d *dashboardServer) handlePopulatePrompt(w http.ResponseWriter, r *http.Re
 
 	sess := session.TmuxSessionNameForWorkspace(workspace)
 	prompt := body.Prompt
+	submit := body.Submit
 	go func() {
 		// The session existing is NOT enough: it's created by `docker run` in tmux,
 		// but the container then boots (proxy, dockerd, launcher) for a while before
@@ -207,6 +209,12 @@ func (d *dashboardServer) handlePopulatePrompt(w http.ResponseWriter, r *http.Re
 			if claudeReady(string(out)) {
 				time.Sleep(1500 * time.Millisecond) // let the input line settle
 				_ = exec.Command("tmux", "send-keys", "-t", sess, "--", prompt).Run()
+				if submit {
+					// Enter must be a SEPARATE send-keys after a short beat, or the
+					// TUI can swallow it before the prompt text registers.
+					time.Sleep(400 * time.Millisecond)
+					_ = exec.Command("tmux", "send-keys", "-t", sess, "Enter").Run()
+				}
 				return
 			}
 		}
