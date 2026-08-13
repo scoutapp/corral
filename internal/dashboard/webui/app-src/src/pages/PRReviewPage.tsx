@@ -3,7 +3,13 @@ import { Link } from "../router";
 import { getJSON, postJSON } from "../api/client";
 import type { CachedRepo, PrItem } from "../api/types";
 import { useBodyClass } from "../hooks/useBodyClass";
-import { AnalysisStatusBanner, BlockCarousel, PRFilesForensics, clearFileStatsCache } from "./RepoPage";
+import {
+  AnalysisStatusBanner,
+  BlockCarousel,
+  PRFilesForensics,
+  RiskCard,
+  clearFileStatsCache,
+} from "./RepoPage";
 
 // PRReviewPage is the dedicated full-page PR review at /repos/<id>/prs/<number>
 // (the reference's PRView, not an inline popout). Navigating here Views the PR
@@ -78,7 +84,16 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
                 setNonce((n) => n + 1);
               }}
             />
-            <PRFilesForensics key={`ff-${nonce}`} prId={pr.id} />
+            {/* Top: Risk (left) + Files changed (right); stacks Risk-first when
+                too narrow. Then the block carousel full-width below. */}
+            <div className="pr-top">
+              <div className="pr-top-left">
+                <RiskCard key={`risk-${nonce}`} prId={pr.id} />
+              </div>
+              <div className="pr-top-right">
+                <PRFilesForensics key={`ff-${nonce}`} prId={pr.id} />
+              </div>
+            </div>
             <BlockCarousel key={`bc-${nonce}`} prId={pr.id} />
           </>
         )}

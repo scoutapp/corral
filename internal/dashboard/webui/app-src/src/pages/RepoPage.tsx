@@ -60,6 +60,7 @@ export function RepoPage({ id }: { id: string }) {
               {repo.url.replace(/^https?:\/\//, "")}
             </a>
           )}
+          <RepoAnalyzedChip repoId={id} />
         </div>
       </header>
 
@@ -88,6 +89,21 @@ export function RepoPage({ id }: { id: string }) {
       </div>
     </>
   );
+}
+
+// RepoAnalyzedChip shows a persistent header chip when the repo hasn't been
+// analyzed (or has new commits since), visible across all repo tabs.
+function RepoAnalyzedChip({ repoId }: { repoId: string }) {
+  const [st, setSt] = useState<AnalysisStatus | null>(null);
+  useEffect(() => {
+    getJSON<AnalysisStatus>(`/repos/${encodeURIComponent(repoId)}/analysis-status`)
+      .then(setSt)
+      .catch(() => {});
+  }, [repoId]);
+  if (!st) return null;
+  if (!st.analyzed) return <span className="repo-chip warn">⚠ not analyzed</span>;
+  if (!st.upToDate) return <span className="repo-chip warn">⚠ analysis out of date</span>;
+  return null;
 }
 
 function PRsTab({ repoId }: { repoId: string }) {
@@ -143,6 +159,9 @@ function PRsTab({ repoId }: { repoId: string }) {
 
   return (
     <>
+      {/* Surface analyze/staleness on the default landing view too, not just
+          the Forensics tab — so users know rankings need analysis. */}
+      <AnalysisStatusBanner repoId={repoId} />
       {err && <p className="tab-note err">Failed: {err}</p>}
 
       {open === null ? (
@@ -203,16 +222,24 @@ function PRsTab({ repoId }: { repoId: string }) {
 // (see prreview placeholderAnalysis). Used to show the "Add AI analysis" prompt.
 const PLACEHOLDER_EXPLANATION = "This block modifies the file. Claude analysis is unavailable.";
 
+interface BlocksStatus {
+  repoAnalyzed: boolean;
+  stale: boolean;
+}
+
 export function BlockCarousel({ prId }: { prId: number }) {
   const [blocks, setBlocks] = useState<PrBlock[] | null>(null);
+  const [status, setStatus] = useState<BlocksStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [i, setI] = useState(0);
   const [enriching, setEnriching] = useState(false);
+  const [reranking, setReranking] = useState(false);
 
   const load = useCallback(() => {
-    getJSON<{ blocks: PrBlock[] }>(`/prs/${prId}/blocks`)
+    getJSON<{ blocks: PrBlock[]; status?: BlocksStatus }>(`/prs/${prId}/blocks`)
       .then((d) => {
         setBlocks(d.blocks || []);
+        setStatus(d.status || null);
         setI(0);
       })
       .catch((e) => setErr((e as Error).message));
@@ -222,10 +249,25 @@ export function BlockCarousel({ prId }: { prId: number }) {
   const enrich = () => {
     setEnriching(true);
     setErr(null);
-    postJSON<{ blocks: PrBlock[] }>(`/prs/${prId}/enrich`)
-      .then((d) => setBlocks(d.blocks || []))
+    postJSON<{ blocks: PrBlock[]; status?: BlocksStatus }>(`/prs/${prId}/enrich`)
+      .then((d) => {
+        setBlocks(d.blocks || []);
+        if (d.status) setStatus(d.status);
+      })
       .catch((e) => setErr((e as Error).message))
       .finally(() => setEnriching(false));
+  };
+
+  const rerank = () => {
+    setReranking(true);
+    setErr(null);
+    postJSON<{ blocks: PrBlock[]; status?: BlocksStatus }>(`/prs/${prId}/rerank`)
+      .then((d) => {
+        setBlocks(d.blocks || []);
+        if (d.status) setStatus(d.status);
+      })
+      .catch((e) => setErr((e as Error).message))
+      .finally(() => setReranking(false));
   };
 
   if (err) return <p className="tab-note err">Failed to load blocks: {err}</p>;
@@ -241,6 +283,25 @@ export function BlockCarousel({ prId }: { prId: number }) {
   const b = blocks[Math.min(i, blocks.length - 1)];
   return (
     <div className="block-carousel">
+      {status?.stale && (
+        <div className="rerank-bar">
+          <span>
+            ⚠ Block hotness was ranked before the repo's last analysis — the
+            ordering may be out of date.
+          </span>
+          <button type="button" className="btn" disabled={reranking} onClick={rerank}>
+            {reranking ? "Re-ranking…" : "Re-rank blocks"}
+          </button>
+        </div>
+      )}
+      {status && !status.repoAnalyzed && (
+        <div className="rerank-bar">
+          <span>
+            ⚠ This repo isn't analyzed yet — blocks aren't hotness-ranked. Run
+            "Analyze repo" (Forensics tab) to rank by churn &amp; callgraph.
+          </span>
+        </div>
+      )}
       <div className="enrich-bar">
         {enriched ? (
           <span className="enrich-note">✓ AI analysis added</span>
@@ -254,7 +315,6 @@ export function BlockCarousel({ prId }: { prId: number }) {
           {enriching ? "Analyzing…" : enriched ? "Re-run AI" : "+ Add AI analysis"}
         </button>
       </div>
-      <RiskCard prId={prId} />
       <div className="block-nav">
         <button type="button" disabled={i <= 0} onClick={() => setI(i - 1)}>
           ◀
@@ -585,7 +645,7 @@ export function PRFilesForensics({ prId }: { prId: number }) {
 
 // RiskCard shows (and can compute) the PR-level risk verdict. GET /prs/<id>/risk
 // loads a stored verdict; "Assess risk" runs POST /prs/<id>/analyze via claude.
-function RiskCard({ prId }: { prId: number }) {
+export function RiskCard({ prId }: { prId: number }) {
   const [risk, setRisk] = useState<PrRisk | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
