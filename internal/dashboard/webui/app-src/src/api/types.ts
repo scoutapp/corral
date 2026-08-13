@@ -326,6 +326,8 @@ export interface FileForensic {
   velocityPerWeek: number;
   refCount: number;
   churnScore?: number;
+  additions: number;
+  deletions: number;
   newFile: boolean; // repo analyzed but this file has no history ⇒ PR adds it
   repoAnalyzed: boolean;
 }
@@ -337,7 +339,12 @@ export interface OpenPr {
   url: string;
   author: string;
   createdAt: string;
+  updatedAt: string;
   isDraft: boolean;
+  reviewDecision: string; // APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED | ""
+  additions: number;
+  deletions: number;
+  labels: string[];
 }
 
 // GET /repos/<id>/projects -> { projects: RepoProject[] }

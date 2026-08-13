@@ -17,6 +17,7 @@ import type {
 import { useBodyClass } from "../hooks/useBodyClass";
 import { loadEditor, type DiffHandle } from "../lib/editor";
 import { splitUnifiedHunk } from "../lib/diffHunk";
+import { relDate } from "../lib/repos";
 
 // RepoPage is the repo-as-hub detail view (/repos/<id>). A repo owns three
 // tabs: PR Review (grokker-derived PR intelligence), Projects (Corral sandbox
@@ -106,6 +107,22 @@ function RepoAnalyzedChip({ repoId }: { repoId: string }) {
   return null;
 }
 
+// ReviewBadge shows a PR's approval state (from gh's reviewDecision), or a
+// draft pill. Draft takes precedence since a draft can't be reviewed.
+function ReviewBadge({ decision, draft }: { decision: string; draft: boolean }) {
+  if (draft) return <span className="review-badge draft">draft</span>;
+  switch (decision) {
+    case "APPROVED":
+      return <span className="review-badge approved">✓ approved</span>;
+    case "CHANGES_REQUESTED":
+      return <span className="review-badge changes">✗ changes</span>;
+    case "REVIEW_REQUIRED":
+      return <span className="review-badge required">○ review</span>;
+    default:
+      return <span className="review-badge none">—</span>;
+  }
+}
+
 function PRsTab({ repoId }: { repoId: string }) {
   // Live open PRs from GitHub (gh pr list), plus the PRs already fetched into
   // the DB (to show a "✓ viewed" marker). Clicking a PR navigates to its
@@ -148,6 +165,30 @@ function PRsTab({ repoId }: { repoId: string }) {
   // Map PR number -> already-fetched DB record (for the "viewed" marker).
   const fetchedByNum = new Map(fetched.map((p) => [p.number, p]));
 
+  // Overview controls (all client-side over the loaded list — no server calls).
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<"updated" | "created" | "number">("updated");
+  const [hideDrafts, setHideDrafts] = useState(false);
+  const now = Date.now();
+
+  const visible = (open || [])
+    .filter((p) => !hideDrafts || !p.isDraft)
+    .filter((p) => {
+      const q = query.trim().toLowerCase();
+      if (!q) return true;
+      return (
+        String(p.number).includes(q) ||
+        p.title.toLowerCase().includes(q) ||
+        p.author.toLowerCase().includes(q) ||
+        p.labels.some((l) => l.toLowerCase().includes(q))
+      );
+    })
+    .sort((a, b) => {
+      if (sort === "number") return b.number - a.number;
+      const key = sort === "updated" ? "updatedAt" : "createdAt";
+      return (b[key] || "").localeCompare(a[key] || "");
+    });
+
   const openManual = () => {
     const n = parseInt(num, 10);
     if (!Number.isFinite(n) || n <= 0) {
@@ -168,32 +209,72 @@ function PRsTab({ repoId }: { repoId: string }) {
         <p className="tab-note">Loading open PRs…</p>
       ) : openUnavailable ? (
         <p className="tab-note">
-          Couldn't list open PRs ({openUnavailable}). Fetch a PR by number below.
+          Couldn't list open PRs ({openUnavailable}). Open a PR by number below.
         </p>
       ) : open.length === 0 ? (
         <p className="tab-note">No open pull requests on this repo.</p>
       ) : (
-        <ul className="pr-list">
-          {open.map((p) => {
-            const rec = fetchedByNum.get(p.number);
-            return (
-              <li key={p.number} className="pr-row">
-                <div className="pr-head-row">
-                  <Link
-                    className="pr-head"
-                    to={`/repos/${encodeURIComponent(repoId)}/prs/${p.number}`}
-                  >
-                    <span className="pr-num">#{p.number}</span>{" "}
-                    {rec?.shortSummary || p.title || "(untitled)"}
-                    {p.isDraft && <span className="pr-state">draft</span>}
-                    {rec && <span className="pr-analyzed" title="Viewed">✓</span>}
-                  </Link>
-                </div>
-                <div className="pr-byline">{p.author && <span>@{p.author}</span>}</div>
-              </li>
-            );
-          })}
-        </ul>
+        <>
+          <div className="pr-toolbar">
+            <input
+              className="pr-search"
+              type="search"
+              placeholder="🔎 filter by #, title, author, label…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}>
+              <option value="updated">Recently updated</option>
+              <option value="created">Recently created</option>
+              <option value="number">PR number</option>
+            </select>
+            <label className="pr-toolbar-check">
+              <input type="checkbox" checked={hideDrafts} onChange={(e) => setHideDrafts(e.target.checked)} />
+              hide drafts
+            </label>
+            <span className="pr-toolbar-count">
+              {visible.length} of {open.length}
+            </span>
+          </div>
+
+          {visible.length === 0 ? (
+            <p className="tab-note">No PRs match “{query}”.</p>
+          ) : (
+            <ul className="pr-list rich">
+              {visible.map((p) => {
+                const rec = fetchedByNum.get(p.number);
+                return (
+                  <li key={p.number} className="pr-card">
+                    <Link
+                      className="pr-card-link"
+                      to={`/repos/${encodeURIComponent(repoId)}/prs/${p.number}`}
+                    >
+                      <div className="pr-card-top">
+                        <ReviewBadge decision={p.reviewDecision} draft={p.isDraft} />
+                        <span className="pr-card-title">
+                          <span className="pr-num">#{p.number}</span>{" "}
+                          {rec?.shortSummary || p.title || "(untitled)"}
+                        </span>
+                        {rec && <span className="pr-analyzed" title="Viewed">✓</span>}
+                      </div>
+                      <div className="pr-card-meta">
+                        {p.author && <span className="pr-meta-author">@{p.author}</span>}
+                        <span className="pr-diffstat">
+                          <span className="add">+{p.additions.toLocaleString()}</span>{" "}
+                          <span className="del">−{p.deletions.toLocaleString()}</span>
+                        </span>
+                        <span className="pr-meta-time">updated {relDate(p.updatedAt, now)}</span>
+                        {p.labels.slice(0, 4).map((l) => (
+                          <span key={l} className="pr-label">{l}</span>
+                        ))}
+                      </div>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
       )}
 
       <div className="pr-manual">
@@ -343,6 +424,7 @@ export function BlockCarousel({ prId }: { prId: number }) {
             {b.filePath}:{b.lineStart}–{b.lineEnd}
           </span>
           {b.isTest && <span className="block-badge">test</span>}
+          {b.diffHunk && <BlockDiffStat hunk={b.diffHunk} />}
           {b.hotnessScore != null && (
             <span className="block-hot">hotness {b.hotnessScore.toFixed(1)}</span>
           )}
@@ -434,6 +516,33 @@ export function clearFileStatsCache(prId: number) {
 // FileForensicsChips renders the git/callgraph stat chips for one file. Files
 // with no commit history (repo not analyzed, or a brand-new file) show a muted
 // "not analyzed" chip instead of misleading zeros.
+// BlockDiffStat computes +/- from a block's diff hunk (client-side).
+function BlockDiffStat({ hunk }: { hunk: string }) {
+  let add = 0;
+  let del = 0;
+  for (const line of hunk.split("\n")) {
+    if (line.startsWith("+") && !line.startsWith("+++")) add++;
+    else if (line.startsWith("-") && !line.startsWith("---")) del++;
+  }
+  if (add === 0 && del === 0) return null;
+  return (
+    <span className="block-diffstat">
+      <span className="add">+{add}</span> <span className="del">−{del}</span>
+    </span>
+  );
+}
+
+// DiffStatChip renders a +add / −del count (per file or PR total).
+function DiffStatChip({ add, del }: { add: number; del: number }) {
+  if (add === 0 && del === 0) return null;
+  return (
+    <span className="ff-chip diffstat" title="lines added / removed in this PR">
+      <span className="add">+{add.toLocaleString()}</span>{" "}
+      <span className="del">−{del.toLocaleString()}</span>
+    </span>
+  );
+}
+
 function FileForensicsChips({ stat }: { stat: FileForensic }) {
   const hasHistory = stat.totalCommits > 0 || stat.daysOld != null;
   if (!hasHistory) {
@@ -451,6 +560,7 @@ function FileForensicsChips({ stat }: { stat: FileForensic }) {
         : "run 'Analyze repo' to compute file forensics";
     return (
       <div className="file-forensics">
+        <DiffStatChip add={stat.additions} del={stat.deletions} />
         <span className="ff-chip cool" title={title}>
           {label}
         </span>
@@ -462,6 +572,7 @@ function FileForensicsChips({ stat }: { stat: FileForensic }) {
   const stale = stat.daysSinceEdit != null && stat.daysSinceEdit > 180;
   return (
     <div className="file-forensics">
+      <DiffStatChip add={stat.additions} del={stat.deletions} />
       <span className="ff-chip" title="fix commits / total commits">
         🔧 {stat.fixCommits}/{stat.totalCommits} fixes ({stat.fixPct}%)
       </span>
@@ -596,11 +707,19 @@ export function PRFilesForensics({ prId }: { prId: number }) {
   const total = files?.length ?? 0;
   const shown = files && !expanded ? files.slice(0, FILES_COLLAPSED) : files;
   const hidden = total - (shown?.length ?? 0);
+  const totalAdd = (files || []).reduce((s, f) => s + f.additions, 0);
+  const totalDel = (files || []).reduce((s, f) => s + f.deletions, 0);
 
   return (
     <div className="pr-files">
       <h3 className="pr-files-h">
         Files changed{files ? ` (${total})` : ""}
+        {files && (totalAdd > 0 || totalDel > 0) && (
+          <span className="pr-files-total">
+            <span className="add">+{totalAdd.toLocaleString()}</span>{" "}
+            <span className="del">−{totalDel.toLocaleString()}</span>
+          </span>
+        )}
       </h3>
       {files === null ? (
         <div className="pr-files-list">

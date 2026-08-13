@@ -2,6 +2,7 @@ package prreview
 
 import (
 	"database/sql"
+	"strings"
 
 	"github.com/scoutapp/corral/internal/store"
 )
@@ -86,6 +87,9 @@ func (s *Service) FileForensics(prID int64, nowTS int64) ([]FileForensic, error)
 	// a caller of a node defined in this file.
 	refCounts, _ := s.refCounts(repoID)
 
+	// Per-file +/- from this PR's diff (summed over the file's block hunks).
+	addDel := s.diffStatsByFile(prID)
+
 	// Has the repo been analyzed at all? Distinguishes a new file (analyzed repo,
 	// no row for this path ⇒ PR adds it) from "repo never analyzed".
 	repoAnalyzed := s.repoAnalyzed(repoID)
@@ -107,6 +111,7 @@ func (s *Service) FileForensics(prID int64, nowTS int64) ([]FileForensic, error)
 			// repo simply hasn't been analyzed yet.
 			out = append(out, FileForensic{
 				FilePath: fp, RefCount: refCounts[fp],
+				Additions: addDel[fp][0], Deletions: addDel[fp][1],
 				NewFile: repoAnalyzed, RepoAnalyzed: repoAnalyzed,
 			})
 			continue
@@ -114,6 +119,7 @@ func (s *Service) FileForensics(prID int64, nowTS int64) ([]FileForensic, error)
 		f := FileForensic{
 			FilePath: fp, TotalCommits: total, FixCommits: fix,
 			AuthorCount: authors, ChurnScore: churn, RefCount: refCounts[fp],
+			Additions: addDel[fp][0], Deletions: addDel[fp][1],
 			RepoAnalyzed: repoAnalyzed,
 		}
 		if total > 0 {
@@ -149,6 +155,36 @@ func (s *Service) repoAnalyzed(repoID string) bool {
 		`SELECT COUNT(*) FROM pr_file_stats WHERE repo_id = ? LIMIT 1`, repoID,
 	).Scan(&n)
 	return n > 0
+}
+
+// diffStatsByFile sums +/- lines per file across a PR's block diff hunks.
+// Returns map file_path → [additions, deletions]. Counts changed lines only
+// (skips +++/--- headers and @@ hunk headers).
+func (s *Service) diffStatsByFile(prID int64) map[string][2]int {
+	out := map[string][2]int{}
+	rows, err := s.db.Query(
+		`SELECT file_path, COALESCE(diff_hunk,'') FROM pr_blocks WHERE pr_id = ?`, prID)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var fp, hunk string
+		if rows.Scan(&fp, &hunk) != nil {
+			continue
+		}
+		add, del := out[fp][0], out[fp][1]
+		for _, line := range strings.Split(hunk, "\n") {
+			switch {
+			case strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++"):
+				add++
+			case strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---"):
+				del++
+			}
+		}
+		out[fp] = [2]int{add, del}
+	}
+	return out
 }
 
 // refCounts maps file_path → number of distinct other files that call into it
