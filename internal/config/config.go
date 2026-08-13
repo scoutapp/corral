@@ -57,7 +57,21 @@ type ProjectConfig struct {
 	// Empty is treated as the default preset (see MitmPresetOrDefault).
 	MitmPreset string `json:"mitm_preset,omitempty"`
 
+	// Source records what a project was spawned from (a PR or an issue) so the
+	// UI can show a back-link both ways. Nil for a plain project.
+	Source *ProjectSource `json:"source,omitempty"`
+
 	CreatedAt string `json:"created_at"`
+}
+
+// ProjectSource is the PR/issue a project was created from.
+type ProjectSource struct {
+	Kind   string `json:"kind"`              // "pr" | "issue"
+	RepoID string `json:"repo_id,omitempty"` // Corral repo cache id
+	Repo   string `json:"repo,omitempty"`    // owner/name
+	Number int    `json:"number,omitempty"`  // PR / issue number
+	URL    string `json:"url,omitempty"`
+	Title  string `json:"title,omitempty"`
 }
 
 // MonitorNoneSentinel is a host that never matches a real hostname; used as the

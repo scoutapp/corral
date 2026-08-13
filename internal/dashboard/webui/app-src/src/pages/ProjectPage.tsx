@@ -3,7 +3,8 @@ import { Link } from "../router";
 import { useStatus } from "../hooks/useStatus";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useDragResize } from "../hooks/useDragResize";
-import { postRaw } from "../api/client";
+import { getJSON, postRaw } from "../api/client";
+import type { ConfigView, ProjectSource } from "../api/types";
 import { SSHLoadModal } from "../components/SSHLoadModal";
 import { XtermPane } from "../components/XtermPane";
 import { ChatPanel } from "../components/ChatPanel";
@@ -40,6 +41,14 @@ export function ProjectPage({ id }: { id: string }) {
   const { projects } = useStatus(4000);
   const me = useMemo(() => projects.find((p) => p.id === id), [projects, id]);
   const name = me?.name || id;
+
+  // The PR/issue this project was spawned from (for a back-link in the header).
+  const [source, setSource] = useState<ProjectSource | null>(null);
+  useEffect(() => {
+    getJSON<ConfigView>(`/p/${id}/config`)
+      .then((c) => setSource(c.source || null))
+      .catch(() => {});
+  }, [id]);
 
   const [tab, setTab] = useState<Tab>("files");
   // Lazily mount a tab's content only after first activation (mirrors the old
@@ -169,6 +178,15 @@ export function ProjectPage({ id }: { id: string }) {
             ← All projects
           </Link>
           <h1>{name}</h1>
+          {source && source.kind === "pr" && source.repo_id && (
+            <a
+              className="proj-source-link"
+              href={`/repos/${encodeURIComponent(source.repo_id)}/prs/${source.number}`}
+              title={source.title || `PR #${source.number}`}
+            >
+              ↩ from PR #{source.number}
+            </a>
+          )}
           <button
             className={`dock-toggle power-toggle${up ? " is-up" : ""}${pending ? " busy" : ""}`}
             type="button"

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "../router";
-import { getJSON, postJSON } from "../api/client";
+import { getJSON, postJSON, postRaw } from "../api/client";
 import type { CachedRepo, PrItem } from "../api/types";
 import { useBodyClass } from "../hooks/useBodyClass";
 import { ChatPanel } from "../components/ChatPanel";
@@ -123,6 +123,77 @@ function labelFor(kind: Exclude<ActionKind, null>): string {
   }
 }
 
+// VerifyLaunch fires a sandbox project to verify the PR, ASYNCHRONOUSLY: it
+// creates a project on the PR's branch (tagged with the PR source for the
+// two-way back-link), starts it, and auto-submits a verify prompt — WITHOUT
+// navigating away. The user stays on the PR page; a link to the new project
+// appears when it's ready.
+function VerifyLaunch({
+  repoId,
+  pr,
+  repoName,
+}: {
+  repoId: string;
+  pr: PrItem;
+  repoName?: string;
+}) {
+  const [state, setState] = useState<"idle" | "launching" | "done" | "err">("idle");
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const launch = async () => {
+    setState("launching");
+    setErr(null);
+    try {
+      const source = {
+        kind: "pr",
+        repo_id: repoId,
+        number: pr.number,
+        url: pr.githubUrl,
+        title: pr.title,
+      };
+      const created = await postJSON<{ id: string }>("/projects/create", {
+        mode: "clone",
+        name: `${repoName || "pr"}-verify-${pr.number}`,
+        repos: [{ repoId, branch: pr.headRef || undefined }],
+        source,
+      });
+      const id = created.id;
+      setProjectId(id);
+      // Start (best-effort) and auto-submit a verify prompt — no navigation.
+      await postJSON(`/p/${id}/start`).catch(() => {});
+      const prompt =
+        `Verify PR #${pr.number} ("${pr.title || ""}") works. You're on its branch. ` +
+        `Explore the change, run the relevant tests or the app, and report whether it behaves correctly ` +
+        `and any issues you find. The PR is ${pr.githubUrl || ""}.`;
+      await postRaw(`/p/${id}/populate-prompt`, { prompt, submit: true }).catch(() => {});
+      setState("done");
+    } catch (e) {
+      setErr((e as Error).message);
+      setState("err");
+    }
+  };
+
+  if (state === "done" && projectId) {
+    return (
+      <a className="dock-toggle" href={`/p/${projectId}/`} title="Open the verify project">
+        ✓ verifying → open project
+      </a>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="dock-toggle"
+      disabled={state === "launching"}
+      title="Create a sandbox project on this PR's branch and auto-start Claude to verify it (runs in the background)"
+      onClick={launch}
+    >
+      {state === "launching" ? "Launching…" : state === "err" ? `⚠ ${err}` : "▶ Verify in sandbox"}
+    </button>
+  );
+}
+
 export function PRReviewPage({ repoId, number }: { repoId: string; number: number }) {
   useBodyClass("console");
   const [repo, setRepo] = useState<CachedRepo | null>(null);
@@ -178,10 +249,11 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
         </div>
         {pr && (
           <>
+            <VerifyLaunch repoId={repoId} pr={pr} repoName={repo?.name} />
             <button
               type="button"
               className="dock-toggle"
-              title="Start a sandbox project on this PR's branch"
+              title="Start a sandbox project on this PR's branch (opens the create dialog)"
               onClick={() => setStartOpen(true)}
             >
               ⧉ Start project
