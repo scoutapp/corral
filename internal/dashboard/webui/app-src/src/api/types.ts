@@ -326,6 +326,8 @@ export interface FileForensic {
   velocityPerWeek: number;
   refCount: number;
   churnScore?: number;
+  newFile: boolean; // repo analyzed but this file has no history ⇒ PR adds it
+  repoAnalyzed: boolean;
 }
 
 // GET /repos/<id>/prs/open -> { available: bool, prs: OpenPr[], reason?: string }

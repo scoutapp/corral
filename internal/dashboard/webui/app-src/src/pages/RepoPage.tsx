@@ -376,12 +376,24 @@ export function clearFileStatsCache(prId: number) {
 // with no commit history (repo not analyzed, or a brand-new file) show a muted
 // "not analyzed" chip instead of misleading zeros.
 function FileForensicsChips({ stat }: { stat: FileForensic }) {
-  const analyzed = stat.totalCommits > 0 || stat.daysOld != null;
-  if (!analyzed) {
+  const hasHistory = stat.totalCommits > 0 || stat.daysOld != null;
+  if (!hasHistory) {
+    // No git history: either the PR adds this file (new), or the repo simply
+    // hasn't been analyzed. Distinguish so a new file isn't mislabeled.
+    const label = stat.newFile
+      ? "✨ new file"
+      : stat.repoAnalyzed
+        ? "no history"
+        : "not analyzed";
+    const title = stat.newFile
+      ? "added by this PR — no prior history on the base branch"
+      : stat.repoAnalyzed
+        ? "no commit history for this file on the analyzed branch"
+        : "run 'Analyze repo' to compute file forensics";
     return (
       <div className="file-forensics">
-        <span className="ff-chip cool" title="no git history for this file yet">
-          not analyzed
+        <span className="ff-chip cool" title={title}>
+          {label}
         </span>
         {stat.refCount > 0 && <span className="ff-chip">🔗 {stat.refCount} refs</span>}
       </div>
