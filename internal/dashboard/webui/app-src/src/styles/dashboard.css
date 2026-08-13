@@ -1042,7 +1042,11 @@ table.projects th, table.projects td {
 .chat-composer #stop { background: #7a2e1a; }
 
 /* ---- Landing page: sidebar shell + repos + new-project modal ------------- */
-.app-shell { display: flex; min-height: calc(100vh - 46px); }
+/* The shell is a fixed-height flex row: the sidebar stays put and only the
+   content column scrolls. Height is the viewport minus the footer bar (and the
+   update banner, when shown, sits above in normal flow so the row fills what's
+   left). overflow:hidden makes .content the scroll context, not the page. */
+.app-shell { display: flex; height: calc(100vh - 46px); overflow: hidden; }
 
 /* Left sidebar nav. Sticky + viewport-height so it stays pinned as the content
    column scrolls — the "New project" CTA (pushed down by .sidebar-spacer) is
@@ -1051,7 +1055,9 @@ table.projects th, table.projects td {
 .sidebar {
   flex: 0 0 210px; display: flex; flex-direction: column; gap: 0.25rem;
   padding: 1.1rem 0.8rem; border-right: 1px solid var(--con-line); background: var(--con-panel);
-  position: sticky; top: 0; height: 100vh; overflow-y: auto; align-self: flex-start;
+  /* Fills the fixed-height shell and stays put; scrolls internally only if its
+     own items overflow a short screen. The content column scrolls, not this. */
+  height: 100%; overflow-y: auto;
 }
 .sidebar .brand { padding: 0 0.5rem 1rem; }
 .sidebar-spacer { flex: 1 1 auto; }
@@ -1074,7 +1080,7 @@ table.projects th, table.projects td {
 .sidebar-cta:hover { filter: brightness(1.08); }
 
 /* Content area */
-.content { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.content { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; overflow-y: auto; }
 .content-head {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
   padding: 1.1rem 1.6rem; border-bottom: 1px solid var(--con-line);
