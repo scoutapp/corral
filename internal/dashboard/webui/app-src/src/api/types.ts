@@ -302,6 +302,33 @@ export interface PrItem {
   fetchedAt?: string;
 }
 
+// GET /repos/<id>/projects -> { projects: RepoProject[] }
+export interface RepoProject {
+  id: string;
+  name: string;
+  workspace: string;
+}
+
+// GET /prs/<prId>/links -> { links: PrLink[] }
+export interface PrLink {
+  id: number;
+  prId: number;
+  linkedPrId: number;
+  relationship: string; // tests | tested_by | related | depends_on
+  note?: string;
+  linkedNumber?: number;
+  linkedTitle?: string;
+  linkedSummary?: string;
+}
+
+// GET /prs/<prId>/links/suggest -> { suggestions: LinkSuggestion[] }
+export interface LinkSuggestion {
+  prId: number;
+  number: number;
+  title: string;
+  overlap: number;
+}
+
 // GET /prs/<prId>/risk -> { risk: PrRisk | null }
 // POST /prs/<prId>/analyze -> { risk: PrRisk }
 export interface PrRisk {

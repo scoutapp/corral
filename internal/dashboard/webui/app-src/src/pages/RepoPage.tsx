@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "../router";
 import { getJSON, postJSON, wsURL } from "../api/client";
-import type { CachedRepo, PrBlock, PrFileStat, PrItem, PrRisk } from "../api/types";
+import type {
+  CachedRepo,
+  LinkSuggestion,
+  PrBlock,
+  PrFileStat,
+  PrItem,
+  PrLink,
+  PrRisk,
+  RepoProject,
+} from "../api/types";
 import { useBodyClass } from "../hooks/useBodyClass";
 
 // RepoPage is the repo-as-hub detail view (/repos/<id>). A repo owns three
@@ -66,7 +75,7 @@ export function RepoPage({ id }: { id: string }) {
           <PRsTab repoId={id} />
         </div>
         <div className="tab-panel" style={{ display: tab === "projects" ? "block" : "none" }}>
-          <ProjectsTab />
+          <ProjectsTab repoId={id} />
         </div>
         <div className="tab-panel" style={{ display: tab === "forensics" ? "block" : "none" }}>
           <ForensicsTab repoId={id} />
@@ -234,6 +243,7 @@ function BlockCarousel({ prId }: { prId: number }) {
       </div>
 
       <BlockChat prId={prId} blockId={b.id} blockLabel={b.title || b.filePath} />
+      <LinkedPRs prId={prId} />
     </div>
   );
 }
@@ -473,11 +483,99 @@ function ForensicsTab({ repoId }: { repoId: string }) {
   );
 }
 
-function ProjectsTab() {
+function ProjectsTab({ repoId }: { repoId: string }) {
+  const [projects, setProjects] = useState<RepoProject[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    getJSON<{ projects: RepoProject[] }>(`/repos/${encodeURIComponent(repoId)}/projects`)
+      .then((d) => setProjects(d.projects || []))
+      .catch((e) => setErr((e as Error).message));
+  }, [repoId]);
+
+  if (err) return <p className="tab-note err">Failed to load projects: {err}</p>;
+  if (projects === null) return <p className="tab-note">Loading…</p>;
+  if (projects.length === 0) {
+    return (
+      <p className="tab-note">
+        No Corral sandbox sessions on this repo yet. Projects whose git remote
+        matches this repo appear here — start one from the Repos list.
+      </p>
+    );
+  }
   return (
-    <p className="tab-note">
-      Corral sandbox sessions started from this repo will appear here (filtered
-      from your projects by their git remote).
-    </p>
+    <ul className="pr-list">
+      {projects.map((p) => (
+        <li key={p.id}>
+          <Link to={`/p/${encodeURIComponent(p.id)}`}>{p.name}</Link>
+          <span className="proj-ws">{p.workspace}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// LinkedPRs shows a PR's cross-PR relationships and lets the user link/unlink,
+// with file-overlap suggestions. Rendered inside the block carousel (PR level).
+function LinkedPRs({ prId }: { prId: number }) {
+  const [links, setLinks] = useState<PrLink[]>([]);
+  const [suggestions, setSuggestions] = useState<LinkSuggestion[]>([]);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    getJSON<{ links: PrLink[] }>(`/prs/${prId}/links`)
+      .then((d) => setLinks(d.links || []))
+      .catch((e) => setErr((e as Error).message));
+    getJSON<{ suggestions: LinkSuggestion[] }>(`/prs/${prId}/links/suggest`)
+      .then((d) => setSuggestions(d.suggestions || []))
+      .catch(() => {});
+  }, [prId]);
+  useEffect(() => load(), [load]);
+
+  const add = (linkedPrId: number, relationship: string) => {
+    postJSON(`/prs/${prId}/links`, { linkedPrId, relationship })
+      .then(() => load())
+      .catch((e) => setErr((e as Error).message));
+  };
+  // Link removal is a DELETE; the shared client only exposes GET/POST, so use
+  // fetch directly (same-origin cookie carries auth).
+  const del = (linkId: number) => {
+    fetch(`/prs/${prId}/links/${linkId}`, { method: "DELETE", credentials: "same-origin" })
+      .then(() => load())
+      .catch(() => {});
+  };
+
+  return (
+    <div className="linked-prs">
+      <h4 className="block-h">Linked PRs</h4>
+      {err && <p className="tab-note err">{err}</p>}
+      {links.length === 0 && <p className="tab-note">No linked PRs.</p>}
+      <ul className="link-list">
+        {links.map((l) => (
+          <li key={l.id}>
+            <span className="link-rel">{l.relationship}</span>
+            <span className="link-tgt">
+              #{l.linkedNumber} {l.linkedTitle || l.linkedSummary || ""}
+            </span>
+            <button type="button" className="link-x" title="Remove link" onClick={() => del(l.id)}>
+              ✕
+            </button>
+          </li>
+        ))}
+      </ul>
+      {suggestions.length > 0 && (
+        <div className="link-suggest">
+          <span className="link-suggest-h">Suggested (shared files):</span>
+          {suggestions.map((s) => (
+            <span key={s.prId} className="link-suggest-item">
+              #{s.number} ({s.overlap})
+              <button type="button" className="btn tiny" onClick={() => add(s.prId, "related")}>
+                + link
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

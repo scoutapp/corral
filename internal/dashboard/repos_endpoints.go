@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -94,6 +96,8 @@ func (d *dashboardServer) handleRepoItem(w http.ResponseWriter, r *http.Request,
 		d.handleRepoPRs(w, r, id)
 	case action == "prs/fetch" && r.Method == http.MethodPost:
 		d.handleRepoPRFetch(w, r, id)
+	case action == "projects" && r.Method == http.MethodGet:
+		d.handleRepoProjects(w, r, id)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -153,6 +157,69 @@ func (d *dashboardServer) handleRepoAnalyze(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeFilesJSON(w, map[string]any{"files": stats})
+}
+
+// repoProject is a Corral project whose workspace git remote matches this repo.
+type repoProject struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Workspace string `json:"workspace"`
+}
+
+// handleRepoProjects: GET /repos/<id>/projects — Corral sandbox projects started
+// from this repo. Projects don't record their source repo, so we derive the
+// link at query time: match each project workspace's `origin` owner/name against
+// the repo's. Best-effort — a workspace without a git remote is simply skipped.
+func (d *dashboardServer) handleRepoProjects(w http.ResponseWriter, r *http.Request, id string) {
+	repo, err := repos.Get(id)
+	if err != nil {
+		http.Error(w, "unknown repo", http.StatusNotFound)
+		return
+	}
+	want := prreview.OwnerName(repo.URL)
+	reg, err := readRegistry()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	out := []repoProject{}
+	for _, p := range reg.Projects {
+		if !workspaceMatchesRepo(p.Workspace, repo, want) {
+			continue
+		}
+		out = append(out, repoProject{
+			ID:        ProjectID(p.Workspace),
+			Name:      filepath.Base(p.Workspace),
+			Workspace: p.Workspace,
+		})
+	}
+	writeFilesJSON(w, map[string]any{"projects": out})
+}
+
+// workspaceMatchesRepo reports whether a project workspace was cloned from repo.
+// It compares the workspace's `origin` remote to the repo — by GitHub owner/name
+// when the repo is a GitHub URL (want != ""), else by exact URL/localPath.
+func workspaceMatchesRepo(workspace string, repo *repos.Repo, want string) bool {
+	origin, err := gitOriginURL(workspace)
+	if err != nil || origin == "" {
+		return false
+	}
+	if want != "" {
+		return prreview.OwnerName(origin) == want
+	}
+	// Non-GitHub source: match the raw remote against the repo's url or path.
+	return origin == repo.URL || origin == repo.LocalPath
+}
+
+// gitOriginURL returns a workspace's origin remote URL, or "" if none.
+func gitOriginURL(workspace string) (string, error) {
+	cmd := exec.Command("git", "-C", workspace, "remote", "get-url", "origin")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 // handleRepoPRFetch: POST /repos/<id>/prs/fetch { "number": N } — fetch a PR's
@@ -234,9 +301,86 @@ func (d *dashboardServer) handlePRItem(w http.ResponseWriter, r *http.Request, r
 		d.handlePRRiskGet(w, r, prID)
 	case action == "analyze" && r.Method == http.MethodPost:
 		d.handlePRAnalyze(w, r, prID)
+	case action == "links" && r.Method == http.MethodGet:
+		d.handlePRLinksGet(w, r, prID)
+	case action == "links" && r.Method == http.MethodPost:
+		d.handlePRLinkAdd(w, r, prID)
+	case action == "links/suggest" && r.Method == http.MethodGet:
+		d.handlePRLinkSuggest(w, r, prID)
+	case strings.HasPrefix(action, "links/") && r.Method == http.MethodDelete:
+		d.handlePRLinkRemove(w, r, strings.TrimPrefix(action, "links/"))
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (d *dashboardServer) handlePRLinksGet(w http.ResponseWriter, r *http.Request, prID int64) {
+	s, err := d.getStore()
+	if err != nil {
+		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	links, err := prreview.New(s).Links(prID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeFilesJSON(w, map[string]any{"links": links})
+}
+
+func (d *dashboardServer) handlePRLinkSuggest(w http.ResponseWriter, r *http.Request, prID int64) {
+	s, err := d.getStore()
+	if err != nil {
+		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	sug, err := prreview.New(s).SuggestLinks(prID, 5)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeFilesJSON(w, map[string]any{"suggestions": sug})
+}
+
+func (d *dashboardServer) handlePRLinkAdd(w http.ResponseWriter, r *http.Request, prID int64) {
+	var body struct {
+		LinkedPrId   int64  `json:"linkedPrId"`
+		Relationship string `json:"relationship"`
+		Note         string `json:"note"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.LinkedPrId <= 0 {
+		http.Error(w, "linkedPrId is required", http.StatusBadRequest)
+		return
+	}
+	s, err := d.getStore()
+	if err != nil {
+		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	link, err := prreview.New(s).AddLink(prID, body.LinkedPrId, body.Relationship, body.Note)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeFilesJSON(w, map[string]any{"link": link})
+}
+
+func (d *dashboardServer) handlePRLinkRemove(w http.ResponseWriter, r *http.Request, linkIDStr string) {
+	linkID, err := strconv.ParseInt(linkIDStr, 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	s, err := d.getStore()
+	if err != nil {
+		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := prreview.New(s).RemoveLink(linkID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeFilesJSON(w, map[string]any{"ok": true})
 }
 
 func (d *dashboardServer) handlePRBlocks(w http.ResponseWriter, r *http.Request, prID int64) {
