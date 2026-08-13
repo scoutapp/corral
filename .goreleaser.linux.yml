@@ -5,6 +5,11 @@
 # older glibc than the runner's; linux/arm64 is cross-compiled with the aarch64
 # gcc the workflow installs. Keep in sync with the darwin file except for the
 # goos/overrides that differ per platform. See .github/workflows/release.yml.
+#
+# cgo C sources compiled here: mattn/go-sqlite3 AND the smacker/go-tree-sitter
+# grammars (Python/JS/TS/Ruby/Go) used by the PR-review callgraph. The static
+# arm64 cross-build must compile all of these under aarch64-linux-gnu-gcc — the
+# first tagged release should be watched for grammar/static-link issues.
 version: 2
 
 project_name: corral

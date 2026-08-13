@@ -409,8 +409,16 @@ function BlockChat({ prId, blockId, blockLabel }: { prId: number; blockId: numbe
   );
 }
 
+interface AnalyzeResp {
+  files: PrFileStat[];
+  cgNodes?: number;
+  cgEdges?: number;
+  callgraphOk?: boolean;
+}
+
 function ForensicsTab({ repoId }: { repoId: string }) {
   const [files, setFiles] = useState<PrFileStat[] | null>(null);
+  const [cg, setCg] = useState<{ nodes: number; edges: number; ok: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
 
@@ -424,16 +432,29 @@ function ForensicsTab({ repoId }: { repoId: string }) {
   const analyze = useCallback(() => {
     setAnalyzing(true);
     setErr(null);
-    postJSON<{ files: PrFileStat[] }>(`/repos/${encodeURIComponent(repoId)}/analyze`)
-      .then((d) => setFiles(d.files || []))
+    postJSON<AnalyzeResp>(`/repos/${encodeURIComponent(repoId)}/analyze`)
+      .then((d) => {
+        setFiles(d.files || []);
+        setCg({ nodes: d.cgNodes || 0, edges: d.cgEdges || 0, ok: !!d.callgraphOk });
+      })
       .catch((e) => setErr((e as Error).message))
       .finally(() => setAnalyzing(false));
   }, [repoId]);
 
   const analyzeBtn = (
-    <button type="button" className="btn primary" disabled={analyzing} onClick={analyze}>
-      {analyzing ? "Analyzing…" : files && files.length ? "Re-analyze" : "Analyze repo"}
-    </button>
+    <>
+      <button type="button" className="btn primary" disabled={analyzing} onClick={analyze}>
+        {analyzing ? "Analyzing…" : files && files.length ? "Re-analyze" : "Analyze repo"}
+      </button>
+      {cg &&
+        (cg.ok ? (
+          <span className="cg-stat">
+            Callgraph: {cg.nodes.toLocaleString()} nodes · {cg.edges.toLocaleString()} edges
+          </span>
+        ) : (
+          <span className="cg-stat">Callgraph unavailable (churn-only hotness)</span>
+        ))}
+    </>
   );
 
   if (err) {

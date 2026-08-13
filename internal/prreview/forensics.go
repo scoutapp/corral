@@ -1,6 +1,7 @@
 package prreview
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"regexp"
@@ -68,6 +69,31 @@ func (s *Service) Analyze(repoID, gitDir string) ([]FileStat, error) {
 		return nil, err
 	}
 	return s.Forensics(repoID)
+}
+
+// AnalyzeResult reports what a full repo analysis produced.
+type AnalyzeResult struct {
+	Files       []FileStat `json:"files"`
+	Nodes       int        `json:"cgNodes"`
+	Edges       int        `json:"cgEdges"`
+	CallgraphOK bool       `json:"callgraphOk"`
+}
+
+// AnalyzeRepo runs forensics AND the tree-sitter callgraph for a repo. The
+// callgraph is best-effort: if it fails (e.g. `git archive`/parse trouble on a
+// large or unusual repo) the forensics result is still returned, with
+// CallgraphOK=false, so hotness gracefully falls back to churn-only.
+func (s *Service) AnalyzeRepo(ctx context.Context, repoID, gitDir, defaultBranch string) (AnalyzeResult, error) {
+	files, err := s.Analyze(repoID, gitDir)
+	if err != nil {
+		return AnalyzeResult{}, err
+	}
+	res := AnalyzeResult{Files: files}
+	nodes, edges, cgErr := s.BuildCallgraph(ctx, repoID, gitDir, defaultBranch)
+	if cgErr == nil {
+		res.Nodes, res.Edges, res.CallgraphOK = nodes, edges, true
+	}
+	return res, nil
 }
 
 // churnScore = total_commits / age_in_days, with a 1-day floor to avoid

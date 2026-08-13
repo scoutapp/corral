@@ -151,12 +151,20 @@ func (d *dashboardServer) handleRepoAnalyze(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	stats, err := prreview.New(s).Analyze(id, repo.CachePath)
+	// Forensics + tree-sitter callgraph. The callgraph is best-effort inside
+	// AnalyzeRepo; forensics still returns if it fails (hotness falls back to
+	// churn-only).
+	res, err := prreview.New(s).AnalyzeRepo(r.Context(), id, repo.CachePath, repo.DefaultBranch)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeFilesJSON(w, map[string]any{"files": stats})
+	writeFilesJSON(w, map[string]any{
+		"files":       res.Files,
+		"cgNodes":     res.Nodes,
+		"cgEdges":     res.Edges,
+		"callgraphOk": res.CallgraphOK,
+	})
 }
 
 // repoProject is a Corral project whose workspace git remote matches this repo.
