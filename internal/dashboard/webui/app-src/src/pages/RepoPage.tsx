@@ -4,6 +4,7 @@ import { getJSON, postJSON, wsURL } from "../api/client";
 import type {
   CachedRepo,
   LinkSuggestion,
+  OpenPr,
   PrBlock,
   PrFileStat,
   PrItem,
@@ -86,84 +87,137 @@ export function RepoPage({ id }: { id: string }) {
 }
 
 function PRsTab({ repoId }: { repoId: string }) {
-  const [prs, setPrs] = useState<PrItem[] | null>(null);
+  // Live open PRs from GitHub (gh pr list), plus the PRs already fetched into the
+  // DB (so we can show an "analyzed" marker and expand their block carousel).
+  const [open, setOpen] = useState<OpenPr[] | null>(null);
+  const [openUnavailable, setOpenUnavailable] = useState<string | null>(null);
+  const [fetched, setFetched] = useState<PrItem[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [num, setNum] = useState("");
-  const [fetching, setFetching] = useState(false);
+  const [busyNum, setBusyNum] = useState<number | null>(null); // PR # currently analyzing
+  const [expanded, setExpanded] = useState<number | null>(null); // PR db-id expanded
 
-  const load = useCallback(() => {
-    getJSON<{ prs: PrItem[] }>(`/repos/${encodeURIComponent(repoId)}/prs`)
-      .then((d) => setPrs(d.prs || []))
-      .catch((e) => setErr((e as Error).message));
+  const loadFetched = useCallback(
+    () =>
+      getJSON<{ prs: PrItem[] }>(`/repos/${encodeURIComponent(repoId)}/prs`)
+        .then((d) => setFetched(d.prs || []))
+        .catch(() => {}),
+    [repoId],
+  );
+  const loadOpen = useCallback(() => {
+    getJSON<{ available: boolean; prs?: OpenPr[]; reason?: string }>(
+      `/repos/${encodeURIComponent(repoId)}/prs/open`,
+    )
+      .then((d) => {
+        if (d.available) {
+          setOpen(d.prs || []);
+          setOpenUnavailable(null);
+        } else {
+          setOpen([]);
+          setOpenUnavailable(d.reason || "unavailable");
+        }
+      })
+      .catch((e) => setOpenUnavailable((e as Error).message));
   }, [repoId]);
-  useEffect(() => load(), [load]);
 
-  const fetchPR = useCallback(() => {
+  useEffect(() => {
+    loadOpen();
+    loadFetched();
+  }, [loadOpen, loadFetched]);
+
+  // Map PR number -> already-fetched DB record (for markers + expansion).
+  const fetchedByNum = new Map(fetched.map((p) => [p.number, p]));
+
+  // Analyze a PR by number: fetch its diff + blocks, then expand its carousel.
+  const analyze = useCallback(
+    (n: number) => {
+      setBusyNum(n);
+      setErr(null);
+      postJSON<{ pr: PrItem }>(`/repos/${encodeURIComponent(repoId)}/prs/fetch`, { number: n })
+        .then((d) => loadFetched().then(() => setExpanded(d.pr.id)))
+        .catch((e) => setErr((e as Error).message))
+        .finally(() => setBusyNum(null));
+    },
+    [repoId, loadFetched],
+  );
+
+  const analyzeManual = () => {
     const n = parseInt(num, 10);
     if (!Number.isFinite(n) || n <= 0) {
       setErr("enter a positive PR number");
       return;
     }
-    setFetching(true);
-    setErr(null);
-    postJSON<{ pr: PrItem }>(`/repos/${encodeURIComponent(repoId)}/prs/fetch`, { number: n })
-      .then(() => {
-        setNum("");
-        load();
-      })
-      .catch((e) => setErr((e as Error).message))
-      .finally(() => setFetching(false));
-  }, [num, repoId, load]);
-
-  const fetchBar = (
-    <div className="tab-actions">
-      <input
-        className="pr-num-input"
-        type="number"
-        min="1"
-        placeholder="PR #"
-        value={num}
-        disabled={fetching}
-        onChange={(e) => setNum(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && fetchPR()}
-      />
-      <button type="button" className="btn primary" disabled={fetching} onClick={fetchPR}>
-        {fetching ? "Fetching…" : "Fetch PR"}
-      </button>
-    </div>
-  );
-
-  const [openPR, setOpenPR] = useState<number | null>(null);
+    setNum("");
+    analyze(n);
+  };
 
   return (
     <>
-      {fetchBar}
       {err && <p className="tab-note err">Failed: {err}</p>}
-      {prs === null ? (
-        <p className="tab-note">Loading…</p>
-      ) : prs.length === 0 ? (
+
+      {open === null ? (
+        <p className="tab-note">Loading open PRs…</p>
+      ) : openUnavailable ? (
         <p className="tab-note">
-          No pull requests fetched yet. Enter a PR number above to pull its diff.
-          Fetching splits it into hotness-ranked blocks and summarizes it.
+          Couldn't list open PRs ({openUnavailable}). Fetch a PR by number below.
         </p>
+      ) : open.length === 0 ? (
+        <p className="tab-note">No open pull requests on this repo.</p>
       ) : (
         <ul className="pr-list">
-          {prs.map((p) => (
-            <li key={p.id} className="pr-row">
-              <button
-                type="button"
-                className="pr-head"
-                onClick={() => setOpenPR(openPR === p.id ? null : p.id)}
-              >
-                <span className="pr-num">#{p.number}</span>{" "}
-                {p.shortSummary || p.title || "(untitled)"}
-                {p.state && <span className="pr-state">{p.state}</span>}
-              </button>
-              {openPR === p.id && <BlockCarousel prId={p.id} />}
-            </li>
-          ))}
+          {open.map((p) => {
+            const rec = fetchedByNum.get(p.number);
+            const isBusy = busyNum === p.number;
+            return (
+              <li key={p.number} className="pr-row">
+                <div className="pr-head-row">
+                  <button
+                    type="button"
+                    className="pr-head"
+                    disabled={!rec}
+                    title={rec ? "Show analysis" : "Not analyzed yet"}
+                    onClick={() => rec && setExpanded(expanded === rec.id ? null : rec.id)}
+                  >
+                    <span className="pr-num">#{p.number}</span>{" "}
+                    {rec?.shortSummary || p.title || "(untitled)"}
+                    {p.isDraft && <span className="pr-state">draft</span>}
+                    {rec && <span className="pr-analyzed" title="Analyzed">✓</span>}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn tiny"
+                    disabled={isBusy}
+                    onClick={() => analyze(p.number)}
+                  >
+                    {isBusy ? "Analyzing…" : rec ? "Re-analyze" : "Analyze"}
+                  </button>
+                </div>
+                <div className="pr-byline">
+                  {p.author && <span>@{p.author}</span>}
+                </div>
+                {rec && expanded === rec.id && <BlockCarousel prId={rec.id} />}
+              </li>
+            );
+          })}
         </ul>
       )}
+
+      <div className="pr-manual">
+        <span className="pr-manual-h">Fetch a specific PR (e.g. closed/old):</span>
+        <input
+          className="pr-num-input"
+          type="number"
+          min="1"
+          placeholder="PR #"
+          value={num}
+          disabled={busyNum !== null}
+          onChange={(e) => setNum(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && analyzeManual()}
+        />
+        <button type="button" className="btn" disabled={busyNum !== null} onClick={analyzeManual}>
+          Fetch
+        </button>
+      </div>
     </>
   );
 }

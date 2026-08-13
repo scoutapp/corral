@@ -1325,7 +1325,9 @@ table.projects th, table.projects td {
 }
 
 .pr-list { list-style: none; margin: 0; padding: 0; }
-.pr-list li {
+/* Plain list rows (Projects tab, linked-PR targets). PR rows use .pr-row, which
+   manages its own layout, so exclude them here to avoid a double border. */
+.pr-list li:not(.pr-row) {
   padding: 0.5rem 0; border-bottom: 1px solid var(--con-line);
   display: flex; align-items: center; gap: 0.6rem;
 }
@@ -1334,13 +1336,23 @@ table.projects th, table.projects td {
   margin-left: auto; font-size: 0.72rem; text-transform: uppercase;
   letter-spacing: 0.12em; color: var(--con-muted);
 }
-.pr-row { display: block; padding: 0; }
+.pr-row { display: block; padding: 0.3rem 0; border-bottom: 1px solid var(--con-line); }
+.pr-head-row { display: flex; align-items: center; gap: 0.6rem; }
 .pr-head {
-  width: 100%; display: flex; align-items: center; gap: 0.6rem;
-  padding: 0.55rem 0; background: none; border: none; color: var(--con-text);
+  flex: 1 1 auto; display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.35rem 0; background: none; border: none; color: var(--con-text);
   cursor: pointer; text-align: left; font-size: inherit;
 }
-.pr-head:hover { color: var(--con-working); }
+.pr-head:disabled { cursor: default; }
+.pr-head:not(:disabled):hover { color: var(--con-working); }
+.pr-analyzed { color: var(--con-working); }
+.pr-byline { font-size: 0.74rem; color: var(--con-muted); padding-left: 0.1rem; }
+.pr-manual {
+  display: flex; align-items: center; gap: 0.5rem; margin-top: 1.1rem;
+  padding-top: 0.8rem; border-top: 1px solid var(--con-line);
+  font-size: 0.82rem; color: var(--con-muted); flex-wrap: wrap;
+}
+.pr-manual-h { margin-right: 0.2rem; }
 
 /* Block carousel (a PR's hotness-ranked blocks) */
 .block-carousel { padding: 0.4rem 0 1rem; }
