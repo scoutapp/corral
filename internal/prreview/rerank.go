@@ -77,7 +77,8 @@ func (s *Service) Rerank(ctx context.Context, prID int64) ([]Block, error) {
 func (s *Service) snapshotAnalysis(prID int64) (map[string]blockAnalysis, error) {
 	rows, err := s.db.Query(`
 		SELECT b.id, COALESCE(b.diff_hunk,''), COALESCE(b.title,''),
-		       COALESCE(b.explanation,''), COALESCE(b.codebase_context,'')
+		       COALESCE(b.explanation,''), COALESCE(b.codebase_context,''),
+		       COALESCE(b.hotness_score, 0)
 		  FROM pr_blocks b WHERE b.pr_id = ?`, prID)
 	if err != nil {
 		return nil, err
@@ -87,11 +88,12 @@ func (s *Service) snapshotAnalysis(prID int64) (map[string]blockAnalysis, error)
 	type row struct {
 		id                     int64
 		hunk, title, expl, ctx string
+		hotness                float64
 	}
 	var rowsData []row
 	for rows.Next() {
 		var r row
-		if err := rows.Scan(&r.id, &r.hunk, &r.title, &r.expl, &r.ctx); err != nil {
+		if err := rows.Scan(&r.id, &r.hunk, &r.title, &r.expl, &r.ctx, &r.hotness); err != nil {
 			return nil, err
 		}
 		rowsData = append(rowsData, r)
@@ -107,6 +109,13 @@ func (s *Service) snapshotAnalysis(prID int64) (map[string]blockAnalysis, error)
 			continue
 		}
 		a := blockAnalysis{Title: r.title, Explanation: r.expl, CodebaseContext: r.ctx}
+		// For AI-enriched blocks, hotness IS the AI risk score — carry it back so
+		// a rerank preserves the informed ranking (0-100). Values outside that
+		// range are legacy mechanical hotness; leave RiskScore 0 so rerank
+		// recomputes mechanically for those.
+		if r.hotness > 0 && r.hotness <= 100 {
+			a.RiskScore = int(r.hotness)
+		}
 		// Edge cases for this block.
 		ecRows, err := s.db.Query(
 			`SELECT COALESCE(description,''), COALESCE(severity,'low') FROM pr_block_edge_cases WHERE block_id = ?`, r.id)

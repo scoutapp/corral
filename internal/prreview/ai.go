@@ -3,6 +3,7 @@ package prreview
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -66,22 +67,42 @@ type blockAnalysis struct {
 	CodebaseContext string     `json:"codebase_context"`
 	EdgeCases       []edgeCase `json:"edge_cases"`
 	Importance      int        `json:"importance"`
+	// RiskScore (0-100) is the AI's INFORMED judgment of how likely THIS change
+	// is to cause issues, weighing the file heuristics (churn/fixes/authors/
+	// callgraph) against how well-guarded/tested the actual added code is. It
+	// becomes the block's hotness when AI analysis is present, so a well-guarded
+	// change in a churny file can rank LOWER than the raw heuristics suggest.
+	RiskScore int `json:"risk_score"`
+}
+
+// fileHeuristic bundles the mechanical signals for a file, passed into the block
+// prompt so the AI can reason about risk with the same evidence the heuristic
+// ranking uses.
+type fileHeuristic struct {
+	Churn         float64
+	TotalCommits  int
+	FixCommits    int
+	AuthorCount   int
+	InDegree      int
+	DaysSinceEdit int // -1 if unknown
 }
 
 type edgeCase struct {
 	Description string `json:"description"`
-	Severity   string `json:"severity"`
+	Severity    string `json:"severity"`
 }
 
-// analyzeBlock asks Claude to analyze one diff block. On any failure (no runner,
-// CLI error, unparseable JSON) it returns a deterministic placeholder with
-// importance 3, so extraction always produces a usable block.
-func analyzeBlock(ctx context.Context, ai aiRunner, diffHunk, filePath, prTitle string) blockAnalysis {
+// analyzeBlock asks Claude to analyze one diff block, giving it the file's
+// mechanical heuristics so it can judge risk with the same evidence the
+// heuristic ranking uses. On any failure (no runner, CLI error, unparseable
+// JSON) it returns a deterministic placeholder, so extraction always produces a
+// usable block.
+func analyzeBlock(ctx context.Context, ai aiRunner, diffHunk, filePath, prTitle string, h fileHeuristic) blockAnalysis {
 	fallback := placeholderAnalysis(filePath)
 	if ai == nil {
 		return fallback
 	}
-	prompt := blockPrompt(diffHunk, filePath, prTitle)
+	prompt := blockPrompt(diffHunk, filePath, prTitle, h)
 	out, err := ai.Run(ctx, prompt)
 	if err != nil {
 		return fallback
@@ -95,6 +116,12 @@ func analyzeBlock(ctx context.Context, ai aiRunner, diffHunk, filePath, prTitle 
 	}
 	if a.Importance < 1 || a.Importance > 5 {
 		a.Importance = 3
+	}
+	if a.RiskScore < 0 {
+		a.RiskScore = 0
+	}
+	if a.RiskScore > 100 {
+		a.RiskScore = 100
 	}
 	return a
 }
@@ -118,14 +145,24 @@ func placeholderAnalysis(filePath string) blockAnalysis {
 	}
 }
 
-func blockPrompt(diffHunk, filePath, prTitle string) string {
+func blockPrompt(diffHunk, filePath, prTitle string, h fileHeuristic) string {
 	if len(diffHunk) > 3000 {
 		diffHunk = diffHunk[:3000]
 	}
-	return "Analyze this code diff block from a pull request.\n\n" +
+	return "Analyze this code diff block from a pull request for RISK — how likely " +
+		"is this specific change to introduce a bug or cause problems.\n\n" +
 		"PR Title: " + prTitle + "\n" +
 		"File: " + filePath + "\n\n" +
+		"File heuristics (historical signals — evidence, not verdict):\n" +
+		heuristicLines(h) + "\n" +
 		"Diff:\n```\n" + diffHunk + "\n```\n\n" +
+		"Judge the risk of THIS change. The heuristics show the file's history, " +
+		"but weigh them against the ACTUAL code: a change to a high-churn / " +
+		"heavily-fixed / widely-called file can still be LOW risk if the added " +
+		"code is simple, well-guarded (null/permission/error checks), covered by " +
+		"tests, or purely additive; conversely a small change to a 'calm' file can " +
+		"be HIGH risk if it touches core invariants, auth, money, or data. Don't " +
+		"just echo the heuristics.\n\n" +
 		"Respond with a JSON object containing:\n" +
 		`- "title": <=8 word title of what this block does` + "\n" +
 		`- "explanation": 1 sentence: what changed and the practical effect` + "\n" +
@@ -133,8 +170,27 @@ func blockPrompt(diffHunk, filePath, prTitle string) string {
 		`- "edge_cases": array of {"description": str, "severity": "low"|"medium"|"high"}` + "\n" +
 		`- "importance": integer 1-5 (1=critical security/auth/payments/data, ` +
 		`2=significant error-handling/API/DB, 3=moderate refactor/config, ` +
-		`4=minor tests/docs, 5=trivial comments/formatting)` + "\n\n" +
+		`4=minor tests/docs, 5=trivial comments/formatting)` + "\n" +
+		`- "risk_score": integer 0-100 — your informed likelihood that THIS change ` +
+		`causes an issue (0=trivially safe, 100=very likely to break something). ` +
+		`This is the primary output; it should reflect the code, not just the ` +
+		`file's churn.` + "\n\n" +
 		"Return only valid JSON, no markdown fences."
+}
+
+// heuristicLines renders the file signals for the prompt.
+func heuristicLines(h fileHeuristic) string {
+	stale := "unknown"
+	if h.DaysSinceEdit >= 0 {
+		stale = fmt.Sprintf("%d days ago", h.DaysSinceEdit)
+	}
+	return fmt.Sprintf(
+		"- churn score: %.2f commits/day\n"+
+			"- fix commits: %d of %d total (files with many fix commits have been buggy)\n"+
+			"- distinct authors: %d\n"+
+			"- callgraph in-degree: %d (how many places call into this file — blast radius)\n"+
+			"- last edited: %s",
+		h.Churn, h.FixCommits, h.TotalCommits, h.AuthorCount, h.InDegree, stale)
 }
 
 // summarizePR asks Claude for a <=100-char PR summary from the PR title and its

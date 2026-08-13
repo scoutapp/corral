@@ -3,6 +3,7 @@ package prreview
 import (
 	"database/sql"
 	"strings"
+	"time"
 
 	"github.com/scoutapp/corral/internal/store"
 )
@@ -183,6 +184,46 @@ func (s *Service) diffStatsByFile(prID int64) map[string][2]int {
 			}
 		}
 		out[fp] = [2]int{add, del}
+	}
+	return out
+}
+
+// fileHeuristics loads the per-file signals (churn, fix/total commits, authors,
+// staleness) for a repo and folds in the callgraph in-degree, for the block AI
+// prompt + the mechanical hotness fallback. Files with no stats row are absent
+// from the map (callers default churn to 1.0).
+func (s *Service) fileHeuristics(repoID string, indeg map[string]int) map[string]fileHeuristic {
+	out := map[string]fileHeuristic{}
+	now := time.Now().Unix()
+	rows, err := s.db.Query(`
+		SELECT file_path, COALESCE(churn_score,1.0), total_commits, fix_commits,
+		       author_count, last_commit
+		  FROM pr_file_stats WHERE repo_id = ?`, repoID)
+	if err == nil {
+		for rows.Next() {
+			var fp string
+			var churn float64
+			var total, fix, authors int
+			var last *int64
+			if rows.Scan(&fp, &churn, &total, &fix, &authors, &last) != nil {
+				continue
+			}
+			h := fileHeuristic{
+				Churn: churn, TotalCommits: total, FixCommits: fix,
+				AuthorCount: authors, InDegree: indeg[fp], DaysSinceEdit: -1,
+			}
+			if last != nil {
+				h.DaysSinceEdit = int((now - *last) / 86400)
+			}
+			out[fp] = h
+		}
+		rows.Close()
+	}
+	// Files that have an in-degree but no stats row still get the in-degree.
+	for fp, d := range indeg {
+		if _, ok := out[fp]; !ok {
+			out[fp] = fileHeuristic{Churn: 1.0, InDegree: d, DaysSinceEdit: -1}
+		}
 	}
 	return out
 }
