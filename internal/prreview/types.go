@@ -59,6 +59,7 @@ type PR struct {
 	State        string  `json:"state,omitempty"`
 	BaseSHA      string  `json:"baseSha,omitempty"`
 	HeadSHA      string  `json:"headSha,omitempty"`
+	HeadRef      string  `json:"headRef,omitempty"` // PR branch name
 	FetchedAt    *string `json:"fetchedAt,omitempty"`
 }
 

@@ -24,12 +24,13 @@ func OwnerName(url string) string {
 
 // ghPRView is the subset of `gh pr view --json …` we store.
 type ghPRView struct {
-	Number     int    `json:"number"`
-	Title      string `json:"title"`
-	State      string `json:"state"`
-	URL        string `json:"url"`
-	BaseRefOid string `json:"baseRefOid"`
-	HeadRefOid string `json:"headRefOid"`
+	Number      int    `json:"number"`
+	Title       string `json:"title"`
+	State       string `json:"state"`
+	URL         string `json:"url"`
+	BaseRefOid  string `json:"baseRefOid"`
+	HeadRefOid  string `json:"headRefOid"`
+	HeadRefName string `json:"headRefName"` // PR branch, for verify-launch
 }
 
 // OpenPR is a lightweight entry from `gh pr list` — the repo's live open PRs,
@@ -122,7 +123,7 @@ func (s *Service) FetchPR(repoID, ownerName string, number int) (*PR, error) {
 
 	metaOut, err := exec.Command(ghBin, "pr", "view", fmt.Sprint(number),
 		"--repo", ownerName,
-		"--json", "number,title,state,url,baseRefOid,headRefOid",
+		"--json", "number,title,state,url,baseRefOid,headRefOid,headRefName",
 	).Output()
 	if err != nil {
 		return nil, fmt.Errorf("prreview: gh pr view: %w", err)
@@ -149,18 +150,19 @@ func (s *Service) upsertPR(repoID string, meta ghPRView, rawDiff string) (*PR, e
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.Exec(`
 		INSERT INTO prs (repo_id, pr_number, title, github_url, state,
-		                 base_sha, head_sha, raw_diff, fetched_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		                 base_sha, head_sha, head_ref, raw_diff, fetched_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(repo_id, pr_number) DO UPDATE SET
 		    title      = excluded.title,
 		    github_url = excluded.github_url,
 		    state      = excluded.state,
 		    base_sha   = excluded.base_sha,
 		    head_sha   = excluded.head_sha,
+		    head_ref   = excluded.head_ref,
 		    raw_diff   = excluded.raw_diff,
 		    fetched_at = excluded.fetched_at
 	`, repoID, meta.Number, meta.Title, meta.URL, meta.State,
-		meta.BaseRefOid, meta.HeadRefOid, rawDiff, now)
+		meta.BaseRefOid, meta.HeadRefOid, meta.HeadRefName, rawDiff, now)
 	if err != nil {
 		return nil, err
 	}
@@ -169,11 +171,11 @@ func (s *Service) upsertPR(repoID string, meta ghPRView, rawDiff string) (*PR, e
 	err = s.db.QueryRow(`
 		SELECT id, repo_id, pr_number, COALESCE(title,''), COALESCE(short_summary,''),
 		       COALESCE(github_url,''), COALESCE(state,''), COALESCE(base_sha,''),
-		       COALESCE(head_sha,''), fetched_at
+		       COALESCE(head_sha,''), COALESCE(head_ref,''), fetched_at
 		  FROM prs WHERE repo_id = ? AND pr_number = ?
 	`, repoID, meta.Number).Scan(
 		&p.ID, &p.RepoID, &p.Number, &p.Title, &p.ShortSummary,
-		&p.GithubURL, &p.State, &p.BaseSHA, &p.HeadSHA, &p.FetchedAt,
+		&p.GithubURL, &p.State, &p.BaseSHA, &p.HeadSHA, &p.HeadRef, &p.FetchedAt,
 	)
 	if err != nil {
 		return nil, err

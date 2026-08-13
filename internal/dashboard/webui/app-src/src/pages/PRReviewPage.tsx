@@ -4,6 +4,7 @@ import { getJSON, postJSON } from "../api/client";
 import type { CachedRepo, PrItem } from "../api/types";
 import { useBodyClass } from "../hooks/useBodyClass";
 import { ChatPanel } from "../components/ChatPanel";
+import { NewProjectModal } from "./ReposModals";
 import {
   AnalysisStatusBanner,
   BlockCarousel,
@@ -129,6 +130,7 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
   const [err, setErr] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0); // bumped after re-analyze to remount panels
   const [chatOpen, setChatOpen] = useState(false);
+  const [startOpen, setStartOpen] = useState(false);
 
   useEffect(() => {
     getJSON<{ repos: CachedRepo[] }>("/repos")
@@ -175,14 +177,24 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
           )}
         </div>
         {pr && (
-          <button
-            type="button"
-            className={`dock-toggle${chatOpen ? " on" : ""}`}
-            title="Ask Claude about this PR — a host claude chat"
-            onClick={() => setChatOpen((v) => !v)}
-          >
-            💬 Ask Claude
-          </button>
+          <>
+            <button
+              type="button"
+              className="dock-toggle"
+              title="Start a sandbox project on this PR's branch"
+              onClick={() => setStartOpen(true)}
+            >
+              ⧉ Start project
+            </button>
+            <button
+              type="button"
+              className={`dock-toggle${chatOpen ? " on" : ""}`}
+              title="Ask Claude about this PR — a host claude chat"
+              onClick={() => setChatOpen((v) => !v)}
+            >
+              💬 Ask Claude
+            </button>
+          </>
         )}
       </header>
 
@@ -235,6 +247,15 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
             <ChatPanel wsPath={`/prs/${pr.id}/chat/ws`} />
           </div>
         </div>
+      )}
+
+      {pr && startOpen && (
+        <NewProjectModal
+          presetRepoId={repoId}
+          presetBranch={pr.headRef}
+          presetName={`${repo?.name || "pr"}-pr-${number}`}
+          onClose={() => setStartOpen(false)}
+        />
       )}
     </>
   );

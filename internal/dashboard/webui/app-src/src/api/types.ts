@@ -300,6 +300,7 @@ export interface PrItem {
   state?: string;
   baseSha?: string;
   headSha?: string;
+  headRef?: string; // PR branch name
   fetchedAt?: string;
 }
 
