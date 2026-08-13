@@ -1,6 +1,7 @@
 package prreview
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -115,5 +116,78 @@ func TestChurnScoreFloor(t *testing.T) {
 	// 10 commits over 10 days = 1.0/day.
 	if got := churnScore(10, 0, 10*86400); got != 1.0 {
 		t.Errorf("churn = %v, want 1.0", got)
+	}
+}
+
+func TestAnalyzeCapturesAuthors(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	gitDir := initTestRepo(t) // all commits by t@e (single author)
+	svc, _ := newService(t)
+	if _, err := svc.Analyze("r1", gitDir); err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	var authors int
+	var first, last *int64
+	svc.db.QueryRow(`SELECT author_count, first_commit, last_commit
+	                 FROM pr_file_stats WHERE repo_id='r1' AND file_path='hot.go'`).
+		Scan(&authors, &first, &last)
+	if authors != 1 {
+		t.Errorf("author_count = %d, want 1 (sole contributor)", authors)
+	}
+	if first == nil || last == nil || *last < *first {
+		t.Errorf("expected first<=last commit ts, got first=%v last=%v", first, last)
+	}
+}
+
+func TestFileForensics(t *testing.T) {
+	svc, _ := newService(t)
+	now := int64(1_700_000_000)
+	// charge.ts: 100 commits, 40 fixes, 1 author, first 400d ago, last 5d ago.
+	first := now - 400*86400
+	last := now - 5*86400
+	svc.db.Exec(`INSERT INTO pr_file_stats
+	  (repo_id, file_path, total_commits, fix_commits, churn_score, author_count, first_commit, last_commit)
+	  VALUES ('r1','src/charge.ts',100,40,5.0,1,?,?)`, first, last)
+	// callgraph: charge.ts referenced by 2 other files.
+	svc.db.Exec(`INSERT INTO pr_cg_nodes (id,repo_id,file_path,symbol_name,kind,line_start,line_end)
+	  VALUES (1,'r1','src/charge.ts','charge','function',1,9),
+	         (2,'r1','src/a.ts','a','function',1,3),(3,'r1','src/b.ts','b','function',1,3)`)
+	svc.db.Exec(`INSERT INTO pr_cg_edges (repo_id,caller_id,callee_id) VALUES ('r1',2,1),('r1',3,1)`)
+
+	prID := seedPR(t, svc, "r1", sampleDiff)
+	svc.ExtractBlocks(context.Background(), prID, nil) // creates the block for charge.ts
+
+	stats, err := svc.FileForensics(prID, now)
+	if err != nil {
+		t.Fatalf("FileForensics: %v", err)
+	}
+	var charge *FileForensic
+	for i := range stats {
+		if stats[i].FilePath == "src/charge.ts" {
+			charge = &stats[i]
+		}
+	}
+	if charge == nil {
+		t.Fatal("no forensics for src/charge.ts")
+	}
+	if charge.FixPct != 40 {
+		t.Errorf("fixPct = %d, want 40", charge.FixPct)
+	}
+	if charge.AuthorCount != 1 {
+		t.Errorf("authorCount = %d, want 1", charge.AuthorCount)
+	}
+	if charge.DaysOld == nil || *charge.DaysOld != 400 {
+		t.Errorf("daysOld = %v, want 400", charge.DaysOld)
+	}
+	if charge.DaysSinceEdit == nil || *charge.DaysSinceEdit != 5 {
+		t.Errorf("daysSinceEdit = %v, want 5", charge.DaysSinceEdit)
+	}
+	if charge.RefCount != 2 {
+		t.Errorf("refCount = %d, want 2 (a.ts, b.ts call charge)", charge.RefCount)
+	}
+	if charge.VelocityPerWeek <= 0 {
+		t.Errorf("velocityPerWeek = %v, want > 0", charge.VelocityPerWeek)
 	}
 }
