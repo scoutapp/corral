@@ -1413,12 +1413,14 @@ table.projects th, table.projects td {
   background: #0b0e14; border: 1px solid var(--con-line);
   font-family: ui-monospace, monospace; font-size: 0.78rem; line-height: 1.45;
 }
-/* CodeMirror-hosted syntax-highlighted diff for a block hunk. */
-.block-diff-cm {
+/* CodeMirror-hosted syntax-highlighted diff for a block hunk. Reuses the
+   projects-pane .diff-view/.diff-body styling (add/delete gutter colors, etc.);
+   this only bounds the height, since here it sits inside a scrolling card
+   rather than filling a pane. */
+.block-diff-host {
   margin: 0.3rem 0; border: 1px solid var(--con-line); border-radius: 4px;
-  overflow: auto; max-height: 24rem; font-size: 0.78rem;
+  height: 22rem; overflow: hidden; font-size: 0.78rem;
 }
-.block-diff-cm .cm-editor { max-height: 24rem; }
 
 /* PR risk card */
 .risk-card {
