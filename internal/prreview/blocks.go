@@ -244,10 +244,58 @@ func (s *Service) ExtractBlocks(ctx context.Context, prID int64, ai aiRunner) ([
 		return *items[i].b.HotnessScore > *items[j].b.HotnessScore
 	})
 
-	if err := s.writeBlocks(prID, items, title, number, ctx, ai); err != nil {
+	// Stamp the repo-analysis these blocks were ranked against, so staleness can
+	// be detected later. Empty when the repo isn't analyzed (⇒ blocks unranked).
+	analysisSHA := s.repoAnalysisSHA(repoID)
+	if err := s.writeBlocks(prID, items, title, number, analysisSHA, ctx, ai); err != nil {
 		return nil, err
 	}
 	return s.Blocks(prID)
+}
+
+// repoAnalysisSHA returns the head_sha the repo was last analyzed at, or "".
+func (s *Service) repoAnalysisSHA(repoID string) string {
+	var sha string
+	_ = s.db.QueryRow(
+		`SELECT head_sha FROM pr_repo_analysis WHERE repo_id = ?`, repoID,
+	).Scan(&sha)
+	return sha
+}
+
+// BlocksStatus reports whether a PR's block hotness ranking is current relative
+// to the repo's analysis.
+type BlocksStatus struct {
+	// RepoAnalyzed is false when the repo has never been analyzed (blocks are
+	// unranked — all fallback hotness).
+	RepoAnalyzed bool `json:"repoAnalyzed"`
+	// Stale is true when the blocks were ranked against a different repo-analysis
+	// than the current one (repo analyzed/re-analyzed after the blocks were
+	// extracted) — hotness ranking is out of date.
+	Stale bool `json:"stale"`
+}
+
+// BlocksStatusFor returns the block-ranking freshness for a PR: whether the repo
+// is analyzed and whether the blocks were ranked against the current analysis.
+func (s *Service) BlocksStatusFor(prID int64) (BlocksStatus, error) {
+	var repoID, blocksSHA string
+	var blocksSHANull *string
+	if err := s.db.QueryRow(
+		`SELECT repo_id, blocks_analysis_sha FROM prs WHERE id = ?`, prID,
+	).Scan(&repoID, &blocksSHANull); err != nil {
+		return BlocksStatus{}, err
+	}
+	if blocksSHANull != nil {
+		blocksSHA = *blocksSHANull
+	}
+	current := s.repoAnalysisSHA(repoID)
+
+	st := BlocksStatus{RepoAnalyzed: current != ""}
+	// Stale when the repo is analyzed but the blocks were ranked against a
+	// different (older/absent) analysis sha.
+	if st.RepoAnalyzed && blocksSHA != current {
+		st.Stale = true
+	}
+	return st, nil
 }
 
 // builtBlock is an extracted block plus its edge cases, before persistence.
@@ -258,7 +306,7 @@ type builtBlock struct {
 
 // writeBlocks persists blocks + edge cases for a PR (replacing prior rows) and
 // updates the PR's short summary, atomically.
-func (s *Service) writeBlocks(prID int64, items []builtBlock, title string, number int, ctx context.Context, ai aiRunner) error {
+func (s *Service) writeBlocks(prID int64, items []builtBlock, title string, number int, analysisSHA string, ctx context.Context, ai aiRunner) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -311,7 +359,10 @@ func (s *Service) writeBlocks(prID int64, items []builtBlock, title string, numb
 		limit = limit[:5]
 	}
 	summary := summarizePR(ctx, ai, title, limit, fallback)
-	if _, err := tx.Exec(`UPDATE prs SET short_summary = ? WHERE id = ?`, summary, prID); err != nil {
+	if _, err := tx.Exec(`
+		UPDATE prs
+		   SET short_summary = ?, blocks_analysis_sha = ?, blocks_extracted_at = datetime('now')
+		 WHERE id = ?`, summary, analysisSHA, prID); err != nil {
 		return err
 	}
 
