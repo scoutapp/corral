@@ -484,6 +484,12 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleRepoItem(w, r, rest)
 		return
 	}
+	// PR Review per-PR actions (GET /prs/<prId>/blocks). PR-review reads/writes
+	// keyed by repo live under /repos/<id>/…; this handles the PR-scoped ones.
+	if strings.HasPrefix(path, "/prs/") {
+		d.handlePRItem(w, r, strings.TrimPrefix(path, "/prs/"))
+		return
+	}
 	if path == "/projects/create" {
 		d.handleCreateProject(w, r)
 		return

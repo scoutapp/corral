@@ -2,7 +2,9 @@ package dashboard
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/scoutapp/corral/internal/prreview"
@@ -178,12 +180,61 @@ func (d *dashboardServer) handleRepoPRFetch(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	pr, err := prreview.New(s).FetchPR(id, ownerName, body.Number)
+	svc := prreview.New(s)
+	pr, err := svc.FetchPR(id, ownerName, body.Number)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
+	// Extract hotness-ranked blocks + an AI summary from the fetched diff. Uses
+	// the host `claude` CLI if resolvable; otherwise ExtractBlocks falls back to
+	// deterministic placeholders (blocks still created, summary = PR title). A
+	// block-extraction failure is non-fatal — the PR + diff are already stored.
+	claudeBin, _ := resolveClaudeBin()
+	if _, err := svc.ExtractBlocks(r.Context(), pr.ID, prreview.NewClaudeRunner(claudeBin)); err != nil {
+		log.Printf("prreview: block extraction for PR #%d failed: %v", pr.Number, err)
+	}
+	// Re-read so the response carries the AI-generated short summary.
+	if prs, e := svc.PRs(id); e == nil {
+		for i := range prs {
+			if prs[i].ID == pr.ID {
+				pr = &prs[i]
+				break
+			}
+		}
+	}
 	writeFilesJSON(w, map[string]any{"pr": pr})
+}
+
+// handlePRItem serves per-PR actions parsed from the path after "/prs/":
+//
+//	GET /prs/<prId>/blocks — hotness-ranked blocks for a fetched PR
+func (d *dashboardServer) handlePRItem(w http.ResponseWriter, r *http.Request, rest string) {
+	parts := strings.SplitN(rest, "/", 2)
+	prID, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	action := ""
+	if len(parts) > 1 {
+		action = parts[1]
+	}
+	if action != "blocks" || r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s, err := d.getStore()
+	if err != nil {
+		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	blocks, err := prreview.New(s).Blocks(prID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeFilesJSON(w, map[string]any{"blocks": blocks})
 }
 
 // handleRepoPRs: GET /repos/<id>/prs — fetched pull requests for the repo.
