@@ -54,6 +54,7 @@ type PR struct {
 	RepoID       string  `json:"repoId"`
 	Number       int     `json:"number"`
 	Title        string  `json:"title,omitempty"`
+	Body         string  `json:"body,omitempty"` // PR description (markdown)
 	ShortSummary string  `json:"shortSummary,omitempty"`
 	GithubURL    string  `json:"githubUrl,omitempty"`
 	State        string  `json:"state,omitempty"`

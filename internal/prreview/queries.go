@@ -261,7 +261,7 @@ func round2(f float64) float64 {
 // PRs returns the pull requests fetched for a repo, newest fetch first.
 func (s *Service) PRs(repoID string) ([]PR, error) {
 	rows, err := s.db.Query(`
-		SELECT id, repo_id, pr_number, COALESCE(title, ''),
+		SELECT id, repo_id, pr_number, COALESCE(title, ''), COALESCE(body, ''),
 		       COALESCE(short_summary, ''), COALESCE(github_url, ''),
 		       COALESCE(state, ''), COALESCE(base_sha, ''),
 		       COALESCE(head_sha, ''), COALESCE(head_ref, ''), fetched_at
@@ -278,7 +278,7 @@ func (s *Service) PRs(repoID string) ([]PR, error) {
 	for rows.Next() {
 		var p PR
 		if err := rows.Scan(
-			&p.ID, &p.RepoID, &p.Number, &p.Title, &p.ShortSummary,
+			&p.ID, &p.RepoID, &p.Number, &p.Title, &p.Body, &p.ShortSummary,
 			&p.GithubURL, &p.State, &p.BaseSHA, &p.HeadSHA, &p.HeadRef, &p.FetchedAt,
 		); err != nil {
 			return nil, err
