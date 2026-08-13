@@ -263,22 +263,12 @@ func (d *dashboardServer) handleRepoPRFetch(w http.ResponseWriter, r *http.Reque
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	// Extract hotness-ranked blocks + an AI summary from the fetched diff. Uses
-	// the host `claude` CLI if resolvable; otherwise ExtractBlocks falls back to
-	// deterministic placeholders (blocks still created, summary = PR title). A
-	// block-extraction failure is non-fatal — the PR + diff are already stored.
-	claudeBin, _ := resolveClaudeBin()
-	if _, err := svc.ExtractBlocks(r.Context(), pr.ID, prreview.NewClaudeRunner(claudeBin)); err != nil {
+	// VIEW step (no AI): split the diff into hotness-ranked blocks using the
+	// repo's already-built churn + callgraph. Passing a nil runner uses
+	// deterministic placeholder titles; real Claude text is a separate, explicit
+	// "enrich" step (POST /prs/<id>/enrich). Non-fatal — the PR + diff are stored.
+	if _, err := svc.ExtractBlocks(r.Context(), pr.ID, nil); err != nil {
 		log.Printf("prreview: block extraction for PR #%d failed: %v", pr.Number, err)
-	}
-	// Re-read so the response carries the AI-generated short summary.
-	if prs, e := svc.PRs(id); e == nil {
-		for i := range prs {
-			if prs[i].ID == pr.ID {
-				pr = &prs[i]
-				break
-			}
-		}
 	}
 	writeFilesJSON(w, map[string]any{"pr": pr})
 }
@@ -286,6 +276,7 @@ func (d *dashboardServer) handleRepoPRFetch(w http.ResponseWriter, r *http.Reque
 // handlePRItem serves per-PR actions parsed from the path after "/prs/":
 //
 //	GET  /prs/<prId>/blocks   — hotness-ranked blocks for a fetched PR
+//	POST /prs/<prId>/enrich   — add Claude analysis to the blocks + summary
 //	GET  /prs/<prId>/risk     — stored risk verdict (or {risk:null})
 //	POST /prs/<prId>/analyze  — (re)compute the risk verdict via claude
 //	GET  /prs/<prId>/chat/ws  — block-scoped streaming chat
@@ -307,6 +298,8 @@ func (d *dashboardServer) handlePRItem(w http.ResponseWriter, r *http.Request, r
 		return
 	case action == "blocks" && r.Method == http.MethodGet:
 		d.handlePRBlocks(w, r, prID)
+	case action == "enrich" && r.Method == http.MethodPost:
+		d.handlePREnrich(w, r, prID)
 	case action == "risk" && r.Method == http.MethodGet:
 		d.handlePRRiskGet(w, r, prID)
 	case action == "analyze" && r.Method == http.MethodPost:
@@ -400,6 +393,29 @@ func (d *dashboardServer) handlePRBlocks(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	blocks, err := prreview.New(s).Blocks(prID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeFilesJSON(w, map[string]any{"blocks": blocks})
+}
+
+// handlePREnrich: POST /prs/<id>/enrich — the ENRICH step. Re-extracts the PR's
+// blocks WITH the host `claude` CLI so each block gets an AI title/explanation/
+// codebase-context/edge-cases and the PR gets a <=100-char summary. Requires
+// claude; returns 502 if it isn't resolvable (blocks already exist from View).
+func (d *dashboardServer) handlePREnrich(w http.ResponseWriter, r *http.Request, prID int64) {
+	claudeBin, err := resolveClaudeBin()
+	if err != nil {
+		http.Error(w, "the `claude` CLI could not be located — install Claude Code and restart the dashboard", http.StatusBadGateway)
+		return
+	}
+	s, err := d.getStore()
+	if err != nil {
+		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	blocks, err := prreview.New(s).ExtractBlocks(r.Context(), prID, prreview.NewClaudeRunner(claudeBin))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

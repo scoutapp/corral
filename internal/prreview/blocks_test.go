@@ -162,3 +162,45 @@ func TestCommentOnlyDiff(t *testing.T) {
 		t.Error("mixed diff should not be comment-only")
 	}
 }
+
+// TestViewThenEnrich models the two-step flow: View extracts hotness-ranked
+// blocks with no AI (placeholder titles); Enrich re-extracts with AI, upgrading
+// titles/explanations while keeping the ranking driven by churn/callgraph.
+func TestViewThenEnrich(t *testing.T) {
+	svc, _ := newService(t)
+	svc.db.Exec(`INSERT INTO pr_file_stats (repo_id, file_path, total_commits, fix_commits, churn_score)
+	             VALUES ('r1','src/charge.ts',50,30,5.0)`)
+	prID := seedPR(t, svc, "r1", sampleDiff)
+
+	// VIEW: nil AI → placeholder analysis, blocks still ranked.
+	viewed, err := svc.ExtractBlocks(context.Background(), prID, nil)
+	if err != nil {
+		t.Fatalf("view: %v", err)
+	}
+	if len(viewed) == 0 {
+		t.Fatal("view produced no blocks")
+	}
+	if viewed[0].FilePath != "src/charge.ts" {
+		t.Errorf("hottest block = %s, want src/charge.ts (churn-ranked without AI)", viewed[0].FilePath)
+	}
+	if viewed[0].Explanation != "This block modifies the file. Claude analysis is unavailable." {
+		t.Errorf("expected placeholder explanation before enrich, got %q", viewed[0].Explanation)
+	}
+
+	// ENRICH: real AI text replaces placeholders.
+	enriched, err := svc.ExtractBlocks(context.Background(), prID, fakeAI{
+		blockJSON: `{"title":"Add idempotency key","explanation":"adds a key param","importance":1}`,
+		summary:   "Prevent duplicate charges",
+	})
+	if err != nil {
+		t.Fatalf("enrich: %v", err)
+	}
+	if enriched[0].Explanation != "adds a key param" {
+		t.Errorf("expected AI explanation after enrich, got %q", enriched[0].Explanation)
+	}
+	var summary string
+	svc.db.QueryRow(`SELECT short_summary FROM prs WHERE id=?`, prID).Scan(&summary)
+	if summary != "Prevent duplicate charges" {
+		t.Errorf("summary not updated on enrich: %q", summary)
+	}
+}
