@@ -1576,6 +1576,35 @@ table.projects th, table.projects td {
   height: 22rem; overflow: hidden; font-size: 0.78rem;
 }
 
+/* Line-comment affordance on the block diff. */
+.block-diff-wrap { position: relative; }
+.line-comment-add {
+  position: absolute; left: -0.65rem; z-index: 3;
+  width: 1.15rem; height: 1.15rem; line-height: 1; padding: 0;
+  border-radius: 4px; border: none; cursor: pointer;
+  background: var(--con-working); color: #06210f; font-weight: 700;
+}
+.line-comment-add:hover { filter: brightness(1.1); }
+.line-comment-box {
+  margin: 0.4rem 0 0.6rem; border: 1px solid var(--con-line); border-radius: 6px;
+  background: var(--con-panel); padding: 0.5rem 0.6rem;
+}
+.line-comment-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 0.78rem; color: var(--con-muted); margin-bottom: 0.35rem;
+  font-family: ui-monospace, monospace;
+}
+.line-comment-x { background: none; border: none; color: var(--con-muted); cursor: pointer; }
+.line-comment-body {
+  width: 100%; min-height: 3.5rem; resize: vertical;
+  padding: 0.4rem 0.5rem; border-radius: 4px;
+  background: var(--con-ground); color: var(--con-text);
+  border: 1px solid var(--con-line); font-family: inherit; font-size: 0.85rem;
+}
+.line-comment-actions { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.4rem; }
+.line-comment-msg { font-size: 0.8rem; color: var(--con-working); }
+.line-comment-msg.err { color: var(--con-waiting); }
+
 /* PR risk card */
 .risk-card {
   border: 1px solid var(--con-line); border-radius: 6px;

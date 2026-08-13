@@ -15,7 +15,7 @@ import type {
   RepoProject,
 } from "../api/types";
 import { useBodyClass } from "../hooks/useBodyClass";
-import { loadEditor, type DiffHandle } from "../lib/editor";
+import { loadEditor, type DiffHandle, type DiffEditorView } from "../lib/editor";
 import { splitUnifiedHunk } from "../lib/diffHunk";
 import { relDate } from "../lib/repos";
 
@@ -430,7 +430,14 @@ export function BlockCarousel({ prId }: { prId: number }) {
           )}
         </div>
         {b.title && <h3 className="block-title">{b.title}</h3>}
-        {b.diffHunk && <BlockDiff hunk={b.diffHunk} filePath={b.filePath} />}
+        {b.diffHunk && (
+          <BlockDiff
+            prId={prId}
+            hunk={b.diffHunk}
+            filePath={b.filePath}
+            lineStart={b.lineStart}
+          />
+        )}
         {b.explanation && (
           <>
             <h4 className="block-h">What this does</h4>
@@ -455,9 +462,25 @@ export function BlockCarousel({ prId }: { prId: number }) {
 // tab uses) — restoring highlighting that the plain <pre> lost. The hunk is
 // split into before/after text; if the editor bundle fails to load, we fall
 // back to the raw hunk in a <pre>.
-function BlockDiff({ hunk, filePath }: { hunk: string; filePath: string }) {
-  const hostRef = useRef<HTMLDivElement | null>(null);
+function BlockDiff({
+  prId,
+  hunk,
+  filePath,
+  lineStart,
+}: {
+  prId: number;
+  hunk: string;
+  filePath: string;
+  lineStart: number;
+}) {
+  const hostRef = useRef<HTMLDivElement | null>(null); // outer wrapper (hover math)
+  const bodyRef = useRef<HTMLDivElement | null>(null); // CM mount point (.diff-body)
+  const viewRef = useRef<DiffEditorView | null>(null);
   const [failed, setFailed] = useState(false);
+  // The CM line (1-based, in the modified doc) the '+' hovers over, and its
+  // screen y; and the line a comment box is open for.
+  const [hoverLine, setHoverLine] = useState<{ cmLine: number; top: number } | null>(null);
+  const [commentLine, setCommentLine] = useState<number | null>(null);
 
   useEffect(() => {
     let handle: DiffHandle | null = null;
@@ -465,30 +488,132 @@ function BlockDiff({ hunk, filePath }: { hunk: string; filePath: string }) {
     const { original, modified } = splitUnifiedHunk(hunk);
     loadEditor()
       .then((editor) => {
-        if (cancelled || !hostRef.current) return;
-        hostRef.current.innerHTML = "";
+        if (cancelled || !bodyRef.current) return;
+        bodyRef.current.innerHTML = "";
         handle = editor.createDiff({
-          parent: hostRef.current,
+          parent: bodyRef.current,
           original,
           modified,
           filename: filePath,
         });
+        viewRef.current = handle.view || null;
       })
       .catch(() => !cancelled && setFailed(true));
     return () => {
       cancelled = true;
       handle?.destroy();
+      viewRef.current = null;
     };
   }, [hunk, filePath]);
 
+  // Track which line the cursor is over so we can offer a '+' comment button.
+  const onMove = (e: React.MouseEvent) => {
+    const view = viewRef.current;
+    const host = hostRef.current;
+    if (!view || !host) return;
+    const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+    if (pos == null) {
+      setHoverLine(null);
+      return;
+    }
+    const cmLine = view.state.doc.lineAt(pos).number; // 1-based
+    const coords = view.coordsAtPos(pos);
+    if (!coords) {
+      setHoverLine(null);
+      return;
+    }
+    const hostRect = host.getBoundingClientRect();
+    setHoverLine({ cmLine, top: coords.top - hostRect.top + host.scrollTop });
+  };
+
   if (failed) return <pre className="diff-pre">{hunk}</pre>;
-  // Reuse the projects-pane diff structure so the block diff inherits the same
-  // CodeMirror-merge styling (add/delete gutter colors, changed-line wash).
-  // .block-diff-host just bounds the height (the Diff tab's .diff-view fills a
-  // pane; here it sits inside a scrolling card).
+  // Real new-file line = block start + offset into the modified (after) doc.
+  const realLine = (cmLine: number) => lineStart + (cmLine - 1);
+
   return (
-    <div className="block-diff-host diff-view">
-      <div className="diff-body" ref={hostRef} />
+    <div className="block-diff-wrap">
+      <div
+        className="block-diff-host diff-view"
+        ref={hostRef}
+        onMouseMove={onMove}
+        onMouseLeave={() => setHoverLine(null)}
+      >
+        <div className="diff-body" ref={bodyRef} />
+      </div>
+      {/* Floating "+" comment affordance on the hovered line. */}
+      {hoverLine && commentLine == null && (
+        <button
+          type="button"
+          className="line-comment-add"
+          style={{ top: `${hoverLine.top}px` }}
+          title={`Comment on line ${realLine(hoverLine.cmLine)}`}
+          onClick={() => setCommentLine(hoverLine.cmLine)}
+        >
+          +
+        </button>
+      )}
+      {commentLine != null && (
+        <LineCommentBox
+          prId={prId}
+          path={filePath}
+          line={realLine(commentLine)}
+          onClose={() => setCommentLine(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// LineCommentBox posts a review comment anchored to a diff line (side=RIGHT).
+function LineCommentBox({
+  prId,
+  path,
+  line,
+  onClose,
+}: {
+  prId: number;
+  path: string;
+  line: number;
+  onClose: () => void;
+}) {
+  const [body, setBody] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const submit = () => {
+    if (!body.trim()) return;
+    setBusy(true);
+    setMsg(null);
+    postJSON(`/prs/${prId}/line-comment`, { path, line, side: "RIGHT", body })
+      .then(() => {
+        setMsg("✓ posted");
+        setTimeout(onClose, 700);
+      })
+      .catch((e) => setMsg((e as Error).message))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="line-comment-box">
+      <div className="line-comment-head">
+        Comment on {path}:{line}
+        <button type="button" className="line-comment-x" onClick={onClose}>
+          ✕
+        </button>
+      </div>
+      <textarea
+        className="line-comment-body"
+        placeholder="Leave a review comment on this line…"
+        value={body}
+        autoFocus
+        onChange={(e) => setBody(e.target.value)}
+      />
+      <div className="line-comment-actions">
+        <button type="button" className="btn primary" disabled={busy || !body.trim()} onClick={submit}>
+          {busy ? "Posting…" : "Comment"}
+        </button>
+        {msg && <span className={`line-comment-msg${msg.startsWith("✓") ? "" : " err"}`}>{msg}</span>}
+      </div>
     </div>
   );
 }

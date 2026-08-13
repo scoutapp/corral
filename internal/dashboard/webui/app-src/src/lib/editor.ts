@@ -14,6 +14,19 @@ export interface EditorHandle {
 
 export interface DiffHandle {
   destroy(): void;
+  // The underlying CodeMirror EditorView (modified/"after" side is the doc).
+  // Typed loosely to avoid pulling CM types into the app bundle; used for
+  // line-position math (posAtCoords/lineBlockAt) when attaching line comments.
+  view?: DiffEditorView;
+}
+
+// Minimal shape of the CodeMirror EditorView methods the app uses for line
+// comments. Not the full CM type — just what BlockDiff needs.
+export interface DiffEditorView {
+  dom: HTMLElement;
+  posAtCoords(coords: { x: number; y: number }): number | null;
+  state: { doc: { lineAt(pos: number): { number: number }; lines: number } };
+  coordsAtPos(pos: number): { top: number; bottom: number; left: number; right: number } | null;
 }
 
 export interface CorralEditorAPI {
