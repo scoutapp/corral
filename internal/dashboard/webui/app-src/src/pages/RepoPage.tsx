@@ -471,8 +471,6 @@ export function BlockCarousel({ prId }: { prId: number }) {
           </>
         )}
       </div>
-
-      <LinkedPRs prId={prId} />
     </div>
   );
 }
@@ -1277,7 +1275,7 @@ function ProjectsTab({ repoId }: { repoId: string }) {
 
 // LinkedPRs shows a PR's cross-PR relationships and lets the user link/unlink,
 // with file-overlap suggestions. Rendered inside the block carousel (PR level).
-function LinkedPRs({ prId }: { prId: number }) {
+export function LinkedPRs({ prId }: { prId: number }) {
   const [links, setLinks] = useState<PrLink[]>([]);
   const [suggestions, setSuggestions] = useState<LinkSuggestion[]>([]);
   const [err, setErr] = useState<string | null>(null);
