@@ -106,6 +106,8 @@ func (d *dashboardServer) handleRepoItem(w http.ResponseWriter, r *http.Request,
 		d.handleRepoProjects(w, r, id)
 	case action == "pin" && r.Method == http.MethodPost:
 		d.handleRepoPin(w, r, id)
+	case action == "color" && r.Method == http.MethodPost:
+		d.handleRepoColor(w, r, id)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -187,6 +189,39 @@ func (d *dashboardServer) handleRepoPin(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	writeFilesJSON(w, map[string]any{"ok": true, "pinned": body.Pinned})
+}
+
+// handleRepoColor: POST /repos/<id>/color {color: "#rrggbb"} — set a repo's
+// label color, shown on the Repos and PRs pages.
+func (d *dashboardServer) handleRepoColor(w http.ResponseWriter, r *http.Request, id string) {
+	var body struct {
+		Color string `json:"color"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !validHexColor(body.Color) {
+		http.Error(w, "a hex color like #a05cff is required", http.StatusBadRequest)
+		return
+	}
+	if err := repos.SetColor(id, body.Color); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeFilesJSON(w, map[string]any{"ok": true, "color": body.Color})
+}
+
+// validHexColor accepts #rgb or #rrggbb.
+func validHexColor(s string) bool {
+	if len(s) != 4 && len(s) != 7 {
+		return false
+	}
+	if s[0] != '#' {
+		return false
+	}
+	for _, c := range s[1:] {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
 
 // handleRepoAnalysisStatus: GET /repos/<id>/analysis-status — whether the repo's
@@ -316,9 +351,10 @@ func (d *dashboardServer) handleRepoPRFetch(w http.ResponseWriter, r *http.Reque
 
 // inboxPR is one open PR in the cross-project inbox, tagged with its repo.
 type inboxPR struct {
-	RepoID   string          `json:"repoId"`
-	RepoName string          `json:"repoName"`
-	PR       prreview.OpenPR `json:"pr"`
+	RepoID    string          `json:"repoId"`
+	RepoName  string          `json:"repoName"`
+	RepoColor string          `json:"repoColor"`
+	PR        prreview.OpenPR `json:"pr"`
 }
 
 // handlePRInbox: GET /prs/inbox — open PRs aggregated across EVERY GitHub repo
@@ -359,7 +395,9 @@ func (d *dashboardServer) handlePRInbox(w http.ResponseWriter, r *http.Request) 
 	out := []inboxPR{}
 	for _, res := range results {
 		for _, pr := range res.prs {
-			out = append(out, inboxPR{RepoID: res.repo.ID, RepoName: res.repo.Name, PR: pr})
+			out = append(out, inboxPR{
+				RepoID: res.repo.ID, RepoName: res.repo.Name, RepoColor: res.repo.Color, PR: pr,
+			})
 		}
 	}
 	writeFilesJSON(w, map[string]any{"prs": out})

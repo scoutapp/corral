@@ -36,6 +36,7 @@ type Repo struct {
 	LastFetched   string `json:"last_fetched"`   // RFC3339
 	AddedAt       string `json:"added_at"`       // RFC3339
 	Pinned        bool   `json:"pinned"`         // pinned repos sort to the top of the list
+	Color         string `json:"color"`          // label color (hex); assigned on first sight, editable
 }
 
 type registry struct {
@@ -79,6 +80,12 @@ func List() ([]Repo, error) {
 	}
 	if reg.Repos == nil {
 		return []Repo{}, nil
+	}
+	// Assign+persist a default color to any repo missing one (assign-on-first-
+	// sight, by add-order palette index). Best-effort: a write failure still
+	// returns the repos (they carry the color in-memory this call).
+	if backfillColors(reg) {
+		_ = writeRegistry(reg)
 	}
 	// Pinned repos first (stable within each group, preserving registry order).
 	out := make([]Repo, len(reg.Repos))

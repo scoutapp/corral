@@ -68,7 +68,15 @@ export function PRInboxSection() {
         className="pr-head"
         onClick={() => navigate(`/repos/${encodeURIComponent(it.repoId)}/prs/${it.pr.number}`)}
       >
-        <span className="inbox-repo">{it.repoName}</span>
+        <span
+          className="repo-color-chip"
+          style={{
+            borderColor: it.repoColor || "var(--con-line)",
+            color: it.repoColor || "var(--con-muted)",
+          }}
+        >
+          {it.repoName}
+        </span>
         <span className="pr-num">#{it.pr.number}</span> {it.pr.title}
         <ReviewDot decision={it.pr.reviewDecision} draft={it.pr.isDraft} />
       </button>

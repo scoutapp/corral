@@ -77,7 +77,14 @@ export function ReposSection({ search, reloadKey }: { search: string; reloadKey:
                   >
                     {rp.pinned ? "★" : "☆"}
                   </button>
-                  <Link className="repo-name" to={`/repos/${encodeURIComponent(rp.id)}`}>
+                  {rp.color && (
+                    <span className="repo-color-dot" style={{ background: rp.color }} title="Repo label color" />
+                  )}
+                  <Link
+                    className="repo-name"
+                    to={`/repos/${encodeURIComponent(rp.id)}`}
+                    style={rp.color ? { color: rp.color } : undefined}
+                  >
                     {rp.name}
                   </Link>
                   <span className="repo-src">{rp.url || rp.local_path || ""}</span>
