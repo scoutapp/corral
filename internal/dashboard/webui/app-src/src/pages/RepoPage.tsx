@@ -21,7 +21,7 @@ import { splitUnifiedHunk } from "../lib/diffHunk";
 import { relDate, ghOwnerName } from "../lib/repos";
 
 // RepoPage is the repo-as-hub detail view (/repos/<id>). A repo owns three
-// tabs: PR Review (grokker-derived PR intelligence), Projects (Corral sandbox
+// tabs: PR Review (PR intelligence), Projects (Corral sandbox
 // sessions on this repo — Phase 4), and Forensics (code-health heatmap).
 //
 // This is the Phase-0 scaffold: routing + tab shell + store-backed reads that
