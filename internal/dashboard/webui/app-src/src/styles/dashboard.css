@@ -1315,6 +1315,7 @@ table.projects th, table.projects td {
 .repo-hub .tab-panel { padding-top: 1rem; }
 .tab-note { color: var(--con-muted); max-width: 60ch; line-height: 1.5; }
 .tab-note.err { color: var(--con-waiting); }
+.tab-actions { display: flex; gap: 0.6rem; margin-bottom: 0.9rem; }
 
 .pr-list { list-style: none; margin: 0; padding: 0; }
 .pr-list li {

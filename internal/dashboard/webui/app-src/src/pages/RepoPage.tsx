@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "../router";
-import { getJSON } from "../api/client";
+import { getJSON, postJSON } from "../api/client";
 import type { CachedRepo, PrFileStat, PrItem } from "../api/types";
 import { useBodyClass } from "../hooks/useBodyClass";
 
@@ -113,6 +113,7 @@ function PRsTab({ repoId }: { repoId: string }) {
 function ForensicsTab({ repoId }: { repoId: string }) {
   const [files, setFiles] = useState<PrFileStat[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
 
   const load = useCallback(() => {
     getJSON<{ files: PrFileStat[] }>(`/repos/${encodeURIComponent(repoId)}/forensics`)
@@ -121,37 +122,65 @@ function ForensicsTab({ repoId }: { repoId: string }) {
   }, [repoId]);
   useEffect(() => load(), [load]);
 
-  if (err) return <p className="tab-note err">Failed to load forensics: {err}</p>;
+  const analyze = useCallback(() => {
+    setAnalyzing(true);
+    setErr(null);
+    postJSON<{ files: PrFileStat[] }>(`/repos/${encodeURIComponent(repoId)}/analyze`)
+      .then((d) => setFiles(d.files || []))
+      .catch((e) => setErr((e as Error).message))
+      .finally(() => setAnalyzing(false));
+  }, [repoId]);
+
+  const analyzeBtn = (
+    <button type="button" className="btn primary" disabled={analyzing} onClick={analyze}>
+      {analyzing ? "Analyzing…" : files && files.length ? "Re-analyze" : "Analyze repo"}
+    </button>
+  );
+
+  if (err) {
+    return (
+      <>
+        <div className="tab-actions">{analyzeBtn}</div>
+        <p className="tab-note err">Failed: {err}</p>
+      </>
+    );
+  }
   if (files === null) return <p className="tab-note">Loading…</p>;
   if (files.length === 0) {
     return (
-      <p className="tab-note">
-        Not analyzed yet. Forensics ranks files by churn (commits per day) and
-        fix-commit count to surface the repo's hottest, most bug-prone files.
-      </p>
+      <>
+        <div className="tab-actions">{analyzeBtn}</div>
+        <p className="tab-note">
+          Not analyzed yet. Forensics ranks files by churn (commits per day) and
+          fix-commit count to surface the repo's hottest, most bug-prone files.
+        </p>
+      </>
     );
   }
   return (
-    <table className="forensics-table">
-      <thead>
-        <tr>
-          <th>File</th>
-          <th>Churn</th>
-          <th>Fix / total commits</th>
-        </tr>
-      </thead>
-      <tbody>
-        {files.map((f) => (
-          <tr key={f.id}>
-            <td>{f.filePath}</td>
-            <td>{f.churnScore != null ? f.churnScore.toFixed(2) : "—"}</td>
-            <td>
-              {f.fixCommits} / {f.totalCommits}
-            </td>
+    <>
+      <div className="tab-actions">{analyzeBtn}</div>
+      <table className="forensics-table">
+        <thead>
+          <tr>
+            <th>File</th>
+            <th>Churn</th>
+            <th>Fix / total commits</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {files.map((f) => (
+            <tr key={f.id}>
+              <td>{f.filePath}</td>
+              <td>{f.churnScore != null ? f.churnScore.toFixed(2) : "—"}</td>
+              <td>
+                {f.fixCommits} / {f.totalCommits}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
   );
 }
 
