@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "../router";
-import { getJSON, postJSON } from "../api/client";
-import type { CachedRepo, PrBlock, PrFileStat, PrItem } from "../api/types";
+import { getJSON, postJSON, wsURL } from "../api/client";
+import type { CachedRepo, PrBlock, PrFileStat, PrItem, PrRisk } from "../api/types";
 import { useBodyClass } from "../hooks/useBodyClass";
 
 // RepoPage is the repo-as-hub detail view (/repos/<id>). A repo owns three
@@ -184,6 +184,7 @@ function BlockCarousel({ prId }: { prId: number }) {
   const b = blocks[Math.min(i, blocks.length - 1)];
   return (
     <div className="block-carousel">
+      <RiskCard prId={prId} />
       <div className="block-nav">
         <button type="button" disabled={i <= 0} onClick={() => setI(i - 1)}>
           ◀
@@ -231,6 +232,169 @@ function BlockCarousel({ prId }: { prId: number }) {
           </>
         )}
       </div>
+
+      <BlockChat prId={prId} blockId={b.id} blockLabel={b.title || b.filePath} />
+    </div>
+  );
+}
+
+// RiskCard shows (and can compute) the PR-level risk verdict. GET /prs/<id>/risk
+// loads a stored verdict; "Assess risk" runs POST /prs/<id>/analyze via claude.
+function RiskCard({ prId }: { prId: number }) {
+  const [risk, setRisk] = useState<PrRisk | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    getJSON<{ risk: PrRisk | null }>(`/prs/${prId}/risk`)
+      .then((d) => setRisk(d.risk))
+      .catch(() => {});
+  }, [prId]);
+
+  const assess = () => {
+    setBusy(true);
+    setErr(null);
+    postJSON<{ risk: PrRisk }>(`/prs/${prId}/analyze`)
+      .then((d) => setRisk(d.risk))
+      .catch((e) => setErr((e as Error).message))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="risk-card">
+      <div className="risk-head">
+        <span className="risk-title">Risk</span>
+        {risk && (
+          <span className={`risk-pill ${risk.overallRisk}`}>{risk.overallRisk}</span>
+        )}
+        <button type="button" className="btn" disabled={busy} onClick={assess}>
+          {busy ? "Assessing…" : risk ? "Re-assess" : "Assess risk"}
+        </button>
+      </div>
+      {err && <p className="tab-note err">Failed: {err}</p>}
+      {risk && (
+        <div className="risk-body">
+          <p className="risk-summary">{risk.riskSummary}</p>
+          {risk.meat && <p><strong>Change:</strong> {risk.meat}</p>}
+          {risk.bugImpact && <p><strong>If a bug slips in:</strong> {risk.bugImpact}</p>}
+          {risk.fixHistory && <p><strong>Fix history:</strong> {risk.fixHistory}</p>}
+          {risk.fileHealth?.length > 0 && (
+            <ul className="risk-files">
+              {risk.fileHealth.map((f, k) => (
+                <li key={k}>
+                  <span className={`risk-dot ${f.risk}`} /> {f.file} — {f.insight}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// BlockChat is a lightweight, block-scoped chat over /prs/<id>/chat/ws. It
+// speaks the same server frame protocol as the project Ask-Claude panel
+// (text/error/turn_end) but is scoped to the current block via ?block=. The
+// server injects PR/block context into the first turn. Collapsed by default.
+function BlockChat({ prId, blockId, blockLabel }: { prId: number; blockId: number; blockLabel: string }) {
+  const [open, setOpen] = useState(false);
+  const [msgs, setMsgs] = useState<{ role: "user" | "assistant" | "meta"; text: string }[]>([]);
+  const [input, setInput] = useState("");
+  const [ready, setReady] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
+  const curIdx = useRef<number | null>(null);
+
+  // A fresh socket per (block, open) so context is re-injected for the block
+  // being viewed. Closing the drawer tears the socket down.
+  useEffect(() => {
+    if (!open) return;
+    setMsgs([]);
+    const ws = new WebSocket(wsURL(`/prs/${prId}/chat/ws?block=${blockId}`));
+    wsRef.current = ws;
+    ws.onopen = () => setReady(true);
+    ws.onclose = () => {
+      setReady(false);
+      setBusy(false);
+    };
+    ws.onmessage = (ev) => {
+      let m: { type?: string; text?: string };
+      try {
+        m = JSON.parse(ev.data);
+      } catch {
+        return;
+      }
+      if (m.type === "text" && m.text) {
+        setMsgs((prev) => {
+          const next = [...prev];
+          if (curIdx.current == null) {
+            curIdx.current = next.length;
+            next.push({ role: "assistant", text: m.text || "" });
+          } else {
+            next[curIdx.current] = {
+              role: "assistant",
+              text: (next[curIdx.current]?.text || "") + m.text,
+            };
+          }
+          return next;
+        });
+      } else if (m.type === "error") {
+        setMsgs((prev) => [...prev, { role: "meta", text: m.text || "error" }]);
+      } else if (m.type === "turn_end") {
+        setBusy(false);
+        curIdx.current = null;
+      }
+    };
+    return () => ws.close();
+  }, [open, prId, blockId]);
+
+  const send = () => {
+    const text = input.trim();
+    if (!text || !ready || busy) return;
+    wsRef.current?.send(JSON.stringify({ prompt: text }));
+    setMsgs((prev) => [...prev, { role: "user", text }]);
+    setInput("");
+    setBusy(true);
+  };
+
+  if (!open) {
+    return (
+      <button type="button" className="btn block-chat-toggle" onClick={() => setOpen(true)}>
+        💬 Ask about this block
+      </button>
+    );
+  }
+
+  return (
+    <div className="block-chat">
+      <div className="block-chat-head">
+        <span>Ask Claude · {blockLabel}</span>
+        <button type="button" className="block-chat-x" onClick={() => setOpen(false)}>
+          ✕
+        </button>
+      </div>
+      <div className="block-chat-log">
+        {msgs.map((m, k) => (
+          <div key={k} className={`chat-msg ${m.role}`}>
+            {m.text}
+          </div>
+        ))}
+        {!ready && <div className="chat-msg meta">connecting…</div>}
+      </div>
+      <div className="block-chat-input">
+        <input
+          value={input}
+          placeholder="Ask about this block…"
+          disabled={!ready || busy}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && send()}
+        />
+        <button type="button" className="btn primary" disabled={!ready || busy} onClick={send}>
+          {busy ? "…" : "Send"}
+        </button>
+      </div>
+      <p className="block-chat-note">Runs your host Claude (not sandboxed).</p>
     </div>
   );
 }

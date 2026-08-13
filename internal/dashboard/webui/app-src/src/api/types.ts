@@ -302,6 +302,17 @@ export interface PrItem {
   fetchedAt?: string;
 }
 
+// GET /prs/<prId>/risk -> { risk: PrRisk | null }
+// POST /prs/<prId>/analyze -> { risk: PrRisk }
+export interface PrRisk {
+  meat: string;
+  bugImpact: string;
+  fileHealth: { file: string; risk: string; insight: string }[];
+  fixHistory: string;
+  overallRisk: string; // high | medium | low
+  riskSummary: string;
+}
+
 // GET /prs/<prId>/blocks -> { blocks: PrBlock[] }
 export interface PrBlock {
   id: number;

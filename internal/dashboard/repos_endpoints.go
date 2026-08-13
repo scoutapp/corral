@@ -208,7 +208,10 @@ func (d *dashboardServer) handleRepoPRFetch(w http.ResponseWriter, r *http.Reque
 
 // handlePRItem serves per-PR actions parsed from the path after "/prs/":
 //
-//	GET /prs/<prId>/blocks — hotness-ranked blocks for a fetched PR
+//	GET  /prs/<prId>/blocks   — hotness-ranked blocks for a fetched PR
+//	GET  /prs/<prId>/risk     — stored risk verdict (or {risk:null})
+//	POST /prs/<prId>/analyze  — (re)compute the risk verdict via claude
+//	GET  /prs/<prId>/chat/ws  — block-scoped streaming chat
 func (d *dashboardServer) handlePRItem(w http.ResponseWriter, r *http.Request, rest string) {
 	parts := strings.SplitN(rest, "/", 2)
 	prID, err := strconv.ParseInt(parts[0], 10, 64)
@@ -220,10 +223,23 @@ func (d *dashboardServer) handlePRItem(w http.ResponseWriter, r *http.Request, r
 	if len(parts) > 1 {
 		action = parts[1]
 	}
-	if action != "blocks" || r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+
+	switch {
+	case action == "chat/ws" && r.Method == http.MethodGet:
+		d.handleBlockChatWS(w, r, prID)
 		return
+	case action == "blocks" && r.Method == http.MethodGet:
+		d.handlePRBlocks(w, r, prID)
+	case action == "risk" && r.Method == http.MethodGet:
+		d.handlePRRiskGet(w, r, prID)
+	case action == "analyze" && r.Method == http.MethodPost:
+		d.handlePRAnalyze(w, r, prID)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (d *dashboardServer) handlePRBlocks(w http.ResponseWriter, r *http.Request, prID int64) {
 	s, err := d.getStore()
 	if err != nil {
 		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
@@ -235,6 +251,37 @@ func (d *dashboardServer) handlePRItem(w http.ResponseWriter, r *http.Request, r
 		return
 	}
 	writeFilesJSON(w, map[string]any{"blocks": blocks})
+}
+
+// handlePRRiskGet returns the last stored risk verdict (null if never analyzed).
+func (d *dashboardServer) handlePRRiskGet(w http.ResponseWriter, r *http.Request, prID int64) {
+	s, err := d.getStore()
+	if err != nil {
+		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	v, err := prreview.New(s).StoredRisk(prID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeFilesJSON(w, map[string]any{"risk": v})
+}
+
+// handlePRAnalyze (re)computes the PR risk verdict via the host claude CLI.
+func (d *dashboardServer) handlePRAnalyze(w http.ResponseWriter, r *http.Request, prID int64) {
+	s, err := d.getStore()
+	if err != nil {
+		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	claudeBin, _ := resolveClaudeBin()
+	v, err := prreview.New(s).AnalyzeRisk(r.Context(), prID, prreview.NewClaudeRunner(claudeBin))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeFilesJSON(w, map[string]any{"risk": v})
 }
 
 // handleRepoPRs: GET /repos/<id>/prs — fetched pull requests for the repo.
