@@ -1477,6 +1477,12 @@ table.projects th, table.projects td {
 /* Dedicated PR review page (/repos/<id>/prs/<number>) */
 .pr-review-page { padding: 1.1rem 1.6rem; max-width: 72rem; }
 
+/* Linked-PRs panel (header toggle) */
+.pr-links-panel {
+  border: 1px solid var(--con-line); border-radius: 6px;
+  background: var(--con-panel); padding: 0.6rem 0.9rem; margin-bottom: 0.9rem;
+}
+
 /* PR description (markdown body from GitHub) */
 .pr-desc {
   border: 1px solid var(--con-line); border-radius: 6px;

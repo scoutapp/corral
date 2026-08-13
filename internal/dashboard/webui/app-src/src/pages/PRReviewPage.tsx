@@ -9,6 +9,7 @@ import { renderMarkdown } from "../lib/markdown";
 import {
   AnalysisStatusBanner,
   BlockCarousel,
+  LinkedPRs,
   PRFilesForensics,
   RiskCard,
   clearFileStatsCache,
@@ -226,6 +227,7 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
   const [nonce, setNonce] = useState(0); // bumped after re-analyze to remount panels
   const [chatOpen, setChatOpen] = useState(false);
   const [startOpen, setStartOpen] = useState(false);
+  const [linksOpen, setLinksOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   // Force a re-pull from GitHub: re-fetches the PR (body + diff) and re-extracts
@@ -299,6 +301,14 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
             >
               {refreshing ? "Refreshing…" : "↻ Refresh from GitHub"}
             </button>
+            <button
+              type="button"
+              className={`dock-toggle${linksOpen ? " on" : ""}`}
+              title="Link this PR to related PRs"
+              onClick={() => setLinksOpen((v) => !v)}
+            >
+              🔗 Linked PRs
+            </button>
             <VerifyLaunch repoId={repoId} pr={pr} repoName={repo?.name} />
             <button
               type="button"
@@ -321,6 +331,11 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
       </header>
 
       <div className="pr-review-page">
+        {pr && linksOpen && (
+          <div className="pr-links-panel">
+            <LinkedPRs prId={pr.id} />
+          </div>
+        )}
         {pr && <PRActions prId={pr.id} />}
         {err ? (
           <p className="tab-note err">Failed to load PR #{number}: {err}</p>
