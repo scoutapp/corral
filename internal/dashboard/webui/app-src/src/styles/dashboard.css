@@ -1325,6 +1325,54 @@ table.projects th, table.projects td {
 }
 
 .pr-list { list-style: none; margin: 0; padding: 0; }
+
+/* PR overview toolbar (search / sort / hide-drafts) + richer PR cards. */
+.pr-toolbar { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
+.pr-search {
+  flex: 1 1 16rem; min-width: 10rem; padding: 0.35rem 0.6rem;
+  background: var(--con-ground); color: var(--con-text);
+  border: 1px solid var(--con-line); border-radius: 6px;
+}
+.pr-toolbar select {
+  padding: 0.35rem 0.5rem; background: var(--con-ground); color: var(--con-text);
+  border: 1px solid var(--con-line); border-radius: 6px;
+}
+.pr-toolbar-check { font-size: 0.8rem; color: var(--con-muted); display: inline-flex; align-items: center; gap: 0.3rem; }
+.pr-toolbar-count { font-size: 0.78rem; color: var(--con-muted); margin-left: auto; }
+
+.pr-list.rich { display: flex; flex-direction: column; gap: 0.5rem; }
+.pr-card { list-style: none; }
+.pr-card-link {
+  display: block; padding: 0.6rem 0.8rem; text-decoration: none;
+  border: 1px solid var(--con-line); border-radius: 8px; color: var(--con-text);
+  background: var(--con-panel); transition: border-color 0.12s, background 0.12s;
+}
+.pr-card-link:hover { border-color: var(--con-working); background: var(--con-panel-hi, var(--con-panel)); }
+.pr-card-top { display: flex; align-items: center; gap: 0.6rem; }
+.pr-card-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-card-meta {
+  display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap;
+  margin-top: 0.35rem; font-size: 0.76rem; color: var(--con-muted);
+}
+.pr-meta-author { font-family: ui-monospace, monospace; }
+.pr-diffstat .add { color: #5ce6a8; }
+.pr-diffstat .del { color: #ff6b81; }
+.pr-label {
+  font-size: 0.68rem; padding: 0.05rem 0.4rem; border-radius: 999px;
+  border: 1px solid var(--con-line); color: var(--con-muted);
+}
+
+/* Approval badges */
+.review-badge {
+  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 0.1rem 0.45rem; border-radius: 999px; white-space: nowrap;
+  border: 1px solid var(--con-line); color: var(--con-muted);
+}
+.review-badge.approved { color: #5ce6a8; border-color: #5ce6a8; }
+.review-badge.changes { color: var(--con-waiting); border-color: var(--con-waiting); }
+.review-badge.required { color: #d6a419; border-color: #d6a419; }
+.review-badge.draft { color: var(--con-muted); }
+.review-badge.none { border: none; }
 /* Plain list rows (Projects tab, linked-PR targets). PR rows use .pr-row, which
    manages its own layout, so exclude them here to avoid a double border. */
 .pr-list li:not(.pr-row) {
@@ -1421,6 +1469,12 @@ table.projects th, table.projects td {
 }
 .ff-chip.warn { color: var(--con-waiting); border-color: var(--con-waiting); }
 .ff-chip.cool { color: var(--con-muted); opacity: 0.85; }
+.ff-chip.diffstat .add, .pr-files-total .add { color: #5ce6a8; }
+.ff-chip.diffstat .del, .pr-files-total .del { color: #ff6b81; }
+.pr-files-total { margin-left: 0.6rem; font-size: 0.78rem; font-family: ui-monospace, monospace; letter-spacing: 0; text-transform: none; }
+.block-diffstat { font-family: ui-monospace, monospace; }
+.block-diffstat .add { color: #5ce6a8; }
+.block-diffstat .del { color: #ff6b81; }
 
 /* Repo-analysis freshness banner (never-analyzed / new-commits-since). */
 .analysis-banner {

@@ -39,6 +39,8 @@ type FileForensic struct {
 	VelocityPerWeek float64  `json:"velocityPerWeek"`
 	RefCount        int      `json:"refCount"` // distinct other files calling into this one
 	ChurnScore      *float64 `json:"churnScore,omitempty"`
+	Additions       int      `json:"additions"` // +lines in this PR's diff for the file
+	Deletions       int      `json:"deletions"` // -lines
 	// NewFile is true when the repo HAS been analyzed but this file has no
 	// history on the analyzed branch — i.e. the PR adds it. Distinguishes a
 	// legitimately-new file from "repo not analyzed at all" (RepoAnalyzed=false).

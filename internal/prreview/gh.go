@@ -35,24 +35,36 @@ type ghPRView struct {
 // OpenPR is a lightweight entry from `gh pr list` — the repo's live open PRs,
 // independent of what has been fetched/analyzed into the DB.
 type OpenPR struct {
-	Number    int    `json:"number"`
-	Title     string `json:"title"`
-	URL       string `json:"url"`
-	Author    string `json:"author"`
-	CreatedAt string `json:"createdAt"`
-	Draft     bool   `json:"isDraft"`
+	Number    int      `json:"number"`
+	Title     string   `json:"title"`
+	URL       string   `json:"url"`
+	Author    string   `json:"author"`
+	CreatedAt string   `json:"createdAt"`
+	UpdatedAt string   `json:"updatedAt"`
+	Draft     bool     `json:"isDraft"`
+	Review    string   `json:"reviewDecision"` // APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED | ""
+	Additions int      `json:"additions"`
+	Deletions int      `json:"deletions"`
+	Labels    []string `json:"labels"`
 }
 
 // ghPRListItem mirrors one `gh pr list --json` row.
 type ghPRListItem struct {
-	Number    int    `json:"number"`
-	Title     string `json:"title"`
-	URL       string `json:"url"`
-	CreatedAt string `json:"createdAt"`
-	IsDraft   bool   `json:"isDraft"`
-	Author    struct {
+	Number         int    `json:"number"`
+	Title          string `json:"title"`
+	URL            string `json:"url"`
+	CreatedAt      string `json:"createdAt"`
+	UpdatedAt      string `json:"updatedAt"`
+	IsDraft        bool   `json:"isDraft"`
+	ReviewDecision string `json:"reviewDecision"`
+	Additions      int    `json:"additions"`
+	Deletions      int    `json:"deletions"`
+	Author         struct {
 		Login string `json:"login"`
 	} `json:"author"`
+	Labels []struct {
+		Name string `json:"name"`
+	} `json:"labels"`
 }
 
 // ListOpenPRs returns the repo's open pull requests via `gh pr list` (reusing
@@ -66,9 +78,12 @@ func ListOpenPRs(ownerName string, limit int) ([]OpenPR, error) {
 	if limit <= 0 {
 		limit = 100
 	}
+	// All of these come back in the single list call — including reviewDecision
+	// (approval state) and additions/deletions — so the overview needs no
+	// per-PR fetches.
 	out, err := exec.Command(ghBin, "pr", "list",
 		"--repo", ownerName, "--state", "open", "--limit", fmt.Sprint(limit),
-		"--json", "number,title,url,createdAt,isDraft,author",
+		"--json", "number,title,url,createdAt,updatedAt,isDraft,author,reviewDecision,additions,deletions,labels",
 	).Output()
 	if err != nil {
 		return nil, fmt.Errorf("prreview: gh pr list: %w", err)
@@ -79,9 +94,15 @@ func ListOpenPRs(ownerName string, limit int) ([]OpenPR, error) {
 	}
 	prs := make([]OpenPR, 0, len(items))
 	for _, it := range items {
+		labels := make([]string, 0, len(it.Labels))
+		for _, l := range it.Labels {
+			labels = append(labels, l.Name)
+		}
 		prs = append(prs, OpenPR{
 			Number: it.Number, Title: it.Title, URL: it.URL,
-			Author: it.Author.Login, CreatedAt: it.CreatedAt, Draft: it.IsDraft,
+			Author: it.Author.Login, CreatedAt: it.CreatedAt, UpdatedAt: it.UpdatedAt,
+			Draft: it.IsDraft, Review: it.ReviewDecision,
+			Additions: it.Additions, Deletions: it.Deletions, Labels: labels,
 		})
 	}
 	return prs, nil
