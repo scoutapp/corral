@@ -67,20 +67,14 @@ func (r *Runner) FireEvent(ctx context.Context, event string, primary int64, rc 
 		}
 	}
 
-	// Secondary hooks — best-effort, recorded but non-blocking.
+	// Secondary hooks — best-effort, recorded but non-blocking. A hook may target
+	// an action or a flow (a flow contributes its steps to the chain record).
 	hooks, err := r.svc.HooksForEvent(event, rc.RepoID)
 	if err == nil {
 		for _, h := range hooks {
-			if h.TargetKind != "action" {
-				continue // flows handled in a later branch
-			}
-			a, aerr := r.svc.Action(h.TargetID)
-			if aerr != nil {
-				continue
-			}
-			hs := r.execute(ctx, a, rc)
-			result.Hooks = append(result.Hooks, hs)
-			steps = append(steps, hs)
+			hs := r.runHookTarget(ctx, h, rc)
+			result.Hooks = append(result.Hooks, hs...)
+			steps = append(steps, hs...)
 		}
 	}
 
@@ -124,16 +118,9 @@ func (r *Runner) FireSecondary(ctx context.Context, event string, rc RunContext)
 		steps  []StepResult
 	)
 	for _, h := range hooks {
-		if h.TargetKind != "action" {
-			continue
-		}
-		a, aerr := r.svc.Action(h.TargetID)
-		if aerr != nil {
-			continue
-		}
-		hs := r.execute(ctx, a, rc)
-		result.Hooks = append(result.Hooks, hs)
-		steps = append(steps, hs)
+		hs := r.runHookTarget(ctx, h, rc)
+		result.Hooks = append(result.Hooks, hs...)
+		steps = append(steps, hs...)
 	}
 
 	result.Status = StatusOK
@@ -148,6 +135,57 @@ func (r *Runner) FireSecondary(ctx context.Context, event string, rc RunContext)
 		return result, ferr
 	}
 	return result, nil
+}
+
+// runHookTarget executes a hook's target — an action (one StepResult) or a flow
+// (its steps, executed in order with output chaining, contributed to the chain
+// record). It does NOT open its own run row: the caller records the whole chain
+// as one run. A flow that stops early contributes the steps it ran. Unknown
+// targets contribute nothing.
+func (r *Runner) runHookTarget(ctx context.Context, h Hook, rc RunContext) []StepResult {
+	switch h.TargetKind {
+	case "action":
+		a, err := r.svc.Action(h.TargetID)
+		if err != nil {
+			return nil
+		}
+		return []StepResult{r.execute(ctx, a, rc)}
+	case "flow":
+		return r.runFlowSteps(ctx, h.TargetID, rc)
+	default:
+		return nil
+	}
+}
+
+// runFlowSteps executes a flow's steps inline (no separate run row) with the
+// same output-chaining semantics as RunFlow, returning the step results. Used
+// when a hook targets a flow.
+func (r *Runner) runFlowSteps(ctx context.Context, flowID int64, rc RunContext) []StepResult {
+	flow, err := r.svc.Flow(flowID)
+	if err != nil {
+		return nil
+	}
+	vars := map[string]string{}
+	for k, v := range rc.Vars {
+		vars[k] = v
+	}
+	var out []StepResult
+	for _, step := range flow.Steps {
+		a, aerr := r.svc.Action(step.ActionID)
+		if aerr != nil {
+			out = append(out, StepResult{ActionID: step.ActionID, Status: StatusError, Err: "step action not found"})
+			break
+		}
+		sr := r.execute(ctx, a, RunContext{Event: rc.Event, RepoID: rc.RepoID, Vars: vars})
+		out = append(out, sr)
+		if sr.Status == StatusError {
+			break
+		}
+		if step.StepKey != "" {
+			vars["steps."+step.StepKey+".output"] = sr.Output
+		}
+	}
+	return out
 }
 
 // chainStatus folds step results into the chain status:

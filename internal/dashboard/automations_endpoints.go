@@ -48,6 +48,10 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handleHooks(w, r)
 	case strings.HasPrefix(rest, "hooks/"):
 		d.handleHookItem(w, r, strings.TrimPrefix(rest, "hooks/"))
+	case rest == "flows":
+		d.handleFlows(w, r)
+	case strings.HasPrefix(rest, "flows/"):
+		d.handleFlowItem(w, r, strings.TrimPrefix(rest, "flows/"))
 	case rest == "runs":
 		d.handleRuns(w, r)
 	case strings.HasPrefix(rest, "runs/"):
