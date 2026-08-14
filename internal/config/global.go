@@ -20,6 +20,12 @@ type GlobalSettings struct {
 	// UpdateRepo is the GitHub "owner/name" that `corral update` and the
 	// dashboard update-check resolve releases from. Empty = DefaultUpdateRepo.
 	UpdateRepo string `json:"update_repo,omitempty"`
+
+	// AutomationsToolsEnabled gates whether automations actions are exposed as
+	// callable tools to the host Claude. OFF by default: a user must explicitly
+	// opt in, since a tool lets Claude trigger real side effects (gh approve,
+	// bash, webhooks). This is the user-permission part of the tool adapter.
+	AutomationsToolsEnabled bool `json:"automations_tools_enabled,omitempty"`
 }
 
 // GlobalSettingsPath is ~/.corral/global-settings.json.

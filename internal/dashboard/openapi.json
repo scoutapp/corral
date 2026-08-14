@@ -73,6 +73,12 @@
     },
     "/prompts/project-start": {
       "get": { "summary": "Resolve the effective project-start prompt for a repo", "parameters": [{ "name": "repo", "in": "query", "schema": { "type": "string" } }], "responses": { "200": { "description": "Effective template + source + presets" } } }
+    },
+    "/tools": {
+      "get": { "summary": "Tool manifest (actions exposed as Claude tools)", "description": "Empty unless the user enabled AutomationsToolsEnabled. Gated so Claude can't act without opt-in.", "responses": { "200": { "description": "Manifest", "content": { "application/json": { "schema": { "type": "object", "properties": { "enabled": { "type": "boolean" }, "tools": { "type": "array", "items": { "$ref": "#/components/schemas/ToolDescriptor" } } } } } } } } }
+    },
+    "/tools/{name}:invoke": {
+      "post": { "summary": "Invoke an action by tool name", "description": "403 when tools are disabled.", "parameters": [{ "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }], "requestBody": { "content": { "application/json": { "schema": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Tool input = run-context vars." } } } }, "responses": { "200": { "description": "Step result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StepResult" } } } }, "403": { "description": "Tools disabled" } } }
     }
   },
   "components": {
@@ -176,6 +182,15 @@
           "output": { "type": "string" },
           "error": { "type": "string" },
           "durationMs": { "type": "integer" }
+        }
+      },
+      "ToolDescriptor": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "actionId": { "type": "integer" },
+          "inputSchema": { "type": "object" }
         }
       },
       "Run": {
