@@ -88,7 +88,7 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 	case strings.HasPrefix(rest, "tools/"):
 		d.handleTools(w, r, strings.TrimPrefix(rest, "tools/"))
 	default:
-		http.NotFound(w, r)
+		routeNotFound(w, r)
 	}
 }
 

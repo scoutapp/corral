@@ -5,11 +5,16 @@ import (
 	"net/http"
 )
 
-// openapiSpec is the hand-authored OpenAPI 3.1 description of the /api/*
-// automations control plane, embedded so it ships with the binary. It's the
-// contract the future corral CLI and macro tooling consume to talk to the
-// dashboard. Kept in sync with the actual routes by hand (the surface is small
-// and stable); a mismatch is a review-catchable bug, not a silent drift.
+// openapiSpec is the hand-authored OpenAPI 3.1 description of the dashboard's
+// host control plane — a curated surface (repos, projects, GitHub issues,
+// automations, logs/traces) covering the mutating + high-value REST the
+// `corral api` CLI and the host Claude skill drive. It deliberately omits the
+// machinery endpoints (WebSockets, files/git/mitm/ssh/terminal). Embedded so it
+// ships with the binary and is served at GET /api/openapi.json.
+//
+// It is kept honest by TestOpenAPINoDrift, which exercises the live router and
+// fails if the spec documents a path the server doesn't actually serve — so this
+// is real drift protection, not an honor system.
 //
 //go:embed openapi.json
 var openapiSpec []byte

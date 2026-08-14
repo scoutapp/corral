@@ -1,284 +1,1711 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Corral Automations API",
-    "version": "1.0.0",
-    "description": "The API-first control plane for Corral's automations engine: reusable actions, event hooks, composed flows, and run history. The dashboard UI is one client; a CLI and macros are others."
+    "title": "Corral Dashboard API",
+    "version": "2.0.0",
+    "description": "The host-side control plane for Corral: repos, projects, GitHub issues, and the automations engine (actions, hooks, flows, runs, prompts) plus the host-wide logs and trace tree. The dashboard UI is one client; the `corral api` CLI and the host Claude skill are others. Loopback-only and token-gated. Mutating calls (POST/PUT/DELETE) require the operator to enable API writes in global settings; reads are always allowed."
   },
-  "servers": [{ "url": "/api", "description": "Dashboard API root" }],
+  "servers": [
+    {
+      "url": "/",
+      "description": "Dashboard root (loopback-only, token-gated)"
+    }
+  ],
   "paths": {
-    "/actions": {
+    "/api/actions": {
       "get": {
         "summary": "List actions",
         "parameters": [
-          { "name": "repo", "in": "query", "schema": { "type": "string" }, "description": "Include this repo's actions plus global ones; omit for global only." }
+          {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Include this repo's actions plus global ones; omit for global only."
+          }
         ],
-        "responses": { "200": { "description": "Actions", "content": { "application/json": { "schema": { "type": "object", "properties": { "actions": { "type": "array", "items": { "$ref": "#/components/schemas/Action" } } } } } } } }
+        "responses": {
+          "200": {
+            "description": "Actions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "actions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Action"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       },
       "post": {
         "summary": "Create an action",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ActionInput" } } } },
-        "responses": { "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Action" } } } } }
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Action"
+                }
+              }
+            }
+          }
+        }
       }
     },
-    "/actions/{id}": {
-      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-      "get": { "summary": "Fetch an action", "responses": { "200": { "description": "Action", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Action" } } } }, "404": { "description": "Not found" } } },
-      "put": { "summary": "Update an action (name + spec)", "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "name": { "type": "string" }, "spec": { "type": "string" } } } } } }, "responses": { "200": { "description": "Updated" } } },
-      "delete": { "summary": "Delete an action", "responses": { "200": { "description": "Deleted" } } }
+    "/api/actions/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Fetch an action",
+        "responses": {
+          "200": {
+            "description": "Action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Action"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an action (name + spec)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "spec": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an action",
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
     },
-    "/actions/{id}:run": {
+    "/api/actions/{id}:run": {
       "post": {
         "summary": "Run an action ad-hoc",
         "description": "Executes the action with the given run context and records a run. This is the entry point macros/CLI use to trigger a unit of work.",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RunContext" } } } },
-        "responses": { "200": { "description": "Step result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StepResult" } } } } }
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunContext"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Step result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepResult"
+                }
+              }
+            }
+          }
+        }
       }
     },
-    "/hooks": {
+    "/api/hooks": {
       "get": {
         "summary": "List hooks bound to an event",
         "parameters": [
-          { "name": "event", "in": "query", "required": true, "schema": { "$ref": "#/components/schemas/Event" } },
-          { "name": "repo", "in": "query", "schema": { "type": "string" } }
+          {
+            "name": "event",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Event"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
-        "responses": { "200": { "description": "Hooks", "content": { "application/json": { "schema": { "type": "object", "properties": { "hooks": { "type": "array", "items": { "$ref": "#/components/schemas/Hook" } } } } } } } }
+        "responses": {
+          "200": {
+            "description": "Hooks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "hooks": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Hook"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       },
-      "post": { "summary": "Bind an event to an action or flow", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HookInput" } } } }, "responses": { "201": { "description": "Created" } } }
+      "post": {
+        "summary": "Bind an event to an action or flow",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HookInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          }
+        }
+      }
     },
-    "/hooks/{id}": {
-      "delete": { "summary": "Unbind a hook", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "Deleted" } } }
+    "/api/hooks/{id}": {
+      "delete": {
+        "summary": "Unbind a hook",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
     },
-    "/flows": {
-      "get": { "summary": "List flows", "parameters": [{ "name": "repo", "in": "query", "schema": { "type": "string" } }], "responses": { "200": { "description": "Flows", "content": { "application/json": { "schema": { "type": "object", "properties": { "flows": { "type": "array", "items": { "$ref": "#/components/schemas/Flow" } } } } } } } } },
-      "post": { "summary": "Create a flow (optionally with inline steps)", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FlowInput" } } } }, "responses": { "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Flow" } } } } } }
+    "/api/flows": {
+      "get": {
+        "summary": "List flows",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Flows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "flows": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Flow"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a flow (optionally with inline steps)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FlowInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Flow"
+                }
+              }
+            }
+          }
+        }
+      }
     },
-    "/flows/{id}": {
-      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-      "get": { "summary": "Fetch a flow with its steps", "responses": { "200": { "description": "Flow", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Flow" } } } } } },
-      "delete": { "summary": "Delete a flow", "responses": { "200": { "description": "Deleted" } } }
+    "/api/flows/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Fetch a flow with its steps",
+        "responses": {
+          "200": {
+            "description": "Flow",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Flow"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a flow",
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
     },
-    "/flows/{id}/steps": {
-      "post": { "summary": "Append a step to a flow", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FlowStep" } } } }, "responses": { "201": { "description": "Added" } } }
+    "/api/flows/{id}/steps": {
+      "post": {
+        "summary": "Append a step to a flow",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FlowStep"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Added"
+          }
+        }
+      }
     },
-    "/flows/{id}:run": {
-      "post": { "summary": "Run a flow ad-hoc", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RunContext" } } } }, "responses": { "200": { "description": "Flow result" } } }
+    "/api/flows/{id}:run": {
+      "post": {
+        "summary": "Run a flow ad-hoc",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunContext"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Flow result"
+          }
+        }
+      }
     },
-    "/runs": {
-      "get": { "summary": "Recent run history", "parameters": [{ "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } }], "responses": { "200": { "description": "Runs", "content": { "application/json": { "schema": { "type": "object", "properties": { "runs": { "type": "array", "items": { "$ref": "#/components/schemas/Run" } } } } } } } } }
+    "/api/runs": {
+      "get": {
+        "summary": "Recent run history",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Runs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "runs": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Run"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     },
-    "/runs/{id}": {
-      "get": { "summary": "Fetch a run", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "Run", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Run" } } } } } }
+    "/api/runs/{id}": {
+      "get": {
+        "summary": "Fetch a run",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            }
+          }
+        }
+      }
     },
-    "/logs": {
+    "/api/logs": {
       "get": {
         "summary": "Application log (host-wide), newest-first, keyset-paginated",
         "parameters": [
-          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } },
-          { "name": "before", "in": "query", "schema": { "type": "integer" }, "description": "keyset cursor: rows older than this id" },
-          { "name": "category", "in": "query", "schema": { "type": "string" } },
-          { "name": "project", "in": "query", "schema": { "type": "string" } },
-          { "name": "repo", "in": "query", "schema": { "type": "string" } },
-          { "name": "level", "in": "query", "schema": { "type": "string" } },
-          { "name": "q", "in": "query", "schema": { "type": "string" }, "description": "free-text search over message + meta" }
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "keyset cursor: rows older than this id"
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "free-text search over message + meta"
+          }
         ],
-        "responses": { "200": { "description": "A page of logs", "content": { "application/json": { "schema": { "type": "object", "properties": { "logs": { "type": "array", "items": { "$ref": "#/components/schemas/LogRecord" } }, "nextCursor": { "type": "integer" } } } } } } }
+        "responses": {
+          "200": {
+            "description": "A page of logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "logs": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LogRecord"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
-    "/logs/facets": {
-      "get": { "summary": "Distinct categories + projects for the log filters", "responses": { "200": { "description": "Facets", "content": { "application/json": { "schema": { "type": "object", "properties": { "categories": { "type": "array", "items": { "type": "string" } }, "projects": { "type": "array", "items": { "type": "string" } } } } } } } } }
+    "/api/logs/facets": {
+      "get": {
+        "summary": "Distinct categories + projects for the log filters",
+        "responses": {
+          "200": {
+            "description": "Facets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "categories": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "projects": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     },
-    "/prompts/project-start": {
-      "get": { "summary": "Resolve the effective project-start prompt for a repo", "parameters": [{ "name": "repo", "in": "query", "schema": { "type": "string" } }], "responses": { "200": { "description": "Effective template + source + presets" } } }
+    "/api/prompts/project-start": {
+      "get": {
+        "summary": "Resolve the effective project-start prompt for a repo",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Effective template + source + presets"
+          }
+        }
+      }
     },
-    "/prompts/default": {
-      "get": { "summary": "Get (creating if needed) the editable global project-start prompt", "responses": { "200": { "description": "The prompt action id + template" } } }
+    "/api/prompts/default": {
+      "get": {
+        "summary": "Get (creating if needed) the editable global project-start prompt",
+        "responses": {
+          "200": {
+            "description": "The prompt action id + template"
+          }
+        }
+      }
     },
-    "/prompts": {
-      "get": { "summary": "Editable prompt catalog (default/effective/source/slots per prompt)", "parameters": [{ "name": "repo", "in": "query", "schema": { "type": "string" } }], "responses": { "200": { "description": "Prompts", "content": { "application/json": { "schema": { "type": "object", "properties": { "prompts": { "type": "array", "items": { "$ref": "#/components/schemas/PromptItem" } } } } } } } } }
+    "/api/prompts": {
+      "get": {
+        "summary": "Editable prompt catalog (default/effective/source/slots per prompt)",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Prompts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "prompts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PromptItem"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     },
-    "/prompts/{key}": {
-      "parameters": [{ "name": "key", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "repo", "in": "query", "schema": { "type": "string" } }],
-      "put": { "summary": "Save a prompt override (repo scope with ?repo=)", "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "template": { "type": "string" } } } } } }, "responses": { "200": { "description": "Updated prompt item" } } },
-      "delete": { "summary": "Reset a prompt (remove the override at this scope)", "responses": { "200": { "description": "Updated prompt item" } } }
+    "/api/prompts/{key}": {
+      "parameters": [
+        {
+          "name": "key",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "repo",
+          "in": "query",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "summary": "Save a prompt override (repo scope with ?repo=)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "template": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated prompt item"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Reset a prompt (remove the override at this scope)",
+        "responses": {
+          "200": {
+            "description": "Updated prompt item"
+          }
+        }
+      }
     },
-    "/triggers": {
-      "get": { "summary": "User-facing trigger catalog (friendly labels + built-in steps)", "responses": { "200": { "description": "Triggers", "content": { "application/json": { "schema": { "type": "object", "properties": { "triggers": { "type": "array", "items": { "$ref": "#/components/schemas/Trigger" } } } } } } } } }
+    "/api/triggers": {
+      "get": {
+        "summary": "User-facing trigger catalog (friendly labels + built-in steps)",
+        "responses": {
+          "200": {
+            "description": "Triggers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "triggers": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Trigger"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     },
-    "/tools": {
-      "get": { "summary": "Tool manifest (actions exposed as Claude tools)", "description": "Empty unless the user enabled AutomationsToolsEnabled. Gated so Claude can't act without opt-in.", "responses": { "200": { "description": "Manifest", "content": { "application/json": { "schema": { "type": "object", "properties": { "enabled": { "type": "boolean" }, "tools": { "type": "array", "items": { "$ref": "#/components/schemas/ToolDescriptor" } } } } } } } } }
+    "/api/tools": {
+      "get": {
+        "summary": "Tool manifest (actions exposed as Claude tools)",
+        "description": "Empty unless the user enabled AutomationsToolsEnabled. Gated so Claude can't act without opt-in.",
+        "responses": {
+          "200": {
+            "description": "Manifest",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "tools": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ToolDescriptor"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     },
-    "/tools/{name}:invoke": {
-      "post": { "summary": "Invoke an action by tool name", "description": "403 when tools are disabled.", "parameters": [{ "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }], "requestBody": { "content": { "application/json": { "schema": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Tool input = run-context vars." } } } }, "responses": { "200": { "description": "Step result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StepResult" } } } }, "403": { "description": "Tools disabled" } } }
+    "/api/tools/{name}:invoke": {
+      "post": {
+        "summary": "Invoke an action by tool name",
+        "description": "403 when tools are disabled.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "Tool input = run-context vars."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Step result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tools disabled"
+          }
+        }
+      }
+    },
+    "/status": {
+      "get": {
+        "summary": "Live per-project status for the landing page",
+        "responses": {
+          "200": {
+            "description": "Project statuses"
+          }
+        }
+      }
+    },
+    "/repos": {
+      "get": {
+        "summary": "List repos (cross-project)",
+        "responses": {
+          "200": {
+            "description": "Repos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "repos": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Repo"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add a repo",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepoInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Added",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Repo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/repos/{id}/fetch": {
+      "post": {
+        "summary": "Refresh a repo's cache mirror",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Fetched"
+          }
+        }
+      }
+    },
+    "/repos/{id}": {
+      "delete": {
+        "summary": "Remove a repo (and its cache)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed"
+          }
+        }
+      }
+    },
+    "/projects/create": {
+      "post": {
+        "summary": "Create a new project workspace",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectCreateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/p/{id}/start": {
+      "post": {
+        "summary": "Start a project's container",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Starting"
+          }
+        }
+      }
+    },
+    "/p/{id}/stop": {
+      "post": {
+        "summary": "Stop a project's container",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stopped"
+          }
+        }
+      }
+    },
+    "/p/{id}/remove": {
+      "post": {
+        "summary": "Unregister a project from the dashboard",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed"
+          }
+        }
+      }
+    },
+    "/gh/repos": {
+      "get": {
+        "summary": "List the operator's GitHub repos",
+        "responses": {
+          "200": {
+            "description": "Repos"
+          }
+        }
+      }
+    },
+    "/gh/branches": {
+      "get": {
+        "summary": "List branches for a repo",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Branches"
+          }
+        }
+      }
+    },
+    "/gh/issues": {
+      "get": {
+        "summary": "List issues for a repo",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Issues"
+          }
+        }
+      }
+    },
+    "/gh/issues/create": {
+      "post": {
+        "summary": "Create a GitHub issue",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueCreateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueCreated"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/global/config": {
+      "get": {
+        "summary": "Read global settings",
+        "responses": {
+          "200": {
+            "description": "Global settings"
+          }
+        }
+      }
+    },
+    "/global/apply": {
+      "post": {
+        "summary": "Apply global settings changes",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Applied"
+          }
+        }
+      }
+    },
+    "/api/logs/trace/{traceId}": {
+      "get": {
+        "summary": "Reconstructed span tree for one trace",
+        "parameters": [
+          {
+            "name": "traceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Trace"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
-      "Event": { "type": "string", "enum": ["pr.approve", "pr.comment", "pr.request_changes", "pr.merge", "pr.analyze", "pr.enter", "project.start"] },
-      "Kind": { "type": "string", "enum": ["capability", "bash", "claude_prompt", "webhook", "slack"] },
+      "Event": {
+        "type": "string",
+        "enum": [
+          "pr.approve",
+          "pr.comment",
+          "pr.request_changes",
+          "pr.merge",
+          "pr.analyze",
+          "pr.enter",
+          "project.start"
+        ]
+      },
+      "Kind": {
+        "type": "string",
+        "enum": [
+          "capability",
+          "bash",
+          "claude_prompt",
+          "webhook",
+          "slack"
+        ]
+      },
       "Action": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string" },
-          "kind": { "$ref": "#/components/schemas/Kind" },
-          "spec": { "type": "string", "description": "Per-kind config as a JSON string." },
-          "scope": { "type": "string", "enum": ["global", "repo"] },
-          "repoId": { "type": "string" }
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/Kind"
+          },
+          "spec": {
+            "type": "string",
+            "description": "Per-kind config as a JSON string."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "repo"
+            ]
+          },
+          "repoId": {
+            "type": "string"
+          }
         }
       },
       "ActionInput": {
         "type": "object",
-        "required": ["name", "kind"],
+        "required": [
+          "name",
+          "kind"
+        ],
         "properties": {
-          "name": { "type": "string" },
-          "kind": { "$ref": "#/components/schemas/Kind" },
-          "spec": { "type": "string" },
-          "scope": { "type": "string", "enum": ["global", "repo"] },
-          "repoId": { "type": "string" }
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/Kind"
+          },
+          "spec": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "repo"
+            ]
+          },
+          "repoId": {
+            "type": "string"
+          }
         }
       },
       "Hook": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "event": { "$ref": "#/components/schemas/Event" },
-          "scope": { "type": "string", "enum": ["global", "repo"] },
-          "repoId": { "type": "string" },
-          "targetKind": { "type": "string", "enum": ["action", "flow"] },
-          "targetId": { "type": "integer" },
-          "position": { "type": "integer" },
-          "enabled": { "type": "boolean" }
+          "id": {
+            "type": "integer"
+          },
+          "event": {
+            "$ref": "#/components/schemas/Event"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "repo"
+            ]
+          },
+          "repoId": {
+            "type": "string"
+          },
+          "targetKind": {
+            "type": "string",
+            "enum": [
+              "action",
+              "flow"
+            ]
+          },
+          "targetId": {
+            "type": "integer"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
         }
       },
       "HookInput": {
         "type": "object",
-        "required": ["event", "targetKind", "targetId"],
+        "required": [
+          "event",
+          "targetKind",
+          "targetId"
+        ],
         "properties": {
-          "event": { "$ref": "#/components/schemas/Event" },
-          "scope": { "type": "string", "enum": ["global", "repo"] },
-          "repoId": { "type": "string" },
-          "targetKind": { "type": "string", "enum": ["action", "flow"] },
-          "targetId": { "type": "integer" },
-          "enabled": { "type": "boolean" }
+          "event": {
+            "$ref": "#/components/schemas/Event"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "repo"
+            ]
+          },
+          "repoId": {
+            "type": "string"
+          },
+          "targetKind": {
+            "type": "string",
+            "enum": [
+              "action",
+              "flow"
+            ]
+          },
+          "targetId": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
         }
       },
       "Flow": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string" },
-          "scope": { "type": "string", "enum": ["global", "repo"] },
-          "repoId": { "type": "string" },
-          "steps": { "type": "array", "items": { "$ref": "#/components/schemas/FlowStep" } }
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "repo"
+            ]
+          },
+          "repoId": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FlowStep"
+            }
+          }
         }
       },
       "FlowInput": {
         "type": "object",
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
-          "name": { "type": "string" },
-          "scope": { "type": "string", "enum": ["global", "repo"] },
-          "repoId": { "type": "string" },
-          "steps": { "type": "array", "items": { "$ref": "#/components/schemas/FlowStep" } }
+          "name": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "repo"
+            ]
+          },
+          "repoId": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FlowStep"
+            }
+          }
         }
       },
       "FlowStep": {
         "type": "object",
-        "required": ["actionId"],
+        "required": [
+          "actionId"
+        ],
         "properties": {
-          "id": { "type": "integer" },
-          "flowId": { "type": "integer" },
-          "position": { "type": "integer" },
-          "actionId": { "type": "integer" },
-          "stepKey": { "type": "string", "description": "Referenced by later steps as {{steps.<key>.output}}." },
-          "dependsOn": { "type": "array", "items": { "type": "string" }, "description": "Reserved for DAG execution; unused while linear." }
+          "id": {
+            "type": "integer"
+          },
+          "flowId": {
+            "type": "integer"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "actionId": {
+            "type": "integer"
+          },
+          "stepKey": {
+            "type": "string",
+            "description": "Referenced by later steps as {{steps.<key>.output}}."
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Reserved for DAG execution; unused while linear."
+          }
         }
       },
       "RunContext": {
         "type": "object",
         "properties": {
-          "event": { "$ref": "#/components/schemas/Event" },
-          "repoId": { "type": "string" },
-          "vars": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Substituted into templates as {{name}}." }
+          "event": {
+            "$ref": "#/components/schemas/Event"
+          },
+          "repoId": {
+            "type": "string"
+          },
+          "vars": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Substituted into templates as {{name}}."
+          }
         }
       },
       "StepResult": {
         "type": "object",
         "properties": {
-          "actionId": { "type": "integer" },
-          "kind": { "type": "string" },
-          "name": { "type": "string" },
-          "status": { "type": "string", "enum": ["ok", "error"] },
-          "output": { "type": "string" },
-          "error": { "type": "string" },
-          "durationMs": { "type": "integer" }
+          "actionId": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "error"
+            ]
+          },
+          "output": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "durationMs": {
+            "type": "integer"
+          }
         }
       },
       "ToolDescriptor": {
         "type": "object",
         "properties": {
-          "name": { "type": "string" },
-          "description": { "type": "string" },
-          "actionId": { "type": "integer" },
-          "inputSchema": { "type": "object" }
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "actionId": {
+            "type": "integer"
+          },
+          "inputSchema": {
+            "type": "object"
+          }
         }
       },
       "Trigger": {
         "type": "object",
         "properties": {
-          "event": { "$ref": "#/components/schemas/Event" },
-          "title": { "type": "string" },
-          "verb": { "type": "string" },
-          "description": { "type": "string" },
-          "builtin": { "type": "string" },
-          "builtinIcon": { "type": "string" }
+          "event": {
+            "$ref": "#/components/schemas/Event"
+          },
+          "title": {
+            "type": "string"
+          },
+          "verb": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "builtin": {
+            "type": "string"
+          },
+          "builtinIcon": {
+            "type": "string"
+          }
         }
       },
       "PromptItem": {
         "type": "object",
         "properties": {
-          "key": { "type": "string" },
-          "name": { "type": "string" },
-          "usedWhen": { "type": "string" },
-          "slots": { "type": "array", "items": { "type": "string" } },
-          "default": { "type": "string" },
-          "effective": { "type": "string" },
-          "source": { "type": "string", "enum": ["repo", "global", "default"] },
-          "overridden": { "type": "boolean" }
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "usedWhen": {
+            "type": "string"
+          },
+          "slots": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "default": {
+            "type": "string"
+          },
+          "effective": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "repo",
+              "global",
+              "default"
+            ]
+          },
+          "overridden": {
+            "type": "boolean"
+          }
         }
       },
       "LogRecord": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "ts": { "type": "string" },
-          "level": { "type": "string", "enum": ["debug", "info", "warn", "error"] },
-          "category": { "type": "string" },
-          "event": { "type": "string" },
-          "message": { "type": "string" },
-          "repoId": { "type": "string" },
-          "projectId": { "type": "string" },
-          "status": { "type": "string" },
-          "durationMs": { "type": "integer" },
-          "meta": { "type": "string", "description": "raw JSON" },
-          "runId": { "type": "integer" }
+          "id": {
+            "type": "integer"
+          },
+          "ts": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "debug",
+              "info",
+              "warn",
+              "error"
+            ]
+          },
+          "category": {
+            "type": "string"
+          },
+          "event": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "repoId": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "durationMs": {
+            "type": "integer"
+          },
+          "meta": {
+            "type": "string",
+            "description": "raw JSON"
+          },
+          "runId": {
+            "type": "integer"
+          }
         }
       },
       "Run": {
         "type": "object",
         "properties": {
-          "id": { "type": "integer" },
-          "trigger": { "type": "string", "enum": ["manual", "api", "hook", "flow-step"] },
-          "event": { "type": "string" },
-          "targetKind": { "type": "string" },
-          "targetId": { "type": "integer" },
-          "status": { "type": "string", "enum": ["running", "ok", "error", "partial"] },
-          "context": { "type": "string", "description": "Run context as a JSON string." },
-          "steps": { "type": "string", "description": "Per-step results as a JSON string." },
-          "startedAt": { "type": "string" },
-          "finishedAt": { "type": "string" }
+          "id": {
+            "type": "integer"
+          },
+          "trigger": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "api",
+              "hook",
+              "flow-step"
+            ]
+          },
+          "event": {
+            "type": "string"
+          },
+          "targetKind": {
+            "type": "string"
+          },
+          "targetId": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "ok",
+              "error",
+              "partial"
+            ]
+          },
+          "context": {
+            "type": "string",
+            "description": "Run context as a JSON string."
+          },
+          "steps": {
+            "type": "string",
+            "description": "Per-step results as a JSON string."
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "finishedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "Repo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "localPath": {
+            "type": "string"
+          },
+          "isPrivate": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RepoInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "localPath": {
+            "type": "string"
+          },
+          "isPrivate": {
+            "type": "boolean"
+          }
+        },
+        "description": "Provide url OR localPath."
+      },
+      "ProjectCreateInput": {
+        "type": "object",
+        "properties": {
+          "repoId": {
+            "type": "string"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          }
+        }
+      },
+      "IssueCreateInput": {
+        "type": "object",
+        "required": [
+          "repo",
+          "title"
+        ],
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          }
+        }
+      },
+      "IssueCreated": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "integer"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "Span": {
+        "type": "object",
+        "properties": {
+          "spanId": {
+            "type": "string"
+          },
+          "parentSpanId": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "event": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "startTs": {
+            "type": "string"
+          },
+          "endTs": {
+            "type": "string"
+          },
+          "durationMs": {
+            "type": "integer"
+          },
+          "unterminated": {
+            "type": "boolean"
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Span"
+            }
+          }
+        }
+      },
+      "Trace": {
+        "type": "object",
+        "properties": {
+          "traceId": {
+            "type": "string"
+          },
+          "roots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Span"
+            }
+          },
+          "spanCount": {
+            "type": "integer"
+          },
+          "rowCount": {
+            "type": "integer"
+          }
         }
       }
     }

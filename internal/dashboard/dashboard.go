@@ -440,6 +440,16 @@ func isPRPagePath(rest string) bool {
 	return true
 }
 
+// routeNotFound is the terminal "no route matched this path" 404, distinct from a
+// handler's "the resource wasn't found" 404. It sets X-Corral-Route: unmatched so
+// tooling (the OpenAPI drift test) can tell "this path isn't served at all" apart
+// from "served, but id/1 doesn't exist" — the two are otherwise the same 404. The
+// body is unchanged from http.NotFound so nothing user-visible shifts.
+func routeNotFound(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("X-Corral-Route", "unmatched")
+	http.NotFound(w, r)
+}
+
 func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	if path == "/" {
@@ -553,7 +563,7 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !strings.HasPrefix(path, "/p/") {
-		http.NotFound(w, r)
+		routeNotFound(w, r)
 		return
 	}
 
@@ -561,7 +571,7 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	parts := strings.SplitN(rest, "/", 2)
 	id := parts[0]
 	if id == "" {
-		http.NotFound(w, r)
+		routeNotFound(w, r)
 		return
 	}
 	sub := ""
@@ -645,7 +655,7 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	case sub == "firewall/stream":
 		d.handleFirewallStream(w, r, id)
 	default:
-		http.NotFound(w, r)
+		routeNotFound(w, r)
 	}
 }
 
