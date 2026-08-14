@@ -5,10 +5,30 @@ import (
 	"testing"
 )
 
+func TestRenderSSHGuidance(t *testing.T) {
+	svc := newService(t)
+
+	// No owner/name → no guidance.
+	if g := svc.RenderSSHGuidance("repo-A", ""); g != "" {
+		t.Errorf("expected empty guidance for no owner, got %q", g)
+	}
+	// With owner/name → the built-in sentence with the remote filled.
+	g := svc.RenderSSHGuidance("repo-A", "acme/widget")
+	if !strings.Contains(g, "git@github.com:acme/widget.git") || !strings.Contains(g, "ssh-agent") {
+		t.Errorf("guidance not rendered with remote: %q", g)
+	}
+	// Editing the ssh.guidance prompt changes it everywhere.
+	svc.SetPromptOverride(PromptSSHGuidance, "", "PUSH VIA {{ssh_remote}}")
+	g = svc.RenderSSHGuidance("repo-A", "acme/widget")
+	if g != "PUSH VIA git@github.com:acme/widget.git" {
+		t.Errorf("override not applied: %q", g)
+	}
+}
+
 func TestPromptCatalogComplete(t *testing.T) {
 	cat := PromptCatalog()
-	if len(cat) < 9 {
-		t.Fatalf("expected the full prompt catalog, got %d", len(cat))
+	if len(cat) < 10 {
+		t.Fatalf("expected the full prompt catalog (10+), got %d", len(cat))
 	}
 	for _, p := range cat {
 		if p.Key == "" || p.Name == "" || p.UsedWhen == "" || p.Default == "" {
@@ -24,8 +44,12 @@ func TestPromptCatalogComplete(t *testing.T) {
 	if !strings.Contains(ps.Default, "{{ssh_guidance}}") {
 		t.Error("project.start default should leave an {{ssh_guidance}} slot")
 	}
-	if !strings.Contains(SSHPushGuidance, "ssh-agent") || !strings.Contains(SSHPushGuidance, "{{ssh_remote}}") {
-		t.Error("SSHPushGuidance should mention the SSH remote + scoped agent")
+	if !strings.Contains(DefaultSSHPushGuidance, "ssh-agent") || !strings.Contains(DefaultSSHPushGuidance, "{{ssh_remote}}") {
+		t.Error("DefaultSSHPushGuidance should mention the SSH remote + scoped agent")
+	}
+	// ssh.guidance is its own editable catalog prompt.
+	if _, ok := PromptDefFor(PromptSSHGuidance); !ok {
+		t.Error("ssh.guidance should be in the catalog")
 	}
 }
 

@@ -63,6 +63,18 @@ func (s *Service) RenderPrompt(key, repoID string, vars map[string]string) strin
 	return RenderTemplate(tmpl, vars)
 }
 
+// RenderSSHGuidance renders the (editable) SSH push-guidance sentence for a
+// repo, filling {{ssh_remote}} with git@github.com:<repoOwnerName>.git. Returns
+// "" when repoOwnerName is empty (no GitHub remote → no guidance). The project
+// prompts fill their {{ssh_guidance}} slot with this only when a key is loaded.
+func (s *Service) RenderSSHGuidance(repoID, repoOwnerName string) string {
+	if strings.TrimSpace(repoOwnerName) == "" {
+		return ""
+	}
+	remote := "git@github.com:" + repoOwnerName + ".git"
+	return s.RenderPrompt(PromptSSHGuidance, repoID, map[string]string{"ssh_remote": remote})
+}
+
 // SetPromptOverride creates or updates the override action for a key at the
 // given scope (repoID empty = global). Returns the stored action.
 func (s *Service) SetPromptOverride(key, repoID, template string) (Action, error) {

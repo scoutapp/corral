@@ -14,6 +14,7 @@ import (
 	"github.com/scoutapp/corral/internal/automations"
 	"github.com/scoutapp/corral/internal/config"
 	"github.com/scoutapp/corral/internal/project"
+	"github.com/scoutapp/corral/internal/prreview"
 	"github.com/scoutapp/corral/internal/repos"
 )
 
@@ -141,12 +142,13 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 	// Issue seeding: create an issue branch in the cloned repo + write ISSUE.md at
 	// the workspace root. Best-effort — a seeding hiccup shouldn't fail the whole
 	// create (the project is already cloned). Returns the prompt to pre-populate.
+	// A fresh project inherits the global SSH keys (union model). If any are
+	// configured, the project prompts tell Claude to push over the SSH remote (the
+	// HTTPS remote won't auth in the sandbox).
+	hasSSHKey := len(config.GlobalSSHKeys()) > 0
+
 	var issuePrompt string
 	if body.Issue != nil && body.Issue.Number > 0 {
-		// A fresh project inherits the global SSH keys (union model). If any are
-		// configured, the prompt tells Claude to push over the SSH remote (the
-		// HTTPS remote won't auth in the sandbox).
-		hasSSHKey := len(config.GlobalSSHKeys()) > 0
 		issuePrompt = d.seedIssue(workspace, body.Repos, body.Issue, hasSSHKey)
 	}
 
@@ -182,9 +184,43 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 		// non-fatal; log-only via debug (no logger here — swallow)
 		_ = err
 	}
+	// For a plain new/clone project (not issue-seeded, not "existing"), build the
+	// project-start prompt so the UI can auto-submit it — this is how the editable
+	// project.start prompt (with SSH guidance when a key is loaded) reaches a plain
+	// project. Issue-seeded projects use issuePrompt instead.
+	var startPrompt string
+	if issuePrompt == "" && (body.Mode == "new" || body.Mode == "clone") && len(body.Repos) >= 1 {
+		startPrompt = d.buildStartPrompt(body.Repos[0])
+	}
+
 	writeFilesJSON(w, map[string]any{
 		"id": ProjectID(workspace), "workspace": workspace,
 		"issue_prompt": issuePrompt, // "" unless spawned from an issue
+		"start_prompt": startPrompt, // "" for issue/existing; the project.start prompt otherwise
+	})
+}
+
+// buildStartPrompt renders the project.start prompt for a plain project's first
+// repo: {{repo}} = the repo's display name, {{branch}} = its branch, and the SSH
+// guidance filled from the repo's GitHub owner/name when a key is loaded.
+func (d *dashboardServer) buildStartPrompt(spec repoSpec) string {
+	repoName, ownerName, branch := "", "", spec.Branch
+	if spec.RepoID != "" {
+		if repo, err := repos.Get(spec.RepoID); err == nil {
+			repoName = repo.Name
+			ownerName = prreview.OwnerName(repo.URL)
+			if branch == "" {
+				branch = repo.DefaultBranch
+			}
+		}
+	}
+	if repoName == "" {
+		repoName = specDirName(spec)
+	}
+	hasSSHKey := len(config.GlobalSSHKeys()) > 0
+	return d.renderProjectPrompt(automations.PromptProjectStart, spec.RepoID, ownerName, hasSSHKey, map[string]string{
+		"repo":   repoName,
+		"branch": branch,
 	})
 }
 
@@ -274,32 +310,48 @@ func (d *dashboardServer) seedIssue(workspace string, specs []repoSpec, iss *iss
 		iss.Repo, iss.Number, iss.Title, strings.TrimSpace(iss.Body), iss.URL, branch)
 	_ = os.WriteFile(filepath.Join(workspace, "ISSUE.md"), []byte(md), 0644)
 
-	// The SSH-push guidance sentence is included only when a key is configured.
-	// It fills the {{ssh_guidance}} slot of the editable "project.issue" prompt.
+	repoID := ""
+	if len(specs) >= 1 {
+		repoID = specs[0].RepoID
+	}
+	return d.renderProjectPrompt(automations.PromptProjectIssue, repoID, iss.Repo, hasSSHKey, map[string]string{
+		"repo":   iss.Repo,
+		"number": strconv.Itoa(iss.Number),
+		"title":  iss.Title,
+		"branch": branch,
+	})
+}
+
+// renderProjectPrompt renders a project-start prompt (plain or from-issue),
+// filling the {{ssh_guidance}} slot from the editable ssh.guidance prompt when a
+// key is configured (and a GitHub owner/name is known), else leaving it empty.
+// Falls back to the built-in default when no store/override is available, so a
+// prompt is always produced. ownerName is the GitHub "owner/name" (for the SSH
+// remote); pass "" for a non-GitHub or unknown remote.
+func (d *dashboardServer) renderProjectPrompt(key, repoID, ownerName string, hasSSHKey bool, slots map[string]string) string {
+	if slots == nil {
+		slots = map[string]string{}
+	}
+
+	// Resolve the SSH guidance sentence (editable) only when a key is loaded.
 	sshGuidance := ""
-	if hasSSHKey && iss.Repo != "" {
-		sshRemote := fmt.Sprintf("git@github.com:%s.git", iss.Repo)
-		sshGuidance = automations.RenderTemplate(automations.SSHPushGuidance, map[string]string{"ssh_remote": sshRemote})
+	if hasSSHKey {
+		if s, err := d.getStore(); err == nil {
+			sshGuidance = automations.New(s).RenderSSHGuidance(repoID, ownerName)
+		} else if ownerName != "" {
+			// No store → render the built-in guidance directly.
+			sshGuidance = automations.RenderTemplate(automations.DefaultSSHPushGuidance,
+				map[string]string{"ssh_remote": "git@github.com:" + ownerName + ".git"})
+		}
 	}
+	slots["ssh_guidance"] = sshGuidance
 
-	slots := map[string]string{
-		"repo":         iss.Repo,
-		"number":       strconv.Itoa(iss.Number),
-		"title":        iss.Title,
-		"branch":       branch,
-		"ssh_guidance": sshGuidance,
-	}
-
-	// Built-in default (rendered directly) so this works even if the store/
-	// resolver is unavailable; the override path replaces it when set.
-	def, _ := automations.PromptDefFor(automations.PromptProjectIssue)
+	// Prefer the resolved (override-aware) prompt; fall back to the built-in
+	// default rendered directly.
+	def, _ := automations.PromptDefFor(key)
 	prompt := automations.RenderTemplate(def.Default, slots)
 	if s, err := d.getStore(); err == nil {
-		repoID := ""
-		if len(specs) >= 1 {
-			repoID = specs[0].RepoID
-		}
-		if rendered := automations.New(s).RenderPrompt(automations.PromptProjectIssue, repoID, slots); strings.TrimSpace(rendered) != "" {
+		if rendered := automations.New(s).RenderPrompt(key, repoID, slots); strings.TrimSpace(rendered) != "" {
 			prompt = rendered
 		}
 	}
