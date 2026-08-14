@@ -2007,3 +2007,8 @@ table.projects th, table.projects td {
 .trigger-add { border: 1px solid var(--con-line); border-radius: 6px; padding: 0.6rem; margin-top: 0.3rem; background: var(--con-panel); }
 .auto-advanced { margin-top: 1.5rem; }
 .auto-advanced summary { cursor: pointer; font-size: 0.82rem; color: var(--muted); }
+
+/* Automations nav: its own group, visually separated, with a subtle accent. */
+.nav-sep { height: 1px; background: var(--con-line); margin: 0.5rem 0.4rem; }
+.nav-automations .nav-ico { color: var(--con-working); }
+.nav-automations:hover { color: var(--con-working); }

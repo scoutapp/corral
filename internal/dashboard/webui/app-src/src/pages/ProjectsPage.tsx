@@ -173,15 +173,20 @@ export function ProjectsPage() {
         <button type="button" className={`nav-item${section === "prs" ? " active" : ""}`} onClick={() => setSection("prs")}>
           <span className="nav-ico">⑃</span> PRs
         </button>
+
+        {/* Automations is its own thing — set apart from the browse sections
+            above and the project/settings controls below. */}
+        <div className="nav-sep" />
+        <Link to="/automations" className="nav-item nav-link nav-automations">
+          <span className="nav-ico">⚡</span> Automations
+        </Link>
+
         <div className="sidebar-spacer" />
         <button type="button" className="sidebar-cta" title="Create a new project" onClick={() => setNewProject(true)}>
           + New project
         </button>
         <Link to="/global" className="nav-item nav-link">
           ⚙ Global settings
-        </Link>
-        <Link to="/automations" className="nav-item nav-link">
-          ⚡ Automations
         </Link>
       </nav>
 
