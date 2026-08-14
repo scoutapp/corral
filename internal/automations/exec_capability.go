@@ -94,5 +94,7 @@ func DefaultRegistry() *Registry {
 	r := NewRegistry()
 	r.Register(KindCapability, NewCapabilityExecutor(GitHubProvider{}))
 	r.Register(KindClaudePrompt, PromptExecutor{})
+	r.Register(KindWebhook, WebhookExecutor{})
+	r.Register(KindSlack, SlackExecutor{})
 	return r
 }
