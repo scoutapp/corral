@@ -6,6 +6,7 @@ import { PRReviewPage } from "./pages/PRReviewPage";
 import { GlobalPage } from "./pages/GlobalPage";
 import { AutomationsPage } from "./pages/AutomationsPage";
 import { RunLogPage } from "./pages/RunLogPage";
+import { LogsPage } from "./pages/LogsPage";
 import { ToastProvider } from "./components/Toasts";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { useUpdateCheck } from "./hooks/useUpdateCheck";
@@ -20,6 +21,7 @@ function Routes() {
   const repoId = matchRepo(path);
   if (repoId) return <RepoPage id={repoId} />;
   if (path === "/global") return <GlobalPage />;
+  if (path === "/automations/logs") return <LogsPage />;
   if (path === "/automations/runs") return <RunLogPage />;
   if (path === "/automations") return <AutomationsPage />;
   return <ProjectsPage />;
