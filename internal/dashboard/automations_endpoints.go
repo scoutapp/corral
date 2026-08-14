@@ -58,6 +58,10 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handleRuns(w, r)
 	case strings.HasPrefix(rest, "runs/"):
 		d.handleRunItem(w, r, strings.TrimPrefix(rest, "runs/"))
+	case rest == "logs":
+		d.handleLogs(w, r, "")
+	case strings.HasPrefix(rest, "logs/"):
+		d.handleLogs(w, r, strings.TrimPrefix(rest, "logs/"))
 	case rest == "triggers":
 		d.handleTriggers(w, r)
 	case rest == "prompts/project-start":

@@ -71,6 +71,24 @@
     "/runs/{id}": {
       "get": { "summary": "Fetch a run", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "Run", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Run" } } } } } }
     },
+    "/logs": {
+      "get": {
+        "summary": "Application log (host-wide), newest-first, keyset-paginated",
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } },
+          { "name": "before", "in": "query", "schema": { "type": "integer" }, "description": "keyset cursor: rows older than this id" },
+          { "name": "category", "in": "query", "schema": { "type": "string" } },
+          { "name": "project", "in": "query", "schema": { "type": "string" } },
+          { "name": "repo", "in": "query", "schema": { "type": "string" } },
+          { "name": "level", "in": "query", "schema": { "type": "string" } },
+          { "name": "q", "in": "query", "schema": { "type": "string" }, "description": "free-text search over message + meta" }
+        ],
+        "responses": { "200": { "description": "A page of logs", "content": { "application/json": { "schema": { "type": "object", "properties": { "logs": { "type": "array", "items": { "$ref": "#/components/schemas/LogRecord" } }, "nextCursor": { "type": "integer" } } } } } } }
+      }
+    },
+    "/logs/facets": {
+      "get": { "summary": "Distinct categories + projects for the log filters", "responses": { "200": { "description": "Facets", "content": { "application/json": { "schema": { "type": "object", "properties": { "categories": { "type": "array", "items": { "type": "string" } }, "projects": { "type": "array", "items": { "type": "string" } } } } } } } } }
+    },
     "/prompts/project-start": {
       "get": { "summary": "Resolve the effective project-start prompt for a repo", "parameters": [{ "name": "repo", "in": "query", "schema": { "type": "string" } }], "responses": { "200": { "description": "Effective template + source + presets" } } }
     },
@@ -229,6 +247,23 @@
           "effective": { "type": "string" },
           "source": { "type": "string", "enum": ["repo", "global", "default"] },
           "overridden": { "type": "boolean" }
+        }
+      },
+      "LogRecord": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "ts": { "type": "string" },
+          "level": { "type": "string", "enum": ["debug", "info", "warn", "error"] },
+          "category": { "type": "string" },
+          "event": { "type": "string" },
+          "message": { "type": "string" },
+          "repoId": { "type": "string" },
+          "projectId": { "type": "string" },
+          "status": { "type": "string" },
+          "durationMs": { "type": "integer" },
+          "meta": { "type": "string", "description": "raw JSON" },
+          "runId": { "type": "integer" }
         }
       },
       "Run": {
