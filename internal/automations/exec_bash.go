@@ -35,9 +35,13 @@ type BashSpec struct {
 }
 
 // BashExecutor runs a bash action's script with the context exported as env.
-type BashExecutor struct{}
+// LoginShell, when set (e.g. "/bin/zsh"), runs the script through that shell as
+// a LOGIN shell (`-lc`) so it sources the operator's profile and gets the same
+// PATH as their terminal — tools like aws/brew/nvm resolve as expected. Empty
+// falls back to `bash -c` with the daemon's (narrower) PATH.
+type BashExecutor struct{ LoginShell string }
 
-func (BashExecutor) Execute(ctx context.Context, a Action, rc RunContext) StepResult {
+func (e BashExecutor) Execute(ctx context.Context, a Action, rc RunContext) StepResult {
 	var spec BashSpec
 	if err := json.Unmarshal([]byte(a.Spec), &spec); err != nil {
 		return StepResult{Status: StatusError, Err: "bad bash spec: " + err.Error()}
@@ -46,7 +50,15 @@ func (BashExecutor) Execute(ctx context.Context, a Action, rc RunContext) StepRe
 		return StepResult{Status: StatusError, Err: "script is required"}
 	}
 
-	cmd := exec.CommandContext(ctx, "bash", "-c", spec.Script)
+	var cmd *exec.Cmd
+	if e.LoginShell != "" {
+		// Login shell → full interactive PATH. The script is passed as -c's
+		// argument (not interpolated), so no shell-injection surface beyond the
+		// script itself (which is user-authored host code by design).
+		cmd = exec.CommandContext(ctx, e.LoginShell, "-lc", spec.Script)
+	} else {
+		cmd = exec.CommandContext(ctx, "bash", "-c", spec.Script)
+	}
 	if spec.WorkDir != "" {
 		cmd.Dir = spec.WorkDir
 	}

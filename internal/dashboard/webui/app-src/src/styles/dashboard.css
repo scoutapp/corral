@@ -2101,7 +2101,15 @@ table.projects th, table.projects td {
 .host-callout-clis { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
 .host-callout-clis-label { font-size: 0.7rem; color: var(--muted); }
 .cli-pill {
-  font-family: ui-monospace, monospace; font-size: 0.68rem; padding: 0.05rem 0.4rem; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  font-family: ui-monospace, monospace; font-size: 0.68rem; padding: 0.05rem 0.45rem; border-radius: 999px;
   border: 1px solid var(--con-line); color: var(--muted); background: var(--con-panel);
 }
+.cli-pill .cli-mark { font-size: 0.7rem; }
+.cli-pill .cli-note { font-family: inherit; opacity: 0.85; margin-left: 0.1rem; }
+/* Signed in — green. */
 .cli-pill.authed { color: #9ece6a; border-color: rgba(158, 206, 106, 0.5); }
+/* Installed but not signed in — amber, with the note. */
+.cli-pill.unauthed { color: var(--con-warn, #e0af68); border-color: rgba(224, 175, 104, 0.5); }
+/* No auth concept (curl/jq/git) — neutral. */
+.cli-pill.no_auth { color: var(--muted); }

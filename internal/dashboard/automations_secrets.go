@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"os"
 	"strings"
 
 	"github.com/scoutapp/corral/internal/automations"
@@ -36,10 +37,23 @@ func (credsSecretResolver) Secret(name string) (string, bool) {
 }
 
 // automationsRegistry returns the executor registry with the credential-backed
-// secret resolver wired in. Emit sites use this instead of DefaultRegistry so
-// {{secret.*}} placeholders resolve.
+// secret resolver AND the operator's login shell wired in, so {{secret.*}}
+// placeholders resolve and bash steps run with the operator's full PATH (aws,
+// brew/nvm tools, …) — matching their terminal.
 func automationsRegistry() *automations.Registry {
-	return automations.RegistryWithSecrets(credsSecretResolver{})
+	return automations.RegistryWith(automations.RegistryOptions{
+		Secrets:    credsSecretResolver{},
+		LoginShell: loginShell(),
+	})
+}
+
+// loginShell returns the operator's shell ($SHELL) for running bash steps as a
+// login shell (full PATH). Falls back to /bin/bash.
+func loginShell() string {
+	if sh := os.Getenv("SHELL"); sh != "" {
+		return sh
+	}
+	return "/bin/bash"
 }
 
 // promptResolver returns a prreview.PromptResolver backed by the automations

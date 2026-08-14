@@ -7,8 +7,9 @@ import (
 	"testing"
 )
 
-// TestScriptEnvEndpoint checks /api/scripts/env reports host=true and probes the
-// CLI set (git is virtually always present in CI; at minimum the shape is right).
+// TestScriptEnvEndpoint checks /api/scripts/env reports host=true and returns a
+// valid CLI status list — every entry is installed (present) with one of the
+// three statuses, and git (if present) is no_auth.
 func TestScriptEnvEndpoint(t *testing.T) {
 	t.Setenv("CORRAL_HOME", t.TempDir())
 	srv := httptest.NewServer(newDashboardServer("tok").routes())
@@ -28,34 +29,28 @@ func TestScriptEnvEndpoint(t *testing.T) {
 		Host bool   `json:"host"`
 		Note string `json:"note"`
 		CLIs []struct {
-			Name          string `json:"name"`
-			Available     bool   `json:"available"`
-			Authenticated *bool  `json:"authenticated"`
+			Name   string `json:"name"`
+			Status string `json:"status"`
 		} `json:"clis"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
 		t.Fatal(err)
 	}
-	if !env.Host {
-		t.Error("expected host=true")
+	if !env.Host || env.Note == "" {
+		t.Errorf("expected host=true + a note, got host=%v note=%q", env.Host, env.Note)
 	}
-	if env.Note == "" {
-		t.Error("expected a note describing the host runtime")
-	}
-	if len(env.CLIs) == 0 {
-		t.Fatal("expected the CLI probe list")
-	}
-	// git should be discoverable and has no auth concept (authenticated == nil).
-	var sawGit bool
+	valid := map[string]bool{"authed": true, "unauthed": true, "no_auth": true}
 	for _, c := range env.CLIs {
-		if c.Name == "git" {
-			sawGit = true
-			if c.Authenticated != nil {
-				t.Error("git should have no auth probe (authenticated == nil)")
-			}
+		if !valid[c.Status] {
+			t.Errorf("cli %s has invalid status %q", c.Name, c.Status)
 		}
-	}
-	if !sawGit {
-		t.Error("git should be in the probe list")
+		// git, if listed, has no auth concept.
+		if c.Name == "git" && c.Status != "no_auth" {
+			t.Errorf("git should be no_auth, got %q", c.Status)
+		}
+		// docker must never be authed — it has no auth probe (presence only).
+		if c.Name == "docker" && c.Status == "authed" {
+			t.Error("docker should not report authed (no meaningful auth probe)")
+		}
 	}
 }

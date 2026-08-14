@@ -94,15 +94,26 @@ func DefaultRegistry() *Registry {
 	return RegistryWithSecrets(nil)
 }
 
+// RegistryOptions configure the built-in registry.
+type RegistryOptions struct {
+	Secrets    SecretResolver // {{secret.*}} resolution for webhook/slack
+	LoginShell string         // run bash steps via this login shell (full PATH); "" = bash -c
+}
+
 // RegistryWithSecrets returns the built-in registry with a secret resolver wired
-// into the webhook/slack executors, so {{secret.NAME}} placeholders resolve from
-// the credential store. Capability actions use the GitHub provider by default.
+// into the webhook/slack executors. Kept for callers that only need secrets.
 func RegistryWithSecrets(sr SecretResolver) *Registry {
+	return RegistryWith(RegistryOptions{Secrets: sr})
+}
+
+// RegistryWith returns the built-in registry configured by opts. Capability
+// actions use the GitHub provider by default; bash steps use opts.LoginShell.
+func RegistryWith(opts RegistryOptions) *Registry {
 	r := NewRegistry()
 	r.Register(KindCapability, NewCapabilityExecutor(GitHubProvider{}))
 	r.Register(KindClaudePrompt, PromptExecutor{})
-	r.Register(KindWebhook, WebhookExecutor{Secrets: sr})
-	r.Register(KindSlack, SlackExecutor{Secrets: sr})
-	r.Register(KindBash, BashExecutor{})
+	r.Register(KindWebhook, WebhookExecutor{Secrets: opts.Secrets})
+	r.Register(KindSlack, SlackExecutor{Secrets: opts.Secrets})
+	r.Register(KindBash, BashExecutor{LoginShell: opts.LoginShell})
 	return r
 }

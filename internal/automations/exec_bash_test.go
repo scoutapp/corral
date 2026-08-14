@@ -21,6 +21,18 @@ func TestBashExecutorEnvAndOutput(t *testing.T) {
 	}
 }
 
+func TestBashExecutorLoginShell(t *testing.T) {
+	// With a login shell set, the script runs via `<shell> -lc` and still sees
+	// the injected CORRAL_ env. /bin/bash is always present.
+	e := BashExecutor{LoginShell: "/bin/bash"}
+	res := e.Execute(context.Background(),
+		Action{Kind: KindBash, Spec: `{"script":"echo hi=$CORRAL_PR_NUMBER"}`},
+		RunContext{Vars: map[string]string{"pr_number": "9"}})
+	if res.Status != StatusOK || res.Output != "hi=9" {
+		t.Fatalf("login-shell run wrong: %+v", res)
+	}
+}
+
 func TestBashExecutorNonZeroExit(t *testing.T) {
 	res := BashExecutor{}.Execute(context.Background(),
 		Action{Kind: KindBash, Spec: `{"script":"echo failing; exit 3"}`}, RunContext{})
