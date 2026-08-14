@@ -60,6 +60,8 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handleProjectStartPrompt(w, r)
 	case rest == "prompts/draft":
 		d.handlePromptDraftWS(w, r)
+	case rest == "openapi.json":
+		d.handleOpenAPI(w, r)
 	default:
 		http.NotFound(w, r)
 	}
