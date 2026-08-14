@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/scoutapp/corral/internal/automations"
 	"github.com/scoutapp/corral/internal/prreview"
 	"github.com/scoutapp/corral/internal/repos"
 )
@@ -595,7 +597,60 @@ func (d *dashboardServer) handlePRAction(w http.ResponseWriter, r *http.Request,
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
+
+	// The built-in gh action (the PRIMARY) succeeded. Fire any user-configured
+	// secondary hooks bound to this event — best-effort: their success/failure is
+	// recorded but never changes the 200 we return here. This is what makes
+	// "Approve" also ping Slack, etc., additively.
+	d.firePRActionHooks(r.Context(), svc, prID, action, ownerName, body.Body, body.Method)
+
 	writeFilesJSON(w, map[string]any{"ok": true})
+}
+
+// prActionEvent maps a PR write-action name to its automations event.
+func prActionEvent(action string) string {
+	switch action {
+	case "approve":
+		return automations.EventPRApprove
+	case "request-changes":
+		return automations.EventPRRequestChanges
+	case "comment":
+		return automations.EventPRComment
+	case "merge":
+		return automations.EventPRMerge
+	}
+	return ""
+}
+
+// firePRActionHooks fires the secondary automations hooks for a PR write action
+// whose built-in behavior already ran. Any error here is swallowed (logged in
+// the run history, not surfaced) since the primary operation already succeeded.
+func (d *dashboardServer) firePRActionHooks(ctx context.Context, svc *prreview.Service, prID int64, action, ownerName, body, method string) {
+	event := prActionEvent(action)
+	if event == "" {
+		return
+	}
+	s, err := d.getStore()
+	if err != nil {
+		return
+	}
+	repoID, _ := svc.RepoIDForPR(prID)
+	number, url, headSHA, title, _ := svc.PRHookContext(prID)
+
+	rc := automations.RunContext{
+		RepoID: repoID,
+		Vars: map[string]string{
+			"owner_name": ownerName,
+			"pr_number":  strconv.Itoa(number),
+			"pr_url":     url,
+			"pr_title":   title,
+			"head_sha":   headSHA,
+			"body":       body,
+			"method":     method,
+		},
+	}
+	runner := automations.NewRunner(automations.New(s), automations.DefaultRegistry())
+	_, _ = runner.FireSecondary(ctx, event, rc)
 }
 
 // handlePRLineComment posts a review comment on a diff line.

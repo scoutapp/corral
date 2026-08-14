@@ -30,6 +30,18 @@ func (s *Service) prRef(prID int64) (PRRef, error) {
 	return ref, err
 }
 
+// PRHookContext returns the stored PR fields the automations engine needs to
+// build a run context (number, github url, head sha, title). Exported so the
+// dashboard can fire event hooks after a PR write action without reaching into
+// prreview internals.
+func (s *Service) PRHookContext(prID int64) (number int, url, headSHA, title string, err error) {
+	err = s.db.QueryRow(
+		`SELECT pr_number, COALESCE(github_url,''), COALESCE(head_sha,''), COALESCE(title,'')
+		   FROM prs WHERE id = ?`, prID,
+	).Scan(&number, &url, &headSHA, &title)
+	return
+}
+
 // gh runs the `gh` CLI with args and returns combined output, mapping a failure
 // to an error that includes gh's stderr (so the UI can surface the reason).
 func runGh(args ...string) (string, error) {
