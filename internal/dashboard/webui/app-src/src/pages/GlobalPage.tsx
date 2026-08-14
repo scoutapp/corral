@@ -4,6 +4,7 @@ import { getJSON, postJSON, postRaw } from "../api/client";
 import type { CredSet, GlobalEdit, GlobalView } from "../api/types";
 import { XtermPane } from "../components/XtermPane";
 import { useBodyClass } from "../hooks/useBodyClass";
+import { useDnd } from "../hooks/useDnd";
 
 // Global settings: shared credentials (masked), cross-project defaults
 // (monitor-list, mitm-ports) new projects inherit, default SSH keys loaded by
@@ -14,8 +15,17 @@ function sshBasename(p: string): string {
   return p.replace(/^.*\//, "");
 }
 
+// Hour options (0–24) for the Do Not Disturb window selects.
+const HOURS = Array.from({ length: 25 }, (_, h) => h);
+function fmtHour(h: number): string {
+  if (h === 0 || h === 24) return "12am";
+  if (h === 12) return "12pm";
+  return h < 12 ? `${h}am` : `${h - 12}pm`;
+}
+
 export function GlobalPage() {
   useBodyClass("console");
+  const dnd = useDnd();
   const [g, setG] = useState<GlobalView | null>(null);
   const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
   const [monitor, setMonitor] = useState("");
@@ -133,6 +143,52 @@ export function GlobalPage() {
           Defaults are inherited by new projects when you run <code>corral init</code>.
         </p>
         <div id="global-root">
+          <section className="cfg-zone">
+            <h3>
+              Do Not Disturb <span className="muted">— quiet hours for notifications (this browser)</span>
+            </h3>
+            <label className="row" style={{ marginBottom: "0.5rem" }}>
+              <input
+                type="checkbox"
+                checked={dnd.config.enabled}
+                onChange={(e) => dnd.setEnabled(e.target.checked)}
+              />
+              <span>
+                Enable Do Not Disturb — silence the chime and toasts outside your active hours.
+                {dnd.config.enabled && dnd.quiet && <span className="dnd-now"> · quiet right now 🌙</span>}
+              </span>
+            </label>
+            <div className="row dnd-hours" style={{ opacity: dnd.config.enabled ? 1 : 0.5 }}>
+              <span className="cfg-label">Notify me between</span>
+              <select
+                className="cfg-edit dnd-hour-select"
+                disabled={!dnd.config.enabled}
+                value={dnd.config.startHour}
+                onChange={(e) => dnd.setWindow(Number(e.target.value), dnd.config.endHour)}
+              >
+                {HOURS.map((h) => (
+                  <option key={h} value={h}>
+                    {fmtHour(h)}
+                  </option>
+                ))}
+              </select>
+              <span>and</span>
+              <select
+                className="cfg-edit dnd-hour-select"
+                disabled={!dnd.config.enabled}
+                value={dnd.config.endHour}
+                onChange={(e) => dnd.setWindow(dnd.config.startHour, Number(e.target.value))}
+              >
+                {HOURS.map((h) => (
+                  <option key={h} value={h}>
+                    {fmtHour(h)}
+                  </option>
+                ))}
+              </select>
+              <span className="muted cfg-note">uses this browser's local time (default 9am–5pm)</span>
+            </div>
+          </section>
+
           <section className="cfg-zone">
             <h3>
               Shared credentials <span className="muted">— all projects, mtime-reloaded live</span>

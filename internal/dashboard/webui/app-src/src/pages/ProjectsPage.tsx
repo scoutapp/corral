@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "../router";
 import { useStatus } from "../hooks/useStatus";
 import { useMutes } from "../hooks/useMutes";
+import { useDnd } from "../hooks/useDnd";
+import { DndControl } from "../components/DndControl";
 import { chime } from "../lib/chime";
 import { useToasts } from "../components/Toasts";
 import { SSHLoadModal } from "../components/SSHLoadModal";
@@ -50,6 +52,7 @@ export function ProjectsPage() {
   const { projects, bootId, connected, loaded } = useStatus(3000);
   const { isMuted, mutedAll, toggleMute, toggleMuteAll, forgetMute } = useMutes(bootId);
   const { notify } = useToasts();
+  const dnd = useDnd();
 
   const [summary, setSummary] = useState("connecting…");
   const [summaryAttn, setSummaryAttn] = useState(false);
@@ -78,13 +81,16 @@ export function ProjectsPage() {
       return;
     }
     // Detect working -> waiting edges: chime (if unmuted) + cross-project toast.
+    // Do Not Disturb (quiet hours) suppresses BOTH the chime and the toast; the
+    // panes still update visually below.
+    const allowAlerts = dnd.notificationsAllowed();
     let play = false;
     for (const p of projects) {
       const prev = lastActivity.current[p.id];
       const act = p.activity || "off";
       if (seeded.current && prev === "working" && act === "waiting") {
-        if (!isMuted(p.id)) play = true;
-        notify(p.id, p.name);
+        if (allowAlerts && !isMuted(p.id)) play = true;
+        if (allowAlerts) notify(p.id, p.name);
       }
       lastActivity.current[p.id] = act;
     }
@@ -93,7 +99,7 @@ export function ProjectsPage() {
 
     setSummary(summarize(projects));
     setSummaryAttn(projects.some((p) => p.activity === "waiting"));
-  }, [projects, connected, loaded, isMuted, notify]);
+  }, [projects, connected, loaded, isMuted, notify, dnd.quiet]);
 
   const sorted = [...projects].sort((a, b) => {
     const ra = RANK[a.activity] ?? 3;
@@ -210,6 +216,7 @@ export function ProjectsPage() {
                 idle
               </span>
             </div>
+            <DndControl dnd={dnd} />
             <button
               type="button"
               className="btn mute-all"
