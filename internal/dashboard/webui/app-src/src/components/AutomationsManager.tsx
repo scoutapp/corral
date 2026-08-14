@@ -29,12 +29,23 @@ type Trigger = {
 };
 
 // Step kinds a user can add from a card, kept to the approachable few. The raw
-// capability/prompt kinds live in Advanced.
+// capability/prompt kinds live in Advanced. "Run a script" is first — it's the
+// most flexible and the one people reach for.
 const STEP_KINDS = [
+  { kind: "bash", label: "Run a script", starter: { script: "" } },
   { kind: "slack", label: "Send a Slack message", starter: { webhookUrl: "{{secret.slack_hook}}", message: "PR {{pr_number}}: {{pr_title}}" } },
   { kind: "webhook", label: "Call a webhook", starter: { url: "", body: '{"pr":"{{pr_number}}"}' } },
-  { kind: "bash", label: "Run a script", starter: { script: 'echo "PR $CORRAL_PR_NUMBER"' } },
 ];
+
+// Seed script: a comment header explaining the runtime + a trailing newline.
+export const DEFAULT_BASH_SCRIPT = `#!/usr/bin/env bash
+# Runs on the machine hosting this dashboard (NOT the sandbox), with your
+# shell environment and any CLIs you're already signed in to (gh, aws, …).
+# Event details arrive as env vars: $CORRAL_PR_NUMBER, $CORRAL_PR_URL, etc.
+set -euo pipefail
+
+echo "PR $CORRAL_PR_NUMBER"
+`;
 
 export function AutomationsManager({ repoId }: { repoId?: string }) {
   const scoped = !!repoId;
@@ -179,8 +190,9 @@ function TriggerCard({
   const [kind, setKind] = useState(STEP_KINDS[0].kind);
   const [name, setName] = useState("");
   const [spec, setSpec] = useState(JSON.stringify(STEP_KINDS[0].starter, null, 2));
-  // Bash steps get a dedicated editor; keep its script separate from the raw JSON.
-  const [bashScript, setBashScript] = useState('echo "PR $CORRAL_PR_NUMBER"');
+  // Bash steps get a dedicated editor; keep its script separate from the raw
+  // JSON. Seed with a helpful comment header + trailing newline.
+  const [bashScript, setBashScript] = useState(DEFAULT_BASH_SCRIPT);
 
   const pickKind = (k: string) => {
     setKind(k);

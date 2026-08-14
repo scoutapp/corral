@@ -13,15 +13,18 @@ import (
 // internal service, a custom notifier). It runs through the same runner as every
 // other action, so it's recorded in run history like the rest.
 //
-// Isolation: the corral dashboard process itself runs inside the sandbox
-// container, so a bash action already inherits that isolation and the allowlist
-// proxy — outbound network is constrained to the allowlist, the filesystem is
-// the container's. We don't spawn a nested sandbox; we just run the script.
+// IMPORTANT — this runs on the HOST, NOT in the sandbox. The corral dashboard is
+// a host process (see `corral dashboard` — the host-wide dashboard), so a bash
+// action executes `bash -c <script>` directly on the operator's machine with the
+// dashboard's environment (os.Environ()): the operator's PATH and any CLIs
+// already authenticated in that session (gh, aws, kubectl, …) with their real
+// credentials. There is NO sandbox, no allowlist proxy, no container FS boundary
+// around it — same trust basis as the host chat panel. The UI surfaces a
+// prominent "runs on the host" warning; treat scripts as trusted host code.
 //
 // Context: every run-context var is exported as CORRAL_<UPPER_SNAKE> (e.g.
 // pr_number → CORRAL_PR_NUMBER), plus CORRAL_EVENT and CORRAL_REPO_ID, so a
-// script reads them as ordinary env vars. gh/git are on PATH (the sandbox image
-// ships them); the credential proxy injects tokens into gh's GitHub calls.
+// script reads them as ordinary env vars.
 
 // BashSpec configures a bash action. Script is the shell body; it is NOT
 // {{var}}-substituted (vars arrive as env, which is safer than string-splicing

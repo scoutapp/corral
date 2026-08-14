@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { wsURL } from "../api/client";
+import { getJSON, wsURL } from "../api/client";
 import { loadEditor, type EditorHandle } from "../lib/editor";
+
+type CliStatus = { name: string; available: boolean; authenticated?: boolean; detail?: string };
+type ScriptEnv = { host: boolean; note: string; clis: CliStatus[] };
 
 // BashStepEditor is a friendlier editor for a "run a script" step: the script
 // comes FIRST in a real CodeMirror editor with bash syntax highlighting, the
@@ -61,6 +64,14 @@ export function BashStepEditor({
     };
     // Mount once; script is seeded from the ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Host execution facts + which CLIs are available/signed-in (for the callout).
+  const [env, setEnv] = useState<ScriptEnv | null>(null);
+  useEffect(() => {
+    getJSON<ScriptEnv>("/api/scripts/env")
+      .then(setEnv)
+      .catch(() => setEnv(null));
   }, []);
 
   const [testing, setTesting] = useState(false);
@@ -142,11 +153,45 @@ export function BashStepEditor({
     ws.onerror = () => setAiLog((l) => l + "\n⚠ draft connection failed");
   };
 
+  const availableClis = (env?.clis || []).filter((c) => c.available);
+
   return (
     <div className="bash-editor">
+      {/* Prominent, accurate callout: this runs on the HOST, with real CLI auth. */}
+      <div className="host-callout">
+        <div className="host-callout-head">
+          ⚠ Runs on your host machine — not the sandbox
+        </div>
+        <p className="host-callout-body">
+          {env?.note ||
+            "This script runs on the machine hosting the dashboard, in its shell environment, with any CLIs you're already signed in to. There is no sandbox."}
+        </p>
+        {availableClis.length > 0 && (
+          <div className="host-callout-clis">
+            <span className="host-callout-clis-label">Available here:</span>
+            {availableClis.map((c) => (
+              <span
+                key={c.name}
+                className={`cli-pill${c.authenticated ? " authed" : ""}`}
+                title={
+                  c.authenticated === true
+                    ? `${c.detail || c.name} — signed in`
+                    : c.authenticated === false
+                      ? `${c.detail || c.name} — installed, not signed in`
+                      : c.detail || c.name
+                }
+              >
+                {c.authenticated === true && "✓ "}
+                {c.name}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="bash-editor-head">
         <span className="bash-editor-label">Script</span>
-        <span className="bash-editor-hint">bash · runs in the sandbox</span>
+        <span className="bash-editor-hint">bash · runs on the host</span>
       </div>
 
       {/* CodeMirror mounts here; a textarea fallback shows until it's ready or if
