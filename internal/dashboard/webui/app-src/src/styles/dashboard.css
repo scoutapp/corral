@@ -1950,3 +1950,8 @@ table.projects th, table.projects td {
 }
 .run-out-err { color: #f7768e; }
 .run-ctx { margin-top: 0.4rem; }
+
+/* Shared AutomationsManager (global page + repo Settings tab). */
+.auto-manager { margin-top: 0.5rem; }
+.auto-mgr-h { font-size: 0.95rem; margin: 1.2rem 0 0.5rem; }
+.repo-settings-sep { border: none; border-top: 1px solid var(--con-line); margin: 1.5rem 0 1rem; }

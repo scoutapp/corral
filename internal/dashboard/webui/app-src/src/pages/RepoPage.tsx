@@ -16,6 +16,7 @@ import type {
   RepoProject,
 } from "../api/types";
 import { useBodyClass } from "../hooks/useBodyClass";
+import { AutomationsManager } from "../components/AutomationsManager";
 import { loadEditor, type DiffHandle, type DiffEditorView } from "../lib/editor";
 import { splitUnifiedHunk } from "../lib/diffHunk";
 import { relDate, ghOwnerName } from "../lib/repos";
@@ -1068,6 +1069,15 @@ function SettingsTab({
         </button>
         {msg && <span className="tab-note">{msg}</span>}
       </div>
+
+      <hr className="repo-settings-sep" />
+      <h3 className="repo-settings-h">Automations</h3>
+      <p className="tab-note">
+        Actions and event hooks scoped to this repo — they apply on top of the{" "}
+        <Link to="/automations">global automations</Link>. Built-in behavior always runs first; hooks
+        are additive and best-effort.
+      </p>
+      <AutomationsManager repoId={repoId} />
     </div>
   );
 }
