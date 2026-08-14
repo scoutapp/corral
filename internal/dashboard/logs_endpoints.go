@@ -3,6 +3,7 @@ package dashboard
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/scoutapp/corral/internal/applog"
@@ -83,6 +84,23 @@ func (d *dashboardServer) handleLogs(w http.ResponseWriter, r *http.Request, res
 			projs = []string{}
 		}
 		writeJSON(w, map[string]any{"categories": cats, "projects": projs})
+		return
+	}
+
+	// GET /api/logs/trace/<traceId> → the reconstructed span tree for one trace,
+	// so the Logs UI can render the causal waterfall behind a row.
+	if strings.HasPrefix(rest, "trace/") {
+		traceID := strings.TrimPrefix(rest, "trace/")
+		if traceID == "" {
+			http.Error(w, "trace id required", http.StatusBadRequest)
+			return
+		}
+		tr, err := l.Trace(traceID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, tr)
 		return
 	}
 
