@@ -2090,3 +2090,18 @@ table.projects th, table.projects td {
 }
 .bash-editor-cm .cm-editor { max-height: 340px; }
 .bash-editor-cm .cm-scroller { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.8rem; }
+
+/* Bash step: prominent "runs on the host" callout + available-CLI pills. */
+.host-callout {
+  border: 1px solid var(--con-warn, #e0af68); border-radius: 8px; padding: 0.6rem 0.75rem;
+  margin-bottom: 0.6rem; background: rgba(224, 175, 104, 0.08);
+}
+.host-callout-head { font-weight: 700; font-size: 0.85rem; color: var(--con-warn, #e0af68); }
+.host-callout-body { font-size: 0.76rem; color: var(--con-text); margin: 0.25rem 0 0.4rem; line-height: 1.5; }
+.host-callout-clis { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
+.host-callout-clis-label { font-size: 0.7rem; color: var(--muted); }
+.cli-pill {
+  font-family: ui-monospace, monospace; font-size: 0.68rem; padding: 0.05rem 0.4rem; border-radius: 999px;
+  border: 1px solid var(--con-line); color: var(--muted); background: var(--con-panel);
+}
+.cli-pill.authed { color: #9ece6a; border-color: rgba(158, 206, 106, 0.5); }
