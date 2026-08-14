@@ -109,3 +109,43 @@ func (s *Service) ResolveProjectStartPrompt(repoID string) (template, source str
 	}
 	return DefaultProjectStartPrompt, "default", nil
 }
+
+// ProjectStartPromptName is the stable name of the seeded global project-start
+// prompt action, so the redesigned Prompts UI can find + edit it.
+const ProjectStartPromptName = "Project-start prompt"
+
+// EnsureProjectStartPrompt returns the global project-start prompt action,
+// creating it (seeded with DefaultProjectStartPrompt and bound to project.start)
+// if it doesn't exist yet. This gives the Prompts section a concrete, editable
+// prompt to show instead of a phantom "built-in default". Idempotent.
+func (s *Service) EnsureProjectStartPrompt() (Action, error) {
+	// Look for an existing global claude_prompt named ProjectStartPromptName.
+	actions, err := s.ListActions("")
+	if err != nil {
+		return Action{}, err
+	}
+	for _, a := range actions {
+		if a.Kind == KindClaudePrompt && a.Name == ProjectStartPromptName {
+			return a, nil
+		}
+	}
+
+	// Create it, seeded with the built-in default template.
+	spec, _ := json.Marshal(PromptSpec{Template: DefaultProjectStartPrompt, Description: "Sent to Claude when a sandbox project starts."})
+	created, err := s.CreateAction(Action{
+		Name: ProjectStartPromptName,
+		Kind: KindClaudePrompt,
+		Spec: string(spec),
+	})
+	if err != nil {
+		return Action{}, err
+	}
+	// Bind it to project.start so ResolveProjectStartPrompt picks it up as the
+	// global default (users edit its template; the binding stays).
+	if _, err := s.CreateHook(Hook{
+		Event: EventProjectStart, TargetKind: "action", TargetID: created.ID, Enabled: true,
+	}); err != nil {
+		return Action{}, err
+	}
+	return created, nil
+}

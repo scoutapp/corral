@@ -56,8 +56,12 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handleRuns(w, r)
 	case strings.HasPrefix(rest, "runs/"):
 		d.handleRunItem(w, r, strings.TrimPrefix(rest, "runs/"))
+	case rest == "triggers":
+		d.handleTriggers(w, r)
 	case rest == "prompts/project-start":
 		d.handleProjectStartPrompt(w, r)
+	case rest == "prompts/default":
+		d.handleDefaultPrompt(w, r)
 	case rest == "prompts/draft":
 		d.handlePromptDraftWS(w, r)
 	case rest == "openapi.json":
@@ -119,6 +123,40 @@ func (d *dashboardServer) handleProjectStartPrompt(w http.ResponseWriter, r *htt
 		"source":   source, // repo | global | default
 		"presets":  presets,
 	})
+}
+
+// handleTriggers: GET /api/triggers — the user-facing trigger catalog (friendly
+// labels + the built-in step for each), the single source of truth for the
+// redesigned Automations cards. Static; no store access needed.
+func (d *dashboardServer) handleTriggers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, map[string]any{"triggers": automations.Triggers()})
+}
+
+// handleDefaultPrompt: GET /api/prompts/default — returns the editable global
+// project-start prompt action, creating it (seeded with the built-in default)
+// if it doesn't exist. This gives the Prompts section a concrete action to edit
+// (PUT /api/actions/<id>) rather than a phantom default.
+func (d *dashboardServer) handleDefaultPrompt(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	svc := d.automationsService(w)
+	if svc == nil {
+		return
+	}
+	a, err := svc.EnsureProjectStartPrompt()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	var spec automations.PromptSpec
+	_ = json.Unmarshal([]byte(a.Spec), &spec)
+	writeJSON(w, map[string]any{"id": a.ID, "name": a.Name, "template": spec.Template})
 }
 
 // --- /api/actions ----------------------------------------------------------
