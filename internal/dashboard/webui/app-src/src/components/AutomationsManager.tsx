@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getJSON, postJSON } from "../api/client";
 import { PromptsCarousel } from "./PromptsCarousel";
+import { BashStepEditor } from "./BashStepEditor";
 
 // AutomationsManager is the approachable actions/automations editor used by the
 // global Automations page (repoId undefined → global) and a repo's Settings tab
@@ -178,6 +179,8 @@ function TriggerCard({
   const [kind, setKind] = useState(STEP_KINDS[0].kind);
   const [name, setName] = useState("");
   const [spec, setSpec] = useState(JSON.stringify(STEP_KINDS[0].starter, null, 2));
+  // Bash steps get a dedicated editor; keep its script separate from the raw JSON.
+  const [bashScript, setBashScript] = useState('echo "PR $CORRAL_PR_NUMBER"');
 
   const pickKind = (k: string) => {
     setKind(k);
@@ -186,7 +189,8 @@ function TriggerCard({
   };
 
   const submit = () => {
-    onAdd(kind, name.trim() || STEP_KINDS.find((s) => s.kind === kind)?.label || kind, spec);
+    const finalSpec = kind === "bash" ? JSON.stringify({ script: bashScript }) : spec;
+    onAdd(kind, name.trim() || STEP_KINDS.find((s) => s.kind === kind)?.label || kind, finalSpec);
     setAdding(false);
     setName("");
   };
@@ -247,7 +251,11 @@ function TriggerCard({
               onChange={(e) => setName(e.target.value)}
             />
           </div>
-          <textarea className="auto-spec" rows={5} value={spec} onChange={(e) => setSpec(e.target.value)} spellCheck={false} />
+          {kind === "bash" ? (
+            <BashStepEditor script={bashScript} onChange={setBashScript} />
+          ) : (
+            <textarea className="auto-spec" rows={5} value={spec} onChange={(e) => setSpec(e.target.value)} spellCheck={false} />
+          )}
           {(kind === "slack" || kind === "webhook") && (
             <p className="auto-hint">
               Reference secrets as <code>{"{{secret.NAME}}"}</code>; the target host must be on the

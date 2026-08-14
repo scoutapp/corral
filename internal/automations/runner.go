@@ -130,6 +130,14 @@ func (r *Runner) RunAction(ctx context.Context, actionID int64, trigger string, 
 	return res, nil
 }
 
+// RunEphemeral executes an in-memory action (not loaded from the store) WITHOUT
+// recording a run. It's for the "test this step" flow: the user is composing an
+// action and wants to see what it does before saving. The action need not have
+// an ID. Nothing is persisted.
+func (r *Runner) RunEphemeral(ctx context.Context, a Action, rc RunContext) StepResult {
+	return r.execute(ctx, a, rc)
+}
+
 // execute times and dispatches one action to its executor.
 func (r *Runner) execute(ctx context.Context, a Action, rc RunContext) StepResult {
 	start := r.now()

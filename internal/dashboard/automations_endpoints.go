@@ -40,6 +40,8 @@ func (d *dashboardServer) automationsService(w http.ResponseWriter) *automations
 // handleAPI dispatches everything under /api/. rest is the path after "/api/".
 func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest string) {
 	switch {
+	case rest == "actions:test":
+		d.handleActionTest(w, r)
 	case rest == "actions":
 		d.handleActions(w, r)
 	case strings.HasPrefix(rest, "actions/"):
@@ -64,6 +66,8 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handleDefaultPrompt(w, r)
 	case rest == "prompts/draft":
 		d.handlePromptDraftWS(w, r)
+	case rest == "scripts/draft":
+		d.handleScriptDraftWS(w, r)
 	case rest == "prompts":
 		d.handlePrompts(w, r, "")
 	case strings.HasPrefix(rest, "prompts/"):
@@ -279,6 +283,34 @@ func (d *dashboardServer) handleActionRun(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	writeJSON(w, res)
+}
+
+// handleActionTest runs an UNSAVED action ad-hoc for the "test this step" flow:
+// POST /api/actions:test {kind, spec, context?}. It executes the in-memory
+// action via the registry and returns the StepResult WITHOUT persisting the
+// action or recording a run — so a user can try a bash script (or webhook, etc.)
+// while composing it, before saving.
+func (d *dashboardServer) handleActionTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	svc := d.automationsService(w)
+	if svc == nil {
+		return
+	}
+	var body struct {
+		Kind    string                   `json:"kind"`
+		Spec    string                   `json:"spec"`
+		Context automations.RunContext   `json:"context"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Kind == "" {
+		http.Error(w, "kind and spec are required", http.StatusBadRequest)
+		return
+	}
+	runner := automations.NewRunner(svc, automationsRegistry())
+	res := runner.RunEphemeral(r.Context(), automations.Action{Kind: body.Kind, Spec: body.Spec, Name: "test"}, body.Context)
 	writeJSON(w, res)
 }
 
