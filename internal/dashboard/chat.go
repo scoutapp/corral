@@ -12,7 +12,20 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/scoutapp/corral/internal/applog"
 )
+
+// truncate shortens s to at most n runes, appending an ellipsis when clipped.
+// Used for log messages built from free-text (chat prompts) so a row stays a
+// readable one-liner.
+func truncate(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
+}
 
 // ----------------------------------------------------------------------------
 // "Ask Claude" chat panel — a Claude-Desktop-style chat UI backed by the host
@@ -164,7 +177,16 @@ func (d *dashboardServer) handleChatWS(w http.ResponseWriter, r *http.Request, i
 		turnMu.Unlock()
 
 		go func(prompt string) {
-			newSession, canceled := d.runChatTurn(ctx, claudeBin, workspace, tools, prompt, sessionID, send)
+			// Each chat turn is the root of its own trace: whatever the host Claude
+			// does in-turn (and, once #3/#4 land, the API actions it drives) nests
+			// under this span. Untraced context → StartSpan mints a fresh trace_id.
+			turnCtx, endTurn := d.applog().StartSpan(ctx, applog.Entry{
+				Category:  applog.CatChat, Event: "chat.turn",
+				Message:   applog.Fmt("Chat turn: %s", truncate(prompt, 80)),
+				ProjectID: ProjectID(workspace),
+			})
+			newSession, canceled := d.runChatTurn(turnCtx, claudeBin, workspace, tools, prompt, sessionID, send)
+			endTurn(nil)
 			turnMu.Lock()
 			sessionID = newSession
 			busy = false

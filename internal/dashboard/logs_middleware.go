@@ -25,21 +25,37 @@ func (d *dashboardServer) logRequests(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+
+		// The request is the root of a trace: mint a trace_id + a root span id and
+		// carry them in the request context, so any downstream work that already
+		// threads ctx (automation hooks, AI/PR-action emits, chat) nests under
+		// this request in the trace tree — no manual id threading.
+		//
+		// The high-frequency /status poll is deliberately left UNTRACED: it fans
+		// out nothing worth a tree and would mint a throwaway trace every ~3s.
+		event := "http.request"
+		traceID, spanID := applog.NewTraceID(), applog.NewTraceID()
+		if path == "/status" {
+			event = "http.poll" // high-frequency; UI collapses these
+			traceID, spanID = "", ""
+		}
+		if traceID != "" {
+			r = r.WithContext(applog.WithSpan(r.Context(), traceID, spanID))
+		}
+
 		sw := &statusWriter{ResponseWriter: w, status: 200}
 		start := time.Now()
 		next.ServeHTTP(sw, r)
 		dur := time.Since(start).Milliseconds()
 
-		event := "http.request"
-		if path == "/status" {
-			event = "http.poll" // high-frequency; UI collapses these
-		}
 		level := applog.LevelInfo
 		if sw.status >= 500 {
 			level = applog.LevelError
 		} else if sw.status >= 400 {
 			level = applog.LevelWarn
 		}
+		// The request row is the root span itself (single row — it already has its
+		// own duration; no separate .start/.end needed). Children use span pairs.
 		d.applog().Log(applog.Entry{
 			Level:      level,
 			Category:   applog.CatHTTP,
@@ -47,6 +63,8 @@ func (d *dashboardServer) logRequests(next http.Handler) http.Handler {
 			Message:    applog.Fmt("%s %s → %d", r.Method, path, sw.status),
 			DurationMs: dur,
 			Meta:       map[string]any{"method": r.Method, "path": path, "status": sw.status},
+			TraceID:    traceID,
+			SpanID:     spanID,
 		})
 	})
 }

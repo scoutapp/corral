@@ -111,14 +111,17 @@ func (d *dashboardServer) handleStartProject(w http.ResponseWriter, r *http.Requ
 	// Detach: we don't wait. The dashboard's status poll will show it come up.
 	go func() { _ = cmd.Wait() }()
 
-	// Built-in start succeeded — fire any project.start hooks (best-effort).
-	d.fireProjectStartHooks(r.Context(), workspace)
-
-	d.applog().Log(applog.Entry{
-		Level: applog.LevelInfo, Category: applog.CatProject, Event: "project.start",
-		Message: applog.Fmt("Started %s", filepath.Base(workspace)),
-		ProjectID: ProjectID(workspace), Status: applog.StatusOK,
+	// Record project.start as a span so the project.start hooks it fires nest
+	// under it in the trace. The launch itself is detached (we don't wait), so the
+	// span times just the synchronous start + hook dispatch.
+	ctx, endSpan := d.applog().StartSpan(r.Context(), applog.Entry{
+		Category: applog.CatProject, Event: "project.start",
+		Message:   applog.Fmt("Started %s", filepath.Base(workspace)),
+		ProjectID: ProjectID(workspace),
 	})
+	// Built-in start succeeded — fire any project.start hooks (best-effort).
+	d.fireProjectStartHooks(ctx, workspace)
+	endSpan(nil)
 	writeFilesJSON(w, map[string]any{"ok": true, "message": fmt.Sprintf("starting %s", session.ContainerNameForWorkspace(workspace))})
 }
 

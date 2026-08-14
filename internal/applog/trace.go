@@ -33,6 +33,21 @@ func WithTrace(ctx context.Context, traceID string) context.Context {
 	return context.WithValue(ctx, traceKey{}, traceCtx{traceID: traceID})
 }
 
+// WithSpan returns a context carrying both a trace id and an already-open span
+// id, so descendants created with StartSpan point their parent_span_id at spanID.
+// Used at a root that records its own span row directly (e.g. the HTTP middleware
+// logs the request as the root span, then seeds this so handlers nest under it).
+func WithSpan(ctx context.Context, traceID, spanID string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, traceKey{}, traceCtx{traceID: traceID, spanID: spanID})
+}
+
+// NewTraceID mints a fresh id for callers that record a root span row themselves
+// (rather than via StartSpan) and need trace_id/span_id up front.
+func NewTraceID() string { return newID() }
+
 // TraceID returns the trace id carried by ctx, or "" if the context is untraced.
 func TraceID(ctx context.Context) string {
 	if ctx == nil {
