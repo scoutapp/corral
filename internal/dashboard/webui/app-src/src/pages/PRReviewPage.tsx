@@ -130,6 +130,41 @@ function labelFor(kind: Exclude<ActionKind, null>): string {
 // two-way back-link), starts it, and auto-submits a verify prompt — WITHOUT
 // navigating away. The user stays on the PR page; a link to the new project
 // appears when it's ready.
+// prPromptVars maps a PR into the {{var}} substitution set shared with the
+// server-side template renderer (owner_name/pr_number/etc.). Keep the keys in
+// sync with what the backend RunContext emits.
+function prPromptVars(pr: PrItem, repoName?: string): Record<string, string> {
+  return {
+    repo: repoName || "",
+    branch: pr.headRef || "",
+    pr_number: String(pr.number),
+    pr_title: pr.title || "",
+    pr_url: pr.githubUrl || "",
+  };
+}
+
+// renderTemplate substitutes {{var}} placeholders (mirrors the Go
+// RenderTemplate: unknown vars blank out).
+function renderTemplate(tmpl: string, vars: Record<string, string>): string {
+  return tmpl.replace(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g, (_, name) => vars[name] ?? "");
+}
+
+// The built-in verify prompt, used when no configured template applies. Kept as
+// the client-side default so Verify works before any Automations are set up.
+function defaultVerifyPrompt(pr: PrItem): string {
+  return (
+    `Verify PR #${pr.number} ("${pr.title || ""}") works. You're on its branch. ` +
+    `Explore the change, run the relevant tests or the app, and report whether it behaves correctly ` +
+    `and any issues you find. The PR is ${pr.githubUrl || ""}.`
+  );
+}
+
+type PromptPreset = { id: number; name: string; scope: string; template: string };
+
+// VerifyLaunch is a split-button: the main action launches a sandbox project on
+// the PR's branch and auto-submits a prompt; the ▾ opens a picker to choose
+// which prompt (the repo/global default, a saved preset, or a one-off custom
+// edit). This is the first surface of configurable prompts.
 function VerifyLaunch({
   repoId,
   pr,
@@ -143,7 +178,38 @@ function VerifyLaunch({
   const [projectId, setProjectId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  // Prompt selection. `template` null means "use the built-in verify prompt".
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [source, setSource] = useState<string>("default");
+  const [presets, setPresets] = useState<PromptPreset[]>([]);
+  const [template, setTemplate] = useState<string | null>(null);
+  const [customizing, setCustomizing] = useState(false);
+  const [customText, setCustomText] = useState("");
+
+  // Load the effective prompt + presets once, lazily when the menu first opens.
+  useEffect(() => {
+    if (!menuOpen || presets.length || template !== null) return;
+    getJSON<{ template: string; source: string; presets: PromptPreset[] }>(
+      `/api/prompts/project-start?repo=${encodeURIComponent(repoId)}`,
+    )
+      .then((d) => {
+        setSource(d.source);
+        setPresets(d.presets || []);
+        // Only adopt a configured template; "default" keeps the built-in verify
+        // prompt (which is PR-specific and better than the generic default).
+        if (d.source !== "default") setTemplate(d.template);
+      })
+      .catch(() => {});
+  }, [menuOpen, repoId, presets.length, template]);
+
+  const effectivePrompt = (): string => {
+    if (customizing && customText.trim()) return customText;
+    if (template) return renderTemplate(template, prPromptVars(pr, repoName));
+    return defaultVerifyPrompt(pr);
+  };
+
   const launch = async () => {
+    setMenuOpen(false);
     setState("launching");
     setErr(null);
     try {
@@ -162,13 +228,9 @@ function VerifyLaunch({
       });
       const id = created.id;
       setProjectId(id);
-      // Start (best-effort) and auto-submit a verify prompt — no navigation.
+      // Start (best-effort) and auto-submit the chosen prompt — no navigation.
       await postJSON(`/p/${id}/start`).catch(() => {});
-      const prompt =
-        `Verify PR #${pr.number} ("${pr.title || ""}") works. You're on its branch. ` +
-        `Explore the change, run the relevant tests or the app, and report whether it behaves correctly ` +
-        `and any issues you find. The PR is ${pr.githubUrl || ""}.`;
-      await postRaw(`/p/${id}/populate-prompt`, { prompt, submit: true }).catch(() => {});
+      await postRaw(`/p/${id}/populate-prompt`, { prompt: effectivePrompt(), submit: true }).catch(() => {});
       setState("done");
     } catch (e) {
       setErr((e as Error).message);
@@ -183,16 +245,86 @@ function VerifyLaunch({
       </a>
     );
   }
+
+  const label =
+    state === "launching" ? "Launching…" : state === "err" ? `⚠ ${err}` : "▶ Verify in sandbox";
+  const promptLabel = customizing
+    ? "custom prompt"
+    : template
+      ? `${source} prompt`
+      : "default verify prompt";
+
   return (
-    <button
-      type="button"
-      className="dock-toggle"
-      disabled={state === "launching"}
-      title="Create a sandbox project on this PR's branch and auto-start Claude to verify it (runs in the background)"
-      onClick={launch}
-    >
-      {state === "launching" ? "Launching…" : state === "err" ? `⚠ ${err}` : "▶ Verify in sandbox"}
-    </button>
+    <div className="split-btn">
+      <button
+        type="button"
+        className="dock-toggle split-main"
+        disabled={state === "launching"}
+        title="Create a sandbox project on this PR's branch and auto-start Claude to verify it (runs in the background)"
+        onClick={launch}
+      >
+        {label}
+      </button>
+      <button
+        type="button"
+        className="dock-toggle split-caret"
+        disabled={state === "launching"}
+        title="Choose which prompt to launch with"
+        aria-label="Choose prompt"
+        onClick={() => setMenuOpen((o) => !o)}
+      >
+        ▾
+      </button>
+
+      {menuOpen && (
+        <div className="split-menu" role="menu">
+          <div className="split-menu-head">Launch prompt · {promptLabel}</div>
+          <button
+            type="button"
+            className={`split-menu-item${!template && !customizing ? " active" : ""}`}
+            onClick={() => {
+              setTemplate(null);
+              setCustomizing(false);
+            }}
+          >
+            Built-in verify prompt
+          </button>
+          {presets.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={`split-menu-item${template === p.template && !customizing ? " active" : ""}`}
+              onClick={() => {
+                setTemplate(p.template);
+                setCustomizing(false);
+              }}
+            >
+              {p.name} <span className="split-menu-scope">{p.scope}</span>
+            </button>
+          ))}
+          <div className="split-menu-sep" />
+          <button
+            type="button"
+            className={`split-menu-item${customizing ? " active" : ""}`}
+            onClick={() => {
+              setCustomizing(true);
+              if (!customText) setCustomText(effectivePrompt());
+            }}
+          >
+            ✎ Customize prompt…
+          </button>
+          {customizing && (
+            <textarea
+              className="split-menu-textarea"
+              rows={6}
+              value={customText}
+              onChange={(e) => setCustomText(e.target.value)}
+              placeholder="Prompt to send when the sandbox starts…"
+            />
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

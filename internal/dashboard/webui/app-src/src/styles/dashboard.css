@@ -683,6 +683,41 @@ table.projects th, table.projects td {
 }
 .dock-toggle.on { border-color: var(--con-working); color: var(--con-working); }
 
+/* Split-button: a primary action plus a ▾ that opens a prompt picker. The two
+   buttons read as one control (shared border, only the seam between them). */
+.split-btn { position: relative; margin-left: auto; display: inline-flex; }
+.split-btn .split-main { margin-left: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.split-btn .split-caret {
+  margin-left: 0; border-left: none; border-top-left-radius: 0; border-bottom-left-radius: 0;
+  padding-left: 0.45rem; padding-right: 0.45rem;
+}
+.split-menu {
+  position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; min-width: 240px;
+  background: var(--con-panel-hi); border: 1px solid var(--con-line); border-radius: 8px;
+  padding: 0.35rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.split-menu-head {
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--muted); padding: 0.25rem 0.4rem 0.35rem;
+}
+.split-menu-item {
+  display: block; width: 100%; text-align: left; background: none; border: none;
+  color: var(--con-text); padding: 0.35rem 0.4rem; border-radius: 5px; cursor: pointer;
+  font-size: 0.82rem;
+}
+.split-menu-item:hover { background: var(--con-panel); }
+.split-menu-item.active { color: var(--con-working); }
+.split-menu-scope {
+  font-size: 0.68rem; color: var(--muted); border: 1px solid var(--con-line);
+  border-radius: 999px; padding: 0 0.4rem; margin-left: 0.3rem;
+}
+.split-menu-sep { height: 1px; background: var(--con-line); margin: 0.3rem 0.2rem; }
+.split-menu-textarea {
+  width: 100%; margin-top: 0.3rem; background: var(--con-panel); color: var(--con-text);
+  border: 1px solid var(--con-line); border-radius: 5px; padding: 0.4rem;
+  font-family: inherit; font-size: 0.8rem; resize: vertical;
+}
+
 /* Container power toggle: prominent, so start/stop is obvious. Idle = a filled
    green "Start"; running = a filled amber "Stop" (a clearly destructive action).
    margin-right pushes it slightly apart from the view-toggle group beside it. */

@@ -52,9 +52,61 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handleRuns(w, r)
 	case strings.HasPrefix(rest, "runs/"):
 		d.handleRunItem(w, r, strings.TrimPrefix(rest, "runs/"))
+	case rest == "prompts/project-start":
+		d.handleProjectStartPrompt(w, r)
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// handleProjectStartPrompt: GET /api/prompts/project-start?repo=<id> — returns
+// the effective project-start prompt template for a repo (with its source:
+// repo / global / default) plus the prompt-template actions available to pick
+// from. This backs the [Verify in sandbox ▾] split-button picker.
+func (d *dashboardServer) handleProjectStartPrompt(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	svc := d.automationsService(w)
+	if svc == nil {
+		return
+	}
+	repoID := r.URL.Query().Get("repo")
+
+	tmpl, source, err := svc.ResolveProjectStartPrompt(repoID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Prompt-template presets available to this repo (its own + global).
+	all, err := svc.ListActions(repoID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	type preset struct {
+		ID       int64  `json:"id"`
+		Name     string `json:"name"`
+		Scope    string `json:"scope"`
+		Template string `json:"template"`
+	}
+	presets := []preset{}
+	for _, a := range all {
+		if a.Kind != automations.KindClaudePrompt {
+			continue
+		}
+		var spec automations.PromptSpec
+		_ = json.Unmarshal([]byte(a.Spec), &spec)
+		presets = append(presets, preset{ID: a.ID, Name: a.Name, Scope: a.Scope, Template: spec.Template})
+	}
+
+	writeJSON(w, map[string]any{
+		"template": tmpl,
+		"source":   source, // repo | global | default
+		"presets":  presets,
+	})
 }
 
 // --- /api/actions ----------------------------------------------------------
