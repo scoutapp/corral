@@ -93,5 +93,6 @@ func prTargetFromContext(rc RunContext) (PRTarget, error) {
 func DefaultRegistry() *Registry {
 	r := NewRegistry()
 	r.Register(KindCapability, NewCapabilityExecutor(GitHubProvider{}))
+	r.Register(KindClaudePrompt, PromptExecutor{})
 	return r
 }
