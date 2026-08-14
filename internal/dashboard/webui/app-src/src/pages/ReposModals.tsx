@@ -4,6 +4,7 @@ import type { CreateProjectResponse, GhIssue, GhRepo, CachedRepo, RepoSpec } fro
 import { Modal } from "../components/Modal";
 import { Typeahead } from "../components/Typeahead";
 import { SSHLoadModal } from "../components/SSHLoadModal";
+import { LaunchPromptEditor } from "../components/LaunchPromptEditor";
 import { useGhRepos } from "../hooks/useGhRepos";
 import { repoItems, toSpec } from "../lib/repos";
 
@@ -87,6 +88,15 @@ export function NewProjectModal({
   const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
   const [ssh, setSsh] = useState<{ id: string; prompt: string } | null>(null); // awaiting SSH-key load
   const [autoSubmit, setAutoSubmit] = useState(true);
+  // The (possibly edited) project-start prompt to send on launch. Only sent
+  // instead of res.start_prompt once the user actually edits it (promptDirty) —
+  // so an untouched launch keeps the server-built prompt (incl. SSH guidance).
+  const [overridePrompt, setOverridePrompt] = useState("");
+  const [promptDirty, setPromptDirty] = useState(false);
+
+  // The repo the project-start prompt resolves against (first clone target).
+  const primaryRepoId =
+    presetRepoId || toSpec(rows[0]?.text.trim() || "", rows[0]?.branch.trim() || "", ghRepos)?.repoId || "";
 
   // Start the newly-created project, populate its project-start prompt, then open
   // it. On 409 ssh_keys_pending, load keys first (SSH modal), then retry. A start
@@ -130,7 +140,10 @@ export function NewProjectModal({
     try {
       const res = await postJSON<CreateProjectResponse>("/projects/create", body);
       setMsg({ text: "created — starting…", err: false });
-      await startAndOpen(res.id, res.start_prompt || "");
+      // Send the user's edited prompt only if they touched it; else the
+      // server-built one (which includes SSH guidance when a key is loaded).
+      const launchPrompt = promptDirty && overridePrompt.trim() ? overridePrompt : res.start_prompt || "";
+      await startAndOpen(res.id, launchPrompt);
     } catch (err) {
       setMsg({ text: (err as Error).message, err: true });
     }
@@ -193,11 +206,20 @@ export function NewProjectModal({
         {mode !== "existing" && (
           <label className="row spawn-fw" style={{ marginTop: "0.4rem" }}>
             <input type="checkbox" checked={autoSubmit} onChange={(e) => setAutoSubmit(e.target.checked)} />
-            <span>Auto-send the project-start prompt to Claude (edit it under Automations → Prompts).</span>
+            <span>Auto-send the project-start prompt to Claude when it opens.</span>
           </label>
         )}
         <details className="spawn-advanced">
           <summary>Advanced</summary>
+          {mode !== "existing" && (
+            <LaunchPromptEditor
+              promptKey="project.start"
+              repoId={primaryRepoId}
+              value={overridePrompt}
+              onChange={setOverridePrompt}
+              onDirty={() => setPromptDirty(true)}
+            />
+          )}
           <label className="row spawn-fw">
             <input type="checkbox" checked={enforceAllowlist} onChange={(e) => setEnforceAllowlist(e.target.checked)} />
             <span>
@@ -425,6 +447,8 @@ export function SpawnModal({ repo, ownerName, issue, onClose }: { repo: CachedRe
   const [busy, setBusy] = useState(false);
   const [ssh, setSsh] = useState<{ id: string; prompt: string } | null>(null);
   const [autoSubmit, setAutoSubmit] = useState(false);
+  const [overridePrompt, setOverridePrompt] = useState("");
+  const [promptDirty, setPromptDirty] = useState(false);
 
   function navigate(id: string, prompt: string) {
     if (prompt) postRaw(`/p/${id}/populate-prompt`, { prompt, submit: autoSubmit }).catch(() => {});
@@ -464,7 +488,7 @@ export function SpawnModal({ repo, ownerName, issue, onClose }: { repo: CachedRe
     };
     try {
       const res = await postJSON<CreateProjectResponse>("/projects/create", body);
-      startSpawned(res.id, res.issue_prompt || "");
+      startSpawned(res.id, promptDirty && overridePrompt.trim() ? overridePrompt : res.issue_prompt || "");
     } catch (err) {
       setBusy(false);
       setMsg({ text: (err as Error).message, err: true });
@@ -494,6 +518,18 @@ export function SpawnModal({ repo, ownerName, issue, onClose }: { repo: CachedRe
 
         <details className="spawn-advanced">
           <summary>Advanced</summary>
+          <LaunchPromptEditor
+            promptKey="project.issue"
+            repoId={repo.id}
+            value={overridePrompt}
+            onChange={setOverridePrompt}
+            onDirty={() => setPromptDirty(true)}
+            vars={{
+              repo: ownerName,
+              number: String(issue.number),
+              title: issue.title,
+            }}
+          />
           <label className="row spawn-fw" style={{ marginBottom: "0.5rem" }}>
             <input type="checkbox" checked={enforceAllowlist} onChange={(e) => setEnforceAllowlist(e.target.checked)} />
             <span>

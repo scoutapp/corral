@@ -2117,3 +2117,11 @@ table.projects th, table.projects td {
 /* Saved-scripts library. */
 .scripts-lib { margin-top: 0.3rem; }
 .scripts-lib .auto-btn.link { margin-right: 0.6rem; padding: 0; border: none; background: none; }
+
+/* Launch-time project-start prompt editor (New-project / issue Advanced). */
+.launch-prompt { margin-bottom: 0.6rem; }
+.launch-prompt-head { display: flex; align-items: center; gap: 0.5rem; font-size: 0.82rem; margin-bottom: 0.15rem; }
+.launch-prompt-src {
+  font-size: 0.66rem; color: var(--muted); border: 1px solid var(--con-line);
+  border-radius: 999px; padding: 0 0.4rem;
+}
