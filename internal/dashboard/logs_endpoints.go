@@ -3,8 +3,10 @@ package dashboard
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/scoutapp/corral/internal/applog"
+	"github.com/scoutapp/corral/internal/config"
 )
 
 // applog returns a central logger over the shared store, or nil if the DB can't
@@ -17,6 +19,34 @@ func (d *dashboardServer) applog() *applog.Logger {
 		return nil
 	}
 	return applog.New(s, false)
+}
+
+// logRetention returns the effective retention policy from global settings,
+// falling back to the built-in defaults (30 days / 100k rows) for unset fields.
+func logRetention() applog.Retention {
+	gs := config.ReadGlobalSettings()
+	r := applog.DefaultRetention
+	if gs.LogRetentionDays > 0 {
+		r.MaxAgeDays = gs.LogRetentionDays
+	}
+	if gs.LogMaxRows > 0 {
+		r.MaxRows = gs.LogMaxRows
+	}
+	return r
+}
+
+// startLogRetention prunes the log on start, then hourly, in a background
+// goroutine. Best-effort — a prune error is ignored.
+func (d *dashboardServer) startLogRetention() {
+	prune := func() { _, _ = d.applog().Prune(logRetention()) }
+	prune()
+	go func() {
+		t := time.NewTicker(time.Hour)
+		defer t.Stop()
+		for range t.C {
+			prune()
+		}
+	}()
 }
 
 // GET /api/logs — the host-wide application log, newest-first, keyset-paginated.

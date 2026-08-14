@@ -780,6 +780,7 @@ func usage() {
 	fmt.Println("  attach                   Attach interactively to the detached session")
 	fmt.Println("  dashboard                Start (or print the URL of) the host-wide project dashboard")
 	fmt.Println("  dashboard stop           Stop the dashboard server")
+	fmt.Println("  logs [--category --level --grep --json --limit N]   Dump the activity log (greppable)")
 	fmt.Println("  uninstall [--yes] [--keep-images]   Remove everything corral created, then the binary itself")
 	fmt.Println("    --yes / -y       Skip the confirmation prompt")
 	fmt.Println("    --keep-images    Preserve the corral-stable image and DinD volumes")
@@ -930,6 +931,9 @@ func Main() {
 
 	case "dashboard-serve": // internal only, spawned by `corral dashboard`
 		err = dashboard.CmdDashboardServe(os.Args[2:])
+
+	case "logs":
+		err = dashboard.CmdLogs(os.Args[2:])
 
 	case "version", "--version", "-v":
 		fmt.Println(config.VersionString())

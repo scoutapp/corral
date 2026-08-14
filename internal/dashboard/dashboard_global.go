@@ -3,6 +3,7 @@ package dashboard
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/scoutapp/corral/internal/applog"
 	"github.com/scoutapp/corral/internal/config"
 	"github.com/scoutapp/corral/internal/creds"
 	"github.com/scoutapp/corral/internal/session"
@@ -99,6 +100,13 @@ type globalView struct {
 	// the default so the field can show a placeholder.
 	UpdateRepo        string `json:"update_repo"`
 	UpdateRepoDefault string `json:"update_repo_default"`
+
+	// Application-log retention (app_logs). Zero = built-in defaults, surfaced so
+	// the UI can show them as placeholders.
+	LogRetentionDays        int `json:"log_retention_days"`
+	LogMaxRows              int `json:"log_max_rows"`
+	LogRetentionDaysDefault int `json:"log_retention_days_default"`
+	LogMaxRowsDefault       int `json:"log_max_rows_default"`
 }
 
 func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Request) {
@@ -129,8 +137,13 @@ func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Reques
 
 	// Show the raw configured value (empty = using the default) plus the default
 	// so the UI can render it as a placeholder.
-	view.UpdateRepo = config.ReadGlobalSettings().UpdateRepo
+	gs := config.ReadGlobalSettings()
+	view.UpdateRepo = gs.UpdateRepo
 	view.UpdateRepoDefault = config.DefaultUpdateRepo
+	view.LogRetentionDays = gs.LogRetentionDays
+	view.LogMaxRows = gs.LogMaxRows
+	view.LogRetentionDaysDefault = applog.DefaultRetention.MaxAgeDays
+	view.LogMaxRowsDefault = applog.DefaultRetention.MaxRows
 
 	writeJSON(w, view)
 }
@@ -145,12 +158,14 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var edit struct {
-		SetCreds     []credSet `json:"set_creds,omitempty"`
-		UnsetCreds   []string  `json:"unset_creds,omitempty"`
-		MonitorHosts *[]string `json:"monitor_hosts,omitempty"`
-		MitmPorts    *[]string `json:"mitm_ports,omitempty"`
-		SSHKeys      *[]string `json:"ssh_keys,omitempty"`
-		UpdateRepo   *string   `json:"update_repo,omitempty"`
+		SetCreds         []credSet `json:"set_creds,omitempty"`
+		UnsetCreds       []string  `json:"unset_creds,omitempty"`
+		MonitorHosts     *[]string `json:"monitor_hosts,omitempty"`
+		MitmPorts        *[]string `json:"mitm_ports,omitempty"`
+		SSHKeys          *[]string `json:"ssh_keys,omitempty"`
+		UpdateRepo       *string   `json:"update_repo,omitempty"`
+		LogRetentionDays *int      `json:"log_retention_days,omitempty"`
+		LogMaxRows       *int      `json:"log_max_rows,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&edit); err != nil {
 		http.Error(w, "bad payload: "+err.Error(), http.StatusBadRequest)
@@ -229,6 +244,21 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 		} else {
 			results = append(results, "✓ update source set to "+gs.UpdateRepoOrDefault())
 		}
+	}
+
+	if edit.LogRetentionDays != nil || edit.LogMaxRows != nil {
+		gs := config.ReadGlobalSettings()
+		if edit.LogRetentionDays != nil {
+			gs.LogRetentionDays = *edit.LogRetentionDays // 0 = back to default
+		}
+		if edit.LogMaxRows != nil {
+			gs.LogMaxRows = *edit.LogMaxRows
+		}
+		if err := config.WriteGlobalSettings(gs); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		results = append(results, "✓ log retention updated")
 	}
 
 	writeJSON(w, map[string]any{"results": results})

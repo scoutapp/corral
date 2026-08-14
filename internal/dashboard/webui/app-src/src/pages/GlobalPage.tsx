@@ -39,6 +39,9 @@ export function GlobalPage() {
   const [populating, setPopulating] = useState(false);
   const [applying, setApplying] = useState(false);
   const [updateRepo, setUpdateRepo] = useState("");
+  // Log retention: "" means "use default"; the placeholder shows the default.
+  const [logDays, setLogDays] = useState("");
+  const [logRows, setLogRows] = useState("");
 
   const linesToList = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
 
@@ -58,6 +61,8 @@ export function GlobalPage() {
           const availNames = new Set((data.available_ssh_keys || []).map((k) => k.name));
           setExtraPaths((data.ssh_keys || []).filter((p) => !availNames.has(sshBasename(p))));
           setUpdateRepo(data.update_repo || "");
+          setLogDays(data.log_retention_days ? String(data.log_retention_days) : "");
+          setLogRows(data.log_max_rows ? String(data.log_max_rows) : "");
           if (okMsg) setMsg({ text: okMsg, err: false });
         })
         .catch((e) => setMsg({ text: `failed to load: ${(e as Error).message}`, err: true }));
@@ -86,6 +91,9 @@ export function GlobalPage() {
     edit.mitm_ports = linesToList(ports);
     edit.ssh_keys = collectSSHKeys();
     edit.update_repo = updateRepo.trim();
+    // 0 clears the override → back to the built-in default.
+    edit.log_retention_days = logDays.trim() ? Math.max(0, parseInt(logDays, 10) || 0) : 0;
+    edit.log_max_rows = logRows.trim() ? Math.max(0, parseInt(logRows, 10) || 0) : 0;
     setApplying(true);
     try {
       const r = await postJSON<{ results?: string[] }>("/global/apply", edit);
@@ -355,6 +363,40 @@ export function GlobalPage() {
                   <code>/releases/latest</code> + <code>/releases/download/&lt;tag&gt;/…</code> layout. Leave blank
                   for the default (<code>{g.update_repo_default}</code>).
                 </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="cfg-zone">
+            <h3>
+              Log retention <span className="muted">— how long the <a href="/automations/logs">activity log</a> is kept</span>
+            </h3>
+            <div className="cfg-field">
+              <div className="cfg-label">Keep for (days)</div>
+              <div className="cfg-value">
+                <input
+                  className="cfg-edit dnd-hour-select"
+                  type="number"
+                  min={0}
+                  placeholder={String(g.log_retention_days_default)}
+                  value={logDays}
+                  onChange={(e) => setLogDays(e.target.value)}
+                />
+                <div className="muted cfg-note">Blank = default ({g.log_retention_days_default} days). Older entries are pruned hourly.</div>
+              </div>
+            </div>
+            <div className="cfg-field">
+              <div className="cfg-label">Max entries</div>
+              <div className="cfg-value">
+                <input
+                  className="cfg-edit dnd-hour-select"
+                  type="number"
+                  min={0}
+                  placeholder={String(g.log_max_rows_default)}
+                  value={logRows}
+                  onChange={(e) => setLogRows(e.target.value)}
+                />
+                <div className="muted cfg-note">Blank = default ({g.log_max_rows_default.toLocaleString()} rows). The newest are kept.</div>
               </div>
             </div>
           </section>
