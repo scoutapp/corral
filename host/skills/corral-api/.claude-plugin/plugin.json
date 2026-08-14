@@ -1,0 +1,9 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "corral-api",
+  "version": "0.1.0",
+  "description": "Drive the Corral dashboard control plane from the host chat via the `corral api` CLI.",
+  "skills": [
+    "./"
+  ]
+}
