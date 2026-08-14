@@ -92,6 +92,64 @@ func (r *Runner) FireEvent(ctx context.Context, event string, primary int64, rc 
 	return result, nil
 }
 
+// FireSecondary runs ONLY the hooks bound to an event — no primary — recording
+// them as one best-effort run. It's for callers that already performed the
+// built-in behavior directly (e.g. the existing gh PR-action handlers) and just
+// want to fire the user's additive hooks afterward without re-implementing the
+// primary as a capability action. The returned result has an empty Primary; its
+// status is ok (all secondaries ok / none bound) or partial (a secondary
+// failed). It returns (result, nil) even when a secondary fails, since
+// secondaries are best-effort — the caller's operation already succeeded.
+//
+// If no hooks are bound, no run is recorded (nothing happened) and the result
+// is the zero value with StatusOK — keeping the common "no automations
+// configured" path free of empty run rows.
+func (r *Runner) FireSecondary(ctx context.Context, event string, rc RunContext) (ChainResult, error) {
+	rc.Event = event
+	hooks, err := r.svc.HooksForEvent(event, rc.RepoID)
+	if err != nil {
+		return ChainResult{}, err
+	}
+	if len(hooks) == 0 {
+		return ChainResult{Status: StatusOK}, nil
+	}
+
+	runID, err := r.startRun(TriggerHook, rc, "event", 0)
+	if err != nil {
+		return ChainResult{}, err
+	}
+
+	var (
+		result ChainResult
+		steps  []StepResult
+	)
+	for _, h := range hooks {
+		if h.TargetKind != "action" {
+			continue
+		}
+		a, aerr := r.svc.Action(h.TargetID)
+		if aerr != nil {
+			continue
+		}
+		hs := r.execute(ctx, a, rc)
+		result.Hooks = append(result.Hooks, hs)
+		steps = append(steps, hs)
+	}
+
+	result.Status = StatusOK
+	for _, h := range result.Hooks {
+		if h.Status == StatusError {
+			result.Status = StatusPartial
+			break
+		}
+	}
+	result.RunID = runID
+	if ferr := r.finishRun(runID, result.Status, steps); ferr != nil {
+		return result, ferr
+	}
+	return result, nil
+}
+
 // chainStatus folds step results into the chain status:
 //   - error   → the primary failed (operation failed)
 //   - partial → primary ok, but at least one secondary failed

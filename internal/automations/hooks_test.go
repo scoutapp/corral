@@ -109,6 +109,40 @@ func TestFireEventNoPrimary(t *testing.T) {
 	}
 }
 
+func TestFireSecondaryNoHooksNoRun(t *testing.T) {
+	r, svc := newChainRunner(t)
+	// No hooks bound → no run recorded, status ok.
+	res, err := r.FireSecondary(context.Background(), EventPRApprove, RunContext{RepoID: "repo-A"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != StatusOK {
+		t.Errorf("expected ok, got %q", res.Status)
+	}
+	if runs, _ := svc.RecentRuns(5); len(runs) != 0 {
+		t.Errorf("no hooks should record no run, got %d", len(runs))
+	}
+}
+
+func TestFireSecondaryPartial(t *testing.T) {
+	r, svc := newChainRunner(t)
+	ok, _ := svc.CreateAction(Action{Name: "ok", Kind: "echo", Spec: `{"var":"x"}`})
+	boom, _ := svc.CreateAction(Action{Name: "boom", Kind: "echo", Spec: `{"fail":true}`})
+	mustHook(t, svc, Hook{Event: EventPRMerge, TargetKind: "action", TargetID: ok.ID, Position: 0, Enabled: true})
+	mustHook(t, svc, Hook{Event: EventPRMerge, TargetKind: "action", TargetID: boom.ID, Position: 1, Enabled: true})
+
+	res, _ := r.FireSecondary(context.Background(), EventPRMerge, RunContext{RepoID: "repo-A", Vars: map[string]string{"x": "hi"}})
+	if res.Status != StatusPartial {
+		t.Fatalf("expected partial (one secondary failed), got %q", res.Status)
+	}
+	if len(res.Hooks) != 2 {
+		t.Errorf("both secondaries should have run, got %d", len(res.Hooks))
+	}
+	if runs, _ := svc.RecentRuns(1); len(runs) != 1 || runs[0].Status != StatusPartial {
+		t.Error("partial run should be recorded")
+	}
+}
+
 func TestMarshalContextVars(t *testing.T) {
 	got := MarshalContextVars(map[string]any{"n": 42, "s": "x", "b": true})
 	if got["n"] != "42" || got["s"] != "x" || got["b"] != "true" {
