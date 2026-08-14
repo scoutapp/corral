@@ -26,24 +26,26 @@ type PromptDef struct {
 
 // Prompt keys — the stable identifiers call sites use.
 const (
-	PromptProjectStart = "project.start"
-	PromptProjectIssue = "project.issue"
-	PromptPRVerify     = "pr.verify"
-	PromptAnalyzeBlock = "analyze.block"
+	PromptProjectStart   = "project.start"
+	PromptProjectIssue   = "project.issue"
+	PromptPRVerify       = "pr.verify"
+	PromptAnalyzeBlock   = "analyze.block"
 	PromptAnalyzeSummary = "analyze.summary"
-	PromptRisk         = "pr.risk"
-	PromptChatPreamble = "chat.preamble"
-	PromptDraftIssue   = "draft.issue"
-	PromptDraftPrompt  = "draft.prompt"
+	PromptRisk           = "pr.risk"
+	PromptChatPreamble   = "chat.preamble"
+	PromptDraftIssue     = "draft.issue"
+	PromptDraftPrompt    = "draft.prompt"
+	PromptSSHGuidance    = "ssh.guidance"
 )
 
-// SSHPushGuidance is the sentence telling Claude to push over the SSH remote —
-// the HTTPS remote won't authenticate in the sandbox (no token), but the
-// project's scoped ssh-agent holds the key. Call sites fill the {{ssh_guidance}}
-// slot with this (with {{ssh_remote}} substituted to git@github.com:<repo>.git)
-// when a key is configured, or with "" when not — so the sentence appears only
-// when it applies.
-const SSHPushGuidance = "When you push, use the SSH remote ({{ssh_remote}}) — the scoped ssh-agent has the key; the HTTPS remote won't authenticate here."
+// DefaultSSHPushGuidance is the built-in text of the ssh.guidance prompt — the
+// sentence telling Claude to push over the SSH remote (the HTTPS remote won't
+// authenticate in the sandbox; the project's scoped ssh-agent holds the key).
+// It is an EDITABLE catalog prompt (PromptSSHGuidance): the project prompts fill
+// their {{ssh_guidance}} slot with this rendered text (with {{ssh_remote}} →
+// git@github.com:<repo>.git) when a key is configured, or "" when not — so it
+// appears only when it applies, and its wording is user-editable in one place.
+const DefaultSSHPushGuidance = "When you push, use the SSH remote ({{ssh_remote}}) — the scoped ssh-agent has the key; the HTTPS remote won't authenticate here."
 
 // sshGuidanceSlot is the trailing slot the project prompts leave for the SSH
 // sentence (a leading space keeps the spacing right when present, nothing when
@@ -171,6 +173,13 @@ func PromptCatalog() []PromptDef {
 				"The user wants a prompt that: {{description}}\n\n" +
 				"Research this codebase so the prompt is concrete, then briefly summarize what you found. Do not write the final prompt yet.",
 			Slots: []string{"description"},
+		},
+		{
+			Key:  PromptSSHGuidance,
+			Name: "SSH push guidance",
+			UsedWhen: "Added to the project-start prompts (plain + from-issue) when an SSH key is configured, so Claude pushes over the SSH remote instead of HTTPS. Omitted when no key is set.",
+			Default:  DefaultSSHPushGuidance,
+			Slots:    []string{"ssh_remote"},
 		},
 	}
 }
