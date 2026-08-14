@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { getJSON, wsURL } from "../api/client";
 import { loadEditor, type EditorHandle } from "../lib/editor";
 
-type CliStatus = { name: string; available: boolean; authenticated?: boolean; detail?: string };
+// status: "authed" (signed in) | "unauthed" (installed, not signed in) | "no_auth"
+type CliStatus = { name: string; status: string; label?: string };
 type ScriptEnv = { host: boolean; note: string; clis: CliStatus[] };
 
 // BashStepEditor is a friendlier editor for a "run a script" step: the script
@@ -153,7 +154,7 @@ export function BashStepEditor({
     ws.onerror = () => setAiLog((l) => l + "\n⚠ draft connection failed");
   };
 
-  const availableClis = (env?.clis || []).filter((c) => c.available);
+  const clis = env?.clis || [];
 
   return (
     <div className="bash-editor">
@@ -164,27 +165,27 @@ export function BashStepEditor({
         </div>
         <p className="host-callout-body">
           {env?.note ||
-            "This script runs on the machine hosting the dashboard, in its shell environment, with any CLIs you're already signed in to. There is no sandbox."}
+            "This script runs on the machine hosting the dashboard, in your login shell, with any CLIs you're already signed in to. There is no sandbox."}
         </p>
-        {availableClis.length > 0 && (
+        {clis.length > 0 && (
           <div className="host-callout-clis">
             <span className="host-callout-clis-label">Available here:</span>
-            {availableClis.map((c) => (
-              <span
-                key={c.name}
-                className={`cli-pill${c.authenticated ? " authed" : ""}`}
-                title={
-                  c.authenticated === true
-                    ? `${c.detail || c.name} — signed in`
-                    : c.authenticated === false
-                      ? `${c.detail || c.name} — installed, not signed in`
-                      : c.detail || c.name
-                }
-              >
-                {c.authenticated === true && "✓ "}
-                {c.name}
-              </span>
-            ))}
+            {clis.map((c) => {
+              const title =
+                c.status === "authed"
+                  ? `${c.label || c.name} — signed in`
+                  : c.status === "unauthed"
+                    ? `${c.label || c.name} — installed, not signed in`
+                    : c.label || c.name;
+              return (
+                <span key={c.name} className={`cli-pill ${c.status}`} title={title}>
+                  {c.status === "authed" && <span className="cli-mark">✓</span>}
+                  {c.status === "unauthed" && <span className="cli-mark">●</span>}
+                  {c.name}
+                  {c.status === "unauthed" && <span className="cli-note">not signed in</span>}
+                </span>
+              );
+            })}
           </div>
         )}
       </div>
