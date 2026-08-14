@@ -348,6 +348,8 @@ func (d *dashboardServer) handleRepoPRFetch(w http.ResponseWriter, r *http.Reque
 	if _, err := svc.ExtractBlocks(r.Context(), pr.ID, nil); err != nil {
 		log.Printf("prreview: block extraction for PR #%d failed: %v", pr.Number, err)
 	}
+	// The PR was viewed (page mount / re-view) — fire any pr.enter hooks.
+	d.firePRHookEvent(r.Context(), pr.ID, automations.EventPREnter, nil)
 	writeFilesJSON(w, map[string]any{"pr": pr})
 }
 
@@ -623,34 +625,14 @@ func prActionEvent(action string) string {
 }
 
 // firePRActionHooks fires the secondary automations hooks for a PR write action
-// whose built-in behavior already ran. Any error here is swallowed (logged in
-// the run history, not surfaced) since the primary operation already succeeded.
-func (d *dashboardServer) firePRActionHooks(ctx context.Context, svc *prreview.Service, prID int64, action, ownerName, body, method string) {
-	event := prActionEvent(action)
-	if event == "" {
-		return
-	}
-	s, err := d.getStore()
-	if err != nil {
-		return
-	}
-	repoID, _ := svc.RepoIDForPR(prID)
-	number, url, headSHA, title, _ := svc.PRHookContext(prID)
-
-	rc := automations.RunContext{
-		RepoID: repoID,
-		Vars: map[string]string{
-			"owner_name": ownerName,
-			"pr_number":  strconv.Itoa(number),
-			"pr_url":     url,
-			"pr_title":   title,
-			"head_sha":   headSHA,
-			"body":       body,
-			"method":     method,
-		},
-	}
-	runner := automations.NewRunner(automations.New(s), automations.DefaultRegistry())
-	_, _ = runner.FireSecondary(ctx, event, rc)
+// whose built-in behavior already ran. It delegates to the shared PR-event
+// emitter, adding the write action's body/method vars.
+func (d *dashboardServer) firePRActionHooks(ctx context.Context, _ *prreview.Service, prID int64, action, ownerName, body, method string) {
+	_ = ownerName // owner is re-resolved inside firePRHookEvent
+	d.firePRHookEvent(ctx, prID, prActionEvent(action), map[string]string{
+		"body":   body,
+		"method": method,
+	})
 }
 
 // handlePRLineComment posts a review comment on a diff line.
@@ -739,6 +721,8 @@ func (d *dashboardServer) handlePREnrich(w http.ResponseWriter, r *http.Request,
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// The built-in AI enrichment (primary) succeeded — fire any pr.analyze hooks.
+	d.firePRHookEvent(r.Context(), prID, automations.EventPRAnalyze, nil)
 	writeFilesJSON(w, map[string]any{"blocks": blocks})
 }
 

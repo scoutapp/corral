@@ -109,6 +109,9 @@ func (d *dashboardServer) handleStartProject(w http.ResponseWriter, r *http.Requ
 	// Detach: we don't wait. The dashboard's status poll will show it come up.
 	go func() { _ = cmd.Wait() }()
 
+	// Built-in start succeeded — fire any project.start hooks (best-effort).
+	d.fireProjectStartHooks(r.Context(), workspace)
+
 	writeFilesJSON(w, map[string]any{"ok": true, "message": fmt.Sprintf("starting %s", session.ContainerNameForWorkspace(workspace))})
 }
 
