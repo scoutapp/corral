@@ -222,19 +222,27 @@ function VerifyLaunch({
     ws.onerror = () => setAiLog((l) => l + "\n⚠ draft connection failed");
   };
 
-  // Load the effective prompt + presets once, lazily when the menu first opens.
+  // Load the effective verify prompt + project-start presets once, lazily when
+  // the menu first opens. The default template resolves from the editable
+  // "pr.verify" catalog prompt (built-in → global → repo), so an override in the
+  // Prompts carousel changes the launch prompt here too.
   useEffect(() => {
     if (!menuOpen || presets.length || template !== null) return;
-    getJSON<{ template: string; source: string; presets: PromptPreset[] }>(
-      `/api/prompts/project-start?repo=${encodeURIComponent(repoId)}`,
+    // The pr.verify effective template (honors overrides).
+    getJSON<{ prompts: { key: string; effective: string; source: string }[] }>(
+      `/api/prompts?repo=${encodeURIComponent(repoId)}`,
     )
       .then((d) => {
-        setSource(d.source);
-        setPresets(d.presets || []);
-        // Only adopt a configured template; "default" keeps the built-in verify
-        // prompt (which is PR-specific and better than the generic default).
-        if (d.source !== "default") setTemplate(d.template);
+        const v = (d.prompts || []).find((p) => p.key === "pr.verify");
+        if (v) {
+          setSource(v.source);
+          setTemplate(v.effective);
+        }
       })
+      .catch(() => {});
+    // Prompt-template presets (saved claude_prompt actions) to pick instead.
+    getJSON<{ presets: PromptPreset[] }>(`/api/prompts/project-start?repo=${encodeURIComponent(repoId)}`)
+      .then((d) => setPresets(d.presets || []))
       .catch(() => {});
   }, [menuOpen, repoId, presets.length, template]);
 

@@ -2012,3 +2012,35 @@ table.projects th, table.projects td {
 .nav-sep { height: 1px; background: var(--con-line); margin: 0.5rem 0.4rem; }
 .nav-automations .nav-ico { color: var(--con-working); }
 .nav-automations:hover { color: var(--con-working); }
+
+/* Prompts carousel. */
+.carousel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
+.carousel-nav { display: flex; align-items: center; gap: 0.5rem; }
+.carousel-arrow {
+  background: var(--con-panel-hi); border: 1px solid var(--con-line); color: var(--con-text);
+  border-radius: 6px; width: 1.8rem; height: 1.8rem; font-size: 1.1rem; cursor: pointer; line-height: 1;
+}
+.carousel-arrow:hover { border-color: var(--con-working); color: var(--con-working); }
+.carousel-dots { display: flex; gap: 0.3rem; align-items: center; }
+.carousel-dot {
+  width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0; cursor: pointer;
+  background: var(--con-line);
+}
+.carousel-dot.active { background: var(--con-text); }
+.carousel-dot.modified { box-shadow: 0 0 0 2px var(--con-working); }
+.carousel-dot.active.modified { background: var(--con-working); }
+.prompt-usedwhen { font-size: 0.78rem; color: var(--muted); margin: 0.2rem 0 0.5rem; font-style: italic; }
+.prompt-slots { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; margin-bottom: 0.4rem; }
+.prompt-slots-label { font-size: 0.72rem; color: var(--muted); }
+.prompt-slot-chip {
+  font-size: 0.7rem; background: var(--con-panel); border: 1px solid var(--con-line);
+  border-radius: 4px; padding: 0 0.35rem; color: var(--con-working);
+}
+.modified-pill {
+  margin-left: auto; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--con-working); border: 1px solid var(--con-working); border-radius: 999px; padding: 0 0.4rem;
+}
+.inherited-pill {
+  margin-left: auto; font-size: 0.62rem; color: var(--muted);
+  border: 1px solid var(--con-line); border-radius: 999px; padding: 0 0.4rem;
+}
