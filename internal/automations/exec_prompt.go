@@ -22,9 +22,11 @@ type PromptSpec struct {
 	Description string `json:"description,omitempty"`
 }
 
-// varRe matches {{ name }} placeholders (letters, digits, underscore), tolerant
-// of surrounding whitespace.
-var varRe = regexp.MustCompile(`\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}`)
+// varRe matches {{ name }} placeholders, tolerant of surrounding whitespace.
+// Dots are allowed so flow step outputs (steps.<key>.output) substitute. The
+// {{secret.*}} form is resolved separately by the http executor BEFORE this
+// runs, so it isn't matched here in practice.
+var varRe = regexp.MustCompile(`\{\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\}\}`)
 
 // RenderTemplate substitutes {{var}} placeholders from vars. Unknown
 // placeholders render as empty string (so a template that references an
@@ -32,6 +34,11 @@ var varRe = regexp.MustCompile(`\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}`)
 func RenderTemplate(tmpl string, vars map[string]string) string {
 	return varRe.ReplaceAllStringFunc(tmpl, func(m string) string {
 		name := varRe.FindStringSubmatch(m)[1]
+		// Leave {{secret.*}} untouched — the http executor resolves those AFTER
+		// var substitution (see resolveSecrets), so they must survive this pass.
+		if strings.HasPrefix(name, "secret.") {
+			return m
+		}
 		if vars == nil {
 			return ""
 		}
