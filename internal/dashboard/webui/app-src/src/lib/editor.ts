@@ -33,8 +33,10 @@ export interface CorralEditorAPI {
   createEditor(opts: {
     parent: HTMLElement;
     doc: string;
-    filename: string;
-    onChange?: () => void;
+    filename?: string;
+    language?: string; // explicit language key (e.g. "bash"); overrides filename
+    readOnly?: boolean;
+    onChange?: (doc: string) => void;
   }): EditorHandle;
   createDiff(opts: {
     parent: HTMLElement;

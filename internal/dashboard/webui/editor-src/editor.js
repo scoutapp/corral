@@ -60,6 +60,7 @@ import { elixir } from "codemirror-lang-elixir";
 import { StreamLanguage } from "@codemirror/language";
 import { ruby } from "@codemirror/legacy-modes/mode/ruby";
 import { lua } from "@codemirror/legacy-modes/mode/lua";
+import { shell } from "@codemirror/legacy-modes/mode/shell";
 
 // Map a normalized language key -> a function producing the language extension.
 // Filenames whose extension isn't here get no language extension (plain text),
@@ -76,6 +77,8 @@ const LANGUAGES = {
   elixir: () => elixir(),
   ruby: () => StreamLanguage.define(ruby),
   lua: () => StreamLanguage.define(lua),
+  bash: () => StreamLanguage.define(shell),
+  shell: () => StreamLanguage.define(shell),
 };
 
 // Extension -> language key. Anything not listed falls through to plain text.
@@ -102,8 +105,10 @@ const EXT_TO_LANG = {
   exs: "elixir",
   heex: "elixir",
   lua: "lua",
-  // Note: no dedicated lang-go / lang-shell in this bundle (see report notes);
-  // .go / .sh / .bash render as plain text with full editing niceties.
+  sh: "shell",
+  bash: "shell",
+  // Note: no dedicated lang-go in this bundle; .go renders as plain text with
+  // full editing niceties. Shell (.sh/.bash) uses the legacy stream mode above.
 };
 
 function extOf(filename) {
@@ -118,8 +123,11 @@ function languageForFilename(filename) {
   return EXT_TO_LANG[extOf(filename)] || null;
 }
 
-function languageExtension(filename) {
-  const key = languageForFilename(filename);
+// languageExtension resolves a language extension from an explicit language key
+// (opts.language, e.g. "bash") if given, else from the filename's extension.
+// Unknown/absent → [] (plain text with full editing niceties).
+function languageExtension(filename, language) {
+  const key = (language && LANGUAGES[language] && language) || languageForFilename(filename);
   if (key && LANGUAGES[key]) {
     try {
       return LANGUAGES[key]();
@@ -147,7 +155,7 @@ function createEditor(opts) {
     basicSetup,
     keymap.of([indentWithTab]),
     vscodeDark,
-    languageExtension(opts.filename),
+    languageExtension(opts.filename, opts.language),
     readOnlyComp.of(EditorState.readOnly.of(!!opts.readOnly)),
   ];
 
