@@ -468,6 +468,10 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	case "/global":
 		d.serveSPA(w, r)
 		return
+	case "/automations":
+		// Top-level Automations page (SPA shell; data via /api/*).
+		d.serveSPA(w, r)
+		return
 	case "/global/config":
 		d.handleGlobalRead(w, r)
 		return
