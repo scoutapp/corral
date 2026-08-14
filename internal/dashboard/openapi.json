@@ -77,6 +77,14 @@
     "/prompts/default": {
       "get": { "summary": "Get (creating if needed) the editable global project-start prompt", "responses": { "200": { "description": "The prompt action id + template" } } }
     },
+    "/prompts": {
+      "get": { "summary": "Editable prompt catalog (default/effective/source/slots per prompt)", "parameters": [{ "name": "repo", "in": "query", "schema": { "type": "string" } }], "responses": { "200": { "description": "Prompts", "content": { "application/json": { "schema": { "type": "object", "properties": { "prompts": { "type": "array", "items": { "$ref": "#/components/schemas/PromptItem" } } } } } } } } }
+    },
+    "/prompts/{key}": {
+      "parameters": [{ "name": "key", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "repo", "in": "query", "schema": { "type": "string" } }],
+      "put": { "summary": "Save a prompt override (repo scope with ?repo=)", "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "template": { "type": "string" } } } } } }, "responses": { "200": { "description": "Updated prompt item" } } },
+      "delete": { "summary": "Reset a prompt (remove the override at this scope)", "responses": { "200": { "description": "Updated prompt item" } } }
+    },
     "/triggers": {
       "get": { "summary": "User-facing trigger catalog (friendly labels + built-in steps)", "responses": { "200": { "description": "Triggers", "content": { "application/json": { "schema": { "type": "object", "properties": { "triggers": { "type": "array", "items": { "$ref": "#/components/schemas/Trigger" } } } } } } } } }
     },
@@ -208,6 +216,19 @@
           "description": { "type": "string" },
           "builtin": { "type": "string" },
           "builtinIcon": { "type": "string" }
+        }
+      },
+      "PromptItem": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string" },
+          "name": { "type": "string" },
+          "usedWhen": { "type": "string" },
+          "slots": { "type": "array", "items": { "type": "string" } },
+          "default": { "type": "string" },
+          "effective": { "type": "string" },
+          "source": { "type": "string", "enum": ["repo", "global", "default"] },
+          "overridden": { "type": "boolean" }
         }
       },
       "Run": {

@@ -64,6 +64,12 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handleDefaultPrompt(w, r)
 	case rest == "prompts/draft":
 		d.handlePromptDraftWS(w, r)
+	case rest == "prompts":
+		d.handlePrompts(w, r, "")
+	case strings.HasPrefix(rest, "prompts/"):
+		// Generic prompt-catalog items (/api/prompts/<key>). The specific
+		// project-start/default/draft cases above are matched first.
+		d.handlePrompts(w, r, keyFromPromptsRest(rest))
 	case rest == "openapi.json":
 		d.handleOpenAPI(w, r)
 	case rest == "tools":
