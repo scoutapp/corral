@@ -1854,3 +1854,57 @@ table.projects th, table.projects td {
 .forensics-table td:nth-child(2), .forensics-table td:nth-child(3) {
   font-family: ui-monospace, monospace;
 }
+
+/* Automations page: the global action catalog + event-hook bindings. */
+.auto-page { max-width: 880px; margin: 0 auto; padding: 1.25rem 1.5rem 4rem; }
+.auto-intro { color: var(--muted); font-size: 0.9rem; line-height: 1.55; margin: 0 0 1rem; }
+.auto-msg {
+  padding: 0.5rem 0.75rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem;
+  background: rgba(158, 206, 106, 0.12); border: 1px solid rgba(158, 206, 106, 0.35); color: var(--con-text);
+}
+.auto-msg.err { background: rgba(247, 118, 142, 0.12); border-color: rgba(247, 118, 142, 0.4); }
+.auto-section { margin-bottom: 2rem; }
+.auto-section h2 { font-size: 1.05rem; margin: 0 0 0.6rem; }
+.auto-section h3 { font-size: 0.9rem; margin: 0.8rem 0 0.4rem; color: var(--muted); }
+.auto-empty { color: var(--muted); font-size: 0.85rem; font-style: italic; }
+.auto-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.auto-table th {
+  text-align: left; color: var(--muted); font-weight: 600; font-size: 0.72rem;
+  text-transform: uppercase; letter-spacing: 0.04em; padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--con-line);
+}
+.auto-table td { padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--con-line); }
+.auto-create { margin-top: 1rem; background: var(--con-panel-hi); border: 1px solid var(--con-line);
+  border-radius: 8px; padding: 0.9rem 1rem; }
+.auto-row { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+.auto-input {
+  background: var(--con-panel); color: var(--con-text); border: 1px solid var(--con-line);
+  border-radius: 5px; padding: 0.4rem 0.55rem; font-size: 0.85rem; font-family: inherit;
+}
+.auto-input:first-child { flex: 1; min-width: 160px; }
+.auto-spec {
+  width: 100%; background: var(--con-panel); color: var(--con-text); border: 1px solid var(--con-line);
+  border-radius: 5px; padding: 0.5rem; font-family: ui-monospace, monospace; font-size: 0.78rem;
+  resize: vertical; margin-bottom: 0.4rem;
+}
+.auto-hint { color: var(--con-warn, #e0af68); font-size: 0.75rem; margin: 0 0 0.5rem; opacity: 0.9; }
+.auto-btn {
+  background: var(--con-panel-hi); color: var(--con-text); border: 1px solid var(--con-line);
+  border-radius: 6px; padding: 0.4rem 0.85rem; font-size: 0.85rem; cursor: pointer;
+}
+.auto-btn:hover { border-color: var(--con-working); color: var(--con-working); }
+.auto-del {
+  background: none; border: none; color: var(--muted); font-size: 0.78rem; cursor: pointer;
+  margin-left: 0.5rem; text-decoration: underline;
+}
+.auto-del:hover { color: var(--con-danger, #f7768e); }
+.auto-event { margin-top: 0.75rem; }
+.auto-event-name { font-size: 0.85rem; margin-bottom: 0.2rem; }
+.auto-hooklist { list-style: none; margin: 0; padding: 0 0 0 1rem; }
+.auto-hooklist li { font-size: 0.83rem; padding: 0.2rem 0; color: var(--con-text); }
+.auto-scope {
+  font-size: 0.66rem; color: var(--muted); border: 1px solid var(--con-line);
+  border-radius: 999px; padding: 0 0.4rem; margin-left: 0.3rem;
+}
+.auto-runs-link, .auto-btn.link { color: var(--con-working); text-decoration: none; font-size: 0.85rem; }
+.auto-runs-link:hover { text-decoration: underline; }

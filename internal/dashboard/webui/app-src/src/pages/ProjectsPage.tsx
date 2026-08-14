@@ -180,6 +180,9 @@ export function ProjectsPage() {
         <Link to="/global" className="nav-item nav-link">
           ⚙ Global settings
         </Link>
+        <Link to="/automations" className="nav-item nav-link">
+          ⚡ Automations
+        </Link>
       </nav>
 
       <div className="content">
