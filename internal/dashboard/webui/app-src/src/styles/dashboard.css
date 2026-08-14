@@ -2185,3 +2185,52 @@ table.projects th, table.projects td {
   color: var(--muted); max-height: 240px; overflow: auto;
 }
 .logs-more { margin-top: 0.75rem; text-align: center; }
+
+/* Trace waterfall — the causal tree behind a log row (GET /api/logs/trace/:id).
+   Reads like the flat log but with indent = span depth and a bar timed within
+   the trace's window. */
+.logs-detail-actions { display: flex; gap: 0.9rem; align-items: center; flex-wrap: wrap; margin-top: 0.2rem; }
+.trace-view {
+  margin-top: 0.5rem; border: 1px solid var(--border); border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 3%, var(--bg)); overflow: hidden;
+}
+.trace-view.loading, .trace-view.empty { padding: 0.6rem 0.75rem; color: var(--muted); font-size: 0.78rem; }
+.trace-view-top {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.35rem 0.6rem; border-bottom: 1px solid var(--border);
+  font-size: 0.68rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted);
+  font-family: var(--mono, ui-monospace, monospace);
+}
+.trace-view-id { color: var(--accent); }
+.trace-view-rows { padding: 0.4rem 0.6rem; display: flex; flex-direction: column; gap: 0.25rem; }
+.trace-span {
+  display: grid; grid-template-columns: minmax(180px, 44%) 1fr; align-items: center; gap: 0.6rem;
+  font-size: 0.74rem; border-radius: 4px;
+}
+.trace-span.hi { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.trace-label {
+  display: flex; align-items: baseline; gap: 0.35rem; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.trace-glyph { color: var(--muted); }
+.trace-event { color: var(--fg); font-family: var(--mono, ui-monospace, monospace); font-size: 0.72rem; }
+.trace-message { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.trace-track { position: relative; height: 15px; background: color-mix(in srgb, var(--fg) 4%, transparent); border-radius: 3px; }
+.trace-bar {
+  position: absolute; top: 0; height: 15px; border-radius: 3px; min-width: 3px;
+  display: flex; align-items: center; padding: 0 0.35rem; box-sizing: border-box;
+  background: var(--accent);
+}
+.trace-bar-dur { font-size: 0.6rem; color: #08110E; font-weight: 600; white-space: nowrap; overflow: hidden; }
+/* Per-category bar hues; fall back to accent for anything unlisted. */
+.trace-bar.cat-chat { background: #6FA8FF; }
+.trace-bar.cat-ai { background: var(--accent); }
+.trace-bar.cat-automation { background: #E8B84B; }
+.trace-bar.cat-project { background: #C88BE8; }
+.trace-bar.cat-http { background: #4A6E8A; }
+.trace-bar.cat-http .trace-bar-dur { color: #E6EEF5; }
+.trace-bar.cat-chat .trace-bar-dur, .trace-bar.cat-project .trace-bar-dur { color: #0A0E16; }
+.trace-bar.err { background: #E8734B; }
+.trace-bar.err .trace-bar-dur { color: #170A05; }
+.trace-bar.open { background: repeating-linear-gradient(45deg, var(--muted), var(--muted) 4px, transparent 4px, transparent 8px); }
+.trace-bar.open .trace-bar-dur { color: var(--fg); }

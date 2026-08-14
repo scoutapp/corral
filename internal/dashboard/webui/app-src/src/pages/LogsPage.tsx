@@ -23,6 +23,36 @@ type LogRecord = {
   durationMs?: number;
   meta: string; // raw JSON
   runId?: number;
+  traceId?: string;
+  spanId?: string;
+  parentSpanId?: string;
+};
+
+// A reconciled span from GET /api/logs/trace/:id.
+type TraceSpan = {
+  spanId: string;
+  parentSpanId?: string;
+  category: string;
+  event: string;
+  message: string;
+  level: string;
+  status?: string;
+  startTs: string;
+  endTs?: string;
+  durationMs: number;
+  unterminated?: boolean;
+  repoId?: string;
+  projectId?: string;
+  runId?: number;
+  meta?: string;
+  children?: TraceSpan[];
+};
+
+type TraceTree = {
+  traceId: string;
+  roots: TraceSpan[];
+  spanCount: number;
+  rowCount: number;
 };
 
 const LEVELS = ["", "info", "warn", "error", "debug"];
@@ -62,6 +92,27 @@ export function LogsPage() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [open, setOpen] = useState<Record<number, boolean>>({});
+  // The trace_id whose waterfall is expanded inline (only one at a time), plus
+  // its fetched tree and load state.
+  const [openTrace, setOpenTrace] = useState<string | null>(null);
+  const [trace, setTrace] = useState<TraceTree | null>(null);
+  const [traceLoading, setTraceLoading] = useState(false);
+
+  const toggleTrace = useCallback((traceId: string) => {
+    setOpenTrace((cur) => {
+      if (cur === traceId) {
+        setTrace(null);
+        return null;
+      }
+      setTrace(null);
+      setTraceLoading(true);
+      getJSON<TraceTree>(`/api/logs/trace/${encodeURIComponent(traceId)}`)
+        .then((t) => setTrace(t))
+        .catch(() => setTrace(null))
+        .finally(() => setTraceLoading(false));
+      return traceId;
+    });
+  }, []);
 
   // Filters.
   const [category, setCategory] = useState("");
@@ -210,7 +261,7 @@ export function LogsPage() {
           <ul className="logs-list">
             {visible.map((l) => {
               const isOpen = !!open[l.id];
-              const hasDetail = (l.meta && l.meta !== "{}") || l.runId;
+              const hasDetail = (l.meta && l.meta !== "{}") || l.runId || l.traceId;
               return (
                 <li key={l.id} className={`logs-row ${levelClass(l.level, l.status)}`}>
                   <button
@@ -237,11 +288,25 @@ export function LogsPage() {
                         {l.projectId && (<><span className="logs-detail-k">project</span> <code>{l.projectId}</code></>)}
                       </div>
                       {l.meta && l.meta !== "{}" && <pre className="logs-detail-json">{prettyJSON(l.meta)}</pre>}
-                      {l.runId ? (
-                        <Link to="/automations/runs" className="auto-btn link">
-                          View run #{l.runId} →
-                        </Link>
-                      ) : null}
+                      <div className="logs-detail-actions">
+                        {l.runId ? (
+                          <Link to="/automations/runs" className="auto-btn link">
+                            View run #{l.runId} →
+                          </Link>
+                        ) : null}
+                        {l.traceId ? (
+                          <button
+                            type="button"
+                            className="auto-btn link"
+                            onClick={() => toggleTrace(l.traceId!)}
+                          >
+                            {openTrace === l.traceId ? "Hide trace ▾" : "View trace ▸"}
+                          </button>
+                        ) : null}
+                      </div>
+                      {l.traceId && openTrace === l.traceId && (
+                        <TraceView loading={traceLoading} trace={trace} highlight={l.spanId} />
+                      )}
                     </div>
                   )}
                 </li>
@@ -270,4 +335,94 @@ function prettyJSON(raw: string): string {
   } catch {
     return raw;
   }
+}
+
+// A flattened span with its depth, for rendering the waterfall as rows.
+type FlatSpan = { span: TraceSpan; depth: number };
+
+function flatten(spans: TraceSpan[] | undefined, depth: number, out: FlatSpan[]) {
+  for (const s of spans || []) {
+    out.push({ span: s, depth });
+    flatten(s.children, depth + 1, out);
+  }
+}
+
+function tsMs(ts?: string): number {
+  if (!ts) return NaN;
+  const d = new Date(ts).getTime();
+  return isNaN(d) ? NaN : d;
+}
+
+// TraceView draws the causal waterfall for one trace: each span a labeled row
+// with a bar positioned by its start/end within the trace's overall window.
+// Spans nest by indent; the row the user opened from is highlighted.
+function TraceView({ loading, trace, highlight }: { loading: boolean; trace: TraceTree | null; highlight?: string }) {
+  if (loading) return <div className="trace-view loading">Loading trace…</div>;
+  if (!trace || trace.roots.length === 0) return <div className="trace-view empty">No trace data.</div>;
+
+  const flat: FlatSpan[] = [];
+  flatten(trace.roots, 0, flat);
+
+  // Trace window: earliest start → latest end across all spans. Fall back to a
+  // 1ms window so a single instantaneous span still renders a visible bar.
+  let t0 = Infinity;
+  let t1 = -Infinity;
+  for (const { span } of flat) {
+    const s = tsMs(span.startTs);
+    const e = tsMs(span.endTs) || s;
+    if (!isNaN(s)) t0 = Math.min(t0, s);
+    if (!isNaN(e)) t1 = Math.max(t1, e);
+  }
+  if (!isFinite(t0) || !isFinite(t1)) {
+    t0 = 0;
+    t1 = 1;
+  }
+  const span = Math.max(1, t1 - t0);
+
+  return (
+    <div className="trace-view">
+      <div className="trace-view-top">
+        <span className="trace-view-id">trace {trace.traceId.slice(0, 8)}…</span>
+        <span className="trace-view-count">
+          {trace.spanCount} span{trace.spanCount === 1 ? "" : "s"} · {trace.rowCount} rows
+        </span>
+      </div>
+      <div className="trace-view-rows">
+        {flat.map(({ span: s, depth }, i) => {
+          const start = tsMs(s.startTs);
+          const end = tsMs(s.endTs) || start;
+          const left = isNaN(start) ? 0 : ((start - t0) / span) * 100;
+          const width = isNaN(start) ? 100 : Math.max(1.5, ((end - start) / span) * 100);
+          const barClass =
+            s.status === "error" || s.level === "error"
+              ? "err"
+              : s.unterminated
+                ? "open"
+                : `cat-${s.category}`;
+          return (
+            <div
+              key={s.spanId + i}
+              className={`trace-span${s.spanId === highlight ? " hi" : ""}`}
+            >
+              <div className="trace-label" style={{ paddingLeft: `${depth * 14}px` }} title={s.event}>
+                <span className="trace-glyph">{categoryIcon(s.category)}</span>
+                <span className="trace-event">{s.event}</span>
+                <span className="trace-message">{s.message}</span>
+              </div>
+              <div className="trace-track">
+                <div
+                  className={`trace-bar ${barClass}`}
+                  style={{ left: `${left}%`, width: `${Math.min(width, 100 - left)}%` }}
+                >
+                  <span className="trace-bar-dur">
+                    {s.unterminated ? "…" : s.durationMs > 0 ? `${s.durationMs}ms` : ""}
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
