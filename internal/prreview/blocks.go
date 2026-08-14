@@ -194,7 +194,7 @@ func (s *Service) ExtractBlocks(ctx context.Context, prID int64, ai aiRunner) ([
 		if fh.Churn == 0 {
 			fh.Churn = 1.0
 		}
-		a := analyzeBlock(ctx, ai, diff, filePath, title, fh)
+		a := s.analyzeBlock(ctx, ai, repoID, diff, filePath, title, fh)
 		importance := a.Importance
 		switch {
 		case isCommentOnlyDiff(diff):
@@ -243,7 +243,7 @@ func (s *Service) ExtractBlocks(ctx context.Context, prID int64, ai aiRunner) ([
 	// Stamp the repo-analysis these blocks were ranked against, so staleness can
 	// be detected later. Empty when the repo isn't analyzed (⇒ blocks unranked).
 	analysisSHA := s.repoAnalysisSHA(repoID)
-	if err := s.writeBlocks(prID, items, title, number, analysisSHA, ctx, ai); err != nil {
+	if err := s.writeBlocks(prID, repoID, items, title, number, analysisSHA, ctx, ai); err != nil {
 		return nil, err
 	}
 	return s.Blocks(prID)
@@ -302,7 +302,7 @@ type builtBlock struct {
 
 // writeBlocks persists blocks + edge cases for a PR (replacing prior rows) and
 // updates the PR's short summary, atomically.
-func (s *Service) writeBlocks(prID int64, items []builtBlock, title string, number int, analysisSHA string, ctx context.Context, ai aiRunner) error {
+func (s *Service) writeBlocks(prID int64, repoID string, items []builtBlock, title string, number int, analysisSHA string, ctx context.Context, ai aiRunner) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -354,7 +354,7 @@ func (s *Service) writeBlocks(prID int64, items []builtBlock, title string, numb
 	if len(limit) > 5 {
 		limit = limit[:5]
 	}
-	summary := summarizePR(ctx, ai, title, limit, fallback)
+	summary := s.summarizePR(ctx, ai, repoID, title, limit, fallback)
 	if _, err := tx.Exec(`
 		UPDATE prs
 		   SET short_summary = ?, blocks_analysis_sha = ?, blocks_extracted_at = datetime('now')

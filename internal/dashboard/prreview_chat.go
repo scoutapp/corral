@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/scoutapp/corral/internal/automations"
 	"github.com/scoutapp/corral/internal/prreview"
 )
 
@@ -34,11 +35,20 @@ func (d *dashboardServer) handleBlockChatWS(w http.ResponseWriter, r *http.Reque
 		blockID, _ = strconv.ParseInt(q, 10, 64)
 	}
 
-	// Build the context preamble once; prepended to the first turn only.
+	// Build the context preamble once; prepended to the first turn only. The
+	// assembled PR/block context fills the {{context}} slot of the editable
+	// "chat.preamble" prompt (default passthrough, so an unedited prompt is
+	// byte-identical to before; an override wraps the context with custom
+	// framing).
 	var preamble string
 	if s, err := d.getStore(); err == nil {
 		if ctxStr, err := prreview.New(s).ChatContext(prID, blockID); err == nil {
-			preamble = ctxStr
+			repoID, _ := prreview.New(s).RepoIDForPR(prID)
+			preamble = automations.New(s).RenderPrompt(
+				automations.PromptChatPreamble, repoID, map[string]string{"context": ctxStr})
+			if strings.TrimSpace(preamble) == "" {
+				preamble = ctxStr // safety: never lose the context
+			}
 		}
 	}
 

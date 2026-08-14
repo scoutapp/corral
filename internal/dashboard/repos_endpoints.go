@@ -716,7 +716,7 @@ func (d *dashboardServer) handlePREnrich(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	blocks, err := prreview.New(s).ExtractBlocks(r.Context(), prID, prreview.NewClaudeRunner(claudeBin))
+	blocks, err := prreview.New(s).WithPromptResolver(d.promptResolver()).ExtractBlocks(r.Context(), prID, prreview.NewClaudeRunner(claudeBin))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -749,7 +749,7 @@ func (d *dashboardServer) handlePRAnalyze(w http.ResponseWriter, r *http.Request
 		return
 	}
 	claudeBin, _ := resolveClaudeBin()
-	v, err := prreview.New(s).AnalyzeRisk(r.Context(), prID, prreview.NewClaudeRunner(claudeBin))
+	v, err := prreview.New(s).WithPromptResolver(d.promptResolver()).AnalyzeRisk(r.Context(), prID, prreview.NewClaudeRunner(claudeBin))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return

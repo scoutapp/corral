@@ -8,16 +8,45 @@ import (
 	"github.com/scoutapp/corral/internal/store"
 )
 
-// Service is the store-backed data layer for PR Review. It holds no state of
-// its own beyond the shared *store.Store; construct one per request or reuse a
-// single instance — both are safe (database/sql pools connections).
+// PromptResolver renders one of Corral's editable prompts (by catalog key) for a
+// repo, filling the given slots. It lets the AI call sites honor a user's prompt
+// override without prreview depending on the automations package: the dashboard
+// injects an automations-backed resolver; a nil resolver (tests, or no
+// automations wired) makes each call site fall back to its built-in default.
+type PromptResolver func(key, repoID string, slots map[string]string) string
+
+// Service is the store-backed data layer for PR Review. It holds the shared
+// *store.Store and an optional prompt resolver; construct one per request or
+// reuse a single instance — both are safe (database/sql pools connections).
 type Service struct {
-	db *sql.DB
+	db      *sql.DB
+	prompts PromptResolver
 }
 
 // New wraps the shared store.
 func New(s *store.Store) *Service {
 	return &Service{db: s.DB()}
+}
+
+// WithPromptResolver returns a copy of the service that renders AI prompts via
+// the given resolver (so user overrides apply). Fluent: prreview.New(s).
+// WithPromptResolver(r).
+func (s *Service) WithPromptResolver(r PromptResolver) *Service {
+	cp := *s
+	cp.prompts = r
+	return &cp
+}
+
+// renderPrompt renders an editable prompt via the resolver, or returns fallback
+// (the built-in default text) when no resolver is set or it yields empty.
+func (s *Service) renderPrompt(key, repoID string, slots map[string]string, fallback string) string {
+	if s.prompts == nil {
+		return fallback
+	}
+	if out := s.prompts(key, repoID, slots); strings.TrimSpace(out) != "" {
+		return out
+	}
+	return fallback
 }
 
 // Forensics returns a repo's per-file stats, hottest first (highest churn).

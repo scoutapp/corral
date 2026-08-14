@@ -73,7 +73,7 @@ func (s *Service) AnalyzeRisk(ctx context.Context, prID int64, ai aiRunner) (*Ri
 	if len(diff) > 6000 {
 		diff = diff[:6000]
 	}
-	prompt := riskPrompt(title, strings.Join(healthLines, "\n"),
+	prompt := s.riskPrompt(repoID, title, strings.Join(healthLines, "\n"),
 		strings.Join(blockLines, "\n"), diff)
 
 	out, err := ai.Run(ctx, prompt)
@@ -109,14 +109,22 @@ func (s *Service) StoredRisk(prID int64) (*RiskVerdict, error) {
 	return &v, nil
 }
 
-func riskPrompt(title, fileHealth, blockContext, diff string) string {
+// riskPrompt builds the PR-level risk prompt, honoring a "pr.risk" override when
+// a resolver is set, else the built-in default.
+func (s *Service) riskPrompt(repoID, title, fileHealth, blockContext, diff string) string {
 	if fileHealth == "" {
 		fileHealth = "No forensics data available."
 	}
 	if blockContext == "" {
 		blockContext = "No block analysis available."
 	}
-	return "You are a senior engineer reviewing a pull request for risk and impact.\n\n" +
+	slots := map[string]string{
+		"title":         title,
+		"file_health":   fileHealth,
+		"block_context": blockContext,
+		"diff":          diff,
+	}
+	fallback := "You are a senior engineer reviewing a pull request for risk and impact.\n\n" +
 		"PR Title: " + title + "\n\n" +
 		"File change history (churn = commits per day since first touch):\n" + fileHealth + "\n\n" +
 		"Block-level analysis:\n" + blockContext + "\n\n" +
@@ -129,4 +137,5 @@ func riskPrompt(title, fileHealth, blockContext, diff string) string {
 		`"overallRisk": "high|medium|low", ` +
 		`"riskSummary": "<=12 words: the risk verdict"}` + "\n\n" +
 		"Only return valid JSON, no markdown fences."
+	return s.renderPrompt(promptRisk, repoID, slots, fallback)
 }

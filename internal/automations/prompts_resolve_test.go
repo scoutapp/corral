@@ -18,10 +18,14 @@ func TestPromptCatalogComplete(t *testing.T) {
 			t.Errorf("PromptDefFor(%q) not found", p.Key)
 		}
 	}
-	// The project-start defaults must carry the SSH push guidance.
+	// The project-start defaults must leave a slot for the SSH push guidance, and
+	// the guidance sentence itself must mention the scoped agent + SSH remote.
 	ps, _ := PromptDefFor(PromptProjectStart)
-	if !strings.Contains(ps.Default, "ssh-agent") || !strings.Contains(ps.Default, "{{ssh_remote}}") {
-		t.Error("project.start default should mention the SSH remote + scoped agent")
+	if !strings.Contains(ps.Default, "{{ssh_guidance}}") {
+		t.Error("project.start default should leave an {{ssh_guidance}} slot")
+	}
+	if !strings.Contains(SSHPushGuidance, "ssh-agent") || !strings.Contains(SSHPushGuidance, "{{ssh_remote}}") {
+		t.Error("SSHPushGuidance should mention the SSH remote + scoped agent")
 	}
 }
 

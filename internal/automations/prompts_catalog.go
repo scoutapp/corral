@@ -37,12 +37,18 @@ const (
 	PromptDraftPrompt  = "draft.prompt"
 )
 
-// sshPushGuidance is appended to the project-start / issue defaults so Claude
-// knows to push over the SSH remote — the HTTPS remote won't authenticate in the
-// sandbox (no token), but the project's scoped ssh-agent holds the key. The
-// {{ssh_remote}} slot is filled with git@github.com:<owner/name>.git when a key
-// is configured, and blanked (with the guidance omitted) when not.
-const sshPushGuidance = " When you push, use the SSH remote ({{ssh_remote}}) — the scoped ssh-agent has the key; the HTTPS remote won't authenticate here."
+// SSHPushGuidance is the sentence telling Claude to push over the SSH remote —
+// the HTTPS remote won't authenticate in the sandbox (no token), but the
+// project's scoped ssh-agent holds the key. Call sites fill the {{ssh_guidance}}
+// slot with this (with {{ssh_remote}} substituted to git@github.com:<repo>.git)
+// when a key is configured, or with "" when not — so the sentence appears only
+// when it applies.
+const SSHPushGuidance = "When you push, use the SSH remote ({{ssh_remote}}) — the scoped ssh-agent has the key; the HTTPS remote won't authenticate here."
+
+// sshGuidanceSlot is the trailing slot the project prompts leave for the SSH
+// sentence (a leading space keeps the spacing right when present, nothing when
+// empty).
+const sshGuidanceSlot = "{{ssh_guidance}}"
 
 // PromptCatalog returns every editable prompt with its built-in default, in
 // display order. This is the single source of truth for the carousel UI and the
@@ -54,15 +60,15 @@ func PromptCatalog() []PromptDef {
 			Name: "Project start",
 			UsedWhen: "Typed into Claude when a plain sandbox project launches (New project, or Verify-in-sandbox without a preset).",
 			Default: "You're working in a sandboxed checkout of {{repo}} on branch {{branch}}. " +
-				"Explore the codebase, then help with the task at hand." + sshPushGuidance,
-			Slots: []string{"repo", "branch", "ssh_remote"},
+				"Explore the codebase, then help with the task at hand. " + sshGuidanceSlot,
+			Slots: []string{"repo", "branch", "ssh_guidance"},
 		},
 		{
 			Key:  PromptProjectIssue,
 			Name: "Project start (from an issue)",
 			UsedWhen: "Typed into Claude when a project is created from a GitHub issue.",
-			Default: "Work on {{repo}} issue #{{number}}: {{title}}. The full description is in ISSUE.md at the workspace root. You're on branch {{branch}}." + sshPushGuidance,
-			Slots:   []string{"repo", "number", "title", "branch", "ssh_remote"},
+			Default: "Work on {{repo}} issue #{{number}}: {{title}}. The full description is in ISSUE.md at the workspace root. You're on branch {{branch}}. " + sshGuidanceSlot,
+			Slots:   []string{"repo", "number", "title", "branch", "ssh_guidance"},
 		},
 		{
 			Key:  PromptPRVerify,
@@ -138,10 +144,12 @@ func PromptCatalog() []PromptDef {
 		{
 			Key:  PromptChatPreamble,
 			Name: "Ask Claude — context preamble",
-			UsedWhen: "Prepended to the first message when you Ask Claude about a PR or block. The {{context}} slot holds the PR/block summary Corral assembles.",
-			Default: "You are a code review assistant helping with this pull request.\n{{context}}\n" +
-				"Focus on potential edge cases, missed test scenarios, and knowledge transfer. Be concise.",
-			Slots: []string{"context"},
+			UsedWhen: "Prepended to the first message when you Ask Claude about a PR or block. {{context}} holds the PR summary, block diff, and hot files Corral assembles; wrap it with your own instructions.",
+			// Default is passthrough — the assembled {{context}} already contains
+			// the intro + focus lines, so an unedited preamble changes nothing. A
+			// user override wraps/replaces the framing around {{context}}.
+			Default: "{{context}}",
+			Slots:   []string{"context"},
 		},
 		{
 			Key:  PromptDraftIssue,
