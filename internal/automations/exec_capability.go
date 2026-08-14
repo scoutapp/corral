@@ -87,15 +87,22 @@ func prTargetFromContext(rc RunContext) (PRTarget, error) {
 	return PRTarget{OwnerName: owner, Number: num, HeadSHA: rc.Var("head_sha")}, nil
 }
 
-// DefaultRegistry returns a Registry with the built-in executors that don't need
-// external wiring. Capability actions use the GitHub provider by default; later
-// branches register bash/prompt/webhook/slack executors on top.
+// DefaultRegistry returns a Registry with the built-in executors and no secret
+// resolver ({{secret.*}} placeholders resolve to empty). Use RegistryWithSecrets
+// to wire the credential store.
 func DefaultRegistry() *Registry {
+	return RegistryWithSecrets(nil)
+}
+
+// RegistryWithSecrets returns the built-in registry with a secret resolver wired
+// into the webhook/slack executors, so {{secret.NAME}} placeholders resolve from
+// the credential store. Capability actions use the GitHub provider by default.
+func RegistryWithSecrets(sr SecretResolver) *Registry {
 	r := NewRegistry()
 	r.Register(KindCapability, NewCapabilityExecutor(GitHubProvider{}))
 	r.Register(KindClaudePrompt, PromptExecutor{})
-	r.Register(KindWebhook, WebhookExecutor{})
-	r.Register(KindSlack, SlackExecutor{})
+	r.Register(KindWebhook, WebhookExecutor{Secrets: sr})
+	r.Register(KindSlack, SlackExecutor{Secrets: sr})
 	r.Register(KindBash, BashExecutor{})
 	return r
 }
