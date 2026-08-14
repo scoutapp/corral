@@ -92,6 +92,35 @@ func TestRunFlowStopsAtFailure(t *testing.T) {
 	}
 }
 
+func TestHookTargetingFlow(t *testing.T) {
+	svc := newService(t)
+	reg := NewRegistry()
+	reg.Register("echo", echoExecutor{})
+	r := NewRunner(svc, reg)
+
+	// A flow of two echo steps, bound to pr.approve as a secondary hook.
+	s1, _ := svc.CreateAction(Action{Name: "s1", Kind: "echo", Spec: `{"var":"x"}`})
+	s2, _ := svc.CreateAction(Action{Name: "s2", Kind: "echo", Spec: `{"var":"steps.a.output"}`})
+	f, _ := svc.CreateFlow(Flow{Name: "notify-flow"})
+	svc.AddStep(FlowStep{FlowID: f.ID, Position: 0, ActionID: s1.ID, StepKey: "a"})
+	svc.AddStep(FlowStep{FlowID: f.ID, Position: 1, ActionID: s2.ID, StepKey: "b"})
+	mustHook(t, svc, Hook{Event: EventPRApprove, TargetKind: "flow", TargetID: f.ID, Enabled: true})
+
+	res, _ := r.FireSecondary(context.Background(), EventPRApprove,
+		RunContext{RepoID: "repo-A", Vars: map[string]string{"x": "go"}})
+
+	if res.Status != StatusOK {
+		t.Fatalf("expected ok, got %q", res.Status)
+	}
+	// Both flow steps contributed to the chain's hook results.
+	if len(res.Hooks) != 2 {
+		t.Fatalf("flow's 2 steps should contribute 2 hook results, got %d", len(res.Hooks))
+	}
+	if res.Hooks[1].Output != "go" {
+		t.Errorf("flow output chaining broken in hook context: %q", res.Hooks[1].Output)
+	}
+}
+
 func TestRenderTemplateAllowsDottedVars(t *testing.T) {
 	got := RenderTemplate("out={{steps.build.output}}", map[string]string{"steps.build.output": "42"})
 	if got != "out=42" {
