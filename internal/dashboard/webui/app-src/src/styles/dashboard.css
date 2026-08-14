@@ -2113,3 +2113,7 @@ table.projects th, table.projects td {
 .cli-pill.unauthed { color: var(--con-warn, #e0af68); border-color: rgba(224, 175, 104, 0.5); }
 /* No auth concept (curl/jq/git) — neutral. */
 .cli-pill.no_auth { color: var(--muted); }
+
+/* Saved-scripts library. */
+.scripts-lib { margin-top: 0.3rem; }
+.scripts-lib .auto-btn.link { margin-right: 0.6rem; padding: 0; border: none; background: none; }
