@@ -1,0 +1,198 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Corral Automations API",
+    "version": "1.0.0",
+    "description": "The API-first control plane for Corral's automations engine: reusable actions, event hooks, composed flows, and run history. The dashboard UI is one client; a CLI and macros are others."
+  },
+  "servers": [{ "url": "/api", "description": "Dashboard API root" }],
+  "paths": {
+    "/actions": {
+      "get": {
+        "summary": "List actions",
+        "parameters": [
+          { "name": "repo", "in": "query", "schema": { "type": "string" }, "description": "Include this repo's actions plus global ones; omit for global only." }
+        ],
+        "responses": { "200": { "description": "Actions", "content": { "application/json": { "schema": { "type": "object", "properties": { "actions": { "type": "array", "items": { "$ref": "#/components/schemas/Action" } } } } } } } }
+      },
+      "post": {
+        "summary": "Create an action",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ActionInput" } } } },
+        "responses": { "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Action" } } } } }
+      }
+    },
+    "/actions/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+      "get": { "summary": "Fetch an action", "responses": { "200": { "description": "Action", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Action" } } } }, "404": { "description": "Not found" } } },
+      "put": { "summary": "Update an action (name + spec)", "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "name": { "type": "string" }, "spec": { "type": "string" } } } } } }, "responses": { "200": { "description": "Updated" } } },
+      "delete": { "summary": "Delete an action", "responses": { "200": { "description": "Deleted" } } }
+    },
+    "/actions/{id}:run": {
+      "post": {
+        "summary": "Run an action ad-hoc",
+        "description": "Executes the action with the given run context and records a run. This is the entry point macros/CLI use to trigger a unit of work.",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RunContext" } } } },
+        "responses": { "200": { "description": "Step result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StepResult" } } } } }
+      }
+    },
+    "/hooks": {
+      "get": {
+        "summary": "List hooks bound to an event",
+        "parameters": [
+          { "name": "event", "in": "query", "required": true, "schema": { "$ref": "#/components/schemas/Event" } },
+          { "name": "repo", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Hooks", "content": { "application/json": { "schema": { "type": "object", "properties": { "hooks": { "type": "array", "items": { "$ref": "#/components/schemas/Hook" } } } } } } } }
+      },
+      "post": { "summary": "Bind an event to an action or flow", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HookInput" } } } }, "responses": { "201": { "description": "Created" } } }
+    },
+    "/hooks/{id}": {
+      "delete": { "summary": "Unbind a hook", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "Deleted" } } }
+    },
+    "/flows": {
+      "get": { "summary": "List flows", "parameters": [{ "name": "repo", "in": "query", "schema": { "type": "string" } }], "responses": { "200": { "description": "Flows", "content": { "application/json": { "schema": { "type": "object", "properties": { "flows": { "type": "array", "items": { "$ref": "#/components/schemas/Flow" } } } } } } } } },
+      "post": { "summary": "Create a flow (optionally with inline steps)", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FlowInput" } } } }, "responses": { "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Flow" } } } } } }
+    },
+    "/flows/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+      "get": { "summary": "Fetch a flow with its steps", "responses": { "200": { "description": "Flow", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Flow" } } } } } },
+      "delete": { "summary": "Delete a flow", "responses": { "200": { "description": "Deleted" } } }
+    },
+    "/flows/{id}/steps": {
+      "post": { "summary": "Append a step to a flow", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FlowStep" } } } }, "responses": { "201": { "description": "Added" } } }
+    },
+    "/flows/{id}:run": {
+      "post": { "summary": "Run a flow ad-hoc", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RunContext" } } } }, "responses": { "200": { "description": "Flow result" } } }
+    },
+    "/runs": {
+      "get": { "summary": "Recent run history", "parameters": [{ "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } }], "responses": { "200": { "description": "Runs", "content": { "application/json": { "schema": { "type": "object", "properties": { "runs": { "type": "array", "items": { "$ref": "#/components/schemas/Run" } } } } } } } } }
+    },
+    "/runs/{id}": {
+      "get": { "summary": "Fetch a run", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "Run", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Run" } } } } } }
+    },
+    "/prompts/project-start": {
+      "get": { "summary": "Resolve the effective project-start prompt for a repo", "parameters": [{ "name": "repo", "in": "query", "schema": { "type": "string" } }], "responses": { "200": { "description": "Effective template + source + presets" } } }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Event": { "type": "string", "enum": ["pr.approve", "pr.comment", "pr.request_changes", "pr.merge", "pr.analyze", "pr.enter", "project.start"] },
+      "Kind": { "type": "string", "enum": ["capability", "bash", "claude_prompt", "webhook", "slack"] },
+      "Action": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "kind": { "$ref": "#/components/schemas/Kind" },
+          "spec": { "type": "string", "description": "Per-kind config as a JSON string." },
+          "scope": { "type": "string", "enum": ["global", "repo"] },
+          "repoId": { "type": "string" }
+        }
+      },
+      "ActionInput": {
+        "type": "object",
+        "required": ["name", "kind"],
+        "properties": {
+          "name": { "type": "string" },
+          "kind": { "$ref": "#/components/schemas/Kind" },
+          "spec": { "type": "string" },
+          "scope": { "type": "string", "enum": ["global", "repo"] },
+          "repoId": { "type": "string" }
+        }
+      },
+      "Hook": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "event": { "$ref": "#/components/schemas/Event" },
+          "scope": { "type": "string", "enum": ["global", "repo"] },
+          "repoId": { "type": "string" },
+          "targetKind": { "type": "string", "enum": ["action", "flow"] },
+          "targetId": { "type": "integer" },
+          "position": { "type": "integer" },
+          "enabled": { "type": "boolean" }
+        }
+      },
+      "HookInput": {
+        "type": "object",
+        "required": ["event", "targetKind", "targetId"],
+        "properties": {
+          "event": { "$ref": "#/components/schemas/Event" },
+          "scope": { "type": "string", "enum": ["global", "repo"] },
+          "repoId": { "type": "string" },
+          "targetKind": { "type": "string", "enum": ["action", "flow"] },
+          "targetId": { "type": "integer" },
+          "enabled": { "type": "boolean" }
+        }
+      },
+      "Flow": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "scope": { "type": "string", "enum": ["global", "repo"] },
+          "repoId": { "type": "string" },
+          "steps": { "type": "array", "items": { "$ref": "#/components/schemas/FlowStep" } }
+        }
+      },
+      "FlowInput": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "scope": { "type": "string", "enum": ["global", "repo"] },
+          "repoId": { "type": "string" },
+          "steps": { "type": "array", "items": { "$ref": "#/components/schemas/FlowStep" } }
+        }
+      },
+      "FlowStep": {
+        "type": "object",
+        "required": ["actionId"],
+        "properties": {
+          "id": { "type": "integer" },
+          "flowId": { "type": "integer" },
+          "position": { "type": "integer" },
+          "actionId": { "type": "integer" },
+          "stepKey": { "type": "string", "description": "Referenced by later steps as {{steps.<key>.output}}." },
+          "dependsOn": { "type": "array", "items": { "type": "string" }, "description": "Reserved for DAG execution; unused while linear." }
+        }
+      },
+      "RunContext": {
+        "type": "object",
+        "properties": {
+          "event": { "$ref": "#/components/schemas/Event" },
+          "repoId": { "type": "string" },
+          "vars": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Substituted into templates as {{name}}." }
+        }
+      },
+      "StepResult": {
+        "type": "object",
+        "properties": {
+          "actionId": { "type": "integer" },
+          "kind": { "type": "string" },
+          "name": { "type": "string" },
+          "status": { "type": "string", "enum": ["ok", "error"] },
+          "output": { "type": "string" },
+          "error": { "type": "string" },
+          "durationMs": { "type": "integer" }
+        }
+      },
+      "Run": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "trigger": { "type": "string", "enum": ["manual", "api", "hook", "flow-step"] },
+          "event": { "type": "string" },
+          "targetKind": { "type": "string" },
+          "targetId": { "type": "integer" },
+          "status": { "type": "string", "enum": ["running", "ok", "error", "partial"] },
+          "context": { "type": "string", "description": "Run context as a JSON string." },
+          "steps": { "type": "string", "description": "Per-step results as a JSON string." },
+          "startedAt": { "type": "string" },
+          "finishedAt": { "type": "string" }
+        }
+      }
+    }
+  }
+}
