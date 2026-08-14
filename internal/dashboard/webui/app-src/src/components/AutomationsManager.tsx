@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { getJSON, postJSON, wsURL } from "../api/client";
+import { useCallback, useEffect, useState } from "react";
+import { getJSON, postJSON } from "../api/client";
+import { PromptsCarousel } from "./PromptsCarousel";
 
 // AutomationsManager is the approachable actions/automations editor used by the
 // global Automations page (repoId undefined → global) and a repo's Settings tab
@@ -119,8 +120,9 @@ export function AutomationsManager({ repoId }: { repoId?: string }) {
     <div className="auto-manager">
       {msg && <div className={`auto-msg${msg.err ? " err" : ""}`}>{msg.text}</div>}
 
-      {/* 1. Prompts — global page only (repo prompts come later). */}
-      {!scoped && <PromptsSection onMsg={setMsg} />}
+      {/* 1. Prompts — the editable prompt catalog (carousel). Global on the
+          Automations page; repo-scoped overrides in a repo's Settings tab. */}
+      <PromptsCarousel repoId={repoId} onMsg={setMsg} />
 
       {/* 2. Automations — one card per trigger. */}
       <h3 className="auto-mgr-h">Automations{scoped ? " (this repo)" : ""}</h3>
@@ -154,121 +156,6 @@ export function AutomationsManager({ repoId }: { repoId?: string }) {
   );
 }
 
-// --- Prompts ----------------------------------------------------------------
-
-function PromptsSection({ onMsg }: { onMsg: (m: { text: string; err: boolean }) => void }) {
-  const [id, setId] = useState<number | null>(null);
-  const [text, setText] = useState("");
-  const [loaded, setLoaded] = useState(false);
-
-  // AI draft.
-  const [aiIntent, setAiIntent] = useState("");
-  const [aiBusy, setAiBusy] = useState(false);
-  const [aiLog, setAiLog] = useState("");
-  const wsRef = useRef<WebSocket | null>(null);
-  useEffect(() => () => wsRef.current?.close(), []);
-
-  useEffect(() => {
-    getJSON<{ id: number; template: string }>("/api/prompts/default")
-      .then((d) => {
-        setId(d.id);
-        setText(d.template);
-        setLoaded(true);
-      })
-      .catch(() => setLoaded(true));
-  }, []);
-
-  const save = async () => {
-    if (id == null) return;
-    try {
-      await fetch(`/api/actions/${id}`, {
-        method: "PUT",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "Project-start prompt", spec: JSON.stringify({ template: text }) }),
-      });
-      onMsg({ text: "✓ prompt saved", err: false });
-    } catch (e) {
-      onMsg({ text: (e as Error).message, err: true });
-    }
-  };
-
-  const draftWithAI = () => {
-    if (!aiIntent.trim()) return;
-    wsRef.current?.close();
-    setAiBusy(true);
-    setAiLog("");
-    const ws = new WebSocket(wsURL("/api/prompts/draft"));
-    wsRef.current = ws;
-    ws.onopen = () => ws.send(JSON.stringify({ description: aiIntent }));
-    ws.onmessage = (ev) => {
-      let m: Record<string, unknown>;
-      try {
-        m = JSON.parse(ev.data);
-      } catch {
-        return;
-      }
-      if (m.type === "text") setAiLog((l) => l + (m.text as string));
-      else if (m.type === "tool_use") setAiLog((l) => l + `› ${m.tool}\n`);
-      else if (m.type === "error") setAiLog((l) => l + `\n⚠ ${(m.text as string) || ""}`);
-      else if (m.type === "draft" && m.result) setText(m.result as string);
-    };
-    ws.onclose = () => {
-      setAiBusy(false);
-      wsRef.current = null;
-    };
-    ws.onerror = () => setAiLog((l) => l + "\n⚠ draft connection failed");
-  };
-
-  if (!loaded) return null;
-
-  return (
-    <section className="prompts-section">
-      <h3 className="auto-mgr-h">Prompts</h3>
-      <p className="auto-hint" style={{ opacity: 0.85 }}>
-        The instruction Claude gets when a sandbox project starts. Use <code>{"{{repo}}"}</code>,{" "}
-        <code>{"{{branch}}"}</code>, <code>{"{{pr_number}}"}</code> and they're filled in at launch.
-      </p>
-      <div className="prompt-card">
-        <div className="prompt-card-head">
-          Project-start prompt <span className="auto-scope">global</span>
-        </div>
-        <textarea
-          className="prompt-textarea"
-          rows={5}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="You're working in {{repo}} on branch {{branch}}…"
-        />
-        <div className="prompt-actions-row">
-          <button type="button" className="auto-btn" onClick={save}>
-            Save prompt
-          </button>
-        </div>
-
-        <details className="prompt-ai">
-          <summary>
-            ✨ Build with AI{" "}
-            <span className="ai-warn" title="Runs your host machine's Claude, not the sandbox; read-only">
-              host · not sandboxed · read-only
-            </span>
-          </summary>
-          <textarea
-            className="prompt-textarea"
-            rows={2}
-            value={aiIntent}
-            onChange={(e) => setAiIntent(e.target.value)}
-            placeholder="Describe what the prompt should do — e.g. 'review the diff and run the tests'"
-          />
-          <button type="button" className="auto-btn" disabled={aiBusy || !aiIntent.trim()} onClick={draftWithAI}>
-            {aiBusy ? "Drafting…" : "Draft with AI"}
-          </button>
-          {aiLog && <pre className="split-menu-ai-log">{aiLog}</pre>}
-        </details>
-      </div>
-    </section>
-  );
-}
 
 // --- Trigger card -----------------------------------------------------------
 
