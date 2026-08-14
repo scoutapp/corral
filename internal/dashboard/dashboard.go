@@ -390,7 +390,9 @@ func (d *dashboardServer) routes() http.Handler {
 		http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))).ServeHTTP(w, r)
 	}))
 
-	mux.HandleFunc("/", d.requireAuth(d.handleRoot))
+	// Wrap the root handler in the request logger (category=http). Static assets
+	// + healthz are registered separately above and aren't logged.
+	mux.Handle("/", d.logRequests(d.requireAuth(d.handleRoot)))
 	return mux
 }
 

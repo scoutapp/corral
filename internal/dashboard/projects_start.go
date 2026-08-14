@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/scoutapp/corral/internal/applog"
 	"github.com/scoutapp/corral/internal/session"
 	sshagent "github.com/scoutapp/corral/internal/ssh"
 )
@@ -112,6 +114,11 @@ func (d *dashboardServer) handleStartProject(w http.ResponseWriter, r *http.Requ
 	// Built-in start succeeded — fire any project.start hooks (best-effort).
 	d.fireProjectStartHooks(r.Context(), workspace)
 
+	d.applog().Log(applog.Entry{
+		Level: applog.LevelInfo, Category: applog.CatProject, Event: "project.start",
+		Message: applog.Fmt("Started %s", filepath.Base(workspace)),
+		ProjectID: ProjectID(workspace), Status: applog.StatusOK,
+	})
 	writeFilesJSON(w, map[string]any{"ok": true, "message": fmt.Sprintf("starting %s", session.ContainerNameForWorkspace(workspace))})
 }
 
