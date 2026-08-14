@@ -243,10 +243,11 @@ export interface GhIssue {
   author?: { login?: string };
 }
 
-// POST /projects/create -> { id, issue_prompt? }
+// POST /projects/create -> { id, issue_prompt?, start_prompt? }
 export interface CreateProjectResponse {
   id: string;
   issue_prompt?: string;
+  start_prompt?: string; // the project.start prompt for a plain new/clone project
 }
 
 // A repo spec sent to /projects/create (one of url|localPath|repoId, + branch).
