@@ -2082,3 +2082,11 @@ table.projects th, table.projects td {
 .bash-result-out.err { color: #f7768e; }
 .bash-ai { margin-top: 0.5rem; border-top: 1px solid var(--con-line); padding-top: 0.5rem; }
 .bash-ai-head { margin-bottom: 0.3rem; }
+
+/* CodeMirror host for the bash step editor (the CM theme handles the inside). */
+.bash-editor-cm {
+  border: 1px solid var(--con-line); border-radius: 6px; overflow: hidden;
+  max-height: 340px;
+}
+.bash-editor-cm .cm-editor { max-height: 340px; }
+.bash-editor-cm .cm-scroller { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.8rem; }

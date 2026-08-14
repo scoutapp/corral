@@ -1,11 +1,13 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { wsURL } from "../api/client";
+import { loadEditor, type EditorHandle } from "../lib/editor";
 
 // BashStepEditor is a friendlier editor for a "run a script" step: the script
-// comes FIRST in a monospace editor (tab-to-indent), the available CORRAL_* env
-// vars are one-click chips, "Create with AI" drafts a script from a description,
-// and "Test run" executes it (unsaved) and shows stdout/stderr/exit. It emits
-// the finished bash spec ({"script": ...}) to the parent.
+// comes FIRST in a real CodeMirror editor with bash syntax highlighting, the
+// available CORRAL_* env vars are one-click chips, "Create with AI" drafts a
+// script from a description, and "Test run" executes it (unsaved) and shows
+// stdout/stderr/exit. It emits the finished bash spec ({"script": ...}) via
+// onChange.
 
 const ENV_VARS = [
   "CORRAL_EVENT",
@@ -26,7 +28,40 @@ export function BashStepEditor({
   script: string;
   onChange: (script: string) => void;
 }) {
-  const taRef = useRef<HTMLTextAreaElement | null>(null);
+  // CodeMirror editor with bash highlighting. We mount once and drive changes
+  // through its onChange; a ref holds the current doc for chip-insert + submit.
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const edRef = useRef<EditorHandle | null>(null);
+  const scriptRef = useRef(script);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let handle: EditorHandle | null = null;
+    let cancelled = false;
+    loadEditor()
+      .then((api) => {
+        if (cancelled || !hostRef.current) return;
+        handle = api.createEditor({
+          parent: hostRef.current,
+          doc: scriptRef.current,
+          language: "bash",
+          onChange: (doc: string) => {
+            scriptRef.current = doc;
+            onChange(doc);
+          },
+        });
+        edRef.current = handle;
+        setReady(true);
+      })
+      .catch(() => setReady(false)); // fall back to the plain textarea below
+    return () => {
+      cancelled = true;
+      handle?.destroy();
+      edRef.current = null;
+    };
+    // Mount once; script is seeded from the ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<TestResult | null>(null);
@@ -38,30 +73,21 @@ export function BashStepEditor({
   const [aiLog, setAiLog] = useState("");
   const wsRef = useRef<WebSocket | null>(null);
 
-  // Insert text at the cursor (for env-var chips), keeping focus.
-  const insertAtCursor = (text: string) => {
-    const ta = taRef.current;
-    if (!ta) {
-      onChange(script + text);
-      return;
-    }
-    const start = ta.selectionStart ?? script.length;
-    const end = ta.selectionEnd ?? script.length;
-    const next = script.slice(0, start) + text + script.slice(end);
+  // Replace the whole doc (AI draft / would-be programmatic changes).
+  const setDoc = (next: string) => {
+    scriptRef.current = next;
     onChange(next);
-    requestAnimationFrame(() => {
-      ta.focus();
-      const pos = start + text.length;
-      ta.setSelectionRange(pos, pos);
-    });
+    edRef.current?.setDoc?.(next);
   };
 
-  // Tab inserts two spaces instead of moving focus (IDE feel).
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Tab") {
-      e.preventDefault();
-      insertAtCursor("  ");
+  // Insert an env var. With CodeMirror we append at the end (simple + reliable);
+  // the textarea fallback inserts at the cursor.
+  const insertVar = (text: string) => {
+    if (edRef.current) {
+      setDoc((scriptRef.current || "") + text);
+      return;
     }
+    setDoc((scriptRef.current || "") + text);
   };
 
   const testRun = async () => {
@@ -74,8 +100,7 @@ export function BashStepEditor({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           kind: "bash",
-          spec: JSON.stringify({ script }),
-          // Sample context so {{CORRAL_*}} vars have something during a test.
+          spec: JSON.stringify({ script: scriptRef.current }),
           context: {
             event: "test",
             vars: { pr_number: "0", pr_url: "https://example/pr/0", pr_title: "Test PR", owner_name: "owner/repo" },
@@ -108,7 +133,7 @@ export function BashStepEditor({
       if (m.type === "text") setAiLog((l) => l + (m.text as string));
       else if (m.type === "tool_use") setAiLog((l) => l + `› ${m.tool}\n`);
       else if (m.type === "error") setAiLog((l) => l + `\n⚠ ${(m.text as string) || ""}`);
-      else if (m.type === "draft" && m.result) onChange(m.result as string);
+      else if (m.type === "draft" && m.result) setDoc(m.result as string);
     };
     ws.onclose = () => {
       setAiBusy(false);
@@ -119,33 +144,36 @@ export function BashStepEditor({
 
   return (
     <div className="bash-editor">
-      {/* Script first — the star of the show. */}
       <div className="bash-editor-head">
         <span className="bash-editor-label">Script</span>
         <span className="bash-editor-hint">bash · runs in the sandbox</span>
       </div>
-      <textarea
-        ref={taRef}
-        className="bash-editor-ta"
-        rows={10}
-        spellCheck={false}
-        value={script}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder={'#!/usr/bin/env bash\nset -euo pipefail\n\necho "PR $CORRAL_PR_NUMBER approved"'}
-      />
+
+      {/* CodeMirror mounts here; a textarea fallback shows until it's ready or if
+          the bundle fails to load. */}
+      <div ref={hostRef} className="bash-editor-cm" />
+      {!ready && (
+        <textarea
+          className="bash-editor-ta"
+          rows={10}
+          spellCheck={false}
+          defaultValue={script}
+          onChange={(e) => setDoc(e.target.value)}
+          placeholder={'#!/usr/bin/env bash\nset -euo pipefail\n\necho "PR $CORRAL_PR_NUMBER approved"'}
+        />
+      )}
 
       <div className="bash-vars">
         <span className="bash-vars-label">Insert var:</span>
         {ENV_VARS.map((v) => (
-          <button key={v} type="button" className="bash-var-chip" onClick={() => insertAtCursor("$" + v)}>
+          <button key={v} type="button" className="bash-var-chip" onClick={() => insertVar("$" + v)}>
             ${v}
           </button>
         ))}
       </div>
 
       <div className="bash-editor-actions">
-        <button type="button" className="auto-btn" disabled={testing || !script.trim()} onClick={testRun}>
+        <button type="button" className="auto-btn" disabled={testing} onClick={testRun}>
           {testing ? "Running…" : "▶ Test run"}
         </button>
         <button type="button" className="auto-btn" onClick={() => setAiOpen((o) => !o)}>
