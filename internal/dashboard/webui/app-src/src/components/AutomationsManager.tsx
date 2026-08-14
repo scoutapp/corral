@@ -1,71 +1,47 @@
-import { useCallback, useEffect, useState } from "react";
-import { getJSON, postJSON } from "../api/client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { getJSON, postJSON, wsURL } from "../api/client";
 
-// AutomationsManager is the shared actions + hooks editor used by both the
-// global Automations page (repoId undefined → global scope) and a repo's
-// Settings tab (repoId set → repo scope, seeing its own + global). It talks to
-// the same /api/* control plane, passing ?repo= when repo-scoped.
+// AutomationsManager is the approachable actions/automations editor used by the
+// global Automations page (repoId undefined → global) and a repo's Settings tab
+// (repoId set → repo scope). It's organized around what a user actually thinks
+// about — not the underlying event/hook model:
+//
+//   1. Prompts    — the project-start prompt, edited inline (+ Build with AI).
+//   2. Automations — one card per trigger ("When you approve a PR"): the
+//                    built-in step, then any extra steps the user added, with a
+//                    plain "+ Add a step" that creates the hook under the hood.
+//   3. Advanced    — the raw action catalog, collapsed.
+//
+// Everything still talks to the /api/* control plane; the words "event" and
+// "hook" never appear in the UI.
 
 type Action = { id: number; name: string; kind: string; scope: string; repoId?: string };
 type Hook = { id: number; event: string; scope: string; targetKind: string; targetId: number };
-type FlowStep = { id: number; actionId: number; stepKey: string; position: number };
-type Flow = { id: number; name: string; scope: string; steps?: FlowStep[] };
+type Trigger = {
+  event: string;
+  title: string;
+  verb: string;
+  description: string;
+  builtin: string;
+  builtinIcon: string;
+};
 
-const KINDS = [
-  { kind: "capability", label: "PR capability (gh)" },
-  { kind: "slack", label: "Slack message" },
-  { kind: "webhook", label: "Webhook (HTTP POST)" },
-  { kind: "claude_prompt", label: "Prompt template" },
-  { kind: "bash", label: "Bash script" },
+// Step kinds a user can add from a card, kept to the approachable few. The raw
+// capability/prompt kinds live in Advanced.
+const STEP_KINDS = [
+  { kind: "slack", label: "Send a Slack message", starter: { webhookUrl: "{{secret.slack_hook}}", message: "PR {{pr_number}}: {{pr_title}}" } },
+  { kind: "webhook", label: "Call a webhook", starter: { url: "", body: '{"pr":"{{pr_number}}"}' } },
+  { kind: "bash", label: "Run a script", starter: { script: 'echo "PR $CORRAL_PR_NUMBER"' } },
 ];
-
-const EVENTS = [
-  "pr.approve",
-  "pr.comment",
-  "pr.request_changes",
-  "pr.merge",
-  "pr.analyze",
-  "pr.enter",
-  "project.start",
-];
-
-function starterSpec(kind: string): string {
-  switch (kind) {
-    case "capability":
-      return JSON.stringify({ capability: "pr-approve", body: "" }, null, 2);
-    case "slack":
-      return JSON.stringify({ webhookUrl: "{{secret.slack_hook}}", message: "PR {{pr_number}}: {{pr_title}}" }, null, 2);
-    case "webhook":
-      return JSON.stringify({ url: "", body: '{"pr":"{{pr_number}}"}' }, null, 2);
-    case "claude_prompt":
-      return JSON.stringify({ template: "Work on {{repo}} @ {{branch}}." }, null, 2);
-    case "bash":
-      return JSON.stringify({ script: 'echo "PR $CORRAL_PR_NUMBER"' }, null, 2);
-    default:
-      return "{}";
-  }
-}
 
 export function AutomationsManager({ repoId }: { repoId?: string }) {
   const scoped = !!repoId;
   const repoQ = scoped ? `?repo=${encodeURIComponent(repoId!)}` : "";
 
   const [actions, setActions] = useState<Action[]>([]);
-  const [hooks, setHooks] = useState<Record<string, Hook[]>>({});
+  const [hooksByEvent, setHooksByEvent] = useState<Record<string, Hook[]>>({});
+  const [triggers, setTriggers] = useState<Trigger[]>([]);
   const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
-
-  const [name, setName] = useState("");
-  const [kind, setKind] = useState("slack");
-  const [spec, setSpec] = useState(starterSpec("slack"));
-
-  const [hookEvent, setHookEvent] = useState("pr.approve");
-  // Encoded as "action:<id>" | "flow:<id>" so a hook can target either.
-  const [hookTarget, setHookTarget] = useState<string>("");
-
-  // Flows.
-  const [flows, setFlows] = useState<Flow[]>([]);
-  const [flowName, setFlowName] = useState("");
-  const [stepAction, setStepAction] = useState<Record<number, number | "">>({});
 
   const loadActions = useCallback(() => {
     getJSON<{ actions: Action[] }>(`/api/actions${repoQ}`)
@@ -73,145 +49,379 @@ export function AutomationsManager({ repoId }: { repoId?: string }) {
       .catch((e) => setMsg({ text: (e as Error).message, err: true }));
   }, [repoQ]);
 
-  const loadHooks = useCallback(() => {
-    Promise.all(
-      EVENTS.map((ev) =>
-        getJSON<{ hooks: Hook[] }>(`/api/hooks?event=${encodeURIComponent(ev)}${scoped ? `&repo=${encodeURIComponent(repoId!)}` : ""}`)
-          .then((d) => [ev, d.hooks || []] as const)
-          .catch(() => [ev, []] as const),
-      ),
-    ).then((pairs) => setHooks(Object.fromEntries(pairs)));
-  }, [scoped, repoId]);
-
-  const loadFlows = useCallback(() => {
-    getJSON<{ flows: Flow[] }>(`/api/flows${repoQ}`)
-      .then(async (d) => {
-        // Fetch each flow's steps for display.
-        const full = await Promise.all(
-          (d.flows || []).map((f) => getJSON<Flow>(`/api/flows/${f.id}`).catch(() => f)),
-        );
-        setFlows(full);
-      })
+  const loadTriggers = useCallback(() => {
+    getJSON<{ triggers: Trigger[] }>("/api/triggers")
+      .then((d) => setTriggers(d.triggers || []))
       .catch(() => {});
-  }, [repoQ]);
+  }, []);
+
+  const loadHooks = useCallback(() => {
+    getJSON<{ triggers: Trigger[] }>("/api/triggers").then((d) => {
+      const evs = (d.triggers || []).map((t) => t.event);
+      Promise.all(
+        evs.map((ev) =>
+          getJSON<{ hooks: Hook[] }>(
+            `/api/hooks?event=${encodeURIComponent(ev)}${scoped ? `&repo=${encodeURIComponent(repoId!)}` : ""}`,
+          )
+            .then((d) => [ev, d.hooks || []] as const)
+            .catch(() => [ev, []] as const),
+        ),
+      ).then((pairs) => setHooksByEvent(Object.fromEntries(pairs)));
+    });
+  }, [scoped, repoId]);
 
   useEffect(() => {
     loadActions();
+    loadTriggers();
     loadHooks();
-    loadFlows();
-  }, [loadActions, loadHooks, loadFlows]);
+  }, [loadActions, loadTriggers, loadHooks]);
 
-  const pickKind = (k: string) => {
-    setKind(k);
-    setSpec(starterSpec(k));
-  };
+  const actionById = (id: number) => actions.find((a) => a.id === id);
 
-  const createAction = async () => {
-    if (!name.trim()) {
-      setMsg({ text: "name is required", err: true });
-      return;
-    }
+  // Add a step to a trigger: create the action, then bind it to the event. The
+  // user never sees either term.
+  const addStep = async (event: string, kind: string, name: string, spec: string) => {
     try {
-      await postJSON("/api/actions", {
+      const a = await postJSON<Action>("/api/actions", {
         name,
         kind,
         spec,
         scope: scoped ? "repo" : "global",
         repoId: scoped ? repoId : undefined,
       });
-      setName("");
-      setSpec(starterSpec(kind));
-      setMsg({ text: "✓ action created", err: false });
-      loadActions();
-    } catch (e) {
-      setMsg({ text: (e as Error).message, err: true });
-    }
-  };
-
-  const deleteAction = async (id: number) => {
-    await fetch(`/api/actions/${id}`, { method: "DELETE", credentials: "same-origin" }).catch(() => {});
-    loadActions();
-    loadHooks();
-  };
-
-  const bindHook = async () => {
-    if (!hookTarget) {
-      setMsg({ text: "choose an action or flow to bind", err: true });
-      return;
-    }
-    const [targetKind, idStr] = hookTarget.split(":");
-    try {
       await postJSON("/api/hooks", {
-        event: hookEvent,
+        event,
         scope: scoped ? "repo" : "global",
         repoId: scoped ? repoId : undefined,
-        targetKind,
-        targetId: Number(idStr),
+        targetKind: "action",
+        targetId: a.id,
         enabled: true,
       });
-      setMsg({ text: "✓ hook bound", err: false });
+      setMsg({ text: "✓ step added", err: false });
+      loadActions();
       loadHooks();
     } catch (e) {
       setMsg({ text: (e as Error).message, err: true });
     }
   };
 
-  const unbindHook = async (id: number) => {
-    await fetch(`/api/hooks/${id}`, { method: "DELETE", credentials: "same-origin" }).catch(() => {});
+  const removeStep = async (hookId: number, actionId: number, actionScope: string) => {
+    await fetch(`/api/hooks/${hookId}`, { method: "DELETE", credentials: "same-origin" }).catch(() => {});
+    // Only delete the action too if it's in our scope (don't touch global from a repo view).
+    if (!scoped || actionScope === "repo") {
+      await fetch(`/api/actions/${actionId}`, { method: "DELETE", credentials: "same-origin" }).catch(() => {});
+    }
+    loadActions();
     loadHooks();
   };
-
-  const createFlow = async () => {
-    if (!flowName.trim()) {
-      setMsg({ text: "flow name is required", err: true });
-      return;
-    }
-    try {
-      await postJSON("/api/flows", {
-        name: flowName,
-        scope: scoped ? "repo" : "global",
-        repoId: scoped ? repoId : undefined,
-      });
-      setFlowName("");
-      setMsg({ text: "✓ flow created", err: false });
-      loadFlows();
-    } catch (e) {
-      setMsg({ text: (e as Error).message, err: true });
-    }
-  };
-
-  const addStep = async (flowId: number, position: number) => {
-    const actionId = stepAction[flowId];
-    if (!actionId) return;
-    const a = actions.find((x) => x.id === actionId);
-    const stepKey = (a?.name || `step${position}`).replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
-    await postJSON(`/api/flows/${flowId}/steps`, { actionId, position, stepKey }).catch((e) =>
-      setMsg({ text: (e as Error).message, err: true }),
-    );
-    setStepAction((s) => ({ ...s, [flowId]: "" }));
-    loadFlows();
-  };
-
-  const deleteFlow = async (id: number) => {
-    await fetch(`/api/flows/${id}`, { method: "DELETE", credentials: "same-origin" }).catch(() => {});
-    loadFlows();
-  };
-
-  const actionName = (id: number) => actions.find((a) => a.id === id)?.name || `#${id}`;
-  const targetName = (h: Hook) =>
-    h.targetKind === "flow"
-      ? `${flows.find((f) => f.id === h.targetId)?.name || `#${h.targetId}`} (flow)`
-      : actionName(h.targetId);
 
   return (
     <div className="auto-manager">
       {msg && <div className={`auto-msg${msg.err ? " err" : ""}`}>{msg.text}</div>}
 
-      <h3 className="auto-mgr-h">{scoped ? "Repo actions" : "Action catalog"}</h3>
+      {/* 1. Prompts — global page only (repo prompts come later). */}
+      {!scoped && <PromptsSection onMsg={setMsg} />}
+
+      {/* 2. Automations — one card per trigger. */}
+      <h3 className="auto-mgr-h">Automations{scoped ? " (this repo)" : ""}</h3>
+      <p className="auto-hint" style={{ opacity: 0.85 }}>
+        Each card is something Corral already does. Add your own steps to run alongside it — a Slack
+        ping when you approve, a script when a project starts, and so on.
+      </p>
+
+      {triggers.map((tr) => (
+        <TriggerCard
+          key={tr.event}
+          trigger={tr}
+          steps={(hooksByEvent[tr.event] || []).filter((h) => h.targetKind === "action")}
+          actionById={actionById}
+          scoped={scoped}
+          onAdd={(kind, name, spec) => addStep(tr.event, kind, name, spec)}
+          onRemove={removeStep}
+        />
+      ))}
+
+      {/* 3. Advanced — raw actions, collapsed. */}
+      <AdvancedSection
+        actions={actions}
+        scoped={scoped}
+        onChanged={() => {
+          loadActions();
+          loadHooks();
+        }}
+      />
+    </div>
+  );
+}
+
+// --- Prompts ----------------------------------------------------------------
+
+function PromptsSection({ onMsg }: { onMsg: (m: { text: string; err: boolean }) => void }) {
+  const [id, setId] = useState<number | null>(null);
+  const [text, setText] = useState("");
+  const [loaded, setLoaded] = useState(false);
+
+  // AI draft.
+  const [aiIntent, setAiIntent] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiLog, setAiLog] = useState("");
+  const wsRef = useRef<WebSocket | null>(null);
+  useEffect(() => () => wsRef.current?.close(), []);
+
+  useEffect(() => {
+    getJSON<{ id: number; template: string }>("/api/prompts/default")
+      .then((d) => {
+        setId(d.id);
+        setText(d.template);
+        setLoaded(true);
+      })
+      .catch(() => setLoaded(true));
+  }, []);
+
+  const save = async () => {
+    if (id == null) return;
+    try {
+      await fetch(`/api/actions/${id}`, {
+        method: "PUT",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Project-start prompt", spec: JSON.stringify({ template: text }) }),
+      });
+      onMsg({ text: "✓ prompt saved", err: false });
+    } catch (e) {
+      onMsg({ text: (e as Error).message, err: true });
+    }
+  };
+
+  const draftWithAI = () => {
+    if (!aiIntent.trim()) return;
+    wsRef.current?.close();
+    setAiBusy(true);
+    setAiLog("");
+    const ws = new WebSocket(wsURL("/api/prompts/draft"));
+    wsRef.current = ws;
+    ws.onopen = () => ws.send(JSON.stringify({ description: aiIntent }));
+    ws.onmessage = (ev) => {
+      let m: Record<string, unknown>;
+      try {
+        m = JSON.parse(ev.data);
+      } catch {
+        return;
+      }
+      if (m.type === "text") setAiLog((l) => l + (m.text as string));
+      else if (m.type === "tool_use") setAiLog((l) => l + `› ${m.tool}\n`);
+      else if (m.type === "error") setAiLog((l) => l + `\n⚠ ${(m.text as string) || ""}`);
+      else if (m.type === "draft" && m.result) setText(m.result as string);
+    };
+    ws.onclose = () => {
+      setAiBusy(false);
+      wsRef.current = null;
+    };
+    ws.onerror = () => setAiLog((l) => l + "\n⚠ draft connection failed");
+  };
+
+  if (!loaded) return null;
+
+  return (
+    <section className="prompts-section">
+      <h3 className="auto-mgr-h">Prompts</h3>
+      <p className="auto-hint" style={{ opacity: 0.85 }}>
+        The instruction Claude gets when a sandbox project starts. Use <code>{"{{repo}}"}</code>,{" "}
+        <code>{"{{branch}}"}</code>, <code>{"{{pr_number}}"}</code> and they're filled in at launch.
+      </p>
+      <div className="prompt-card">
+        <div className="prompt-card-head">
+          Project-start prompt <span className="auto-scope">global</span>
+        </div>
+        <textarea
+          className="prompt-textarea"
+          rows={5}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="You're working in {{repo}} on branch {{branch}}…"
+        />
+        <div className="prompt-actions-row">
+          <button type="button" className="auto-btn" onClick={save}>
+            Save prompt
+          </button>
+        </div>
+
+        <details className="prompt-ai">
+          <summary>
+            ✨ Build with AI{" "}
+            <span className="ai-warn" title="Runs your host machine's Claude, not the sandbox; read-only">
+              host · not sandboxed · read-only
+            </span>
+          </summary>
+          <textarea
+            className="prompt-textarea"
+            rows={2}
+            value={aiIntent}
+            onChange={(e) => setAiIntent(e.target.value)}
+            placeholder="Describe what the prompt should do — e.g. 'review the diff and run the tests'"
+          />
+          <button type="button" className="auto-btn" disabled={aiBusy || !aiIntent.trim()} onClick={draftWithAI}>
+            {aiBusy ? "Drafting…" : "Draft with AI"}
+          </button>
+          {aiLog && <pre className="split-menu-ai-log">{aiLog}</pre>}
+        </details>
+      </div>
+    </section>
+  );
+}
+
+// --- Trigger card -----------------------------------------------------------
+
+function TriggerCard({
+  trigger,
+  steps,
+  actionById,
+  scoped,
+  onAdd,
+  onRemove,
+}: {
+  trigger: Trigger;
+  steps: Hook[];
+  actionById: (id: number) => Action | undefined;
+  scoped: boolean;
+  onAdd: (kind: string, name: string, spec: string) => void;
+  onRemove: (hookId: number, actionId: number, actionScope: string) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [kind, setKind] = useState(STEP_KINDS[0].kind);
+  const [name, setName] = useState("");
+  const [spec, setSpec] = useState(JSON.stringify(STEP_KINDS[0].starter, null, 2));
+
+  const pickKind = (k: string) => {
+    setKind(k);
+    const def = STEP_KINDS.find((s) => s.kind === k);
+    setSpec(JSON.stringify(def?.starter ?? {}, null, 2));
+  };
+
+  const submit = () => {
+    onAdd(kind, name.trim() || STEP_KINDS.find((s) => s.kind === kind)?.label || kind, spec);
+    setAdding(false);
+    setName("");
+  };
+
+  return (
+    <div className="trigger-card">
+      <div className="trigger-card-head">
+        <span className="trigger-title">{trigger.title}</span>
+        <span className="trigger-desc">{trigger.description}</span>
+      </div>
+      <ol className="trigger-steps">
+        {trigger.builtin ? (
+          <li className="trigger-step builtin">
+            <span className="trigger-step-ico">{trigger.builtinIcon}</span>
+            {trigger.builtin}
+            <span className="builtin-pill">built-in</span>
+          </li>
+        ) : (
+          <li className="trigger-step builtin muted-step">
+            <span className="trigger-step-ico">•</span>
+            {trigger.title.replace(/^When /, "")}
+          </li>
+        )}
+        {steps.map((h) => {
+          const a = actionById(h.targetId);
+          return (
+            <li key={h.id} className="trigger-step">
+              <span className="trigger-step-ico">{stepIcon(a?.kind)}</span>
+              {a?.name || `#${h.targetId}`}
+              {(!scoped || h.scope === "repo") && (
+                <button
+                  type="button"
+                  className="auto-del"
+                  onClick={() => onRemove(h.id, h.targetId, a?.scope || "global")}
+                >
+                  remove
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+
+      {adding ? (
+        <div className="trigger-add">
+          <div className="auto-row">
+            <select className="auto-input" value={kind} onChange={(e) => pickKind(e.target.value)}>
+              {STEP_KINDS.map((k) => (
+                <option key={k.kind} value={k.kind}>
+                  {k.label}
+                </option>
+              ))}
+            </select>
+            <input
+              className="auto-input"
+              placeholder="name (optional)"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <textarea className="auto-spec" rows={5} value={spec} onChange={(e) => setSpec(e.target.value)} spellCheck={false} />
+          {(kind === "slack" || kind === "webhook") && (
+            <p className="auto-hint">
+              Reference secrets as <code>{"{{secret.NAME}}"}</code>; the target host must be on the
+              firewall allowlist.
+            </p>
+          )}
+          <div className="auto-row">
+            <button type="button" className="auto-btn" onClick={submit}>
+              Add step
+            </button>
+            <button type="button" className="auto-btn" onClick={() => setAdding(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" className="trigger-add-btn" onClick={() => setAdding(true)}>
+          + Add a step…
+        </button>
+      )}
+    </div>
+  );
+}
+
+function stepIcon(kind?: string): string {
+  switch (kind) {
+    case "slack":
+      return "💬";
+    case "webhook":
+      return "🔗";
+    case "bash":
+      return "⚙";
+    case "capability":
+      return "▤";
+    case "claude_prompt":
+      return "✨";
+    default:
+      return "•";
+  }
+}
+
+// --- Advanced (raw actions) -------------------------------------------------
+
+function AdvancedSection({
+  actions,
+  scoped,
+  onChanged,
+}: {
+  actions: Action[];
+  scoped: boolean;
+  onChanged: () => void;
+}) {
+  const del = async (id: number) => {
+    await fetch(`/api/actions/${id}`, { method: "DELETE", credentials: "same-origin" }).catch(() => {});
+    onChanged();
+  };
+  return (
+    <details className="auto-advanced">
+      <summary>Advanced · all actions{scoped ? " (this repo + global)" : ""}</summary>
       {actions.length === 0 ? (
-        <p className="auto-empty">
-          No actions yet{scoped ? " for this repo (global ones still apply)" : ""}. Create one below.
-        </p>
+        <p className="auto-empty">No actions yet.</p>
       ) : (
         <table className="auto-table">
           <thead>
@@ -231,9 +441,8 @@ export function AutomationsManager({ repoId }: { repoId?: string }) {
                 </td>
                 <td>{a.scope}</td>
                 <td>
-                  {/* Only repo-scoped actions are deletable from a repo view. */}
                   {(!scoped || a.scope === "repo") && (
-                    <button type="button" className="auto-del" onClick={() => deleteAction(a.id)}>
+                    <button type="button" className="auto-del" onClick={() => del(a.id)}>
                       delete
                     </button>
                   )}
@@ -243,147 +452,6 @@ export function AutomationsManager({ repoId }: { repoId?: string }) {
           </tbody>
         </table>
       )}
-
-      <div className="auto-create">
-        <h4 className="auto-mgr-h">New {scoped ? "repo " : ""}action</h4>
-        <div className="auto-row">
-          <input className="auto-input" placeholder="name" value={name} onChange={(e) => setName(e.target.value)} />
-          <select className="auto-input" value={kind} onChange={(e) => pickKind(e.target.value)}>
-            {KINDS.map((k) => (
-              <option key={k.kind} value={k.kind}>
-                {k.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <textarea className="auto-spec" rows={7} value={spec} onChange={(e) => setSpec(e.target.value)} spellCheck={false} />
-        {(kind === "slack" || kind === "webhook") && (
-          <p className="auto-hint">
-            Reference secrets as <code>{"{{secret.NAME}}"}</code> (resolved from the credential store); the target host
-            must be on the firewall allowlist.
-          </p>
-        )}
-        <button type="button" className="auto-btn" onClick={createAction}>
-          Create action
-        </button>
-      </div>
-
-      <h3 className="auto-mgr-h">Event hooks{scoped ? " (this repo)" : ""}</h3>
-      <div className="auto-row">
-        <select className="auto-input" value={hookEvent} onChange={(e) => setHookEvent(e.target.value)}>
-          {EVENTS.map((ev) => (
-            <option key={ev} value={ev}>
-              {ev}
-            </option>
-          ))}
-        </select>
-        <select className="auto-input" value={hookTarget} onChange={(e) => setHookTarget(e.target.value)}>
-          <option value="">choose action or flow…</option>
-          {actions.length > 0 && (
-            <optgroup label="Actions">
-              {actions.map((a) => (
-                <option key={`a${a.id}`} value={`action:${a.id}`}>
-                  {a.name} ({a.kind})
-                </option>
-              ))}
-            </optgroup>
-          )}
-          {flows.length > 0 && (
-            <optgroup label="Flows">
-              {flows.map((f) => (
-                <option key={`f${f.id}`} value={`flow:${f.id}`}>
-                  {f.name} (flow)
-                </option>
-              ))}
-            </optgroup>
-          )}
-        </select>
-        <button type="button" className="auto-btn" onClick={bindHook}>
-          Bind
-        </button>
-      </div>
-
-      {EVENTS.map((ev) => {
-        const bound = hooks[ev] || [];
-        if (bound.length === 0) return null;
-        return (
-          <div key={ev} className="auto-event">
-            <div className="auto-event-name">
-              <code>{ev}</code>
-            </div>
-            <ul className="auto-hooklist">
-              {bound.map((h) => (
-                <li key={h.id}>
-                  → {targetName(h)} <span className="auto-scope">{h.scope}</span>
-                  {/* Global hooks aren't removable from a repo view. */}
-                  {(!scoped || h.scope === "repo") && (
-                    <button type="button" className="auto-del" onClick={() => unbindHook(h.id)}>
-                      remove
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        );
-      })}
-
-      <h3 className="auto-mgr-h">Flows{scoped ? " (this repo)" : ""}</h3>
-      <p className="auto-hint" style={{ opacity: 0.8 }}>
-        A flow runs its actions in order; a later step can use an earlier one's result via{" "}
-        <code>{"{{steps.KEY.output}}"}</code>. Bind a flow to an event just like an action.
-      </p>
-      <div className="auto-row">
-        <input
-          className="auto-input"
-          placeholder="new flow name"
-          value={flowName}
-          onChange={(e) => setFlowName(e.target.value)}
-        />
-        <button type="button" className="auto-btn" onClick={createFlow}>
-          Create flow
-        </button>
-      </div>
-
-      {flows.map((f) => (
-        <div key={f.id} className="auto-flow">
-          <div className="auto-flow-head">
-            <b>{f.name}</b> <span className="auto-scope">{f.scope}</span>
-            {(!scoped || f.scope === "repo") && (
-              <button type="button" className="auto-del" onClick={() => deleteFlow(f.id)}>
-                delete
-              </button>
-            )}
-          </div>
-          <ol className="auto-flow-steps">
-            {(f.steps || []).map((st) => (
-              <li key={st.id}>
-                {actionName(st.actionId)} <span className="auto-step-key">{st.stepKey}</span>
-              </li>
-            ))}
-            {(f.steps || []).length === 0 && <li className="auto-empty">no steps yet</li>}
-          </ol>
-          <div className="auto-row">
-            <select
-              className="auto-input"
-              value={stepAction[f.id] ?? ""}
-              onChange={(e) =>
-                setStepAction((s) => ({ ...s, [f.id]: e.target.value ? Number(e.target.value) : "" }))
-              }
-            >
-              <option value="">add step…</option>
-              {actions.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name} ({a.kind})
-                </option>
-              ))}
-            </select>
-            <button type="button" className="auto-btn" onClick={() => addStep(f.id, (f.steps || []).length)}>
-              Add step
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
+    </details>
   );
 }
