@@ -2044,3 +2044,41 @@ table.projects th, table.projects td {
   margin-left: auto; font-size: 0.62rem; color: var(--muted);
   border: 1px solid var(--con-line); border-radius: 999px; padding: 0 0.4rem;
 }
+
+/* Bash step editor (IDE-like). */
+.bash-editor { margin: 0.3rem 0; }
+.bash-editor-head { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.25rem; }
+.bash-editor-label { font-size: 0.82rem; font-weight: 600; }
+.bash-editor-hint { font-size: 0.7rem; color: var(--muted); }
+.bash-editor-ta {
+  width: 100%; background: #0f1115; color: #e6e9ef; border: 1px solid var(--con-line);
+  border-radius: 6px; padding: 0.6rem 0.7rem; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.8rem; line-height: 1.5; tab-size: 2; resize: vertical;
+}
+.bash-editor-ta:focus { outline: none; border-color: var(--con-working); }
+.bash-vars { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; margin: 0.4rem 0; }
+.bash-vars-label { font-size: 0.7rem; color: var(--muted); }
+.bash-var-chip {
+  font-family: ui-monospace, monospace; font-size: 0.68rem; background: var(--con-panel);
+  border: 1px solid var(--con-line); border-radius: 4px; padding: 0.05rem 0.35rem; color: var(--con-working);
+  cursor: pointer;
+}
+.bash-var-chip:hover { border-color: var(--con-working); }
+.bash-editor-actions { display: flex; gap: 0.5rem; margin: 0.4rem 0; }
+.bash-result { border: 1px solid var(--con-line); border-radius: 6px; margin-top: 0.4rem; overflow: hidden; }
+.bash-result.ok { border-color: rgba(158, 206, 106, 0.4); }
+.bash-result.err { border-color: rgba(247, 118, 142, 0.4); }
+.bash-result-head {
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.6rem; font-size: 0.8rem;
+  background: var(--con-panel-hi);
+}
+.bash-result.ok .bash-result-head { color: #9ece6a; }
+.bash-result.err .bash-result-head { color: #f7768e; }
+.bash-result-dur { margin-left: auto; color: var(--muted); font-size: 0.7rem; }
+.bash-result-out {
+  margin: 0; padding: 0.5rem 0.6rem; background: #0f1115; color: var(--muted); font-size: 0.74rem;
+  white-space: pre-wrap; max-height: 200px; overflow: auto;
+}
+.bash-result-out.err { color: #f7768e; }
+.bash-ai { margin-top: 0.5rem; border-top: 1px solid var(--con-line); padding-top: 0.5rem; }
+.bash-ai-head { margin-bottom: 0.3rem; }
