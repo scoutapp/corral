@@ -1965,3 +1965,45 @@ table.projects th, table.projects td {
   font-size: 0.66rem; color: var(--muted); font-family: ui-monospace, monospace;
   border: 1px solid var(--con-line); border-radius: 999px; padding: 0 0.4rem; margin-left: 0.3rem;
 }
+
+/* Redesigned Automations: Prompts section + trigger cards. */
+.prompts-section { margin-bottom: 1.75rem; }
+.prompt-card { background: var(--con-panel-hi); border: 1px solid var(--con-line); border-radius: 10px; padding: 0.9rem 1rem; }
+.prompt-card-head { font-size: 0.88rem; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.4rem; }
+.prompt-textarea {
+  width: 100%; background: var(--con-panel); color: var(--con-text); border: 1px solid var(--con-line);
+  border-radius: 6px; padding: 0.5rem; font-family: ui-monospace, monospace; font-size: 0.8rem;
+  resize: vertical; margin-bottom: 0.4rem;
+}
+.prompt-actions-row { display: flex; gap: 0.5rem; align-items: center; }
+.prompt-ai { margin-top: 0.6rem; border-top: 1px solid var(--con-line); padding-top: 0.5rem; }
+.prompt-ai summary { cursor: pointer; font-size: 0.82rem; display: flex; align-items: center; gap: 0.4rem; }
+
+.trigger-card {
+  background: var(--con-panel-hi); border: 1px solid var(--con-line); border-radius: 10px;
+  padding: 0.8rem 1rem; margin-bottom: 0.7rem;
+}
+.trigger-card-head { display: flex; flex-direction: column; margin-bottom: 0.5rem; }
+.trigger-title { font-size: 0.95rem; font-weight: 600; }
+.trigger-desc { font-size: 0.76rem; color: var(--muted); }
+.trigger-steps { list-style: none; margin: 0 0 0.5rem; padding: 0; counter-reset: step; }
+.trigger-step {
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.5rem; font-size: 0.85rem;
+  border: 1px solid var(--con-line); border-radius: 6px; margin-bottom: 0.3rem; background: var(--con-panel);
+}
+.trigger-step.builtin { background: transparent; border-style: dashed; color: var(--con-text); }
+.trigger-step.muted-step { color: var(--muted); }
+.trigger-step-ico { width: 1.2rem; text-align: center; }
+.builtin-pill {
+  margin-left: auto; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--muted); border: 1px solid var(--con-line); border-radius: 999px; padding: 0 0.4rem;
+}
+.trigger-step .auto-del { margin-left: auto; }
+.trigger-add-btn {
+  background: none; border: 1px dashed var(--con-line); color: var(--con-working);
+  border-radius: 6px; padding: 0.35rem 0.7rem; font-size: 0.82rem; cursor: pointer; width: 100%;
+}
+.trigger-add-btn:hover { border-color: var(--con-working); }
+.trigger-add { border: 1px solid var(--con-line); border-radius: 6px; padding: 0.6rem; margin-top: 0.3rem; background: var(--con-panel); }
+.auto-advanced { margin-top: 1.5rem; }
+.auto-advanced summary { cursor: pointer; font-size: 0.82rem; color: var(--muted); }
