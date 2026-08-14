@@ -482,6 +482,13 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Automations control plane (API-first). Everything under /api/ is a plain
+	// REST endpoint the dashboard UI, a future CLI, and macros all share.
+	if strings.HasPrefix(path, "/api/") {
+		d.handleAPI(w, r, strings.TrimPrefix(path, "/api/"))
+		return
+	}
+
 	// Repos list (cross-project). /repos (GET list, POST add) and
 	// /repos/<id>[/fetch|/prs|/forensics] (item actions).
 	if path == "/repos" {
