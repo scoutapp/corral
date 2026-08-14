@@ -1955,3 +1955,13 @@ table.projects th, table.projects td {
 .auto-manager { margin-top: 0.5rem; }
 .auto-mgr-h { font-size: 0.95rem; margin: 1.2rem 0 0.5rem; }
 .repo-settings-sep { border: none; border-top: 1px solid var(--con-line); margin: 1.5rem 0 1rem; }
+
+/* Flows builder (inside AutomationsManager). */
+.auto-flow { border: 1px solid var(--con-line); border-radius: 8px; padding: 0.6rem 0.8rem; margin: 0.5rem 0; }
+.auto-flow-head { display: flex; align-items: center; gap: 0.5rem; font-size: 0.88rem; margin-bottom: 0.3rem; }
+.auto-flow-steps { margin: 0.2rem 0 0.5rem; padding-left: 1.4rem; font-size: 0.82rem; }
+.auto-flow-steps li { padding: 0.15rem 0; }
+.auto-step-key {
+  font-size: 0.66rem; color: var(--muted); font-family: ui-monospace, monospace;
+  border: 1px solid var(--con-line); border-radius: 999px; padding: 0 0.4rem; margin-left: 0.3rem;
+}
