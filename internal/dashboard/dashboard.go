@@ -301,6 +301,12 @@ type dashboardServer struct {
 	mu    sync.Mutex
 	terms map[*termSession]struct{} // live browser-terminal PTYs (see terminal.go)
 	token string
+	// apiToken is a SECOND credential, distinct from the browser's session token,
+	// carried by the `corral api` CLI and the host Claude skill. Requests
+	// authenticated with it are subject to the API-writes gate (mutating calls
+	// need ApiWritesEnabled); the browser's own token never is. This is what lets
+	// us gate Claude/CLI writes without disabling the human's dashboard buttons.
+	apiToken string
 	// bootID is a fresh random value each time the dashboard daemon starts. It is
 	// surfaced in /status so the browser can tell when the server has restarted
 	// and drop stale per-project UI state (e.g. mute prefs keyed by project id).
@@ -313,7 +319,8 @@ type dashboardServer struct {
 
 func newDashboardServer(token string) *dashboardServer {
 	boot, _ := randomToken()
-	return &dashboardServer{terms: make(map[*termSession]struct{}), token: token, bootID: boot}
+	apiTok, _ := randomToken()
+	return &dashboardServer{terms: make(map[*termSession]struct{}), token: token, apiToken: apiTok, bootID: boot}
 }
 
 // getStore opens the shared Corral database on first use and caches the handle.
@@ -340,16 +347,50 @@ func (d *dashboardServer) getStore() (*store.Store, error) {
 // worth defending against here since the terminal tab grants a real shell.
 // A valid ?token= is accepted once, then remembered via an HttpOnly cookie so
 // reloading/reopening the page doesn't require re-pasting it.
+// credentialKind marks which token authenticated a request, so the write-gate
+// can treat programmatic (API-token) clients differently from the browser.
+type credentialKind int
+
+const (
+	credNone    credentialKind = iota
+	credSession                // the browser's dashboard token
+	credAPI                    // the corral api CLI / host Claude skill token
+)
+
+type credKeyType struct{}
+
+var credKey credKeyType
+
+// credential returns which token authenticated the request (credNone if unset).
+func credential(r *http.Request) credentialKind {
+	if k, ok := r.Context().Value(credKey).(credentialKind); ok {
+		return k
+	}
+	return credNone
+}
+
 func (d *dashboardServer) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Cookie carries either the session token (browser) or the API token
+		// (a CLI/skill that prefers not to pass ?token= each call).
 		if cookie, err := r.Cookie(dashboardCookieName); err == nil {
 			if subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(d.token)) == 1 {
-				next(w, r)
+				next(w, tag(r, credSession))
+				return
+			}
+			if d.apiToken != "" && subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(d.apiToken)) == 1 {
+				next(w, tag(r, credAPI))
 				return
 			}
 		}
 
 		if tok := r.URL.Query().Get("token"); tok != "" {
+			// The API token via ?token= authenticates without the browser cookie
+			// dance (no redirect) — a CLI/skill one-shot request.
+			if d.apiToken != "" && subtle.ConstantTimeCompare([]byte(tok), []byte(d.apiToken)) == 1 {
+				next(w, tag(r, credAPI))
+				return
+			}
 			if subtle.ConstantTimeCompare([]byte(tok), []byte(d.token)) == 1 {
 				http.SetCookie(w, &http.Cookie{
 					Name:     dashboardCookieName,
@@ -371,6 +412,11 @@ func (d *dashboardServer) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 		http.Error(w, "403 Forbidden — missing or invalid dashboard token", http.StatusForbidden)
 	}
+}
+
+// tag returns r with its credential kind recorded in the context.
+func tag(r *http.Request, k credentialKind) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), credKey, k))
 }
 
 // routes wires up the full route table. Deliberately not using Go 1.22's
@@ -450,8 +496,31 @@ func routeNotFound(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
+// isMutatingMethod reports whether an HTTP method changes state — the set the
+// API-writes gate protects. GET/HEAD/OPTIONS are reads and always pass.
+func isMutatingMethod(m string) bool {
+	switch m {
+	case http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch:
+		return true
+	default:
+		return false
+	}
+}
+
 func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
+
+	// API-writes gate. A request authenticated with the API token (the corral CLI
+	// / host Claude skill) may only make MUTATING calls when the operator has
+	// enabled API writes in global settings. Reads are always allowed; the browser
+	// (session token) is never gated. Enforced here — before dispatch — so it
+	// applies uniformly no matter which handler would serve the path, and can't be
+	// bypassed by a direct HTTP call.
+	if credential(r) == credAPI && isMutatingMethod(r.Method) && !config.ReadGlobalSettings().ApiWritesEnabled {
+		http.Error(w, "API writes are disabled — enable them in the dashboard's global settings to let the CLI/Claude make changes", http.StatusForbidden)
+		return
+	}
+
 	if path == "/" {
 		d.serveSPA(w, r)
 		return
@@ -1171,9 +1240,14 @@ func (d *dashboardServer) pollFirewallLog(w http.ResponseWriter, logPath string,
 // ----------------------------------------------------------------------------
 
 type DashboardState struct {
-	Pid       int    `json:"pid"`
-	Port      int    `json:"port"`
-	Token     string `json:"token"`
+	Pid   int    `json:"pid"`
+	Port  int    `json:"port"`
+	Token string `json:"token"`
+	// APIToken is the separate credential the `corral api` CLI uses. Distinct from
+	// Token (the browser session token) so mutating API calls can be gated behind
+	// ApiWritesEnabled without affecting the human's dashboard. Empty in state
+	// written by an older dashboard; the CLI then falls back to Token.
+	APIToken  string `json:"api_token,omitempty"`
 	StartedAt string `json:"started_at"`
 }
 
@@ -1268,6 +1342,10 @@ func EnsureDashboardRunning() (*DashboardState, bool, error) {
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to generate dashboard token: %w", err)
 	}
+	apiToken, err := randomToken()
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to generate dashboard API token: %w", err)
+	}
 
 	port, err := config.FindFreePort(7777)
 	if err != nil {
@@ -1289,7 +1367,7 @@ func EnsureDashboardRunning() (*DashboardState, bool, error) {
 	}
 	defer logFile.Close()
 
-	cmd := exec.Command(exePath, "dashboard-serve", "--port", fmt.Sprintf("%d", port), "--token", token)
+	cmd := exec.Command(exePath, "dashboard-serve", "--port", fmt.Sprintf("%d", port), "--token", token, "--api-token", apiToken)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -1310,6 +1388,7 @@ func EnsureDashboardRunning() (*DashboardState, bool, error) {
 		Pid:       cmd.Process.Pid,
 		Port:      port,
 		Token:     token,
+		APIToken:  apiToken,
 		StartedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := writeDashboardState(state); err != nil {
@@ -1346,6 +1425,7 @@ func CmdDashboardServe(args []string) error {
 	fset := flag.NewFlagSet("dashboard-serve", flag.ContinueOnError)
 	port := fset.Int("port", 0, "port to listen on")
 	token := fset.String("token", "", "auth token")
+	apiToken := fset.String("api-token", "", "separate token for the corral api CLI / skill")
 	if err := fset.Parse(args); err != nil {
 		return err
 	}
@@ -1354,6 +1434,9 @@ func CmdDashboardServe(args []string) error {
 	}
 
 	server := newDashboardServer(*token)
+	if *apiToken != "" {
+		server.apiToken = *apiToken
+	}
 	server.startLogRetention() // prune app_logs on start + hourly
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", *port),

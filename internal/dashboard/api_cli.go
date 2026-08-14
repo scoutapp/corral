@@ -168,7 +168,14 @@ func resolveDashboardTarget(urlFlag, tokenFlag string) (base, token string, err 
 			base = fmt.Sprintf("http://127.0.0.1:%d", state.Port)
 		}
 		if token == "" {
-			token = state.Token
+			// Prefer the dedicated API token: mutating calls made with it are
+			// subject to the API-writes gate (the browser's own token isn't). Fall
+			// back to the session token for a dashboard old enough not to have one.
+			if state.APIToken != "" {
+				token = state.APIToken
+			} else {
+				token = state.Token
+			}
 		}
 	}
 	if token == "" {

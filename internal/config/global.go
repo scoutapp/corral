@@ -32,6 +32,13 @@ type GlobalSettings struct {
 	// prunes on dashboard start + hourly.
 	LogRetentionDays int `json:"log_retention_days,omitempty"`
 	LogMaxRows       int `json:"log_max_rows,omitempty"`
+
+	// ApiWritesEnabled gates MUTATING API calls (POST/PUT/DELETE) made with the
+	// API token — i.e. the `corral api` CLI and the host Claude skill. OFF by
+	// default: reads are always allowed, but a write needs explicit opt-in since
+	// it can start projects, create issues, run flows. The browser dashboard (its
+	// own session token) is never gated — this is only for programmatic clients.
+	ApiWritesEnabled bool `json:"api_writes_enabled,omitempty"`
 }
 
 // GlobalSettingsPath is ~/.corral/global-settings.json.
