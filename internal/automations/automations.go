@@ -247,6 +247,70 @@ func (s *Service) DeleteHook(id int64) error {
 	return err
 }
 
+// --- Runs (read side; writes are the runner's) -----------------------------
+
+// Run is one recorded execution. Context and Steps are the raw JSON blobs as
+// stored; the API/UI decode them as needed.
+type Run struct {
+	ID         int64  `json:"id"`
+	Trigger    string `json:"trigger"`
+	Event      string `json:"event,omitempty"`
+	TargetKind string `json:"targetKind"`
+	TargetID   int64  `json:"targetId"`
+	Status     string `json:"status"`
+	Context    string `json:"context"` // raw JSON
+	Steps      string `json:"steps"`   // raw JSON
+	StartedAt  string `json:"startedAt"`
+	FinishedAt string `json:"finishedAt,omitempty"`
+}
+
+// Run fetches one recorded run by ID.
+func (s *Service) Run(id int64) (Run, error) {
+	var r Run
+	var event, finished sql.NullString
+	err := s.db.QueryRow(`
+		SELECT id, trigger, event, target_kind, target_id, status,
+		       context_json, steps_json, started_at, finished_at
+		  FROM auto_runs WHERE id = ?
+	`, id).Scan(&r.ID, &r.Trigger, &event, &r.TargetKind, &r.TargetID, &r.Status,
+		&r.Context, &r.Steps, &r.StartedAt, &finished)
+	if err != nil {
+		return Run{}, err
+	}
+	r.Event, r.FinishedAt = event.String, finished.String
+	return r, nil
+}
+
+// RecentRuns returns the most recent runs, newest first, capped at limit
+// (default 50). It is the backing query for /api/runs and the run-log UI.
+func (s *Service) RecentRuns(limit int) ([]Run, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.Query(`
+		SELECT id, trigger, event, target_kind, target_id, status,
+		       context_json, steps_json, started_at, finished_at
+		  FROM auto_runs ORDER BY started_at DESC, id DESC LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []Run{}
+	for rows.Next() {
+		var r Run
+		var event, finished sql.NullString
+		if err := rows.Scan(&r.ID, &r.Trigger, &event, &r.TargetKind, &r.TargetID, &r.Status,
+			&r.Context, &r.Steps, &r.StartedAt, &finished); err != nil {
+			return nil, err
+		}
+		r.Event, r.FinishedAt = event.String, finished.String
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // --- helpers ---------------------------------------------------------------
 
 func scanActions(rows *sql.Rows) ([]Action, error) {
