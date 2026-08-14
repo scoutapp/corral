@@ -62,6 +62,10 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handlePromptDraftWS(w, r)
 	case rest == "openapi.json":
 		d.handleOpenAPI(w, r)
+	case rest == "tools":
+		d.handleTools(w, r, "")
+	case strings.HasPrefix(rest, "tools/"):
+		d.handleTools(w, r, strings.TrimPrefix(rest, "tools/"))
 	default:
 		http.NotFound(w, r)
 	}
