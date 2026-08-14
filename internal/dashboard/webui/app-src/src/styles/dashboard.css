@@ -1908,3 +1908,45 @@ table.projects th, table.projects td {
 }
 .auto-runs-link, .auto-btn.link { color: var(--con-working); text-decoration: none; font-size: 0.85rem; }
 .auto-runs-link:hover { text-decoration: underline; }
+
+/* Run history: expandable list of automation executions. */
+.run-list { list-style: none; margin: 0; padding: 0; }
+.run-item { border: 1px solid var(--con-line); border-radius: 8px; margin-bottom: 0.5rem; overflow: hidden; }
+.run-head {
+  width: 100%; display: flex; align-items: center; gap: 0.6rem; background: var(--con-panel-hi);
+  border: none; color: var(--con-text); padding: 0.55rem 0.8rem; cursor: pointer; text-align: left;
+}
+.run-head:hover { background: var(--con-panel); }
+.run-badge {
+  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.03em; border-radius: 999px;
+  padding: 0.1rem 0.5rem; font-weight: 600;
+}
+.run-ok { background: rgba(158, 206, 106, 0.15); color: #9ece6a; }
+.run-err { background: rgba(247, 118, 142, 0.15); color: #f7768e; }
+.run-partial { background: rgba(224, 175, 104, 0.15); color: #e0af68; }
+.run-running { background: rgba(122, 162, 247, 0.15); color: #7aa2f7; }
+.run-what { flex: 1; display: flex; flex-direction: column; font-size: 0.85rem; }
+.run-meta { color: var(--muted); font-size: 0.72rem; }
+.run-time { color: var(--muted); font-size: 0.75rem; font-family: ui-monospace, monospace; }
+.run-caret { color: var(--muted); width: 1rem; text-align: center; }
+.run-steps { padding: 0.5rem 0.8rem 0.7rem; background: var(--con-panel); }
+.run-empty, .run-ctx summary { color: var(--muted); font-size: 0.8rem; }
+.run-step { padding: 0.4rem 0; border-bottom: 1px solid var(--con-line); }
+.run-step:last-child { border-bottom: none; }
+.run-step-head { display: flex; align-items: center; gap: 0.5rem; font-size: 0.84rem; }
+.run-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.run-dot.run-ok { background: #9ece6a; }
+.run-dot.run-err { background: #f7768e; }
+.run-dot.run-partial { background: #e0af68; }
+.run-step-kind {
+  font-size: 0.68rem; color: var(--muted); border: 1px solid var(--con-line);
+  border-radius: 999px; padding: 0 0.4rem;
+}
+.run-step-dur { color: var(--muted); font-size: 0.72rem; margin-left: auto; }
+.run-out {
+  margin: 0.35rem 0 0; background: var(--con-bg, #0f1115); border: 1px solid var(--con-line);
+  border-radius: 5px; padding: 0.4rem 0.5rem; font-size: 0.74rem; white-space: pre-wrap;
+  color: var(--muted); max-height: 220px; overflow: auto;
+}
+.run-out-err { color: #f7768e; }
+.run-ctx { margin-top: 0.4rem; }
