@@ -126,6 +126,7 @@ export interface GlobalView {
   log_max_rows: number; // 0 = use default
   log_retention_days_default: number;
   log_max_rows_default: number;
+  api_writes_enabled: boolean; // corral api CLI / Claude may make mutating calls
 }
 export interface GlobalEdit {
   set_creds?: CredSet[];
@@ -136,6 +137,7 @@ export interface GlobalEdit {
   update_repo?: string; // "" clears the override (back to default)
   log_retention_days?: number; // 0 = back to default
   log_max_rows?: number;
+  api_writes_enabled?: boolean;
 }
 
 // GET /update-status -> update availability for the global banner.

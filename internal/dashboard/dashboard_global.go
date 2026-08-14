@@ -107,6 +107,10 @@ type globalView struct {
 	LogMaxRows              int `json:"log_max_rows"`
 	LogRetentionDaysDefault int `json:"log_retention_days_default"`
 	LogMaxRowsDefault       int `json:"log_max_rows_default"`
+
+	// ApiWritesEnabled — whether the corral api CLI / host Claude skill may make
+	// mutating calls. Off by default; surfaced so the UI can render the toggle.
+	ApiWritesEnabled bool `json:"api_writes_enabled"`
 }
 
 func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Request) {
@@ -144,6 +148,7 @@ func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Reques
 	view.LogMaxRows = gs.LogMaxRows
 	view.LogRetentionDaysDefault = applog.DefaultRetention.MaxAgeDays
 	view.LogMaxRowsDefault = applog.DefaultRetention.MaxRows
+	view.ApiWritesEnabled = gs.ApiWritesEnabled
 
 	writeJSON(w, view)
 }
@@ -166,6 +171,7 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 		UpdateRepo       *string   `json:"update_repo,omitempty"`
 		LogRetentionDays *int      `json:"log_retention_days,omitempty"`
 		LogMaxRows       *int      `json:"log_max_rows,omitempty"`
+		ApiWritesEnabled *bool     `json:"api_writes_enabled,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&edit); err != nil {
 		http.Error(w, "bad payload: "+err.Error(), http.StatusBadRequest)
@@ -259,6 +265,20 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		results = append(results, "✓ log retention updated")
+	}
+
+	if edit.ApiWritesEnabled != nil {
+		gs := config.ReadGlobalSettings()
+		gs.ApiWritesEnabled = *edit.ApiWritesEnabled
+		if err := config.WriteGlobalSettings(gs); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if *edit.ApiWritesEnabled {
+			results = append(results, "✓ API writes enabled (the corral CLI / Claude can now make changes)")
+		} else {
+			results = append(results, "✓ API writes disabled (read-only for the CLI / Claude)")
+		}
 	}
 
 	writeJSON(w, map[string]any{"results": results})

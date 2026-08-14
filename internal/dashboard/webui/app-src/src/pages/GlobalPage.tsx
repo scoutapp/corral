@@ -42,6 +42,7 @@ export function GlobalPage() {
   // Log retention: "" means "use default"; the placeholder shows the default.
   const [logDays, setLogDays] = useState("");
   const [logRows, setLogRows] = useState("");
+  const [apiWrites, setApiWrites] = useState(false);
 
   const linesToList = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
 
@@ -63,6 +64,7 @@ export function GlobalPage() {
           setUpdateRepo(data.update_repo || "");
           setLogDays(data.log_retention_days ? String(data.log_retention_days) : "");
           setLogRows(data.log_max_rows ? String(data.log_max_rows) : "");
+          setApiWrites(!!data.api_writes_enabled);
           if (okMsg) setMsg({ text: okMsg, err: false });
         })
         .catch((e) => setMsg({ text: `failed to load: ${(e as Error).message}`, err: true }));
@@ -94,6 +96,7 @@ export function GlobalPage() {
     // 0 clears the override → back to the built-in default.
     edit.log_retention_days = logDays.trim() ? Math.max(0, parseInt(logDays, 10) || 0) : 0;
     edit.log_max_rows = logRows.trim() ? Math.max(0, parseInt(logRows, 10) || 0) : 0;
+    edit.api_writes_enabled = apiWrites;
     setApplying(true);
     try {
       const r = await postJSON<{ results?: string[] }>("/global/apply", edit);
@@ -397,6 +400,22 @@ export function GlobalPage() {
                   onChange={(e) => setLogRows(e.target.value)}
                 />
                 <div className="muted cfg-note">Blank = default ({g.log_max_rows_default.toLocaleString()} rows). The newest are kept.</div>
+              </div>
+            </div>
+          </section>
+
+          <section className="cfg-section">
+            <h3>
+              API access <span className="muted">— let the <code>corral api</code> CLI and Claude make changes</span>
+            </h3>
+            <div className="cfg-field">
+              <label className="cfg-ssh-item">
+                <input type="checkbox" checked={apiWrites} onChange={(e) => setApiWrites(e.target.checked)} />{" "}
+                <span className="cfg-ssh-name">Allow API writes</span>
+              </label>
+              <div className="muted cfg-note">
+                Reads (listing flows, logs, PRs) are always allowed. With this off, the CLI and Claude can look
+                but not act; turn it on to let them start projects, create issues, and run flows. Off by default.
               </div>
             </div>
           </section>
