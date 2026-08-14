@@ -8,8 +8,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
+	"github.com/scoutapp/corral/internal/automations"
 	"github.com/scoutapp/corral/internal/config"
 	"github.com/scoutapp/corral/internal/project"
 	"github.com/scoutapp/corral/internal/repos"
@@ -145,7 +147,7 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 		// configured, the prompt tells Claude to push over the SSH remote (the
 		// HTTPS remote won't auth in the sandbox).
 		hasSSHKey := len(config.GlobalSSHKeys()) > 0
-		issuePrompt = seedIssue(workspace, body.Repos, body.Issue, hasSSHKey)
+		issuePrompt = d.seedIssue(workspace, body.Repos, body.Issue, hasSSHKey)
 	}
 
 	// Initialize the project config, unless "existing" already has one.
@@ -249,7 +251,7 @@ func issueBranchSlug(number int, title string) string {
 // and returns a prompt to pre-populate into Claude. All best-effort: the clone
 // already succeeded, so a failed branch/file step is logged (via the returned
 // prompt still being useful) but never fails the create.
-func seedIssue(workspace string, specs []repoSpec, iss *issueSeed, hasSSHKey bool) string {
+func (d *dashboardServer) seedIssue(workspace string, specs []repoSpec, iss *issueSeed, hasSSHKey bool) string {
 	// The repo landed in a subdir of the workspace (see cloneMultiRepoWorkspace).
 	// Seed the first repo (issue-spawn is single-repo in the UI).
 	repoDir := workspace
@@ -272,15 +274,36 @@ func seedIssue(workspace string, specs []repoSpec, iss *issueSeed, hasSSHKey boo
 		iss.Repo, iss.Number, iss.Title, strings.TrimSpace(iss.Body), iss.URL, branch)
 	_ = os.WriteFile(filepath.Join(workspace, "ISSUE.md"), []byte(md), 0644)
 
-	prompt := fmt.Sprintf("Work on %s issue #%d: %s. The full description is in ISSUE.md at the workspace root. You're on branch %s.",
-		iss.Repo, iss.Number, iss.Title, branch)
-	// When an SSH key is set up for this project, push over the SSH remote — the
-	// HTTPS remote won't authenticate in the sandbox (no token), but the scoped
-	// ssh-agent holds the key. github owner/name is iss.Repo.
+	// The SSH-push guidance sentence is included only when a key is configured.
+	// It fills the {{ssh_guidance}} slot of the editable "project.issue" prompt.
+	sshGuidance := ""
 	if hasSSHKey && iss.Repo != "" {
-		prompt += fmt.Sprintf(" When you push, use the SSH remote (git@github.com:%s.git) — the scoped ssh-agent has the key; the HTTPS remote won't authenticate here.", iss.Repo)
+		sshRemote := fmt.Sprintf("git@github.com:%s.git", iss.Repo)
+		sshGuidance = automations.RenderTemplate(automations.SSHPushGuidance, map[string]string{"ssh_remote": sshRemote})
 	}
-	return prompt
+
+	slots := map[string]string{
+		"repo":         iss.Repo,
+		"number":       strconv.Itoa(iss.Number),
+		"title":        iss.Title,
+		"branch":       branch,
+		"ssh_guidance": sshGuidance,
+	}
+
+	// Built-in default (rendered directly) so this works even if the store/
+	// resolver is unavailable; the override path replaces it when set.
+	def, _ := automations.PromptDefFor(automations.PromptProjectIssue)
+	prompt := automations.RenderTemplate(def.Default, slots)
+	if s, err := d.getStore(); err == nil {
+		repoID := ""
+		if len(specs) >= 1 {
+			repoID = specs[0].RepoID
+		}
+		if rendered := automations.New(s).RenderPrompt(automations.PromptProjectIssue, repoID, slots); strings.TrimSpace(rendered) != "" {
+			prompt = rendered
+		}
+	}
+	return strings.TrimSpace(prompt)
 }
 
 // resolveNewWorkspace produces the workspace path for each create mode, doing

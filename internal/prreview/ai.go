@@ -97,12 +97,12 @@ type edgeCase struct {
 // heuristic ranking uses. On any failure (no runner, CLI error, unparseable
 // JSON) it returns a deterministic placeholder, so extraction always produces a
 // usable block.
-func analyzeBlock(ctx context.Context, ai aiRunner, diffHunk, filePath, prTitle string, h fileHeuristic) blockAnalysis {
+func (s *Service) analyzeBlock(ctx context.Context, ai aiRunner, repoID, diffHunk, filePath, prTitle string, h fileHeuristic) blockAnalysis {
 	fallback := placeholderAnalysis(filePath)
 	if ai == nil {
 		return fallback
 	}
-	prompt := blockPrompt(diffHunk, filePath, prTitle, h)
+	prompt := s.blockPrompt(repoID, diffHunk, filePath, prTitle, h)
 	out, err := ai.Run(ctx, prompt)
 	if err != nil {
 		return fallback
@@ -145,11 +145,30 @@ func placeholderAnalysis(filePath string) blockAnalysis {
 	}
 }
 
-func blockPrompt(diffHunk, filePath, prTitle string, h fileHeuristic) string {
+// Prompt catalog keys the AI call sites resolve overrides by (mirror of the
+// automations catalog; kept as local constants so prreview stays decoupled).
+const (
+	promptAnalyzeBlock   = "analyze.block"
+	promptAnalyzeSummary = "analyze.summary"
+	promptRisk           = "pr.risk"
+)
+
+// blockPrompt builds the per-block risk-analysis prompt, honoring a user
+// override for the "analyze.block" prompt when a resolver is set, else the
+// built-in default. The default is produced by rendering the same slots into the
+// baked-in text, so overridden and default paths are identical but for the
+// template source.
+func (s *Service) blockPrompt(repoID, diffHunk, filePath, prTitle string, h fileHeuristic) string {
 	if len(diffHunk) > 3000 {
 		diffHunk = diffHunk[:3000]
 	}
-	return "Analyze this code diff block from a pull request for RISK — how likely " +
+	slots := map[string]string{
+		"pr_title":   prTitle,
+		"file":       filePath,
+		"heuristics": heuristicLines(h),
+		"diff":       diffHunk,
+	}
+	fallback := "Analyze this code diff block from a pull request for RISK — how likely " +
 		"is this specific change to introduce a bug or cause problems.\n\n" +
 		"PR Title: " + prTitle + "\n" +
 		"File: " + filePath + "\n\n" +
@@ -176,6 +195,7 @@ func blockPrompt(diffHunk, filePath, prTitle string, h fileHeuristic) string {
 		`This is the primary output; it should reflect the code, not just the ` +
 		`file's churn.` + "\n\n" +
 		"Return only valid JSON, no markdown fences."
+	return s.renderPrompt(promptAnalyzeBlock, repoID, slots, fallback)
 }
 
 // heuristicLines renders the file signals for the prompt.
@@ -194,15 +214,18 @@ func heuristicLines(h fileHeuristic) string {
 }
 
 // summarizePR asks Claude for a <=100-char PR summary from the PR title and its
-// block titles. Falls back to the (truncated) PR title on any failure.
-func summarizePR(ctx context.Context, ai aiRunner, prTitle string, blockTitles []string, fallback string) string {
+// block titles, honoring a user override for "analyze.summary". Falls back to
+// the (truncated) PR title on any failure.
+func (svc *Service) summarizePR(ctx context.Context, ai aiRunner, repoID, prTitle string, blockTitles []string, fallback string) string {
 	if ai == nil {
 		return truncate100(fallback)
 	}
-	prompt := "Summarize this pull request in under 100 characters.\n" +
+	slots := map[string]string{"pr_title": prTitle, "key_changes": strings.Join(blockTitles, ", ")}
+	def := "Summarize this pull request in under 100 characters.\n" +
 		"PR Title: " + prTitle + "\n" +
 		"Key changes: " + strings.Join(blockTitles, ", ") + "\n" +
 		"Return only the summary string, no quotes or extra text."
+	prompt := svc.renderPrompt(promptAnalyzeSummary, repoID, slots, def)
 	out, err := ai.Run(ctx, prompt)
 	if err != nil {
 		return truncate100(fallback)

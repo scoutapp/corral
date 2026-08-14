@@ -5,6 +5,7 @@ import (
 
 	"github.com/scoutapp/corral/internal/automations"
 	"github.com/scoutapp/corral/internal/creds"
+	"github.com/scoutapp/corral/internal/prreview"
 )
 
 // credsSecretResolver resolves {{secret.NAME}} placeholders in webhook/slack
@@ -39,4 +40,19 @@ func (credsSecretResolver) Secret(name string) (string, bool) {
 // {{secret.*}} placeholders resolve.
 func automationsRegistry() *automations.Registry {
 	return automations.RegistryWithSecrets(credsSecretResolver{})
+}
+
+// promptResolver returns a prreview.PromptResolver backed by the automations
+// prompt catalog, so the PR-Review AI call sites honor user prompt overrides
+// (three-level: built-in → global → repo). Reads the shared store per call; a
+// store error degrades to the built-in default (renderPrompt treats an empty
+// return as "use fallback"). This keeps prreview decoupled from automations.
+func (d *dashboardServer) promptResolver() prreview.PromptResolver {
+	return func(key, repoID string, slots map[string]string) string {
+		s, err := d.getStore()
+		if err != nil {
+			return ""
+		}
+		return automations.New(s).RenderPrompt(key, repoID, slots)
+	}
 }
