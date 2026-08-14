@@ -21,7 +21,9 @@ function Routes() {
   const repoId = matchRepo(path);
   if (repoId) return <RepoPage id={repoId} />;
   if (path === "/global") return <GlobalPage />;
-  if (path === "/automations/logs") return <LogsPage />;
+  // Logs is a top-level, app-wide page. /automations/logs is kept as an alias so
+  // any existing links still resolve.
+  if (path === "/logs" || path === "/automations/logs") return <LogsPage />;
   if (path === "/automations/runs") return <RunLogPage />;
   if (path === "/automations") return <AutomationsPage />;
   return <ProjectsPage />;

@@ -46,10 +46,6 @@ export function AutomationsPage() {
           >
             Scripts
           </button>
-          {/* Logs is its own full page (searchable/paginated), so it's a link. */}
-          <Link to="/automations/logs" className="tab-btn tab-link">
-            Logs
-          </Link>
         </div>
 
         {tab === "automations" ? (
