@@ -186,6 +186,9 @@ export function ProjectsPage() {
         <Link to="/automations" className="nav-item nav-link nav-automations">
           <span className="nav-ico">⚡</span> Automations
         </Link>
+        <Link to="/logs" className="nav-item nav-link">
+          <span className="nav-ico">📋</span> Logs
+        </Link>
 
         <div className="sidebar-spacer" />
         <button type="button" className="sidebar-cta" title="Create a new project" onClick={() => setNewProject(true)}>

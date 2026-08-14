@@ -146,8 +146,8 @@ export function LogsPage() {
     <>
       <header className="console-header">
         <div className="brand">
-          <Link to="/automations" className="back">
-            ← Automations
+          <Link to="/" className="back">
+            ← All projects
           </Link>
           <span className="brand-name">Logs</span>
           <button type="button" className="brand-sub auto-btn link" onClick={loadFirst}>
