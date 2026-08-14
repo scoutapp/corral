@@ -96,5 +96,6 @@ func DefaultRegistry() *Registry {
 	r.Register(KindClaudePrompt, PromptExecutor{})
 	r.Register(KindWebhook, WebhookExecutor{})
 	r.Register(KindSlack, SlackExecutor{})
+	r.Register(KindBash, BashExecutor{})
 	return r
 }
