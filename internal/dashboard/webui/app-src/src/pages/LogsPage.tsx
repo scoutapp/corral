@@ -68,7 +68,9 @@ export function LogsPage() {
   const [project, setProject] = useState("");
   const [level, setLevel] = useState("");
   const [q, setQ] = useState("");
-  const [hideHttp, setHideHttp] = useState(true);
+  // Off by default: hiding request logs when they're the only activity yields a
+  // confusingly empty page. Users can toggle it on to cut the noise.
+  const [hideHttp, setHideHttp] = useState(false);
 
   // Facet options.
   const [categories, setCategories] = useState<string[]>([]);
@@ -192,7 +194,18 @@ export function LogsPage() {
         {err && <div className="auto-msg err">{err}</div>}
 
         {visible.length === 0 && !loading ? (
-          <p className="auto-empty">No logs match. Activity is recorded here as it happens.</p>
+          // Distinguish "nothing at all" from "everything is hidden by the
+          // request-logs filter" — the latter is a filter state, not empty data.
+          logs.length > 0 && hideHttp && !category ? (
+            <p className="auto-empty">
+              Only request logs so far, and they're hidden.{" "}
+              <button type="button" className="auto-btn link" onClick={() => setHideHttp(false)}>
+                Show request logs
+              </button>
+            </p>
+          ) : (
+            <p className="auto-empty">No logs match. Activity is recorded here as it happens.</p>
+          )
         ) : (
           <ul className="logs-list">
             {visible.map((l) => {
