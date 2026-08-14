@@ -1,0 +1,91 @@
+---
+name: corral-api
+description: Drive the Corral dashboard from the host — list and act on repos, projects, GitHub issues, automations, flows, and the activity log through the `corral api` CLI. Use this when the user asks you to inspect or change Corral state (e.g. "what flows do I have", "start a project on that issue", "run the triage flow", "create an issue and start work on it"). HOST-ONLY: this talks to the loopback dashboard and never runs inside a sandbox.
+---
+
+# Corral API
+
+Corral's dashboard exposes a host-side HTTP control plane. You drive it with one
+command — `corral api` — which auto-discovers the running dashboard (its loopback
+port + token from `~/.corral/dashboard.json`) and speaks to it. There are no
+per-endpoint wrappers to memorize: **read the OpenAPI spec, then call the paths it
+documents.**
+
+> **Trust boundary.** This is a HOST capability. It talks to the operator's
+> dashboard over loopback. It is never available inside a sandbox — a sandboxed
+> Claude working in a project cannot and must not reach the dashboard. Only use
+> this skill when you are the host chat assistant.
+
+## Step 1 — discover the surface
+
+Always start by reading the spec, so you use real paths and shapes rather than
+guessing:
+
+```
+corral api GET /api/openapi.json
+```
+
+That returns an OpenAPI 3.1 document. Its `paths` are the exact routes you can
+call; its `components.schemas` are the request/response shapes. The surface is
+curated to the high-value operations (repos, projects, GitHub issues,
+automations, flows, runs, prompts, logs/traces) — not every internal endpoint.
+
+## Step 2 — call it
+
+```
+corral api <METHOD> <path> [-d '<json body>']
+```
+
+Examples:
+
+```
+corral api GET  /api/flows                              # list flows
+corral api GET  /api/logs?category=ai                   # recent AI activity
+corral api GET  /repos                                  # repos Corral knows
+corral api POST /api/flows/3:run -d '{"vars":{"repo":"acme/widget"}}'
+corral api POST /gh/issues/create -d '{"repo":"acme/widget","title":"Fix flaky test","body":"..."}'
+corral api POST /p/<projectId>/start                    # start a project's container
+```
+
+- The response body (JSON) prints to stdout. Parse it and use it.
+- A non-2xx response prints the error to stderr and exits non-zero — check for
+  that and tell the user what failed.
+- Bodies: `-d '<json>'` inline, or `-d @file.json` to read from a file.
+
+## Reads vs writes — the permission gate
+
+**Reads (GET) always work.** You can always inspect: list flows, read logs, look
+at a PR, see project status.
+
+**Writes (POST/PUT/DELETE) require the operator to have enabled API writes.** This
+is off by default. If a write returns:
+
+```
+HTTP 403 ... API writes are disabled — enable them in the dashboard's global settings ...
+```
+
+then the user has not opted in. **Do not try to work around it.** Tell them
+plainly: they can turn on **API access → Allow API writes** in the dashboard's
+Global settings, then you can retry. This gate is deliberate — it's how the user
+controls whether you can change things, not a bug.
+
+## Chaining work
+
+A common request is a chain: pull something, create an issue, start work on it.
+Do it as a sequence of `corral api` calls, checking each result before the next:
+
+1. `GET` the data you need (e.g. `/api/logs` or an MCP result the user references).
+2. `POST /gh/issues/create` — capture the returned issue `number` + `url`.
+3. `POST /projects/create` (or `/p/<id>/start`) referencing that issue.
+
+If any step 403s on the writes gate, stop and ask the user to enable API writes
+rather than partially completing the chain.
+
+## Tips
+
+- When unsure of a path or body shape, re-read `GET /api/openapi.json` — it's the
+  source of truth and is drift-checked against the real routes.
+- `corral api` needs a running dashboard. If it reports no dashboard found, tell
+  the user to run `corral dashboard`.
+- Prefer the smallest set of calls that answers the request; don't enumerate the
+  whole API when one endpoint will do.

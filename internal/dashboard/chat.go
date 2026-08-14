@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/scoutapp/corral/internal/applog"
+	"github.com/scoutapp/corral/internal/config"
 )
 
 // truncate shortens s to at most n runes, appending an ellipsis when clipped.
@@ -316,6 +317,14 @@ func buildClaudeArgs(prompt string, tools []string, sessionID string) []string {
 		"--output-format", "stream-json", "--verbose",
 		"--permission-mode", "default",
 	}
+	// Load the corral-api skill for THIS chat session only, via --plugin-dir. We
+	// deliberately don't install it into ~/.claude/skills: that would make its
+	// description standing context in every host chat forever, even for users who
+	// never drive the API. Scoping it to the Corral chat process keeps that cost
+	// exactly where it's useful. Skipped silently if the bundled skill is absent.
+	if dir := corralAPISkillDir(); dir != "" {
+		args = append(args, "--plugin-dir", dir)
+	}
 	if len(tools) > 0 {
 		args = append(args, "--allowedTools")
 		args = append(args, tools...)
@@ -324,6 +333,17 @@ func buildClaudeArgs(prompt string, tools []string, sessionID string) []string {
 		args = append(args, "--resume", sessionID)
 	}
 	return args
+}
+
+// corralAPISkillDir returns the bundled corral-api skill/plugin directory, or ""
+// if it isn't present (dev checkout without the host tier, or a partial install).
+// A plugin dir is identified by its .claude-plugin/plugin.json manifest.
+func corralAPISkillDir() string {
+	dir := filepath.Join(config.HostAssetsDir(), "skills", "corral-api")
+	if _, err := os.Stat(filepath.Join(dir, ".claude-plugin", "plugin.json")); err != nil {
+		return ""
+	}
+	return dir
 }
 
 func (d *dashboardServer) runChatTurn(ctx context.Context, claudeBin, workspace string, tools []string, prompt, sessionID string, send func(chatServerMsg) error) (string, bool) {
