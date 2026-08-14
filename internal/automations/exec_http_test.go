@@ -85,3 +85,53 @@ func TestWebhookMissingURL(t *testing.T) {
 		t.Fatalf("expected error for missing url, got %q", res.Status)
 	}
 }
+
+// fakeSecrets resolves a fixed secret set.
+type fakeSecrets map[string]string
+
+func (f fakeSecrets) Secret(name string) (string, bool) { v, ok := f[name]; return v, ok }
+
+func TestSlackSecretURLResolution(t *testing.T) {
+	var got map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&got)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// The webhook URL is a secret referenced by name, never in the spec.
+	e := SlackExecutor{Secrets: fakeSecrets{"slack_hook": srv.URL}}
+	res := e.Execute(context.Background(),
+		Action{Kind: KindSlack, Spec: `{"webhookUrl":"{{secret.slack_hook}}","message":"hi {{actor}}"}`},
+		RunContext{Vars: map[string]string{"actor": "jack"}})
+
+	if res.Status != StatusOK {
+		t.Fatalf("expected ok, got %q (%s)", res.Status, res.Err)
+	}
+	if got["text"] != "hi jack" {
+		t.Errorf("message not substituted: %q", got["text"])
+	}
+}
+
+func TestSecretUnresolvedIsBlankNotLiteral(t *testing.T) {
+	// With no resolver, {{secret.X}} must blank out (fail-closed), never leak the
+	// literal placeholder into the request URL.
+	out := resolveSecrets("{{secret.token}}", nil, nil)
+	if out != "" {
+		t.Errorf("unresolved secret should be blank, got %q", out)
+	}
+	// A missing name with a resolver present also blanks.
+	out = resolveSecrets("x{{secret.missing}}y", nil, fakeSecrets{"other": "v"})
+	if out != "xy" {
+		t.Errorf("missing secret should blank, got %q", out)
+	}
+}
+
+func TestSecretsThenVarsOrder(t *testing.T) {
+	// A secret whose value itself looks like a {{var}} must NOT be re-expanded —
+	// secrets resolve first, then vars, and the secret's content is final.
+	out := resolveSecrets("{{secret.s}}", map[string]string{"inner": "LEAK"}, fakeSecrets{"s": "{{inner}}"})
+	if out != "{{inner}}" {
+		t.Errorf("secret content should not be re-expanded as a var, got %q", out)
+	}
+}

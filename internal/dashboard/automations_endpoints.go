@@ -219,7 +219,7 @@ func (d *dashboardServer) handleActionRun(w http.ResponseWriter, r *http.Request
 		// An empty body is fine (manual run with no context).
 		_ = json.NewDecoder(r.Body).Decode(&rc)
 	}
-	runner := automations.NewRunner(svc, automations.DefaultRegistry())
+	runner := automations.NewRunner(svc, automationsRegistry())
 	res, err := runner.RunAction(r.Context(), id, automations.TriggerAPI, rc)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

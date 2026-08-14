@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"time"
 )
 
@@ -22,9 +23,46 @@ import (
 // it through the proxy is a UI concern (branch 12) that sets the value.
 
 // httpClient is shared; a short timeout keeps a slow endpoint from hanging a
-// hook chain. Outbound calls in the sandbox go through the allowlist proxy, so
-// the target host must be allowlisted.
+// hook chain. It uses http.DefaultTransport, which honors HTTP(S)_PROXY — so in
+// the sandbox these calls route through the allowlist/credential proxy, and a
+// header/url_param credential configured for the target host is injected
+// transparently. (The target host must be allowlisted.)
 var httpClient = &http.Client{Timeout: 15 * time.Second}
+
+// SecretResolver returns the value of a named secret, or ("", false) if unknown.
+// It lets executors substitute {{secret.NAME}} placeholders without the secret
+// ever being stored in an action's spec_json. The dashboard backs it with the
+// credential store; tests pass a fake. A nil resolver leaves {{secret.*}}
+// placeholders blank (fail-closed — a misconfigured secret never leaks the
+// literal placeholder into an outbound request).
+type SecretResolver interface {
+	Secret(name string) (string, bool)
+}
+
+// secretRe matches {{secret.NAME}} placeholders (distinct from context {{var}}).
+var secretRe = regexp.MustCompile(`\{\{\s*secret\.([a-zA-Z_][a-zA-Z0-9_.-]*)\s*\}\}`)
+
+// resolveSecrets applies {{var}} context substitution FIRST, then {{secret.NAME}}
+// LAST. Ordering matters for safety:
+//   - vars first, so a var can never be used to smuggle a {{secret.*}} reference
+//     (its value is substituted before secrets are scanned).
+//   - secrets last, so a secret's value (which may itself contain {{...}}) is
+//     final and never re-expanded as a var.
+// Unresolved/absent secrets blank out (fail-closed) — the literal placeholder
+// never leaks into an outbound request.
+func resolveSecrets(s string, vars map[string]string, sr SecretResolver) string {
+	s = RenderTemplate(s, vars)
+	return secretRe.ReplaceAllStringFunc(s, func(m string) string {
+		name := secretRe.FindStringSubmatch(m)[1]
+		if sr == nil {
+			return ""
+		}
+		if v, ok := sr.Secret(name); ok {
+			return v
+		}
+		return ""
+	})
+}
 
 // --- Webhook ---------------------------------------------------------------
 
@@ -38,25 +76,27 @@ type WebhookSpec struct {
 }
 
 // WebhookExecutor POSTs to a configured URL with the context-substituted body.
-type WebhookExecutor struct{}
+// A SecretResolver (may be nil) resolves {{secret.NAME}} placeholders in the
+// url/body/headers without the secret living in the action spec.
+type WebhookExecutor struct{ Secrets SecretResolver }
 
-func (WebhookExecutor) Execute(ctx context.Context, a Action, rc RunContext) StepResult {
+func (e WebhookExecutor) Execute(ctx context.Context, a Action, rc RunContext) StepResult {
 	var spec WebhookSpec
 	if err := json.Unmarshal([]byte(a.Spec), &spec); err != nil {
 		return StepResult{Status: StatusError, Err: "bad webhook spec: " + err.Error()}
 	}
-	url := RenderTemplate(spec.URL, rc.Vars)
+	url := resolveSecrets(spec.URL, rc.Vars, e.Secrets)
 	if url == "" {
 		return StepResult{Status: StatusError, Err: "webhook url is required"}
 	}
-	body := RenderTemplate(spec.Body, rc.Vars)
+	body := resolveSecrets(spec.Body, rc.Vars, e.Secrets)
 	ct := spec.ContentType
 	if ct == "" {
 		ct = "application/json"
 	}
 	headers := map[string]string{"Content-Type": ct}
 	for k, v := range spec.Headers {
-		headers[k] = RenderTemplate(v, rc.Vars)
+		headers[k] = resolveSecrets(v, rc.Vars, e.Secrets)
 	}
 	return doPost(ctx, url, body, headers)
 }
@@ -64,24 +104,26 @@ func (WebhookExecutor) Execute(ctx context.Context, a Action, rc RunContext) Ste
 // --- Slack -----------------------------------------------------------------
 
 // SlackSpec configures a Slack Incoming Webhook post. Message is the text (with
-// {{var}} substitution); the URL is the webhook endpoint (secret — inject via
-// the credential proxy rather than hardcoding).
+// {{var}} substitution). WebhookURL is the endpoint; since a Slack webhook URL
+// IS the secret (the token is in the path), reference it as
+// {{secret.NAME}} and store the value in the credential store rather than
+// embedding it in the spec.
 type SlackSpec struct {
 	WebhookURL string `json:"webhookUrl"`
 	Message    string `json:"message"`
 }
 
 // SlackExecutor posts a message to a Slack Incoming Webhook.
-type SlackExecutor struct{}
+type SlackExecutor struct{ Secrets SecretResolver }
 
-func (SlackExecutor) Execute(ctx context.Context, a Action, rc RunContext) StepResult {
+func (e SlackExecutor) Execute(ctx context.Context, a Action, rc RunContext) StepResult {
 	var spec SlackSpec
 	if err := json.Unmarshal([]byte(a.Spec), &spec); err != nil {
 		return StepResult{Status: StatusError, Err: "bad slack spec: " + err.Error()}
 	}
-	url := RenderTemplate(spec.WebhookURL, rc.Vars)
+	url := resolveSecrets(spec.WebhookURL, rc.Vars, e.Secrets)
 	if url == "" {
-		return StepResult{Status: StatusError, Err: "slack webhookUrl is required"}
+		return StepResult{Status: StatusError, Err: "slack webhookUrl is required (set it or reference {{secret.NAME}})"}
 	}
 	msg := RenderTemplate(spec.Message, rc.Vars)
 	payload, _ := json.Marshal(map[string]string{"text": msg})
