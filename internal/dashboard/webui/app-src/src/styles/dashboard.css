@@ -2149,3 +2149,39 @@ table.projects th, table.projects td {
 .dnd-hours { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .dnd-hour-select { width: auto; min-width: 5rem; }
 .dnd-now { color: var(--con-warn, #e0af68); }
+
+/* Logs tab (as a link styled like a tab button). */
+.tab-btn.tab-link { text-decoration: none; display: inline-flex; align-items: center; }
+
+/* Logs page. */
+.logs-filters { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.logs-search { flex: 1; min-width: 180px; }
+.logs-hidehttp { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.78rem; color: var(--muted); }
+.logs-list { list-style: none; margin: 0; padding: 0; }
+.logs-row { border-bottom: 1px solid var(--con-line); }
+.logs-row-head {
+  width: 100%; display: flex; align-items: center; gap: 0.6rem; background: none; border: none;
+  color: var(--con-text); padding: 0.4rem 0.3rem; cursor: pointer; text-align: left; font-size: 0.83rem;
+}
+.logs-row-head:hover { background: var(--con-panel-hi); }
+.logs-time { color: var(--muted); font-family: ui-monospace, monospace; font-size: 0.72rem; width: 4.5rem; flex-shrink: 0; }
+.logs-cat { color: var(--muted); font-size: 0.72rem; width: 6.5rem; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.logs-msg { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.logs-row.log-error .logs-msg { color: #f7768e; }
+.logs-row.log-warn .logs-msg { color: var(--con-warn, #e0af68); }
+.logs-status {
+  font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.03em; border-radius: 999px;
+  padding: 0 0.4rem; border: 1px solid var(--con-line);
+}
+.logs-status.log-ok { color: #9ece6a; } .logs-status.log-error { color: #f7768e; } .logs-status.log-warn { color: #e0af68; }
+.logs-dur { color: var(--muted); font-size: 0.68rem; }
+.logs-caret { color: var(--muted); width: 1rem; text-align: center; }
+.logs-detail { padding: 0.3rem 0.3rem 0.6rem 5.1rem; }
+.logs-detail-meta { font-size: 0.75rem; color: var(--muted); margin-bottom: 0.3rem; }
+.logs-detail-k { color: var(--muted); margin: 0 0.25rem 0 0.6rem; }
+.logs-detail-json {
+  margin: 0.2rem 0; background: var(--con-bg, #0f1115); border: 1px solid var(--con-line);
+  border-radius: 5px; padding: 0.4rem 0.5rem; font-size: 0.72rem; white-space: pre-wrap;
+  color: var(--muted); max-height: 240px; overflow: auto;
+}
+.logs-more { margin-top: 0.75rem; text-align: center; }
