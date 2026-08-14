@@ -26,6 +26,12 @@ type GlobalSettings struct {
 	// opt in, since a tool lets Claude trigger real side effects (gh approve,
 	// bash, webhooks). This is the user-permission part of the tool adapter.
 	AutomationsToolsEnabled bool `json:"automations_tools_enabled,omitempty"`
+
+	// LogRetentionDays / LogMaxRows bound the application log (app_logs). Zero
+	// means "use the built-in default" (30 days / 100k rows). The retention job
+	// prunes on dashboard start + hourly.
+	LogRetentionDays int `json:"log_retention_days,omitempty"`
+	LogMaxRows       int `json:"log_max_rows,omitempty"`
 }
 
 // GlobalSettingsPath is ~/.corral/global-settings.json.

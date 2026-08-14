@@ -1344,6 +1344,7 @@ func CmdDashboardServe(args []string) error {
 	}
 
 	server := newDashboardServer(*token)
+	server.startLogRetention() // prune app_logs on start + hourly
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", *port),
 		Handler: server.routes(),

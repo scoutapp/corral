@@ -122,6 +122,10 @@ export interface GlobalView {
   available_ssh_keys: SSHAvailableKey[];
   update_repo: string; // configured value ("" = use default)
   update_repo_default: string;
+  log_retention_days: number; // 0 = use default
+  log_max_rows: number; // 0 = use default
+  log_retention_days_default: number;
+  log_max_rows_default: number;
 }
 export interface GlobalEdit {
   set_creds?: CredSet[];
@@ -130,6 +134,8 @@ export interface GlobalEdit {
   mitm_ports?: string[];
   ssh_keys?: string[];
   update_repo?: string; // "" clears the override (back to default)
+  log_retention_days?: number; // 0 = back to default
+  log_max_rows?: number;
 }
 
 // GET /update-status -> update availability for the global banner.
