@@ -118,6 +118,28 @@ export function AutomationsManager({ repoId }: { repoId?: string }) {
     }
   };
 
+  // Bind an EXISTING saved action (e.g. a saved script) to a trigger — no new
+  // action is created; the same script is reused.
+  const addExistingStep = async (event: string, actionId: number) => {
+    try {
+      await postJSON("/api/hooks", {
+        event,
+        scope: scoped ? "repo" : "global",
+        repoId: scoped ? repoId : undefined,
+        targetKind: "action",
+        targetId: actionId,
+        enabled: true,
+      });
+      setMsg({ text: "✓ step added", err: false });
+      loadHooks();
+    } catch (e) {
+      setMsg({ text: (e as Error).message, err: true });
+    }
+  };
+
+  // Saved bash scripts available to reference from a "run a script" step.
+  const savedScripts = actions.filter((a) => a.kind === "bash");
+
   const removeStep = async (hookId: number, actionId: number, actionScope: string) => {
     await fetch(`/api/hooks/${hookId}`, { method: "DELETE", credentials: "same-origin" }).catch(() => {});
     // Only delete the action too if it's in our scope (don't touch global from a repo view).
@@ -149,8 +171,10 @@ export function AutomationsManager({ repoId }: { repoId?: string }) {
           trigger={tr}
           steps={(hooksByEvent[tr.event] || []).filter((h) => h.targetKind === "action")}
           actionById={actionById}
+          savedScripts={savedScripts}
           scoped={scoped}
           onAdd={(kind, name, spec) => addStep(tr.event, kind, name, spec)}
+          onAddExisting={(actionId) => addExistingStep(tr.event, actionId)}
           onRemove={removeStep}
         />
       ))}
@@ -175,15 +199,19 @@ function TriggerCard({
   trigger,
   steps,
   actionById,
+  savedScripts,
   scoped,
   onAdd,
+  onAddExisting,
   onRemove,
 }: {
   trigger: Trigger;
   steps: Hook[];
   actionById: (id: number) => Action | undefined;
+  savedScripts: Action[];
   scoped: boolean;
   onAdd: (kind: string, name: string, spec: string) => void;
+  onAddExisting: (actionId: number) => void;
   onRemove: (hookId: number, actionId: number, actionScope: string) => void;
 }) {
   const [adding, setAdding] = useState(false);
@@ -193,6 +221,8 @@ function TriggerCard({
   // Bash steps get a dedicated editor; keep its script separate from the raw
   // JSON. Seed with a helpful comment header + trailing newline.
   const [bashScript, setBashScript] = useState(DEFAULT_BASH_SCRIPT);
+  // "run a script": pick a saved script (referenced) or write a new one.
+  const [savedId, setSavedId] = useState<number | "new">("new");
 
   const pickKind = (k: string) => {
     setKind(k);
@@ -201,6 +231,13 @@ function TriggerCard({
   };
 
   const submit = () => {
+    // Reference an existing saved script rather than creating a new action.
+    if (kind === "bash" && savedId !== "new") {
+      onAddExisting(savedId);
+      setAdding(false);
+      setSavedId("new");
+      return;
+    }
     const finalSpec = kind === "bash" ? JSON.stringify({ script: bashScript }) : spec;
     onAdd(kind, name.trim() || STEP_KINDS.find((s) => s.kind === kind)?.label || kind, finalSpec);
     setAdding(false);
@@ -256,15 +293,43 @@ function TriggerCard({
                 </option>
               ))}
             </select>
-            <input
-              className="auto-input"
-              placeholder="name (optional)"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
+            {/* Name is only for a freshly-written step; a saved script keeps its name. */}
+            {!(kind === "bash" && savedId !== "new") && (
+              <input
+                className="auto-input"
+                placeholder="name (optional)"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            )}
           </div>
+
+          {/* run a script: choose a saved one (if any) or write a new one. */}
+          {kind === "bash" && savedScripts.length > 0 && (
+            <div className="auto-row">
+              <select
+                className="auto-input"
+                value={savedId}
+                onChange={(e) => setSavedId(e.target.value === "new" ? "new" : Number(e.target.value))}
+              >
+                <option value="new">✎ Write a new script</option>
+                <optgroup label="Saved scripts">
+                  {savedScripts.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.scope})
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+            </div>
+          )}
+
           {kind === "bash" ? (
-            <BashStepEditor script={bashScript} onChange={setBashScript} />
+            savedId === "new" ? (
+              <BashStepEditor script={bashScript} onChange={setBashScript} />
+            ) : (
+              <p className="auto-hint">Uses the saved script — edit it under the Scripts tab.</p>
+            )
           ) : (
             <textarea className="auto-spec" rows={5} value={spec} onChange={(e) => setSpec(e.target.value)} spellCheck={false} />
           )}
