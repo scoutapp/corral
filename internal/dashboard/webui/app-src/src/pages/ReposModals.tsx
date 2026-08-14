@@ -85,23 +85,25 @@ export function NewProjectModal({
   const [path, setPath] = useState("");
   const [enforceAllowlist, setEnforceAllowlist] = useState(false); // opt-in strict; default is passthrough
   const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
-  const [ssh, setSsh] = useState<string | null>(null); // project id awaiting SSH-key load
+  const [ssh, setSsh] = useState<{ id: string; prompt: string } | null>(null); // awaiting SSH-key load
+  const [autoSubmit, setAutoSubmit] = useState(true);
 
-  // Start the newly-created project, then open it. On 409 ssh_keys_pending, load
-  // keys first (SSH modal), then retry + navigate. A start failure still opens
-  // the project (its page shows the state / a Start button).
-  async function startAndOpen(id: string) {
+  // Start the newly-created project, populate its project-start prompt, then open
+  // it. On 409 ssh_keys_pending, load keys first (SSH modal), then retry. A start
+  // failure still opens the project (its page shows the state / a Start button).
+  async function startAndOpen(id: string, prompt: string) {
     try {
       const res = await postRaw(`/p/${id}/start`);
       const b = await res.json().catch(() => ({}));
       if (res.status === 409 && b?.ssh_keys_pending) {
         setMsg({ text: "load SSH keys to start this project…", err: false });
-        setSsh(id);
+        setSsh({ id, prompt });
         return;
       }
     } catch {
       /* fall through — open the project regardless */
     }
+    if (prompt) postRaw(`/p/${id}/populate-prompt`, { prompt, submit: autoSubmit }).catch(() => {});
     window.location.href = `/p/${id}/`;
   }
 
@@ -128,7 +130,7 @@ export function NewProjectModal({
     try {
       const res = await postJSON<CreateProjectResponse>("/projects/create", body);
       setMsg({ text: "created — starting…", err: false });
-      await startAndOpen(res.id);
+      await startAndOpen(res.id, res.start_prompt || "");
     } catch (err) {
       setMsg({ text: (err as Error).message, err: true });
     }
@@ -188,6 +190,12 @@ export function NewProjectModal({
             Absolute path <input type="text" placeholder="/Users/you/code/project" autoComplete="off" value={path} onChange={(e) => setPath(e.target.value)} />
           </label>
         )}
+        {mode !== "existing" && (
+          <label className="row spawn-fw" style={{ marginTop: "0.4rem" }}>
+            <input type="checkbox" checked={autoSubmit} onChange={(e) => setAutoSubmit(e.target.checked)} />
+            <span>Auto-send the project-start prompt to Claude (edit it under Automations → Prompts).</span>
+          </label>
+        )}
         <details className="spawn-advanced">
           <summary>Advanced</summary>
           <label className="row spawn-fw">
@@ -208,11 +216,14 @@ export function NewProjectModal({
 
       {ssh && (
         <SSHLoadModal
-          projectId={ssh}
+          projectId={ssh.id}
           onDone={(loaded) => {
-            const id = ssh;
+            const { id, prompt } = ssh;
             setSsh(null);
-            if (loaded) postRaw(`/p/${id}/start`).catch(() => {});
+            if (loaded) {
+              postRaw(`/p/${id}/start`).catch(() => {});
+              if (prompt) postRaw(`/p/${id}/populate-prompt`, { prompt, submit: autoSubmit }).catch(() => {});
+            }
             window.location.href = `/p/${id}/`;
           }}
         />
