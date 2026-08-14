@@ -74,6 +74,12 @@
     "/prompts/project-start": {
       "get": { "summary": "Resolve the effective project-start prompt for a repo", "parameters": [{ "name": "repo", "in": "query", "schema": { "type": "string" } }], "responses": { "200": { "description": "Effective template + source + presets" } } }
     },
+    "/prompts/default": {
+      "get": { "summary": "Get (creating if needed) the editable global project-start prompt", "responses": { "200": { "description": "The prompt action id + template" } } }
+    },
+    "/triggers": {
+      "get": { "summary": "User-facing trigger catalog (friendly labels + built-in steps)", "responses": { "200": { "description": "Triggers", "content": { "application/json": { "schema": { "type": "object", "properties": { "triggers": { "type": "array", "items": { "$ref": "#/components/schemas/Trigger" } } } } } } } } }
+    },
     "/tools": {
       "get": { "summary": "Tool manifest (actions exposed as Claude tools)", "description": "Empty unless the user enabled AutomationsToolsEnabled. Gated so Claude can't act without opt-in.", "responses": { "200": { "description": "Manifest", "content": { "application/json": { "schema": { "type": "object", "properties": { "enabled": { "type": "boolean" }, "tools": { "type": "array", "items": { "$ref": "#/components/schemas/ToolDescriptor" } } } } } } } } }
     },
@@ -191,6 +197,17 @@
           "description": { "type": "string" },
           "actionId": { "type": "integer" },
           "inputSchema": { "type": "object" }
+        }
+      },
+      "Trigger": {
+        "type": "object",
+        "properties": {
+          "event": { "$ref": "#/components/schemas/Event" },
+          "title": { "type": "string" },
+          "verb": { "type": "string" },
+          "description": { "type": "string" },
+          "builtin": { "type": "string" },
+          "builtinIcon": { "type": "string" }
         }
       },
       "Run": {
