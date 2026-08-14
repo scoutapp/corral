@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/scoutapp/corral/internal/applog"
 	"github.com/scoutapp/corral/internal/automations"
 	"github.com/scoutapp/corral/internal/prreview"
 	"github.com/scoutapp/corral/internal/repos"
@@ -595,10 +596,21 @@ func (d *dashboardServer) handlePRAction(w http.ResponseWriter, r *http.Request,
 	case "merge":
 		err = svc.Merge(prID, ownerName, body.Method)
 	}
+	repoID, _ := svc.RepoIDForPR(prID)
+	num, _, _, _, _ := svc.PRHookContext(prID)
 	if err != nil {
+		d.applog().Errorf(applog.CatPRAction, "pr."+action,
+			applog.Fmt("PR action %q on %s#%d failed", action, ownerName, num), err,
+			map[string]any{"owner": ownerName, "pr": num, "action": action})
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
+	d.applog().Log(applog.Entry{
+		Level: applog.LevelInfo, Category: applog.CatPRAction, Event: "pr." + action,
+		Message: applog.Fmt("%s %s#%d", prActionVerb(action), ownerName, num),
+		RepoID:  repoID, Status: applog.StatusOK,
+		Meta: map[string]any{"owner": ownerName, "pr": num, "action": action},
+	})
 
 	// The built-in gh action (the PRIMARY) succeeded. Fire any user-configured
 	// secondary hooks bound to this event — best-effort: their success/failure is
@@ -607,6 +619,21 @@ func (d *dashboardServer) handlePRAction(w http.ResponseWriter, r *http.Request,
 	d.firePRActionHooks(r.Context(), svc, prID, action, ownerName, body.Body, body.Method)
 
 	writeFilesJSON(w, map[string]any{"ok": true})
+}
+
+// prActionVerb renders a PR action name as a past-tense log verb.
+func prActionVerb(action string) string {
+	switch action {
+	case "approve":
+		return "Approved"
+	case "request-changes":
+		return "Requested changes on"
+	case "comment":
+		return "Commented on"
+	case "merge":
+		return "Merged"
+	}
+	return action
 }
 
 // prActionEvent maps a PR write-action name to its automations event.
@@ -716,11 +743,21 @@ func (d *dashboardServer) handlePREnrich(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	blocks, err := prreview.New(s).WithPromptResolver(d.promptResolver()).ExtractBlocks(r.Context(), prID, prreview.NewClaudeRunner(claudeBin))
+	svc := prreview.New(s)
+	repoID, _ := svc.RepoIDForPR(prID)
+	num, _, _, _, _ := svc.PRHookContext(prID)
+	blocks, err := svc.WithPromptResolver(d.promptResolver()).ExtractBlocks(r.Context(), prID, prreview.NewClaudeRunner(claudeBin))
 	if err != nil {
+		d.applog().Errorf(applog.CatAI, "ai.analyze", applog.Fmt("AI analysis of PR #%d failed", num), err,
+			map[string]any{"pr": num})
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	d.applog().Log(applog.Entry{
+		Level: applog.LevelInfo, Category: applog.CatAI, Event: "ai.analyze",
+		Message: applog.Fmt("Analyzed PR #%d — %d blocks", num, len(blocks)),
+		RepoID:  repoID, Status: applog.StatusOK, Meta: map[string]any{"pr": num, "blocks": len(blocks)},
+	})
 	// The built-in AI enrichment (primary) succeeded — fire any pr.analyze hooks.
 	d.firePRHookEvent(r.Context(), prID, automations.EventPRAnalyze, nil)
 	writeFilesJSON(w, map[string]any{"blocks": blocks})
@@ -749,11 +786,25 @@ func (d *dashboardServer) handlePRAnalyze(w http.ResponseWriter, r *http.Request
 		return
 	}
 	claudeBin, _ := resolveClaudeBin()
-	v, err := prreview.New(s).WithPromptResolver(d.promptResolver()).AnalyzeRisk(r.Context(), prID, prreview.NewClaudeRunner(claudeBin))
+	rsvc := prreview.New(s)
+	rRepoID, _ := rsvc.RepoIDForPR(prID)
+	rNum, _, _, _, _ := rsvc.PRHookContext(prID)
+	v, err := rsvc.WithPromptResolver(d.promptResolver()).AnalyzeRisk(r.Context(), prID, prreview.NewClaudeRunner(claudeBin))
 	if err != nil {
+		d.applog().Errorf(applog.CatAI, "ai.risk", applog.Fmt("Risk assessment of PR #%d failed", rNum), err,
+			map[string]any{"pr": rNum})
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
+	risk := ""
+	if v != nil {
+		risk = v.OverallRisk
+	}
+	d.applog().Log(applog.Entry{
+		Level: applog.LevelInfo, Category: applog.CatAI, Event: "ai.risk",
+		Message: applog.Fmt("Risk assessment PR #%d — %s", rNum, risk),
+		RepoID:  rRepoID, Status: applog.StatusOK, Meta: map[string]any{"pr": rNum, "risk": risk},
+	})
 	writeFilesJSON(w, map[string]any{"risk": v})
 }
 

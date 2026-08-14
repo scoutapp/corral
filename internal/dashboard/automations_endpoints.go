@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/scoutapp/corral/internal/applog"
 	"github.com/scoutapp/corral/internal/automations"
 )
 
@@ -289,7 +290,20 @@ func (d *dashboardServer) handleActionRun(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	d.applog().Log(applog.Entry{
+		Level: levelForStatus(res.Status), Category: applog.CatAutomation, Event: "automation.run",
+		Message: applog.Fmt("Ran action %q — %s", res.Name, res.Status),
+		Status:  res.Status, RepoID: rc.RepoID, Meta: map[string]any{"action": res.Name, "kind": res.Kind},
+	})
 	writeJSON(w, res)
+}
+
+// levelForStatus maps a step/run status to a log level.
+func levelForStatus(status string) string {
+	if status == automations.StatusError {
+		return applog.LevelError
+	}
+	return applog.LevelInfo
 }
 
 // handleActionTest runs an UNSAVED action ad-hoc for the "test this step" flow:
@@ -317,6 +331,11 @@ func (d *dashboardServer) handleActionTest(w http.ResponseWriter, r *http.Reques
 	}
 	runner := automations.NewRunner(svc, automationsRegistry())
 	res := runner.RunEphemeral(r.Context(), automations.Action{Kind: body.Kind, Spec: body.Spec, Name: "test"}, body.Context)
+	d.applog().Log(applog.Entry{
+		Level: levelForStatus(res.Status), Category: applog.CatScript, Event: "script.test",
+		Message: applog.Fmt("Test-ran a %s step — %s", body.Kind, res.Status),
+		Status:  res.Status, DurationMs: res.Duration, Meta: map[string]any{"kind": body.Kind},
+	})
 	writeJSON(w, res)
 }
 
