@@ -54,6 +54,8 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handleRunItem(w, r, strings.TrimPrefix(rest, "runs/"))
 	case rest == "prompts/project-start":
 		d.handleProjectStartPrompt(w, r)
+	case rest == "prompts/draft":
+		d.handlePromptDraftWS(w, r)
 	default:
 		http.NotFound(w, r)
 	}

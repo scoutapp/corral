@@ -717,6 +717,21 @@ table.projects th, table.projects td {
   border: 1px solid var(--con-line); border-radius: 5px; padding: 0.4rem;
   font-family: inherit; font-size: 0.8rem; resize: vertical;
 }
+.split-menu-ai { margin-top: 0.5rem; border-top: 1px solid var(--con-line); padding-top: 0.4rem; }
+.split-menu-ai-head {
+  font-size: 0.78rem; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
+  color: var(--con-text); margin-bottom: 0.2rem;
+}
+.ai-warn {
+  font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.03em;
+  color: var(--con-warn, #e0af68); border: 1px solid var(--con-warn, #e0af68);
+  border-radius: 999px; padding: 0 0.4rem; opacity: 0.85;
+}
+.split-menu-ai-log {
+  margin-top: 0.3rem; max-height: 160px; overflow: auto; background: var(--con-panel);
+  border: 1px solid var(--con-line); border-radius: 5px; padding: 0.4rem;
+  font-size: 0.72rem; white-space: pre-wrap; color: var(--muted);
+}
 
 /* Container power toggle: prominent, so start/stop is obvious. Idle = a filled
    green "Start"; running = a filled amber "Stop" (a clearly destructive action).

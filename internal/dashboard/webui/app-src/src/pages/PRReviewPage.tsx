@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "../router";
-import { getJSON, postJSON, postRaw } from "../api/client";
+import { getJSON, postJSON, postRaw, wsURL } from "../api/client";
 import type { CachedRepo, PrItem } from "../api/types";
 import { useBodyClass } from "../hooks/useBodyClass";
 import { ChatPanel } from "../components/ChatPanel";
@@ -186,6 +186,42 @@ function VerifyLaunch({
   const [customizing, setCustomizing] = useState(false);
   const [customText, setCustomText] = useState("");
 
+  // "Build with AI" prompt-drafting (host claude, not sandboxed — read-only).
+  const [aiIntent, setAiIntent] = useState("");
+  const [aiDrafting, setAiDrafting] = useState(false);
+  const [aiLog, setAiLog] = useState("");
+  const aiWsRef = useRef<WebSocket | null>(null);
+  useEffect(() => () => aiWsRef.current?.close(), []);
+
+  const draftWithAI = () => {
+    if (!aiIntent.trim()) return;
+    aiWsRef.current?.close();
+    setAiDrafting(true);
+    setAiLog("");
+    const ws = new WebSocket(wsURL(`/api/prompts/draft?repoId=${encodeURIComponent(repoId)}`));
+    aiWsRef.current = ws;
+    ws.onopen = () => ws.send(JSON.stringify({ description: aiIntent }));
+    ws.onmessage = (ev) => {
+      let m: Record<string, unknown>;
+      try {
+        m = JSON.parse(ev.data);
+      } catch {
+        return;
+      }
+      if (m.type === "text") setAiLog((l) => l + (m.text as string));
+      else if (m.type === "tool_use") setAiLog((l) => l + `› ${m.tool}\n`);
+      else if (m.type === "error") setAiLog((l) => l + `\n⚠ ${(m.text as string) || ""}`);
+      else if (m.type === "draft" && m.result) {
+        setCustomText(m.result as string); // fill the editor with the drafted template
+      }
+    };
+    ws.onclose = () => {
+      setAiDrafting(false);
+      aiWsRef.current = null;
+    };
+    ws.onerror = () => setAiLog((l) => l + "\n⚠ draft connection failed");
+  };
+
   // Load the effective prompt + presets once, lazily when the menu first opens.
   useEffect(() => {
     if (!menuOpen || presets.length || template !== null) return;
@@ -314,13 +350,40 @@ function VerifyLaunch({
             ✎ Customize prompt…
           </button>
           {customizing && (
-            <textarea
-              className="split-menu-textarea"
-              rows={6}
-              value={customText}
-              onChange={(e) => setCustomText(e.target.value)}
-              placeholder="Prompt to send when the sandbox starts…"
-            />
+            <>
+              <textarea
+                className="split-menu-textarea"
+                rows={6}
+                value={customText}
+                onChange={(e) => setCustomText(e.target.value)}
+                placeholder="Prompt to send when the sandbox starts…"
+              />
+              <div className="split-menu-ai">
+                <div className="split-menu-ai-head">
+                  ✨ Build with AI
+                  <span className="ai-warn" title="Runs your host machine's Claude, not the sandbox; read-only tools">
+                    host · not sandboxed · read-only
+                  </span>
+                </div>
+                <textarea
+                  className="split-menu-textarea"
+                  rows={2}
+                  value={aiIntent}
+                  onChange={(e) => setAiIntent(e.target.value)}
+                  placeholder="Describe what this prompt should do — e.g. 'review the diff, run the test suite, and summarize risks'"
+                />
+                <button
+                  type="button"
+                  className="dock-toggle"
+                  style={{ marginLeft: 0 }}
+                  disabled={aiDrafting || !aiIntent.trim()}
+                  onClick={draftWithAI}
+                >
+                  {aiDrafting ? "Drafting…" : "Draft with AI"}
+                </button>
+                {aiLog && <pre className="split-menu-ai-log">{aiLog}</pre>}
+              </div>
+            </>
           )}
         </div>
       )}
