@@ -50,13 +50,14 @@ func (d *dashboardServer) firePRHookEvent(ctx context.Context, prID int64, event
 
 	runner := automations.NewRunner(automations.New(s), automationsRegistry())
 	res, _ := runner.FireSecondary(ctx, event, automations.RunContext{RepoID: repoID, Vars: vars})
-	d.logAutomationRun(event, repoID, res)
+	d.logAutomationRun(ctx, event, repoID, res)
 }
 
 // logAutomationRun records an automation hook-chain execution in the app log,
 // linking its run_id so the Logs tab can deep-link to the run detail. A no-op
-// when no hooks fired (RunID 0 → nothing was recorded).
-func (d *dashboardServer) logAutomationRun(event, repoID string, res automations.ChainResult) {
+// when no hooks fired (RunID 0 → nothing was recorded). Placed inside ctx's trace
+// so it nests under whatever fired it (a PR action, a project start, a flow).
+func (d *dashboardServer) logAutomationRun(ctx context.Context, event, repoID string, res automations.ChainResult) {
 	if res.RunID == 0 {
 		return
 	}
@@ -64,7 +65,7 @@ func (d *dashboardServer) logAutomationRun(event, repoID string, res automations
 	if res.Status == automations.StatusError {
 		level = applog.LevelError
 	}
-	d.applog().Log(applog.Entry{
+	d.applog().LogCtx(ctx, applog.Entry{
 		Level: level, Category: applog.CatAutomation, Event: "automation." + event,
 		Message: applog.Fmt("%s hooks — %d step(s), %s", event, len(res.Hooks), res.Status),
 		RepoID:  repoID, Status: res.Status, RunID: res.RunID,
@@ -94,5 +95,5 @@ func (d *dashboardServer) fireProjectStartHooks(ctx context.Context, workspace s
 	}
 	runner := automations.NewRunner(automations.New(s), automationsRegistry())
 	res, _ := runner.FireSecondary(ctx, automations.EventProjectStart, automations.RunContext{RepoID: repoID, Vars: vars})
-	d.logAutomationRun(automations.EventProjectStart, repoID, res)
+	d.logAutomationRun(ctx, automations.EventProjectStart, repoID, res)
 }

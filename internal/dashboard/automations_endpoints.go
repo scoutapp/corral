@@ -290,7 +290,7 @@ func (d *dashboardServer) handleActionRun(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	d.applog().Log(applog.Entry{
+	d.applog().InfoCtx(r.Context(), applog.Entry{
 		Level: levelForStatus(res.Status), Category: applog.CatAutomation, Event: "automation.run",
 		Message: applog.Fmt("Ran action %q — %s", res.Name, res.Status),
 		Status:  res.Status, RepoID: rc.RepoID, Meta: map[string]any{"action": res.Name, "kind": res.Kind},
@@ -331,7 +331,7 @@ func (d *dashboardServer) handleActionTest(w http.ResponseWriter, r *http.Reques
 	}
 	runner := automations.NewRunner(svc, automationsRegistry())
 	res := runner.RunEphemeral(r.Context(), automations.Action{Kind: body.Kind, Spec: body.Spec, Name: "test"}, body.Context)
-	d.applog().Log(applog.Entry{
+	d.applog().InfoCtx(r.Context(), applog.Entry{
 		Level: levelForStatus(res.Status), Category: applog.CatScript, Event: "script.test",
 		Message: applog.Fmt("Test-ran a %s step — %s", body.Kind, res.Status),
 		Status:  res.Status, DurationMs: res.Duration, Meta: map[string]any{"kind": body.Kind},

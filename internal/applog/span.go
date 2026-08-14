@@ -96,3 +96,27 @@ func (l *Logger) LogCtx(ctx context.Context, e Entry) {
 	e.ParentSpanID = SpanID(ctx)
 	l.Log(e)
 }
+
+// InfoCtx is the trace-aware Info: an info-level point-in-time row inside ctx's
+// trace.
+func (l *Logger) InfoCtx(ctx context.Context, e Entry) {
+	if e.Level == "" {
+		e.Level = LevelInfo
+	}
+	l.LogCtx(ctx, e)
+}
+
+// ErrorfCtx is the trace-aware Errorf: it folds err into meta.error, sets
+// status=error, and places the row inside ctx's trace.
+func (l *Logger) ErrorfCtx(ctx context.Context, category, event, message string, err error, meta map[string]any) {
+	if meta == nil {
+		meta = map[string]any{}
+	}
+	if err != nil {
+		meta["error"] = err.Error()
+	}
+	l.LogCtx(ctx, Entry{
+		Level: LevelError, Category: category, Event: event,
+		Message: message, Status: StatusError, Meta: meta,
+	})
+}
