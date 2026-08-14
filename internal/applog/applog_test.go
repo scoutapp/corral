@@ -1,6 +1,7 @@
 package applog
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -129,6 +130,90 @@ func TestPruneByCount(t *testing.T) {
 	if p, _ := l.Query(Query{Q: "e0", Limit: 50}); len(p.Logs) != 0 {
 		t.Errorf("pruned rows should be gone from FTS too, got %d", len(p.Logs))
 	}
+}
+
+func TestSpanPairAndNesting(t *testing.T) {
+	l := newLogger(t, false)
+
+	// Root span (untraced context → mints a trace) with one nested child.
+	ctx, endRoot := l.StartSpan(context.Background(), Entry{
+		Category: CatChat, Event: "chat.turn", Message: "triage errors",
+	})
+	traceID := TraceID(ctx)
+	if traceID == "" {
+		t.Fatal("root StartSpan did not mint a trace id")
+	}
+	rootSpan := SpanID(ctx)
+	if rootSpan == "" {
+		t.Fatal("root context missing span id")
+	}
+
+	childCtx, endChild := l.StartSpan(ctx, Entry{
+		Category: CatAI, Event: "ai.call", Message: "plan",
+	})
+	if TraceID(childCtx) != traceID {
+		t.Error("child did not inherit trace id")
+	}
+	endChild(nil)
+	endRoot(nil)
+
+	// Read newest-first: root.end, child.end, child.start, root.start.
+	page, _ := l.Query(Query{Limit: 10})
+	if len(page.Logs) != 4 {
+		t.Fatalf("expected 4 span rows, got %d", len(page.Logs))
+	}
+	// Every row shares the trace id.
+	for _, r := range page.Logs {
+		if r.TraceID != traceID {
+			t.Errorf("row %s has trace %q, want %q", r.Event, r.TraceID, traceID)
+		}
+	}
+	// Find child rows: they carry parent_span_id == rootSpan.
+	var childStart, childEnd *Record
+	for i := range page.Logs {
+		r := &page.Logs[i]
+		if r.Event == "ai.call.start" {
+			childStart = r
+		}
+		if r.Event == "ai.call.end" {
+			childEnd = r
+		}
+	}
+	if childStart == nil || childEnd == nil {
+		t.Fatal("missing child .start/.end rows")
+	}
+	if childStart.ParentSpanID != rootSpan {
+		t.Errorf("child parent_span_id = %q, want root %q", childStart.ParentSpanID, rootSpan)
+	}
+	// start and end share a span id; end carries ok status.
+	if childStart.SpanID != childEnd.SpanID {
+		t.Errorf("child start/end span ids differ: %q vs %q", childStart.SpanID, childEnd.SpanID)
+	}
+	if childEnd.Status != StatusOK {
+		t.Errorf("child end status = %q, want ok", childEnd.Status)
+	}
+}
+
+func TestSpanEndError(t *testing.T) {
+	l := newLogger(t, false)
+	_, end := l.StartSpan(context.Background(), Entry{Category: CatScript, Event: "script.test", Message: "run"})
+	end(errors.New("boom"))
+
+	// The .end row is error-marked with the error in meta.
+	p, _ := l.Query(Query{Q: "boom", Limit: 10})
+	if len(p.Logs) != 1 || p.Logs[0].Event != "script.test.end" || p.Logs[0].Status != StatusError {
+		t.Fatalf("error span end not recorded: %+v", p.Logs)
+	}
+}
+
+func TestNilLoggerSpanSafe(t *testing.T) {
+	var l *Logger
+	// StartSpan on a nil logger still returns a trace-carrying ctx + no-op end.
+	ctx, end := l.StartSpan(context.Background(), Entry{Category: CatSystem, Event: "x"})
+	if TraceID(ctx) == "" {
+		t.Error("nil-logger StartSpan should still carry a trace id in ctx")
+	}
+	end(nil) // must not panic
 }
 
 func TestNilLoggerSafe(t *testing.T) {

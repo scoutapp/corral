@@ -19,6 +19,10 @@ type Record struct {
 	DurationMs int64  `json:"durationMs,omitempty"`
 	Meta       string `json:"meta"` // raw JSON
 	RunID      int64  `json:"runId,omitempty"`
+
+	TraceID      string `json:"traceId,omitempty"`
+	SpanID       string `json:"spanId,omitempty"`
+	ParentSpanID string `json:"parentSpanId,omitempty"`
 }
 
 // Query filters a page of logs. Empty fields are ignored. Before is the keyset
@@ -59,7 +63,8 @@ func (l *Logger) Query(q Query) (Page, error) {
 	)
 	sb.WriteString(`SELECT a.id, a.ts, a.level, a.category, a.event, a.message,
 		COALESCE(a.repo_id,''), COALESCE(a.project_id,''), COALESCE(a.status,''),
-		COALESCE(a.duration_ms,0), a.meta_json, COALESCE(a.run_id,0)
+		COALESCE(a.duration_ms,0), a.meta_json, COALESCE(a.run_id,0),
+		COALESCE(a.trace_id,''), COALESCE(a.span_id,''), COALESCE(a.parent_span_id,'')
 		FROM app_logs a`)
 
 	// Free-text: LIKE over message + meta_json. Each token must appear (AND),
@@ -107,7 +112,8 @@ func (l *Logger) Query(q Query) (Page, error) {
 	for rows.Next() {
 		var r Record
 		if err := rows.Scan(&r.ID, &r.TS, &r.Level, &r.Category, &r.Event, &r.Message,
-			&r.RepoID, &r.ProjectID, &r.Status, &r.DurationMs, &r.Meta, &r.RunID); err != nil {
+			&r.RepoID, &r.ProjectID, &r.Status, &r.DurationMs, &r.Meta, &r.RunID,
+			&r.TraceID, &r.SpanID, &r.ParentSpanID); err != nil {
 			return Page{}, err
 		}
 		out = append(out, r)

@@ -58,6 +58,14 @@ type Entry struct {
 	DurationMs int64
 	Meta       map[string]any
 	RunID      int64
+
+	// Tracing (migration 0009). Usually set for you by StartSpan/LogCtx from the
+	// context carrier rather than filled by hand. TraceID groups an action's
+	// whole causal tree; SpanID identifies this span (shared by its .start/.end
+	// rows); ParentSpanID points at the enclosing span (empty at the root).
+	TraceID      string
+	SpanID       string
+	ParentSpanID string
 }
 
 // Logger writes entries to app_logs. Safe for concurrent use (database/sql
@@ -97,11 +105,12 @@ func (l *Logger) Log(e Entry) {
 		runID = e.RunID
 	}
 	_, err := l.db.Exec(`
-		INSERT INTO app_logs (level, category, event, message, repo_id, project_id, status, duration_ms, meta_json, run_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO app_logs (level, category, event, message, repo_id, project_id, status, duration_ms, meta_json, run_id, trace_id, span_id, parent_span_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, e.Level, e.Category, e.Event, e.Message,
 		nullIf(e.RepoID), nullIf(e.ProjectID), nullIf(e.Status),
-		nullIfZero(e.DurationMs), meta, runID)
+		nullIfZero(e.DurationMs), meta, runID,
+		nullIf(e.TraceID), nullIf(e.SpanID), nullIf(e.ParentSpanID))
 	if err != nil && l.onError != nil {
 		l.onError(err)
 	}
