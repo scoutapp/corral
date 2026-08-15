@@ -794,10 +794,18 @@
     },
     "/status": {
       "get": {
-        "summary": "Live per-project status for the landing page",
+        "summary": "Live per-project status \u2014 up/down, and the working/waiting activity signal",
+        "description": "The activity field is how you tell whether a project's Claude is actively working ('working') or idle at the prompt waiting on the user ('waiting'), or the container is down ('off'). It's computed from real completion activity (POST /v1/messages when the traffic is decrypted, else a proxy.log heuristic).",
         "responses": {
           "200": {
-            "description": "Project statuses"
+            "description": "Project statuses",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -1705,6 +1713,61 @@
           },
           "rowCount": {
             "type": "integer"
+          }
+        }
+      },
+      "StatusRow": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "workspace": {
+            "type": "string"
+          },
+          "container_up": {
+            "type": "boolean"
+          },
+          "tmux_up": {
+            "type": "boolean"
+          },
+          "mitm_up": {
+            "type": "boolean"
+          },
+          "activity": {
+            "type": "string",
+            "enum": [
+              "working",
+              "waiting",
+              "off"
+            ],
+            "description": "working = a completion is actively streaming; waiting = idle at the prompt; off = container down."
+          },
+          "anthropic_hits": {
+            "type": "integer",
+            "description": "recent completion hits in the activity window (for display)."
+          },
+          "peek": {
+            "type": "string",
+            "description": "last non-empty terminal line, for a pane preview."
+          }
+        }
+      },
+      "StatusResponse": {
+        "type": "object",
+        "properties": {
+          "projects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StatusRow"
+            }
+          },
+          "boot_id": {
+            "type": "string",
+            "description": "changes when the dashboard restarts."
           }
         }
       }

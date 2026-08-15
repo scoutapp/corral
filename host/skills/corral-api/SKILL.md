@@ -69,6 +69,19 @@ plainly: they can turn on **API access → Allow API writes** in the dashboard's
 Global settings, then you can retry. This gate is deliberate — it's how the user
 controls whether you can change things, not a bug.
 
+## Is a project working or waiting?
+
+`GET /status` returns each project's `activity`: `working` (a completion is
+actively streaming), `waiting` (idle at the prompt, needs the user), or `off`
+(container down). Use it to answer "is that project still going?":
+
+```
+corral api GET /status
+# → { "projects": [ { "name": "...", "activity": "waiting", ... } ], ... }
+```
+
+This is a read — always allowed.
+
 ## Chaining work
 
 A common request is a chain: pull something, create an issue, start work on it.

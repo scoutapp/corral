@@ -1,52 +1,157 @@
 package dashboard
 
 import (
+	"encoding/json"
+	"fmt"
+	"net/http"
 	"strings"
 	"time"
 )
 
 // ----------------------------------------------------------------------------
-// Project activity — a coarse "working / waiting / off" signal.
+// Project activity — a coarse "working / waiting / off" signal that drives the
+// landing page's chime + toast (they fire on a working→waiting edge).
 //
-// The proxy.log records every allowed connection with a timestamp, including the
-// api.anthropic.com requests Claude Code makes. While Claude is actively working
-// it streams completions and those requests cluster in bursts; when it finishes a
-// turn and sits at the prompt waiting for you, they stop. So the RATE of recent
-// api.anthropic.com hits distinguishes "working" from "waiting."
+// The naive signal — "any recent api.anthropic.com hit == working" — over-fires:
+// it can't tell a completion the USER asked for from one Claude Code runs on its
+// OWN (generating a conversation title, a summary). Real proxy.log data shows
+// those background calls as short 3–8 hit bursts that look identical, host-wise,
+// to a real turn. The only thing that distinguishes them is the request PATH
+// (/v1/messages vs Claude Code's internal endpoints) — which the allowlist-proxy
+// can't see (it CONNECT-tunnels HTTPS as an opaque byte-splice; TLS terminates at
+// mitmweb). So we use a HYBRID:
 //
-// Rate — not mere recency — matters: an idle Claude Code still makes sparse
-// keep-alive/telemetry hits every several minutes, so "any recent hit == working"
-// would false-positive. We require several hits inside a short window.
+//   - PRECISE (preferred): when api.anthropic.com is being MITM'd, mitmweb has the
+//     decrypted flows. Count POST api.anthropic.com/v1/messages flows in the
+//     window — the real user-facing completion calls, nothing else.
+//   - FALLBACK: when it isn't MITM'd (or mitmweb is unreachable), fall back to
+//     proxy.log host-counting, but SUPPRESS short isolated bursts so a single
+//     auto-completion doesn't notify — require a sustained burst.
 // ----------------------------------------------------------------------------
 
 const (
 	activityWindow    = 60 * time.Second // how far back to count hits
-	activityWorkingN  = 3                // >= this many hits in the window => working
+	activityWorkingN  = 3                // >= this many /v1/messages hits => working (precise path)
 	activityTailBytes = 64 * 1024        // proxy.log tail to scan (plenty for 60s)
 	activityHost      = "api.anthropic.com"
+	activityMsgPath   = "/v1/messages"
+
+	// Fallback (host-only) threshold. Higher than the precise one: without the
+	// path we can't exclude auto-completions, so we demand a bigger sustained
+	// burst — a lone 3–8 hit auto-completion won't reach it, a real streaming turn
+	// will. Derived from real logs (auto-completions cluster at 3–8 hits/60s).
+	activityFallbackN = 9
 )
 
-// projectActivity classifies a project's current activity from proxy.log.
-//   - "off":     container not up (nothing running)
-//   - "working": container up AND >= activityWorkingN anthropic hits in the window
-//   - "waiting": container up but few/no recent hits (Claude idle at the prompt)
+// projectActivity classifies a project's current activity.
+//   - "off":     container not up
+//   - "working": container up AND enough recent user-facing completion activity
+//   - "waiting": container up but idle at the prompt
 //
-// tmuxUp is accepted for future refinement (e.g. distinguishing a dead session)
-// but a running container is the gate today. Returns the hit count for display.
-func projectActivity(workspace string, containerUp, tmuxUp bool) (string, int) {
+// mitmWebPort is the project's mitmweb port (0 if mitm isn't up); when nonzero and
+// api.anthropic.com is actually being decrypted, we use the precise /v1/messages
+// count. Otherwise we fall back to the proxy.log heuristic. Returns the hit count
+// for display.
+func projectActivity(workspace string, containerUp, tmuxUp bool, mitmWebPort int) (string, int) {
 	if !containerUp {
 		return "off", 0
 	}
 
-	logPath := logsDirForWorkspace(workspace) + "/proxy.log"
-	// proxy.log is written by the in-container allowlist-proxy, whose clock is UTC,
-	// so compare in UTC (see parseProxyLogTime).
-	hits := countRecentAnthropicHits(logPath, time.Now().UTC(), activityWindow)
+	// Precise path: count POST /v1/messages flows from mitmweb.
+	if mitmWebPort > 0 {
+		if hits, ok := countRecentMessageFlows(mitmWebPort, time.Now(), activityWindow); ok {
+			if hits >= activityWorkingN {
+				return "working", hits
+			}
+			return "waiting", hits
+		}
+		// ok==false → api.anthropic.com isn't in the flows (not MITM'd) or mitmweb
+		// was unreachable; fall through to the proxy.log heuristic.
+	}
 
-	if hits >= activityWorkingN {
+	// Fallback: proxy.log host-count with burst suppression.
+	logPath := logsDirForWorkspace(workspace) + "/proxy.log"
+	hits := countRecentAnthropicHits(logPath, time.Now().UTC(), activityWindow)
+	if hits >= activityFallbackN {
 		return "working", hits
 	}
 	return "waiting", hits
+}
+
+// mitmFlow is the subset of a mitmweb /flows entry we read.
+type mitmFlow struct {
+	Request struct {
+		Method     string  `json:"method"`
+		Host       string  `json:"host"`
+		PrettyHost string  `json:"pretty_host"`
+		Path       string  `json:"path"`
+		TSStart    float64 `json:"timestamp_start"`
+	} `json:"request"`
+}
+
+// countRecentMessageFlows counts POST api.anthropic.com/v1/messages flows whose
+// request started within `window` of now. The bool is false when the data is
+// unusable for this purpose — mitmweb unreachable, or NO api.anthropic.com flow
+// present at all (so we can't tell "idle" from "not being decrypted") — signaling
+// the caller to fall back. A present anthropic host with zero recent /v1/messages
+// is a legitimate "waiting" and returns (0, true).
+func countRecentMessageFlows(webPort int, now time.Time, window time.Duration) (int, bool) {
+	upstream := fmt.Sprintf("http://127.0.0.1:%d/flows", webPort)
+	req, err := http.NewRequest(http.MethodGet, upstream, nil)
+	if err != nil {
+		return 0, false
+	}
+	// mitmweb rejects any Host that isn't a bare loopback IP (rebinding guard).
+	req.Host = fmt.Sprintf("127.0.0.1:%d", webPort)
+	client := &http.Client{Timeout: 1500 * time.Millisecond}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return 0, false
+	}
+
+	var flows []mitmFlow
+	if err := json.NewDecoder(resp.Body).Decode(&flows); err != nil {
+		return 0, false
+	}
+
+	cutoff := now.Add(-window).Unix()
+	count := 0
+	sawAnthropic := false
+	for _, f := range flows {
+		host := f.Request.PrettyHost
+		if host == "" {
+			host = f.Request.Host
+		}
+		if !hostIsAnthropicAPI(host) {
+			continue
+		}
+		sawAnthropic = true
+		if f.Request.Method != http.MethodPost || f.Request.Path != activityMsgPath {
+			continue // token-counting, model list, and Claude Code's own calls are excluded
+		}
+		if int64(f.Request.TSStart) >= cutoff {
+			count++
+		}
+	}
+	if !sawAnthropic {
+		// No anthropic flows at all → it isn't being MITM'd here; the flow data
+		// can't answer the question. Fall back.
+		return 0, false
+	}
+	return count, true
+}
+
+// hostIsAnthropicAPI matches api.anthropic.com exactly (ignoring a :port), NOT
+// statsig/other subdomains — those are background telemetry, not completions.
+func hostIsAnthropicAPI(host string) bool {
+	if i := strings.IndexByte(host, ':'); i >= 0 {
+		host = host[:i]
+	}
+	return strings.EqualFold(host, activityHost)
 }
 
 // countRecentAnthropicHits scans the tail of proxy.log and counts lines mentioning
