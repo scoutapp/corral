@@ -2,8 +2,11 @@ package dashboard
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
+	"os/exec"
+	"strings"
 
 	"github.com/scoutapp/corral/internal/applog"
 	"github.com/scoutapp/corral/internal/mcp"
@@ -31,8 +34,18 @@ func (d *dashboardServer) handleMCP(w http.ResponseWriter, r *http.Request, name
 		return
 	}
 
-	// /api/mcp/<name> — item routes (DELETE).
+	// /api/mcp/<name> — item routes (DELETE, and <name>/login).
 	if name != "" {
+		// <name>/login — start the interactive OAuth in a bridged terminal.
+		if strings.HasSuffix(name, "/login") {
+			srv, derr := url.PathUnescape(strings.TrimSuffix(name, "/login"))
+			if derr != nil {
+				http.Error(w, "bad server name", http.StatusBadRequest)
+				return
+			}
+			d.handleMCPLogin(w, r, srv)
+			return
+		}
 		decoded, derr := url.PathUnescape(name)
 		if derr != nil {
 			http.Error(w, "bad server name", http.StatusBadRequest)
@@ -104,6 +117,57 @@ func (d *dashboardServer) handleMCP(w http.ResponseWriter, r *http.Request, name
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// mcpLoginSession is the fixed tmux session the OAuth login runs in; the browser
+// attaches to it over /api/mcp/login/ws (a bridged terminal).
+const mcpLoginSession = "corral-mcp-login"
+
+// handleMCPLogin starts `claude mcp login <name>` in a detached tmux session so
+// its interactive OAuth (opens a browser, waits for the callback) can run, and
+// returns the session id the Integrations tab attaches a terminal to. Mirrors
+// handleGlobalPopulate (the claude setup-token flow). This is a mutating action,
+// so it's gated for the CLI/Claude by handleRoot — but the browser (session
+// token) is never gated, and in practice only the user drives this OAuth.
+func (d *dashboardServer) handleMCPLogin(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	if name == "" {
+		http.Error(w, "server name required", http.StatusBadRequest)
+		return
+	}
+	bin, err := resolveClaudeBin()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	if err := d.spawnLoginSession(bin, name); err != nil {
+		http.Error(w, "failed to start login session: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	d.applog().InfoCtx(r.Context(), applog.Entry{
+		Category: applog.CatSystem, Event: "mcp.login",
+		Message: applog.Fmt("Started MCP login for %q", name),
+		Meta:    map[string]any{"name": name},
+	})
+	writeJSON(w, map[string]any{"session": mcpLoginSession})
+}
+
+// spawnLoginSession starts `claude mcp login <name>` in the bridged-terminal tmux
+// session. Split out (and overridable via loginSpawnerOverride) so tests exercise
+// the endpoint without spawning a real tmux session. `; exec bash` keeps the pane
+// open so the user can read the result; name is passed as a separate argv so a
+// server name with spaces is safe.
+func (d *dashboardServer) spawnLoginSession(bin, name string) error {
+	if d.loginSpawnerOverride != nil {
+		return d.loginSpawnerOverride(bin, name)
+	}
+	exec.Command("tmux", "kill-session", "-t", mcpLoginSession).Run()
+	cmdline := fmt.Sprintf("%q mcp login %q; echo; echo '[done — you can close this]'; exec bash", bin, name)
+	return exec.Command("tmux", "new-session", "-d", "-s", mcpLoginSession, "bash", "-lc", cmdline).Run()
 }
 
 // mcpClient builds an mcp.Client bound to the resolved host claude binary. Errors

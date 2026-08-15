@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "../router";
-import { getJSON, postJSON, delJSON } from "../api/client";
+import { getJSON, postJSON, delJSON, postRaw } from "../api/client";
 import { useBodyClass } from "../hooks/useBodyClass";
+import { XtermPane } from "../components/XtermPane";
 
 // IntegrationsPage — connect MCP servers at the HOST. Corral drives the host
 // `claude` CLI's native registry (GET/POST/DELETE /api/mcp), so a server
@@ -40,6 +41,9 @@ export function IntegrationsPage() {
   const [header, setHeader] = useState("");
   const [adding, setAdding] = useState(false);
 
+  // Which server's OAuth login terminal is open (null = none).
+  const [loggingIn, setLoggingIn] = useState<string | null>(null);
+
   const load = useCallback(() => {
     setLoading(true);
     setErr(null);
@@ -70,6 +74,18 @@ export function IntegrationsPage() {
       setErr(`Couldn't connect: ${(e as Error).message}`);
     } finally {
       setAdding(false);
+    }
+  }
+
+  async function authenticate(srv: McpServer) {
+    setErr(null);
+    try {
+      // Starts `claude mcp login <name>` in a bridged terminal; the pane below
+      // attaches to it, and the OAuth completes in the browser.
+      await postRaw(`/api/mcp/${encodeURIComponent(srv.name)}/login`);
+      setLoggingIn(srv.name);
+    } catch (e) {
+      setErr(`Couldn't start login: ${(e as Error).message}`);
     }
   }
 
@@ -130,9 +146,9 @@ export function IntegrationsPage() {
                 <div className="mcp-right">
                   <span className={`mcp-status mcp-${s.status}`}>{STATUS_LABEL[s.status]}</span>
                   {s.status === "needs_auth" && (
-                    <span className="mcp-auth-hint" title="Authenticate from your terminal: claude mcp login">
-                      authenticate in terminal
-                    </span>
+                    <button type="button" className="mcp-auth-btn" onClick={() => authenticate(s)}>
+                      authenticate
+                    </button>
                   )}
                   <button type="button" className="mcp-x" title="Remove" onClick={() => remove(s)}>
                     ×
@@ -141,6 +157,29 @@ export function IntegrationsPage() {
               </li>
             ))}
           </ul>
+        )}
+
+        {loggingIn && (
+          <div className="mcp-login">
+            <div className="mcp-login-head">
+              <span>
+                Authenticating <b>{loggingIn}</b> — complete the login in the terminal (a browser tab may open).
+              </span>
+              <button
+                type="button"
+                className="auto-btn link"
+                onClick={() => {
+                  setLoggingIn(null);
+                  load();
+                }}
+              >
+                Done ⟳
+              </button>
+            </div>
+            <div className="mcp-login-term">
+              <XtermPane fullPath="/api/mcp/login/ws" />
+            </div>
+          </div>
         )}
 
         {showAdd ? (

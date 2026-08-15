@@ -319,6 +319,9 @@ type dashboardServer struct {
 	// mcpClientOverride, when set (tests only), replaces the real `claude mcp`
 	// client so /api/mcp handlers don't shell out to the CLI.
 	mcpClientOverride *mcp.Client
+	// loginSpawnerOverride, when set (tests only), replaces the tmux spawn for the
+	// MCP OAuth login so tests don't create real sessions.
+	loginSpawnerOverride func(bin, name string) error
 }
 
 func newDashboardServer(token string) *dashboardServer {
@@ -568,6 +571,11 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	case "/global/populate/ws":
 		d.handleSessionWS(w, r, "corral-populate-creds")
+		return
+	case "/api/mcp/login/ws":
+		// The bridged terminal for an MCP OAuth login (see handleMCPLogin). Handled
+		// here rather than via handleAPI because it's a WebSocket, not JSON.
+		d.handleSessionWS(w, r, mcpLoginSession)
 		return
 	}
 
