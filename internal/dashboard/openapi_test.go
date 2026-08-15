@@ -56,6 +56,9 @@ func TestOpenAPINoDrift(t *testing.T) {
 	d.mcpClientOverride = mcp.NewWithRunner(func(ctx context.Context, args ...string) (string, error) {
 		return "", nil
 	})
+	// Don't spawn a real tmux OAuth session when the drift test POSTs the login
+	// route — just prove the route resolves.
+	d.loginSpawnerOverride = func(bin, name string) error { return nil }
 	srv := httptest.NewServer(d.routes())
 	defer srv.Close()
 

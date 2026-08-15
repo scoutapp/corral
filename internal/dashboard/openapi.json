@@ -1181,6 +1181,42 @@
           }
         }
       }
+    },
+    "/api/mcp/{name}/login": {
+      "post": {
+        "summary": "Start the interactive OAuth login for an MCP server",
+        "description": "Runs `claude mcp login <name>` in a bridged terminal (the browser attaches over a WebSocket). Use this for a server whose status is needs_auth. Mutating \u2014 gated for the CLI/Claude; in practice the user completes the browser OAuth.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Login session started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "API writes disabled (CLI/Claude only)"
+          }
+        }
+      }
     }
   },
   "components": {

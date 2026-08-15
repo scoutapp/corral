@@ -109,6 +109,38 @@ func TestMCPRemoveEndpoint(t *testing.T) {
 	}
 }
 
+func TestMCPLoginEndpoint(t *testing.T) {
+	t.Setenv("CORRAL_HOME", t.TempDir())
+	d := newDashboardServer("sess")
+	d.apiToken = "apitok"
+	d.mcpClientOverride = mcp.NewWithRunner(func(ctx context.Context, args ...string) (string, error) { return "", nil })
+	var spawned string
+	d.loginSpawnerOverride = func(bin, name string) error { spawned = name; return nil }
+	srv := httptest.NewServer(d.routes())
+	defer srv.Close()
+
+	req, _ := http.NewRequest("POST", srv.URL+"/api/mcp/sentry/login", nil)
+	req.AddCookie(&http.Cookie{Name: dashboardCookieName, Value: "sess"})
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("login status = %d", resp.StatusCode)
+	}
+	if spawned != "sentry" {
+		t.Errorf("login spawned for %q, want sentry", spawned)
+	}
+	var out struct {
+		Session string `json:"session"`
+	}
+	json.NewDecoder(resp.Body).Decode(&out)
+	if out.Session != mcpLoginSession {
+		t.Errorf("session = %q, want %q", out.Session, mcpLoginSession)
+	}
+}
+
 // The write gate governs Claude/CLI (API token), not the browser. A POST with the
 // API token 403s when writes are off; the browser (session token) always works.
 func TestMCPWriteGate(t *testing.T) {

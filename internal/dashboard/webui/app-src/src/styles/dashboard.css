@@ -2269,3 +2269,14 @@ table.projects th, table.projects td {
 .mcp-field { display: grid; grid-template-columns: 110px 1fr; align-items: center; gap: 0.7rem; margin-bottom: 0.55rem; }
 .mcp-field label { font-size: 0.8rem; color: var(--muted); }
 .mcp-add-actions { display: flex; gap: 0.8rem; align-items: center; margin-top: 0.7rem; }
+
+.mcp-auth-btn {
+  font-family: var(--mono, ui-monospace, monospace); font-size: 0.68rem; letter-spacing: 0.03em;
+  color: #E8B84B; background: none; border: 1px solid color-mix(in srgb, #E8B84B 45%, transparent);
+  border-radius: 5px; padding: 0.25rem 0.6rem; cursor: pointer;
+}
+.mcp-auth-btn:hover { background: color-mix(in srgb, #E8B84B 12%, transparent); }
+.mcp-login { margin-top: 1rem; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+.mcp-login-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--border); font-size: 0.82rem; color: var(--muted); }
+.mcp-login-head b { color: var(--fg); }
+.mcp-login-term { height: 300px; padding: 4px; background: var(--bg); }
