@@ -47,6 +47,10 @@ export function postRaw(path: string, body?: unknown): Promise<Response> {
   });
 }
 
+export function delJSON<T>(path: string): Promise<T> {
+  return fetch(path, { method: "DELETE", credentials: "same-origin" }).then((r) => parse<T>(r));
+}
+
 export function getText(path: string): Promise<string> {
   return fetch(path, { credentials: "same-origin" }).then((r) => {
     if (!r.ok) throw new ApiError(r.status, "");

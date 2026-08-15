@@ -7,6 +7,7 @@ import { GlobalPage } from "./pages/GlobalPage";
 import { AutomationsPage } from "./pages/AutomationsPage";
 import { RunLogPage } from "./pages/RunLogPage";
 import { LogsPage } from "./pages/LogsPage";
+import { IntegrationsPage } from "./pages/IntegrationsPage";
 import { ToastProvider } from "./components/Toasts";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { useUpdateCheck } from "./hooks/useUpdateCheck";
@@ -24,6 +25,7 @@ function Routes() {
   // Logs is a top-level, app-wide page. /automations/logs is kept as an alias so
   // any existing links still resolve.
   if (path === "/logs" || path === "/automations/logs") return <LogsPage />;
+  if (path === "/integrations") return <IntegrationsPage />;
   if (path === "/automations/runs") return <RunLogPage />;
   if (path === "/automations") return <AutomationsPage />;
   return <ProjectsPage />;
