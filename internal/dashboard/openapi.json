@@ -1109,6 +1109,78 @@
           }
         }
       }
+    },
+    "/api/mcp": {
+      "get": {
+        "summary": "List connected MCP servers with live status",
+        "description": "Drives `claude mcp list` on the host. status is connected | needs_auth | pending | unknown. A read \u2014 always allowed.",
+        "responses": {
+          "200": {
+            "description": "Servers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "servers": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/McpServer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Connect a remote MCP server",
+        "description": "Runs `claude mcp add --scope user`. A mutating call \u2014 when made by the CLI/host Claude it requires API writes to be enabled; the browser is never gated.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpAddInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Connected"
+          },
+          "403": {
+            "description": "API writes disabled (CLI/Claude only)"
+          }
+        }
+      }
+    },
+    "/api/mcp/{name}": {
+      "delete": {
+        "summary": "Remove an MCP server",
+        "description": "Runs `claude mcp remove <name>`. Mutating \u2014 gated for the CLI/Claude, never for the browser.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed"
+          },
+          "403": {
+            "description": "API writes disabled (CLI/Claude only)"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1768,6 +1840,65 @@
           "boot_id": {
             "type": "string",
             "description": "changes when the dashboard restarts."
+          }
+        }
+      },
+      "McpServer": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "transport": {
+            "type": "string",
+            "enum": [
+              "http",
+              "sse",
+              "stdio"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "needs_auth",
+              "pending",
+              "unknown"
+            ]
+          },
+          "statusText": {
+            "type": "string",
+            "description": "raw human status from the CLI"
+          }
+        }
+      },
+      "McpAddInput": {
+        "type": "object",
+        "required": [
+          "name",
+          "url"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "transport": {
+            "type": "string",
+            "enum": [
+              "http",
+              "sse"
+            ],
+            "description": "remote transport; defaults to http"
+          },
+          "url": {
+            "type": "string"
+          },
+          "header": {
+            "type": "string",
+            "description": "full Authorization header, e.g. 'Authorization: Bearer \u2026'"
           }
         }
       }

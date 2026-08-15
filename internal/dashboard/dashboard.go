@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/mcp"
 	"github.com/scoutapp/corral/internal/session"
 	"github.com/scoutapp/corral/internal/store"
 	"io"
@@ -315,6 +316,9 @@ type dashboardServer struct {
 	// Review feature and is opened lazily on first use so the dashboard still
 	// starts if the DB can't be opened; PR-review endpoints then report the error.
 	store *store.Store
+	// mcpClientOverride, when set (tests only), replaces the real `claude mcp`
+	// client so /api/mcp handlers don't shell out to the CLI.
+	mcpClientOverride *mcp.Client
 }
 
 func newDashboardServer(token string) *dashboardServer {

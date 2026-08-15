@@ -77,6 +77,13 @@ func New(claudeBin string) *Client {
 	return c
 }
 
+// NewWithRunner builds a Client whose commands go through the given runner
+// instead of the real CLI. For tests and for callers that need to intercept the
+// `claude mcp` invocation. The runner receives the args after the binary.
+func NewWithRunner(run func(ctx context.Context, args ...string) (string, error)) *Client {
+	return &Client{bin: "claude", run: run}
+}
+
 func (c *Client) exec(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, c.bin, args...)
 	out, err := cmd.CombinedOutput()
