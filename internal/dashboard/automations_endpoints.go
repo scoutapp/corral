@@ -87,6 +87,10 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handleTools(w, r, "")
 	case strings.HasPrefix(rest, "tools/"):
 		d.handleTools(w, r, strings.TrimPrefix(rest, "tools/"))
+	case rest == "mcp":
+		d.handleMCP(w, r, "")
+	case strings.HasPrefix(rest, "mcp/"):
+		d.handleMCP(w, r, strings.TrimPrefix(rest, "mcp/"))
 	default:
 		routeNotFound(w, r)
 	}

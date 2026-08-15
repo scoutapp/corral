@@ -1,11 +1,14 @@
 package dashboard
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/scoutapp/corral/internal/mcp"
 )
 
 // TestOpenAPISpecValid asserts the embedded spec is well-formed JSON, is
@@ -47,7 +50,13 @@ func TestOpenAPISpecValid(t *testing.T) {
 // subset, and documenting a dead path is the dangerous direction.
 func TestOpenAPINoDrift(t *testing.T) {
 	t.Setenv("CORRAL_HOME", t.TempDir())
-	srv := httptest.NewServer(newDashboardServer("tok").routes())
+	d := newDashboardServer("tok")
+	// Stub the mcp client so exercising GET /api/mcp doesn't shell out to the real
+	// `claude mcp list` (slow, host-dependent). We only assert the route resolves.
+	d.mcpClientOverride = mcp.NewWithRunner(func(ctx context.Context, args ...string) (string, error) {
+		return "", nil
+	})
+	srv := httptest.NewServer(d.routes())
 	defer srv.Close()
 
 	var doc struct {
