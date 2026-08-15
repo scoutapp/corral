@@ -258,7 +258,7 @@ func projectLiveStatus(workspace string) ProjectStatus {
 		status.MitmWebPort = state.WebPort
 	}
 
-	status.Activity, status.AnthropicHits = projectActivity(workspace, status.ContainerUp, status.TmuxUp)
+	status.Activity, status.AnthropicHits = projectActivity(workspace, status.ContainerUp, status.TmuxUp, status.MitmWebPort)
 
 	return status
 }
