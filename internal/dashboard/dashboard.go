@@ -739,10 +739,12 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleMitmContent(w, r, id, strings.TrimPrefix(sub, "mitm/flows/"))
 	case sub == "firewall/stream":
 		d.handleFirewallStream(w, r, id)
+	case sub == "live-ports":
+		// /p/<id>/live-ports — listening TCP ports in the container (discovery).
+		d.handleLivePorts(w, r, id)
 	case strings.HasPrefix(sub, "live/"):
 		// /p/<id>/live/<port>/<path…> — reverse-proxy to the app on <port> inside
-		// the container. (Discovery, /p/<id>/live-ports, is a distinct route added
-		// alongside this in the same milestone.)
+		// the container.
 		d.handleLiveProxy(w, r, id, strings.TrimPrefix(sub, "live/"))
 	default:
 		routeNotFound(w, r)
