@@ -36,6 +36,7 @@ const (
 	KindClaudePrompt = "claude_prompt" // a prompt template (project-start, etc.)
 	KindWebhook      = "webhook"       // HTTP POST
 	KindSlack        = "slack"         // Slack message
+	KindMCP          = "mcp"           // agentic: headless claude with an MCP server available
 )
 
 // Hookable events. Kept as constants so the UI, the resolver, and the emit
