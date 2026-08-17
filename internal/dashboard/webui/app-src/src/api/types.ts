@@ -344,6 +344,17 @@ export interface PrItem {
   fetchedAt?: string;
 }
 
+// GET /prs/<prId>/issues -> { issues: LinkedIssue[] } — the issue(s) a PR closes,
+// for the PR-view Issue description tab(s). Empty when the PR closes nothing.
+export interface LinkedIssue {
+  number: number;
+  title?: string;
+  body?: string; // markdown
+  url?: string;
+  state?: string;
+  source?: "closing" | "branch"; // how the link was found
+}
+
 // GET /repos/<id>/analysis-status -> AnalysisStatus
 export interface AnalysisStatus {
   analyzed: boolean;

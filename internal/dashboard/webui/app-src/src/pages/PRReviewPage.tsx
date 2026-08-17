@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "../router";
 import { getJSON, postJSON, postRaw, wsURL } from "../api/client";
-import type { CachedRepo, PrItem } from "../api/types";
+import type { CachedRepo, LinkedIssue, PrItem } from "../api/types";
 import { useBodyClass } from "../hooks/useBodyClass";
 import { ChatPanel } from "../components/ChatPanel";
 import { NewProjectModal } from "./ReposModals";
@@ -399,24 +399,114 @@ function VerifyLaunch({
   );
 }
 
-// PRDescription renders the PR's markdown body, collapsed by default when long
-// (GitHub descriptions can be huge — templates, checklists) with a show-more.
-function PRDescription({ body }: { body?: string }) {
+// markdownBody renders a collapsible markdown body (PR or issue description).
+// GitHub descriptions can be huge (templates, checklists), so clamp long ones.
+function MarkdownBody({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
-  const text = (body || "").trim();
-  if (!text) return null;
   const long = text.length > 600;
   return (
-    <div className={`pr-desc${long && !open ? " clamped" : ""}`}>
-      <div className="pr-desc-head">Description</div>
-      <div
-        className="pr-desc-body markdown"
-        dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }}
-      />
+    <div className={`pr-desc-body-wrap${long && !open ? " clamped" : ""}`}>
+      <div className="pr-desc-body markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />
       {long && (
         <button type="button" className="pr-desc-more" onClick={() => setOpen((v) => !v)}>
           {open ? "Show less" : "Show more"}
         </button>
+      )}
+    </div>
+  );
+}
+
+// PRDescription shows the PR's description and, when the PR closes an issue (or
+// links one via the head branch name), a tab per closing issue:
+//
+//   [ Description | Issue #42 | Issue #99 ]
+//
+// The linked issues are fetched lazily from /prs/<id>/issues. If there are none,
+// it's just the PR description — no tab bar.
+function PRDescription({ prId, body }: { prId: number; body?: string }) {
+  const [issues, setIssues] = useState<LinkedIssue[]>([]);
+  const [active, setActive] = useState(0); // 0 = PR; 1..n = issues[i-1]
+
+  useEffect(() => {
+    let live = true;
+    getJSON<{ issues: LinkedIssue[] }>(`/prs/${prId}/issues`)
+      .then((d) => live && setIssues(d.issues || []))
+      .catch(() => live && setIssues([]));
+    return () => {
+      live = false;
+    };
+  }, [prId]);
+
+  const prText = (body || "").trim();
+  // Nothing to show at all (no PR body AND no issues): render nothing, as before.
+  if (!prText && issues.length === 0) return null;
+
+  // No linked issues → the original single-panel description (no tabs).
+  if (issues.length === 0) {
+    return (
+      <div className="pr-desc">
+        <div className="pr-desc-head">Description</div>
+        {prText ? <MarkdownBody text={prText} /> : <p className="pr-desc-empty">No description.</p>}
+      </div>
+    );
+  }
+
+  const issue = active > 0 ? issues[active - 1] : null;
+  return (
+    <div className="pr-desc">
+      <div className="pr-desc-tabs" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={active === 0}
+          className={`pr-desc-tab${active === 0 ? " active" : ""}`}
+          onClick={() => setActive(0)}
+        >
+          Description
+        </button>
+        {issues.map((iss, i) => (
+          <button
+            key={iss.number}
+            type="button"
+            role="tab"
+            aria-selected={active === i + 1}
+            className={`pr-desc-tab${active === i + 1 ? " active" : ""}`}
+            onClick={() => setActive(i + 1)}
+            title={iss.title || `Issue #${iss.number}`}
+          >
+            Issue #{iss.number}
+          </button>
+        ))}
+      </div>
+
+      {issue ? (
+        <div className="pr-desc-issue">
+          <div className="pr-desc-issue-head">
+            <span className="pr-desc-issue-title">
+              #{issue.number} {issue.title || ""}
+            </span>
+            {issue.state && <span className="pr-state">{issue.state}</span>}
+            {issue.url && (
+              <a className="pr-desc-issue-link" href={issue.url} target="_blank" rel="noreferrer">
+                view on GitHub ↗
+              </a>
+            )}
+            {issue.source === "branch" && (
+              <span className="pr-desc-issue-src" title="Linked via the PR's branch name, not an official 'Closes #N' reference">
+                from branch name
+              </span>
+            )}
+          </div>
+          {(issue.body || "").trim() ? (
+            <MarkdownBody text={(issue.body || "").trim()} />
+          ) : (
+            <p className="pr-desc-empty">No issue description.</p>
+          )}
+        </div>
+      ) : prText ? (
+        <MarkdownBody text={prText} />
+      ) : (
+        <p className="pr-desc-empty">No description.</p>
       )}
     </div>
   );
@@ -553,7 +643,7 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
                 setNonce((n) => n + 1);
               }}
             />
-            <PRDescription body={pr.body} />
+            <PRDescription prId={pr.id} body={pr.body} />
             {/* Top: Risk (left) + Files changed (right); stacks Risk-first when
                 too narrow. Then the block carousel full-width below. */}
             <div className="pr-top">
