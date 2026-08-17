@@ -2405,3 +2405,11 @@ table.projects th, table.projects td {
 .promptlib-item-actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
 .promptlib-x { background: none; border: none; color: var(--muted); font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0 0.2rem; }
 .promptlib-x:hover { color: #E8734B; }
+
+/* Saved-prompt picker inside the launch-prompt editor. */
+.launch-prompt-head-right { display: inline-flex; align-items: center; gap: 0.6rem; }
+.launch-prompt-pick {
+  font-size: 0.74rem; color: var(--accent); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 5px; padding: 0.15rem 0.4rem;
+}
+.launch-prompt-pick:hover { border-color: var(--accent); }
