@@ -2,26 +2,36 @@ import { useCallback, useEffect, useState } from "react";
 import { getJSON } from "../api/client";
 import { ChatPanel } from "./ChatPanel";
 
-// FirstRunChat gates the GLOBAL chat behind a one-time capability choice. The
-// global assistant's power — look only, or act (run corral api) — is a deliberate
-// setting stored in the DB, unset until chosen. Until it's set, we show a setup
-// card instead of spawning the assistant, so the user decides how much it can do
-// on first use. The choice is editable later in Global settings.
+// FirstRunChat gates the GLOBAL chat behind a one-time setup. Two host-Claude
+// permission choices are deliberate settings stored server-side, unset until
+// chosen: the chat capability (look only vs. act) and whether the CLI/skill may
+// make API writes. Until BOTH are configured we show the setup card instead of
+// spawning the assistant — so if either was never decided (e.g. api-writes on an
+// install that predates the prompt), the user still gets asked. Editable later in
+// Global settings.
 
 type CapResp = { capability: "readonly" | "act" | null; configured: boolean };
+type GlobalResp = { api_writes_enabled: boolean; api_writes_configured: boolean };
 
 export function FirstRunChat() {
-  const [state, setState] = useState<CapResp | null>(null);
+  const [cap, setCap] = useState<CapResp | null>(null);
+  const [writes, setWrites] = useState<GlobalResp | null>(null);
 
   const load = useCallback(() => {
     getJSON<CapResp>("/api/chat/capability")
-      .then(setState)
-      .catch(() => setState({ capability: null, configured: false }));
+      .then(setCap)
+      .catch(() => setCap({ capability: null, configured: false }));
+    getJSON<GlobalResp>("/global/config")
+      .then(setWrites)
+      .catch(() => setWrites({ api_writes_enabled: false, api_writes_configured: true })); // don't block on a fetch error
   }, []);
   useEffect(() => load(), [load]);
 
-  if (!state) return <div className="firstrun-loading">…</div>;
-  if (!state.configured) return <FirstRunSetup onDone={load} />;
+  if (!cap || !writes) return <div className="firstrun-loading">…</div>;
+  // Prompt if EITHER choice is still unmade.
+  if (!cap.configured || !writes.api_writes_configured) {
+    return <FirstRunSetup cap={cap} writes={writes} onDone={load} />;
+  }
   return <ChatPanel wsPath={globalChatPath()} />;
 }
 
@@ -48,22 +58,36 @@ export function pageContext(path: string): string {
   return "";
 }
 
-function FirstRunSetup({ onDone }: { onDone: () => void }) {
-  const [choice, setChoice] = useState<"readonly" | "act">("readonly");
+function FirstRunSetup({ cap, writes, onDone }: { cap: CapResp; writes: GlobalResp; onDone: () => void }) {
+  // Which choices this card is responsible for. If one was already made (e.g. the
+  // chat capability on an older install), we only ask about the unmade one.
+  const askCap = !cap.configured;
+  const askWrites = !writes.api_writes_configured;
+
+  const [choice, setChoice] = useState<"readonly" | "act">(cap.capability || "readonly");
+  const [allowWrites, setAllowWrites] = useState<boolean>(writes.api_writes_enabled);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  async function send(path: string, method: string, body: unknown) {
+    const r = await fetch(path, {
+      method,
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  }
 
   async function save() {
     setSaving(true);
     setErr(null);
     try {
-      const r = await fetch("/api/chat/capability", {
-        method: "PUT",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ capability: choice }),
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      // Only write the settings this card actually asked about, so we never
+      // overwrite a choice the user already made. Capability is a PUT; global
+      // settings apply is a POST.
+      if (askCap) await send("/api/chat/capability", "PUT", { capability: choice });
+      if (askWrites) await send("/global/apply", "POST", { api_writes_enabled: allowWrites });
       onDone();
     } catch (e) {
       setErr(`Couldn't save: ${(e as Error).message}`);
@@ -80,24 +104,41 @@ function FirstRunSetup({ onDone }: { onDone: () => void }) {
         Global settings.
       </p>
 
-      <label className={`firstrun-opt${choice === "readonly" ? " sel" : ""}`}>
-        <input type="radio" name="cap" checked={choice === "readonly"} onChange={() => setChoice("readonly")} />
-        <div>
-          <div className="firstrun-opt-title">Read-only</div>
-          <div className="firstrun-opt-desc">It can look — read logs, list flows, inspect PRs — but not change anything.</div>
-        </div>
-      </label>
+      {askCap && (
+        <>
+          <label className={`firstrun-opt${choice === "readonly" ? " sel" : ""}`}>
+            <input type="radio" name="cap" checked={choice === "readonly"} onChange={() => setChoice("readonly")} />
+            <div>
+              <div className="firstrun-opt-title">Read-only</div>
+              <div className="firstrun-opt-desc">It can look — read logs, list flows, inspect PRs — but not change anything.</div>
+            </div>
+          </label>
 
-      <label className={`firstrun-opt${choice === "act" ? " sel" : ""}`}>
-        <input type="radio" name="cap" checked={choice === "act"} onChange={() => setChoice("act")} />
-        <div>
-          <div className="firstrun-opt-title">Can act</div>
-          <div className="firstrun-opt-desc">
-            It can also run things — create issues, start projects, run flows. Changes still require API writes to be
-            enabled in Global settings, so this stays under your control.
+          <label className={`firstrun-opt${choice === "act" ? " sel" : ""}`}>
+            <input type="radio" name="cap" checked={choice === "act"} onChange={() => setChoice("act")} />
+            <div>
+              <div className="firstrun-opt-title">Can act</div>
+              <div className="firstrun-opt-desc">
+                It can also run things — create issues, start projects, run flows. Doing so needs API writes (below).
+              </div>
+            </div>
+          </label>
+        </>
+      )}
+
+      {askWrites && (
+        <label className={`firstrun-opt${allowWrites ? " sel" : ""}`}>
+          <input type="checkbox" checked={allowWrites} onChange={(e) => setAllowWrites(e.target.checked)} />
+          <div>
+            <div className="firstrun-opt-title">Allow API writes</div>
+            <div className="firstrun-opt-desc">
+              Let the <code>corral api</code> CLI and this assistant make changes — create issues, start projects, run
+              flows, create skills &amp; scripts. Leave off to keep them read-only. You stay in control; change it
+              anytime in Global settings.
+            </div>
           </div>
-        </div>
-      </label>
+        </label>
+      )}
 
       {err && <div className="auto-msg err">{err}</div>}
 

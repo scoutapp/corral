@@ -109,8 +109,12 @@ type globalView struct {
 	LogMaxRowsDefault       int `json:"log_max_rows_default"`
 
 	// ApiWritesEnabled — whether the corral api CLI / host Claude skill may make
-	// mutating calls. Off by default; surfaced so the UI can render the toggle.
-	ApiWritesEnabled bool `json:"api_writes_enabled"`
+	// mutating calls. ApiWritesConfigured is false when the user has never chosen
+	// (nil) — the UI keys on that to prompt in the first-run setup, mirroring the
+	// chat capability. When not configured, ApiWritesEnabled reads as false (the
+	// safe posture) but the "configured" flag distinguishes it from a deliberate off.
+	ApiWritesEnabled    bool `json:"api_writes_enabled"`
+	ApiWritesConfigured bool `json:"api_writes_configured"`
 }
 
 func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Request) {
@@ -148,7 +152,8 @@ func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Reques
 	view.LogMaxRows = gs.LogMaxRows
 	view.LogRetentionDaysDefault = applog.DefaultRetention.MaxAgeDays
 	view.LogMaxRowsDefault = applog.DefaultRetention.MaxRows
-	view.ApiWritesEnabled = gs.ApiWritesEnabled
+	view.ApiWritesEnabled = gs.ApiWritesAllowed()
+	view.ApiWritesConfigured = gs.ApiWritesConfigured()
 
 	writeJSON(w, view)
 }
@@ -269,7 +274,10 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 
 	if edit.ApiWritesEnabled != nil {
 		gs := config.ReadGlobalSettings()
-		gs.ApiWritesEnabled = *edit.ApiWritesEnabled
+		// Record the explicit choice (a non-nil pointer), which also flips
+		// ApiWritesConfigured true so the first-run prompt stops firing.
+		v := *edit.ApiWritesEnabled
+		gs.ApiWritesEnabled = &v
 		if err := config.WriteGlobalSettings(gs); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

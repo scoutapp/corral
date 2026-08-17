@@ -523,7 +523,7 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	// (session token) is never gated. Enforced here — before dispatch — so it
 	// applies uniformly no matter which handler would serve the path, and can't be
 	// bypassed by a direct HTTP call.
-	if credential(r) == credAPI && isMutatingMethod(r.Method) && !config.ReadGlobalSettings().ApiWritesEnabled {
+	if credential(r) == credAPI && isMutatingMethod(r.Method) && !config.ReadGlobalSettings().ApiWritesAllowed() {
 		http.Error(w, "API writes are disabled — enable them in the dashboard's global settings to let the CLI/Claude make changes", http.StatusForbidden)
 		return
 	}
