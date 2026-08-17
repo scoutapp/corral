@@ -219,11 +219,39 @@ func liveProxyTo(w http.ResponseWriter, r *http.Request, container, id string, p
 			DisableKeepAlives:     true,
 			ResponseHeaderTimeout: 30 * time.Second,
 		},
+		ModifyResponse: hardenLiveResponse,
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, e error) {
 			http.Error(w, fmt.Sprintf("live view: could not reach the app on port %d (%v)", port, e), http.StatusBadGateway)
 		},
 	}
 	proxy.ServeHTTP(w, r)
+}
+
+// hardenLiveResponse rewrites the framed app's response headers so embedding the
+// UNTRUSTED sandbox app in the dashboard can't become a sandbox→dashboard path.
+// This is the server half of the isolation; the client half is the iframe's
+// sandbox= attribute (which runs the app in an opaque origin with no
+// same-origin access to the dashboard).
+//
+//   - Replace whatever framing policy the app sent with our own: only the
+//     dashboard itself may frame this content (frame-ancestors 'self'). We
+//     REMOVE the app's X-Frame-Options entirely — a DENY/SAMEORIGIN there would
+//     otherwise make the browser refuse to render our iframe at all — and pin
+//     the CSP frame-ancestors ourselves so it can be framed by us and no one else.
+//   - Never let the framed app set cookies in the dashboard's origin. Its
+//     Set-Cookie headers are dropped so it can't plant a cookie the browser
+//     would then send on dashboard requests.
+func hardenLiveResponse(resp *http.Response) error {
+	h := resp.Header
+	// The app's own anti-framing headers would block our legitimate embed; drop
+	// them and assert our own frame-ancestors policy.
+	h.Del("X-Frame-Options")
+	h.Del("Content-Security-Policy")
+	h.Del("Content-Security-Policy-Report-Only")
+	h.Set("Content-Security-Policy", "frame-ancestors 'self'")
+	// The framed app must not set cookies scoped to the dashboard origin.
+	h.Del("Set-Cookie")
+	return nil
 }
 
 // stripCookie removes a single named cookie from the request's Cookie header,
