@@ -54,15 +54,28 @@ func (d *dashboardServer) logRequests(next http.Handler) http.Handler {
 		} else if sw.status >= 400 {
 			level = applog.LevelWarn
 		}
+
+		// On an error status, surface WHY: handlers write the reason into the body
+		// (http.Error → "bad JSON: EOF", "API writes are disabled", …). Without this
+		// the log said only "POST /path → 400" — the status, never the reason. Fold
+		// a trimmed snippet of that body into the message + meta so the Logs UI shows
+		// the actual cause. Only captured for errors (see statusWriter.captureBody),
+		// so success responses aren't buffered.
+		msg := applog.Fmt("%s %s → %d", r.Method, path, sw.status)
+		meta := map[string]any{"method": r.Method, "path": path, "status": sw.status}
+		if reason := errorReason(sw); reason != "" {
+			msg = applog.Fmt("%s %s → %d: %s", r.Method, path, sw.status, reason)
+			meta["error"] = reason
+		}
 		// The request row is the root span itself (single row — it already has its
 		// own duration; no separate .start/.end needed). Children use span pairs.
 		d.applog().Log(applog.Entry{
 			Level:      level,
 			Category:   applog.CatHTTP,
 			Event:      event,
-			Message:    applog.Fmt("%s %s → %d", r.Method, path, sw.status),
+			Message:    msg,
 			DurationMs: dur,
-			Meta:       map[string]any{"method": r.Method, "path": path, "status": sw.status},
+			Meta:       meta,
 			TraceID:    traceID,
 			SpanID:     spanID,
 		})
@@ -75,12 +88,39 @@ func skipLogPath(p string) bool {
 		strings.HasPrefix(p, "/static/")
 }
 
-// statusWriter captures the response status for logging. It forwards Hijack (for
-// WebSocket upgrades) and Flush when the underlying writer supports them.
+// errorReason returns a short, single-line reason for an error response, from the
+// captured body. Returns "" for non-error responses or an empty body. The body is
+// http.Error's plain text (e.g. "bad JSON: EOF\n") or a small JSON error; we take
+// the first line, trimmed, so the log message stays one line.
+func errorReason(s *statusWriter) string {
+	if s.status < 400 || len(s.body) == 0 {
+		return ""
+	}
+	reason := string(s.body)
+	if i := strings.IndexByte(reason, '\n'); i >= 0 {
+		reason = reason[:i]
+	}
+	reason = strings.TrimSpace(reason)
+	// Guard against a pathologically long single line.
+	if len(reason) > 200 {
+		reason = reason[:200] + "…"
+	}
+	return reason
+}
+
+// maxErrorBodyCapture bounds how much of an error response body we buffer for the
+// log reason — enough for a message like "bad JSON: EOF" or an allowlist error,
+// not a whole page. Success bodies are never captured.
+const maxErrorBodyCapture = 512
+
+// statusWriter captures the response status (and, for error statuses, a bounded
+// snippet of the body) for logging. It forwards Hijack (for WebSocket upgrades)
+// and Flush when the underlying writer supports them.
 type statusWriter struct {
 	http.ResponseWriter
 	status int
 	wrote  bool
+	body   []byte // captured only for 4xx/5xx, up to maxErrorBodyCapture bytes
 }
 
 func (s *statusWriter) WriteHeader(code int) {
@@ -93,6 +133,16 @@ func (s *statusWriter) WriteHeader(code int) {
 
 func (s *statusWriter) Write(b []byte) (int, error) {
 	s.wrote = true
+	// Capture the body only for error responses, and only up to the cap. This is
+	// the reason string handlers pass to http.Error; success bodies (which can be
+	// large JSON/streams) are never buffered.
+	if s.status >= 400 && len(s.body) < maxErrorBodyCapture {
+		room := maxErrorBodyCapture - len(s.body)
+		if room > len(b) {
+			room = len(b)
+		}
+		s.body = append(s.body, b[:room]...)
+	}
 	return s.ResponseWriter.Write(b)
 }
 
