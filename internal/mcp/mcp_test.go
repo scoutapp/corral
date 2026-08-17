@@ -55,6 +55,20 @@ func TestParseList(t *testing.T) {
 	if got[4].Status != StatusPending {
 		t.Errorf("pending status = %q, want pending", got[4].Status)
 	}
+
+	// Kind: claude.ai-prefixed names are "personal"; others are "server".
+	if gmail.Kind != KindPersonal {
+		t.Errorf("gmail kind = %q, want personal", gmail.Kind)
+	}
+	if got[2].Kind != KindPersonal {
+		t.Errorf("scout kind = %q, want personal", got[2].Kind)
+	}
+	if got[3].Kind != KindServer { // "linear"
+		t.Errorf("linear kind = %q, want server", got[3].Kind)
+	}
+	if got[4].Kind != KindServer { // "pendingsrv"
+		t.Errorf("pendingsrv kind = %q, want server", got[4].Kind)
+	}
 }
 
 func TestParseListIgnoresNoise(t *testing.T) {

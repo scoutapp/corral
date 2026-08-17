@@ -16,6 +16,18 @@ type McpServer = {
   transport?: "http" | "sse" | "stdio";
   status: "connected" | "needs_auth" | "pending" | "unknown";
   statusText?: string;
+  // "personal" = synced from your claude.ai account; "server" = configured on
+  // this host (added via corral or `claude mcp add`).
+  kind?: "personal" | "server";
+};
+
+const KIND_LABEL: Record<NonNullable<McpServer["kind"]>, string> = {
+  personal: "Personal",
+  server: "Server",
+};
+const KIND_TITLE: Record<NonNullable<McpServer["kind"]>, string> = {
+  personal: "Synced from your claude.ai account",
+  server: "Configured on this host",
 };
 
 const STATUS_LABEL: Record<McpServer["status"], string> = {
@@ -109,8 +121,8 @@ export function IntegrationsPage() {
             ← All projects
           </Link>
           <span className="brand-name">Integrations</span>
-          <button type="button" className="brand-sub auto-btn link" onClick={load}>
-            ⟳ refresh
+          <button type="button" className="brand-sub auto-btn link" onClick={load} disabled={loading}>
+            {loading && servers.length > 0 ? "⟳ refreshing…" : "⟳ refresh"}
           </button>
         </div>
       </header>
@@ -124,7 +136,11 @@ export function IntegrationsPage() {
         {err && <div className="auto-msg err">{err}</div>}
         {msg && !err && <div className="auto-msg">{msg}</div>}
 
-        {servers.length === 0 && !loading ? (
+        {loading && servers.length === 0 ? (
+          <div className="mcp-loading">
+            <span className="mcp-spinner" aria-hidden="true" /> Checking MCP servers…
+          </div>
+        ) : servers.length === 0 && !loading ? (
           <p className="auto-empty">
             No MCP servers connected yet.{" "}
             <button type="button" className="auto-btn link" onClick={() => setShowAdd(true)}>
@@ -137,7 +153,14 @@ export function IntegrationsPage() {
               <li key={s.name} className="mcp-row">
                 <span className={`mcp-dot mcp-${s.status}`} title={s.statusText || s.status} />
                 <div className="mcp-id">
-                  <div className="mcp-name">{s.name}</div>
+                  <div className="mcp-name">
+                    {s.name}
+                    {s.kind && (
+                      <span className={`mcp-kind mcp-kind-${s.kind}`} title={KIND_TITLE[s.kind]}>
+                        {KIND_LABEL[s.kind]}
+                      </span>
+                    )}
+                  </div>
                   <div className="mcp-url">
                     {s.url}
                     {s.transport ? <span className="mcp-transport"> · {s.transport}</span> : null}

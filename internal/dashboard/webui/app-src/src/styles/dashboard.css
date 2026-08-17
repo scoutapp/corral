@@ -2290,8 +2290,26 @@ table.projects th, table.projects td {
 .mcp-dot.mcp-connected { background: var(--accent); box-shadow: 0 0 7px var(--accent); }
 .mcp-dot.mcp-needs_auth { background: #E8B84B; box-shadow: 0 0 7px #E8B84B; }
 .mcp-dot.mcp-pending { background: var(--muted); }
-.mcp-name { font-weight: 600; color: var(--fg); font-size: 0.92rem; }
+.mcp-name { font-weight: 600; color: var(--fg); font-size: 0.92rem; display: inline-flex; align-items: center; gap: 0.5rem; }
+.mcp-kind {
+  font-family: var(--mono, ui-monospace, monospace); font-size: 0.6rem; font-weight: 600;
+  letter-spacing: 0.05em; text-transform: uppercase;
+  border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px;
+}
+.mcp-kind-personal { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.mcp-kind-server { color: var(--muted); }
 .mcp-url { font-family: var(--mono, ui-monospace, monospace); font-size: 0.72rem; color: var(--muted); margin-top: 1px; }
+
+/* Loading indicator while the MCP list is being fetched (list health-checks
+   each server, so it can take a couple seconds). */
+.mcp-loading { display: flex; align-items: center; gap: 0.6rem; color: var(--muted); font-size: 0.85rem; padding: 0.8rem 0; }
+.mcp-spinner {
+  width: 13px; height: 13px; border-radius: 50%;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  animation: mcp-spin 0.7s linear infinite; display: inline-block;
+}
+@keyframes mcp-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .mcp-spinner { animation: none; } }
 .mcp-transport { color: var(--text-faint, #526460); }
 .mcp-right { display: flex; align-items: center; gap: 0.7rem; }
 .mcp-status { font-family: var(--mono, ui-monospace, monospace); font-size: 0.65rem; letter-spacing: 0.05em; text-transform: uppercase; }

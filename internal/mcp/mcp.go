@@ -48,6 +48,33 @@ type Server struct {
 	// StatusText is the raw human string from the CLI ("Needs authentication"),
 	// kept so the UI can show exactly what claude reported.
 	StatusText string `json:"statusText,omitempty"`
+	// Kind splits "personal" (synced from your claude.ai account — scope
+	// "claude.ai config") from "server" (configured on this host at user/project/
+	// local scope, e.g. added via corral or `claude mcp add`). Derived from the
+	// claude.ai-prefixed name that `mcp list` emits, which is a reliable 1:1 proxy
+	// for the claude.ai-config scope (avoids an extra `mcp get` per server).
+	Kind Kind `json:"kind"`
+}
+
+// Kind is where an MCP server's config comes from.
+type Kind string
+
+const (
+	KindPersonal Kind = "personal" // claude.ai account (scope "claude.ai config")
+	KindServer   Kind = "server"   // this host (user/project/local scope)
+)
+
+// claudeAiNamePrefix is how the claude.ai integration names the servers it syncs
+// ("claude.ai Gmail", "claude.ai Slack"). Its presence maps 1:1 to the
+// "claude.ai config" scope reported by `claude mcp get`.
+const claudeAiNamePrefix = "claude.ai "
+
+// kindForName classifies a server by its name (see claudeAiNamePrefix).
+func kindForName(name string) Kind {
+	if strings.HasPrefix(name, claudeAiNamePrefix) {
+		return KindPersonal
+	}
+	return KindServer
 }
 
 // AddSpec describes a remote MCP server to connect. Header, when set, is the full
@@ -186,6 +213,7 @@ func parseList(out string) []Server {
 			Transport:  transportFromURL(urlPart),
 			Status:     st,
 			StatusText: text,
+			Kind:       kindForName(name),
 		})
 	}
 	return servers
