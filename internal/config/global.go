@@ -34,11 +34,29 @@ type GlobalSettings struct {
 	LogMaxRows       int `json:"log_max_rows,omitempty"`
 
 	// ApiWritesEnabled gates MUTATING API calls (POST/PUT/DELETE) made with the
-	// API token — i.e. the `corral api` CLI and the host Claude skill. OFF by
-	// default: reads are always allowed, but a write needs explicit opt-in since
-	// it can start projects, create issues, run flows. The browser dashboard (its
-	// own session token) is never gated — this is only for programmatic clients.
-	ApiWritesEnabled bool `json:"api_writes_enabled,omitempty"`
+	// API token — i.e. the `corral api` CLI and the host Claude skill. Reads are
+	// always allowed, but a write needs explicit opt-in since it can start
+	// projects, create issues, run flows. The browser dashboard (its own session
+	// token) is never gated — this is only for programmatic clients.
+	//
+	// TRI-STATE: nil = the user has never chosen (the dashboard prompts them, like
+	// the chat capability), true = allowed, false = explicitly denied. nil is
+	// treated as OFF for enforcement (ApiWritesAllowed), so the safe posture holds
+	// until they decide — but unlike a plain bool, nil is distinguishable from a
+	// deliberate "off", which is what lets the UI know to ask.
+	ApiWritesEnabled *bool `json:"api_writes_enabled,omitempty"`
+}
+
+// ApiWritesAllowed reports the effective enforcement value: true only when the
+// user has explicitly enabled writes. nil (never chosen) and false both block.
+func (gs *GlobalSettings) ApiWritesAllowed() bool {
+	return gs != nil && gs.ApiWritesEnabled != nil && *gs.ApiWritesEnabled
+}
+
+// ApiWritesConfigured reports whether the user has made a choice (true or false).
+// nil means "never chosen" → the dashboard should prompt.
+func (gs *GlobalSettings) ApiWritesConfigured() bool {
+	return gs != nil && gs.ApiWritesEnabled != nil
 }
 
 // GlobalSettingsPath is ~/.corral/global-settings.json.

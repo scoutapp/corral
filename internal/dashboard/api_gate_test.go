@@ -34,7 +34,7 @@ func doReq(t *testing.T, srv *httptest.Server, method, path, token string) int {
 func setApiWrites(t *testing.T, enabled bool) {
 	t.Helper()
 	gs := config.ReadGlobalSettings()
-	gs.ApiWritesEnabled = enabled
+	gs.ApiWritesEnabled = &enabled // explicit choice (tri-state; nil = never chosen)
 	if err := config.WriteGlobalSettings(gs); err != nil {
 		t.Fatalf("write global settings: %v", err)
 	}
@@ -49,7 +49,14 @@ func TestApiWritesGate(t *testing.T) {
 	// (gated) vs not-403 (allowed through to the handler, which then 404s).
 	const writePath = "/p/nonexistent/start"
 
-	// Writes disabled (default): API token → 403 from the gate.
+	// NEVER CHOSEN (nil): the safe posture — a write with the API token is blocked
+	// (403), same as an explicit off. This is what lets the default stay safe while
+	// the UI prompts the user to choose.
+	if code := doReq(t, srv, http.MethodPost, writePath, "apitok"); code != http.StatusForbidden {
+		t.Errorf("api write with writes UNSET (nil): got %d, want 403", code)
+	}
+
+	// Writes disabled (explicit): API token → 403 from the gate.
 	setApiWrites(t, false)
 	if code := doReq(t, srv, http.MethodPost, writePath, "apitok"); code != http.StatusForbidden {
 		t.Errorf("api write with gate OFF: got %d, want 403", code)
