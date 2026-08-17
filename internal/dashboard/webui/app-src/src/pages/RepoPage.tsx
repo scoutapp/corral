@@ -17,6 +17,7 @@ import type {
 } from "../api/types";
 import { useBodyClass } from "../hooks/useBodyClass";
 import { AutomationsManager } from "../components/AutomationsManager";
+import { RepoSkillsSettings } from "../components/RepoSkillsSettings";
 import { loadEditor, type DiffHandle, type DiffEditorView } from "../lib/editor";
 import { splitUnifiedHunk } from "../lib/diffHunk";
 import { relDate, ghOwnerName } from "../lib/repos";
@@ -1069,6 +1070,8 @@ function SettingsTab({
         </button>
         {msg && <span className="tab-note">{msg}</span>}
       </div>
+
+      <RepoSkillsSettings repoId={repoId} />
 
       <hr className="repo-settings-sep" />
       <h3 className="repo-settings-h">Automations</h3>
