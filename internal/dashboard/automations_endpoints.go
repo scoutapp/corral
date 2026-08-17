@@ -91,6 +91,8 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handleMCP(w, r, "")
 	case strings.HasPrefix(rest, "mcp/"):
 		d.handleMCP(w, r, strings.TrimPrefix(rest, "mcp/"))
+	case rest == "chat/capability":
+		d.handleChatCapability(w, r)
 	default:
 		routeNotFound(w, r)
 	}

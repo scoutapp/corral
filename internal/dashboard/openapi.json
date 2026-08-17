@@ -1296,6 +1296,71 @@
           }
         }
       }
+    },
+    "/api/chat/capability": {
+      "get": {
+        "summary": "Get the global assistant's capability (read-only vs act)",
+        "description": "configured=false means the user hasn't chosen yet \u2192 the dashboard shows a first-run prompt. Governs the app-wide chat dock only.",
+        "responses": {
+          "200": {
+            "description": "Capability",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "capability": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "readonly",
+                        "act",
+                        null
+                      ]
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Set the global assistant's capability",
+        "description": "readonly = look only; act = can run corral api (still fenced by the API-writes gate). A browser preference, not itself gated.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "capability"
+                ],
+                "properties": {
+                  "capability": {
+                    "type": "string",
+                    "enum": [
+                      "readonly",
+                      "act"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved"
+          }
+        }
+      }
     }
   },
   "components": {

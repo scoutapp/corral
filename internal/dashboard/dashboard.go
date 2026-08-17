@@ -577,6 +577,10 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		// here rather than via handleAPI because it's a WebSocket, not JSON.
 		d.handleSessionWS(w, r, mcpLoginSession)
 		return
+	case "/chat/ws":
+		// The app-wide "Claude everywhere" chat — not tied to a project.
+		d.handleGlobalChatWS(w, r)
+		return
 	}
 
 	// Automations control plane (API-first). Everything under /api/ is a plain
