@@ -453,6 +453,8 @@ func (d *dashboardServer) handlePRItem(w http.ResponseWriter, r *http.Request, r
 		d.handlePRRiskGet(w, r, prID)
 	case action == "analyze" && r.Method == http.MethodPost:
 		d.handlePRAnalyze(w, r, prID)
+	case action == "issues" && r.Method == http.MethodGet:
+		d.handlePRIssues(w, r, prID)
 	case action == "links" && r.Method == http.MethodGet:
 		d.handlePRLinksGet(w, r, prID)
 	case action == "links" && r.Method == http.MethodPost:
@@ -464,6 +466,34 @@ func (d *dashboardServer) handlePRItem(w http.ResponseWriter, r *http.Request, r
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// handlePRIssues: GET /prs/<prId>/issues — the issue(s) this PR closes, for the
+// PR-view Issue description tab(s). Resolves via GitHub's closingIssuesReferences,
+// falling back to a number in the head branch name. A PR that closes nothing
+// returns {"issues": []} (the UI then shows just the PR description, no tabs).
+func (d *dashboardServer) handlePRIssues(w http.ResponseWriter, r *http.Request, prID int64) {
+	s, err := d.getStore()
+	if err != nil {
+		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	svc := prreview.New(s)
+	ownerName := d.ownerNameForPR(svc, prID)
+	if ownerName == "" {
+		// Not a GitHub remote — no issues to link. Empty, not an error.
+		writeJSON(w, map[string]any{"issues": []prreview.LinkedIssue{}})
+		return
+	}
+	issues, err := svc.LinkedIssues(prID, ownerName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	if issues == nil {
+		issues = []prreview.LinkedIssue{}
+	}
+	writeJSON(w, map[string]any{"issues": issues})
 }
 
 func (d *dashboardServer) handlePRLinksGet(w http.ResponseWriter, r *http.Request, prID int64) {
