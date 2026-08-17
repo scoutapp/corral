@@ -2280,3 +2280,45 @@ table.projects th, table.projects td {
 .mcp-login-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--border); font-size: 0.82rem; color: var(--muted); }
 .mcp-login-head b { color: var(--fg); }
 .mcp-login-term { height: 300px; padding: 4px; background: var(--bg); }
+
+/* Flows builder — a two-pane composer: flow list + selected-flow detail. */
+.flows-layout { display: grid; grid-template-columns: 220px 1fr; gap: 1rem; margin-top: 0.5rem; }
+.flows-list { border-right: 1px solid var(--border); padding-right: 1rem; }
+.flows-new { display: flex; gap: 0.4rem; margin-bottom: 0.7rem; }
+.flows-list ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.flows-list-item { width: 100%; text-align: left; background: none; border: 1px solid transparent; border-radius: 6px; padding: 0.45rem 0.6rem; color: var(--fg); font-size: 0.86rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+.flows-list-item:hover { border-color: var(--border); }
+.flows-list-item.active { background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+.flows-list-count { font-family: var(--mono, ui-monospace, monospace); font-size: 0.7rem; color: var(--muted); }
+
+.flow-detail-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; }
+.flow-detail-head h3 { margin: 0; font-size: 1.05rem; color: var(--fg); }
+.flow-detail-actions { display: flex; gap: 0.6rem; align-items: center; }
+
+.flow-steps { list-style: none; margin: 0 0 0.9rem; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; counter-reset: step; }
+.flow-step { display: flex; align-items: center; gap: 0.7rem; border: 1px solid var(--border); border-radius: 7px; padding: 0.5rem 0.75rem; background: color-mix(in srgb, var(--fg) 1.5%, transparent); }
+.flow-step-key { font-family: var(--mono, ui-monospace, monospace); font-size: 0.75rem; color: var(--accent); min-width: 5rem; }
+.flow-step-action { color: var(--fg); font-size: 0.86rem; }
+.flow-step-deps { font-family: var(--mono, ui-monospace, monospace); font-size: 0.72rem; color: var(--accent-2, #E8B84B); margin-left: auto; }
+
+.flow-add-step { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 0.9rem; }
+.flow-add-step select[multiple] { height: 4.5rem; min-width: 8rem; }
+
+.flow-schedule { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; padding: 0.7rem 0.85rem; border: 1px solid var(--border); border-radius: 8px; background: color-mix(in srgb, var(--accent-2, #E8B84B) 4%, transparent); margin-bottom: 0.9rem; }
+.flow-schedule-label { font-size: 0.85rem; color: var(--fg); }
+.flow-schedule-catchup { font-size: 0.78rem; color: var(--muted); display: inline-flex; align-items: center; gap: 0.3rem; }
+.flow-schedule-last { font-family: var(--mono, ui-monospace, monospace); font-size: 0.72rem; color: var(--muted); }
+
+.flow-result { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.flow-result.ok { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.flow-result.err { border-color: color-mix(in srgb, #E8734B 45%, var(--border)); }
+.flow-result-head { padding: 0.5rem 0.8rem; border-bottom: 1px solid var(--border); font-family: var(--mono, ui-monospace, monospace); font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.flow-result ol { margin: 0; padding: 0.6rem 1.3rem; display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.82rem; }
+.flow-result li.ok { color: var(--fg); }
+.flow-result li.err { color: #E8734B; }
+.flow-result-err { color: #E8734B; font-family: var(--mono, ui-monospace, monospace); font-size: 0.75rem; }
+
+@media (max-width: 720px) {
+  .flows-layout { grid-template-columns: 1fr; }
+  .flows-list { border-right: none; border-bottom: 1px solid var(--border); padding-right: 0; padding-bottom: 0.8rem; }
+}
