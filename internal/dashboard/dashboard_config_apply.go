@@ -1,9 +1,11 @@
 package dashboard
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/dindcache"
 	"github.com/scoutapp/corral/internal/session"
 	sshagent "github.com/scoutapp/corral/internal/ssh"
 	"net/http"
@@ -50,8 +52,14 @@ type configEdit struct {
 	PassthroughFirewall *bool     `json:"passthrough_firewall,omitempty"`
 	DindEnabled         *bool     `json:"dind_enabled,omitempty"`
 	DindPorts           *[]string `json:"dind_ports,omitempty"`
-	LaunchTmux          *bool     `json:"launch_tmux,omitempty"`
-	SeccompMode         *string   `json:"seccomp_mode,omitempty"`
+	// DindCache: a JSON object {name, mode} pins the project to a cache; JSON
+	// null clears it (back to a fresh per-workspace volume). Absent = no edit.
+	// RawMessage lets us tell all three apart: nil (absent), "null" (clear),
+	// or an object (set) — a plain *DindCacheRef can't distinguish absent from
+	// null-clear.
+	DindCache   json.RawMessage `json:"dind_cache,omitempty"`
+	LaunchTmux  *bool           `json:"launch_tmux,omitempty"`
+	SeccompMode *string         `json:"seccomp_mode,omitempty"`
 
 	// SSH scoped-agent EXTRA key list (restart-required — baked at container
 	// start). Union model: these are added on top of the global default; setting
@@ -64,6 +72,59 @@ type credSet struct {
 	Kind  string `json:"kind"` // header | url_param
 	Name  string `json:"name"`
 	Value string `json:"value"`
+}
+
+// dindCacheEdit interprets the raw dind_cache field:
+//
+//	absent           → present=false (no edit)
+//	null             → present=true, next=nil (clear the cache)
+//	{name,mode}      → present=true, next=&ref (set/replace)
+//
+// A malformed object, an invalid cache name, or an unknown mode is an error so a
+// bad edit is rejected up front rather than saved and failing at container start.
+func (e configEdit) dindCacheEdit() (present bool, next *config.DindCacheRef, err error) {
+	raw := bytes.TrimSpace(e.DindCache)
+	if len(raw) == 0 {
+		return false, nil, nil
+	}
+	if string(raw) == "null" {
+		return true, nil, nil
+	}
+	var ref config.DindCacheRef
+	if err := json.Unmarshal(raw, &ref); err != nil {
+		return true, nil, fmt.Errorf("dind_cache: %w", err)
+	}
+	if !dindcache.ValidName(ref.Name) {
+		return true, nil, fmt.Errorf("dind_cache: invalid cache name %q", ref.Name)
+	}
+	switch ref.Mode {
+	case "", config.DindCacheModeCopy:
+		ref.Mode = config.DindCacheModeCopy
+	case config.DindCacheModeShared:
+	default:
+		return true, nil, fmt.Errorf("dind_cache: unknown mode %q (want copy|shared)", ref.Mode)
+	}
+	return true, &ref, nil
+}
+
+// dindCacheEqual reports whether two cache refs are the same (both nil counts).
+func dindCacheEqual(a, b *config.DindCacheRef) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.Name == b.Name && a.Mode == b.Mode
+}
+
+// dindCacheLabel renders a cache ref for the diff preview.
+func dindCacheLabel(r *config.DindCacheRef) string {
+	if r == nil || r.Name == "" {
+		return "none"
+	}
+	mode := r.Mode
+	if mode == "" {
+		mode = config.DindCacheModeCopy
+	}
+	return fmt.Sprintf("%s [%s]", r.Name, mode)
 }
 
 // diffEntry is one line of the review-before-apply preview.
@@ -376,6 +437,11 @@ func computeDiff(edit configEdit, cur *config.ProjectConfig, curAllowed []string
 	if edit.DindPorts != nil {
 		out = append(out, listDiff("published port", cur.DindPorts, *edit.DindPorts, true)...)
 	}
+	if present, next, err := edit.dindCacheEdit(); err == nil && present {
+		if !dindCacheEqual(cur.DindCache, next) {
+			out = append(out, diffEntry{Field: "dind_cache", Change: fmt.Sprintf("~ %s → %s", dindCacheLabel(cur.DindCache), dindCacheLabel(next)), Restart: true})
+		}
+	}
 	if edit.LaunchTmux != nil && *edit.LaunchTmux != cur.LaunchTmux {
 		out = append(out, diffEntry{Field: "launch_tmux", Change: fmt.Sprintf("~ %v → %v", cur.LaunchTmux, *edit.LaunchTmux), Restart: true})
 	}
@@ -430,6 +496,11 @@ func applyRestartFields(workspace string, edit configEdit) error {
 	}
 	if edit.DindPorts != nil {
 		cfg.DindPorts = *edit.DindPorts
+	}
+	if present, next, err := edit.dindCacheEdit(); err != nil {
+		return err
+	} else if present {
+		cfg.DindCache = next
 	}
 	if edit.LaunchTmux != nil {
 		cfg.LaunchTmux = *edit.LaunchTmux

@@ -337,6 +337,10 @@ func (sc *Corral) Run(keepDevfiles bool) error {
 	if !sc.DisableDind && cfg.DindEnabled {
 		sc.dindEnabled = true
 		sc.dindPorts = cfg.DindPorts
+		sc.dindCache = cfg.DindCache
+		if err := sc.seedDindCache(cfg); err != nil {
+			return err
+		}
 	}
 	sc.seccompMode = cfg.SeccompMode
 

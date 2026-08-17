@@ -41,19 +41,20 @@ type configView struct {
 
 	// Live zone
 	AllowedHosts []string   `json:"allowed_hosts"`
-	MonitorHosts []string   `json:"monitor_hosts"`           // the custom list (empty for non-custom presets)
+	MonitorHosts []string   `json:"monitor_hosts"` // the custom list (empty for non-custom presets)
 	MonitorAll   bool       `json:"monitor_all"`
 	MitmPreset   string     `json:"mitm_preset"` // minimal|all|none|custom
 	MitmPorts    []string   `json:"mitm_ports"`
 	Credentials  []credView `json:"credentials"`
 
 	// Restart-required zone
-	ProxyEnabled        bool     `json:"proxy_enabled"`
-	PassthroughFirewall bool     `json:"passthrough_firewall"`
-	DindEnabled         bool     `json:"dind_enabled"`
-	DindPorts           []string `json:"dind_ports"`
-	LaunchTmux          bool     `json:"launch_tmux"`
-	SeccompMode         string   `json:"seccomp_mode"` // "" default | unconfined | <path>
+	ProxyEnabled        bool                 `json:"proxy_enabled"`
+	PassthroughFirewall bool                 `json:"passthrough_firewall"`
+	DindEnabled         bool                 `json:"dind_enabled"`
+	DindPorts           []string             `json:"dind_ports"`
+	DindCache           *config.DindCacheRef `json:"dind_cache,omitempty"`
+	LaunchTmux          bool                 `json:"launch_tmux"`
+	SeccompMode         string               `json:"seccomp_mode"` // "" default | unconfined | <path>
 
 	// SSH scoped-agent (union model). The effective set is global ∪ project extras.
 	//   SSHKeys          — this project's EXTRA key paths (added on top of global)
@@ -96,6 +97,7 @@ func (d *dashboardServer) handleConfigRead(w http.ResponseWriter, r *http.Reques
 		PassthroughFirewall: cfg.PassthroughFirewall,
 		DindEnabled:         cfg.DindEnabled,
 		DindPorts:           cfg.DindPorts,
+		DindCache:           cfg.DindCache,
 		LaunchTmux:          cfg.LaunchTmux,
 		SeccompMode:         cfg.SeccompMode,
 		ContainerUp:         session.DockerContainerRunning(session.ContainerNameForWorkspace(workspace)),
