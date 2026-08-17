@@ -60,7 +60,20 @@ examples:
 	fs.StringVar(&tokenFlag, "token", "", "dashboard token")
 	fs.BoolVar(&include, "i", false, "include response status + headers")
 	fs.BoolVar(&includeLong, "include", false, "include response status + headers")
-	if err := fs.Parse(args); err != nil {
+
+	// The natural way to call this — `corral api POST /path -d '{...}'` — puts the
+	// METHOD + path positionals BEFORE the flags. Go's flag package stops parsing
+	// at the first non-flag arg, so those trailing flags would be silently dropped
+	// (the classic symptom: `-d` ignored → empty body → 400). Pull the positionals
+	// out first, then parse the remaining args as flags, so flag order doesn't
+	// matter. We take the first two args that aren't a flag / a flag's value as the
+	// METHOD and path.
+	method, path, flagArgs, perr := splitAPIArgs(args)
+	if perr != nil {
+		fs.Usage()
+		return perr
+	}
+	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}
 	if dataLong != "" {
@@ -68,13 +81,7 @@ examples:
 	}
 	include = include || includeLong
 
-	rest := fs.Args()
-	if len(rest) < 2 {
-		fs.Usage()
-		return fmt.Errorf("need a METHOD and a path")
-	}
-	method := strings.ToUpper(rest[0])
-	path := rest[1]
+	method = strings.ToUpper(method)
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
@@ -139,6 +146,48 @@ examples:
 		fmt.Fprintln(os.Stdout)
 	}
 	return nil
+}
+
+// apiValueFlags are the `corral api` flags that consume the following argument as
+// their value (in the space-separated `-d value` form). Used by splitAPIArgs to
+// skip a flag's value when hunting for the two positionals. Boolean flags (-i,
+// --include) are absent — they never consume a following arg.
+var apiValueFlags = map[string]bool{
+	"-d": true, "--data": true, "--url": true, "--token": true,
+}
+
+// splitAPIArgs pulls the METHOD and path positionals out of a `corral api` arg
+// list, returning them plus the remaining (flag) args. This makes flag POSITION
+// irrelevant: `POST /path -d '{...}'` and `-d '{...}' POST /path` both work, where
+// Go's flag package alone would drop the trailing flags in the first form.
+//
+// It walks the args, skipping flags (a token starting with "-") and, for a
+// value-flag in the `-d value` form, the value that follows it. The first two
+// non-flag tokens are the METHOD and path; everything else is returned as flags.
+func splitAPIArgs(args []string) (method, path string, flagArgs []string, err error) {
+	var positionals []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if strings.HasPrefix(a, "-") && a != "-" {
+			flagArgs = append(flagArgs, a)
+			// `--flag=value` carries its own value; `-d value` takes the next arg.
+			if !strings.Contains(a, "=") && apiValueFlags[a] && i+1 < len(args) {
+				i++
+				flagArgs = append(flagArgs, args[i])
+			}
+			continue
+		}
+		positionals = append(positionals, a)
+	}
+	if len(positionals) < 2 {
+		return "", "", nil, fmt.Errorf("need a METHOD and a path")
+	}
+	// Any positionals beyond the first two are unexpected; keep the behavior strict
+	// and predictable rather than silently ignoring them.
+	if len(positionals) > 2 {
+		return "", "", nil, fmt.Errorf("unexpected extra argument %q (usage: corral api <METHOD> <path> [flags])", positionals[2])
+	}
+	return positionals[0], positionals[1], flagArgs, nil
 }
 
 // resolveDashboardTarget determines the base URL + token, in precedence order:

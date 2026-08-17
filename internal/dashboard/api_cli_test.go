@@ -8,6 +8,50 @@ import (
 	"testing"
 )
 
+// TestSplitAPIArgs covers the flag-position independence: METHOD + path can come
+// before OR after flags. The regression this guards: Go's flag package stops at
+// the first positional, so `POST /path -d '{...}'` used to silently drop -d and
+// send an empty body (→ 400).
+func TestSplitAPIArgs(t *testing.T) {
+	cases := []struct {
+		name       string
+		args       []string
+		wantMethod string
+		wantPath   string
+		wantFlags  []string
+	}{
+		{"flags after positionals", []string{"POST", "/api/actions", "-d", "{}"}, "POST", "/api/actions", []string{"-d", "{}"}},
+		{"flags before positionals", []string{"-d", "{}", "POST", "/api/actions"}, "POST", "/api/actions", []string{"-d", "{}"}},
+		{"flags interleaved", []string{"POST", "-d", "{}", "/api/actions"}, "POST", "/api/actions", []string{"-d", "{}"}},
+		{"inline --data=value", []string{"POST", "/api/actions", "--data={}"}, "POST", "/api/actions", []string{"--data={}"}},
+		{"bool flag doesn't eat path", []string{"GET", "-i", "/api/flows"}, "GET", "/api/flows", []string{"-i"}},
+		{"no flags", []string{"GET", "/api/flows"}, "GET", "/api/flows", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m, p, flags, err := splitAPIArgs(tc.args)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if m != tc.wantMethod || p != tc.wantPath {
+				t.Errorf("method/path = %q %q, want %q %q", m, p, tc.wantMethod, tc.wantPath)
+			}
+			if strings.Join(flags, " ") != strings.Join(tc.wantFlags, " ") {
+				t.Errorf("flags = %v, want %v", flags, tc.wantFlags)
+			}
+		})
+	}
+
+	// Too few positionals is an error.
+	if _, _, _, err := splitAPIArgs([]string{"GET"}); err == nil {
+		t.Error("expected error for missing path")
+	}
+	// A stray third positional is rejected rather than silently ignored.
+	if _, _, _, err := splitAPIArgs([]string{"GET", "/a", "/b"}); err == nil {
+		t.Error("expected error for extra positional")
+	}
+}
+
 // TestCmdAPIRoundTrip drives a real test dashboard through CmdAPI via --url/--token
 // and asserts a documented GET round-trips (the spec itself), and that a non-2xx
 // surfaces as an error.
