@@ -1604,7 +1604,7 @@ table.projects th, table.projects td {
   background: #0b0e14; border: 1px solid var(--con-line); border-radius: 4px;
   padding: 0.5rem 0.7rem; overflow-x: auto; font-size: 0.8rem;
 }
-.pr-desc.clamped .pr-desc-body {
+.pr-desc-body-wrap.clamped .pr-desc-body {
   max-height: 11rem; overflow: hidden;
   -webkit-mask-image: linear-gradient(180deg, #000 70%, transparent);
   mask-image: linear-gradient(180deg, #000 70%, transparent);
@@ -1614,6 +1614,27 @@ table.projects th, table.projects td {
   color: var(--con-working); font-size: 0.8rem; padding: 0.2rem 0;
 }
 .pr-desc-more:hover { text-decoration: underline; }
+.pr-desc-empty { font-size: 0.85rem; color: var(--con-muted); margin: 0.2rem 0; }
+
+/* PR/Issue description tabs — shown when a PR closes/links an issue. */
+.pr-desc-tabs { display: flex; gap: 0.15rem; border-bottom: 1px solid var(--con-line); margin-bottom: 0.6rem; flex-wrap: wrap; }
+.pr-desc-tab {
+  background: none; border: none; cursor: pointer; padding: 0.35rem 0.65rem;
+  font-size: 0.8rem; color: var(--con-muted); border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.pr-desc-tab:hover { color: var(--con-text); }
+.pr-desc-tab.active { color: var(--con-text); border-bottom-color: var(--con-working); font-weight: 600; }
+.pr-desc-issue-head {
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.45rem;
+}
+.pr-desc-issue-title { font-size: 0.86rem; font-weight: 600; color: var(--con-text); }
+.pr-desc-issue-link { font-size: 0.76rem; color: var(--con-working); text-decoration: none; }
+.pr-desc-issue-link:hover { text-decoration: underline; }
+.pr-desc-issue-src {
+  font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--con-muted);
+  border: 1px solid var(--con-line); border-radius: 4px; padding: 1px 5px;
+}
 
 /* PR write-action bar (approve / comment / request changes / merge). */
 .pr-actions { margin-bottom: 0.9rem; }
