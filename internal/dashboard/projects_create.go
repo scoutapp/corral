@@ -169,6 +169,18 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 			return
 		}
 	}
+	// Inject each repo's saved skills + agent context into the workspace so the
+	// sandbox checkout carries them (best-effort; see injectRepoAssets).
+	repoIDs := make([]string, 0, len(body.Repos))
+	for _, rspec := range body.Repos {
+		if rspec.RepoID != "" {
+			repoIDs = append(repoIDs, rspec.RepoID)
+		}
+	}
+	if len(repoIDs) > 0 {
+		d.injectRepoAssets(workspace, repoIDs)
+	}
+
 	if err := RegisterProject(workspace); err != nil {
 		http.Error(w, "register: "+err.Error(), http.StatusInternalServerError)
 		return
