@@ -97,6 +97,12 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handleMCP(w, r, strings.TrimPrefix(rest, "mcp/"))
 	case rest == "chat/capability":
 		d.handleChatCapability(w, r)
+	case rest == "skills":
+		d.handleRepoSkills(w, r, "")
+	case strings.HasPrefix(rest, "skills/"):
+		d.handleRepoSkills(w, r, strings.TrimPrefix(rest, "skills/"))
+	case strings.HasPrefix(rest, "repos/") && strings.HasSuffix(rest, "/agent-context"):
+		d.handleRepoAgentContext(w, r, strings.TrimSuffix(strings.TrimPrefix(rest, "repos/"), "/agent-context"))
 	default:
 		routeNotFound(w, r)
 	}

@@ -37,6 +37,8 @@ const (
 	KindWebhook      = "webhook"       // HTTP POST
 	KindSlack        = "slack"         // Slack message
 	KindMCP          = "mcp"           // agentic: headless claude with an MCP server available
+	KindSkill        = "skill"         // a per-repo skill (SKILL.md content), injected into the sandbox
+	KindAgentContext = "agent_context" // per-repo CLAUDE.md context, one per repo
 )
 
 // Hookable events. Kept as constants so the UI, the resolver, and the emit
