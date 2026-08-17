@@ -71,6 +71,10 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handleDefaultPrompt(w, r)
 	case rest == "prompts/draft":
 		d.handlePromptDraftWS(w, r)
+	case rest == "prompts/library":
+		d.handlePromptLibrary(w, r, "")
+	case strings.HasPrefix(rest, "prompts/library/"):
+		d.handlePromptLibrary(w, r, strings.TrimPrefix(rest, "prompts/library/"))
 	case rest == "scripts/draft":
 		d.handleScriptDraftWS(w, r)
 	case rest == "scripts/env":
