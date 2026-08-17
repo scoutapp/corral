@@ -43,6 +43,8 @@ export function GlobalPage() {
   const [logDays, setLogDays] = useState("");
   const [logRows, setLogRows] = useState("");
   const [apiWrites, setApiWrites] = useState(false);
+  // Global assistant capability (separate DB-backed setting; null until first run).
+  const [assistantCap, setAssistantCap] = useState<"readonly" | "act" | null>(null);
 
   const linesToList = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
 
@@ -68,6 +70,10 @@ export function GlobalPage() {
           if (okMsg) setMsg({ text: okMsg, err: false });
         })
         .catch((e) => setMsg({ text: `failed to load: ${(e as Error).message}`, err: true }));
+      // Assistant capability lives in its own DB-backed setting.
+      getJSON<{ capability: "readonly" | "act" | null; configured: boolean }>("/api/chat/capability")
+        .then((c) => setAssistantCap(c.configured ? c.capability : null))
+        .catch(() => {});
     },
     [],
   );
@@ -82,6 +88,24 @@ export function GlobalPage() {
       if (chosenKeys[sshBasename(p)] !== false) out.push(p);
     });
     return out;
+  }
+
+  // Assistant capability saves immediately (its own DB-backed setting, not part
+  // of the Apply bundle).
+  async function saveAssistantCap(cap: "readonly" | "act") {
+    setAssistantCap(cap);
+    try {
+      const r = await fetch("/api/chat/capability", {
+        method: "PUT",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ capability: cap }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setMsg({ text: `✓ assistant set to ${cap === "act" ? "can act" : "read-only"}`, err: false });
+    } catch (e) {
+      setMsg({ text: `couldn't update assistant: ${(e as Error).message}`, err: true });
+    }
   }
 
   async function apply() {
@@ -416,6 +440,37 @@ export function GlobalPage() {
               <div className="muted cfg-note">
                 Reads (listing flows, logs, PRs) are always allowed. With this off, the CLI and Claude can look
                 but not act; turn it on to let them start projects, create issues, and run flows. Off by default.
+              </div>
+            </div>
+          </section>
+
+          <section className="cfg-section">
+            <h3>
+              Assistant <span className="muted">— what the app-wide Claude chat can do</span>
+            </h3>
+            <div className="cfg-field">
+              <label className="cfg-ssh-item">
+                <input
+                  type="radio"
+                  name="assistant-cap"
+                  checked={assistantCap !== "act"}
+                  onChange={() => saveAssistantCap("readonly")}
+                />{" "}
+                <span className="cfg-ssh-name">Read-only — look, don't change</span>
+              </label>
+              <label className="cfg-ssh-item">
+                <input
+                  type="radio"
+                  name="assistant-cap"
+                  checked={assistantCap === "act"}
+                  onChange={() => saveAssistantCap("act")}
+                />{" "}
+                <span className="cfg-ssh-name">Can act — run corral api (create issues, start projects, run flows)</span>
+              </label>
+              <div className="muted cfg-note">
+                Governs the app-wide chat dock. "Can act" still needs API writes (above) enabled before it can
+                actually change anything.
+                {assistantCap === null && " Not set yet — you'll be asked the first time you open the chat."}
               </div>
             </div>
           </section>
