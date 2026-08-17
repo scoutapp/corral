@@ -782,6 +782,7 @@ func usage() {
 	fmt.Println("  dashboard stop           Stop the dashboard server")
 	fmt.Println("  logs [--category --level --grep --json --limit N]   Dump the activity log (greppable)")
 	fmt.Println("  api <METHOD> <path> [-d json]   Call the dashboard API (see GET /api/openapi.json)")
+	fmt.Println("  flow list | run <name>          List or run automation flows")
 	fmt.Println("  uninstall [--yes] [--keep-images]   Remove everything corral created, then the binary itself")
 	fmt.Println("    --yes / -y       Skip the confirmation prompt")
 	fmt.Println("    --keep-images    Preserve the corral-stable image and DinD volumes")
@@ -938,6 +939,9 @@ func Main() {
 
 	case "api":
 		err = dashboard.CmdAPI(os.Args[2:])
+
+	case "flow":
+		err = dashboard.CmdFlow(os.Args[2:])
 
 	case "version", "--version", "-v":
 		fmt.Println(config.VersionString())
