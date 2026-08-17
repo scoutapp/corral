@@ -1,0 +1,584 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Corral Roadmap — Host orchestrates, sandbox is a leaf</title>
+<style>
+  html { -webkit-text-size-adjust: 100%; }
+  img { max-width: 100%; }
+  :root {
+    --ground: #0E1518;
+    --ground-2: #121D21;
+    --panel: #16232700;
+    --text: #C7D3D0;
+    --text-dim: #7E908C;
+    --text-faint: #526460;
+    --accent: #4AD6A8;
+    --accent-2: #E8B84B;
+    --danger: #E8734B;
+    --line: #21332F;
+    --line-bright: #2E4842;
+    --host: #4AD6A8;
+    --sandbox: #E8B84B;
+    --mono: "SFMono-Regular", "JetBrains Mono", "Menlo", ui-monospace, monospace;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(74,214,168,0.07), transparent 70%),
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: auto, 46px 46px, 46px 46px;
+    background-position: 0 0, -1px -1px, -1px -1px;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: linear-gradient(180deg, transparent, var(--ground) 82%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 28px; position: relative; z-index: 1; }
+
+  /* ---- eyebrow / mono utility ---- */
+  .mono { font-family: var(--mono); }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+
+  /* ---------------- HERO ---------------- */
+  header.hero { padding: 92px 0 40px; }
+  .hero .tag {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 26px;
+  }
+  .hero h1 {
+    font-family: var(--sans);
+    font-weight: 800;
+    font-size: clamp(38px, 6.4vw, 74px);
+    line-height: 0.98;
+    letter-spacing: -0.03em;
+    margin: 0 0 8px;
+    color: #EAF2EF;
+  }
+  .hero h1 .thin { font-weight: 300; color: var(--text-dim); }
+  .hero .lede {
+    max-width: 620px;
+    font-size: 18px;
+    color: var(--text-dim);
+    margin: 22px 0 0;
+  }
+  .hero .ver {
+    margin-top: 30px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--text-faint);
+    display: flex; gap: 20px; flex-wrap: wrap;
+  }
+  .hero .ver b { color: var(--accent); font-weight: 500; }
+
+  /* ---------------- TRUST DIAGRAM (thesis) ---------------- */
+  .thesis {
+    margin: 48px 0 20px;
+    border: 1px solid var(--line-bright);
+    border-radius: 12px;
+    background: linear-gradient(180deg, var(--ground-2), var(--ground));
+    overflow: hidden;
+  }
+  .thesis-head {
+    padding: 16px 22px;
+    border-bottom: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .thesis-head .rule { color: var(--accent); letter-spacing: 0.04em; }
+  .flowchart {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: stretch;
+    min-height: 220px;
+  }
+  .zone { padding: 26px 24px; }
+  .zone-host { }
+  .zone-sandbox { background:
+      repeating-linear-gradient(45deg, transparent, transparent 12px, rgba(232,184,75,0.03) 12px, rgba(232,184,75,0.03) 24px); }
+  .zone-label {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .zone-host .zone-label { color: var(--host); }
+  .zone-sandbox .zone-label { color: var(--sandbox); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+  .zone-host .dot { background: var(--host); box-shadow: 0 0 8px var(--host); }
+  .zone-sandbox .dot { background: var(--sandbox); box-shadow: 0 0 8px var(--sandbox); }
+  .node {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    padding: 8px 12px;
+    border: 1px solid var(--line-bright);
+    border-radius: 7px;
+    background: rgba(0,0,0,0.25);
+    margin-bottom: 9px;
+    color: var(--text);
+  }
+  .node small { color: var(--text-faint); display: block; font-size: 10.5px; margin-top: 2px; }
+
+  /* the boundary wall */
+  .boundary {
+    position: relative;
+    width: 96px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-left: 1px dashed var(--line-bright);
+    border-right: 1px dashed var(--line-bright);
+    background: rgba(0,0,0,0.22);
+    gap: 18px;
+  }
+  .flow-arrow { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+  .flow-arrow .glyph { font-family: var(--mono); color: var(--accent); font-size: 20px; line-height: 1; }
+  .flow-arrow .lbl { font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em; color: var(--text-dim); text-transform: uppercase; }
+  .flow-blocked .glyph { color: var(--danger); }
+  .flow-blocked .lbl { color: var(--danger); }
+  .boundary-tag {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    font-family: var(--mono); font-size: 9px; letter-spacing: 0.14em;
+    color: var(--text-faint); text-transform: uppercase; white-space: nowrap;
+  }
+  .thesis-foot {
+    padding: 14px 22px;
+    border-top: 1px solid var(--line);
+    font-size: 14px;
+    color: var(--text-dim);
+  }
+  .thesis-foot b { color: var(--text); font-weight: 600; }
+
+  /* ---------------- SECTION SCAFFOLD ---------------- */
+  section { padding: 56px 0 12px; position: relative; }
+  .sec-head { margin-bottom: 30px; }
+  .sec-head .eyebrow { margin-bottom: 12px; }
+  .sec-head h2 {
+    font-size: clamp(26px, 3.4vw, 36px);
+    font-weight: 750;
+    letter-spacing: -0.02em;
+    margin: 0;
+    color: #E4EDEA;
+  }
+  .sec-head p { color: var(--text-dim); max-width: 640px; margin: 12px 0 0; }
+
+  /* ---------------- SEQUENCE SPINE ---------------- */
+  .spine { display: flex; flex-direction: column; gap: 0; }
+  .phase {
+    display: grid;
+    grid-template-columns: 92px 1fr;
+    border-left: 1px solid var(--line-bright);
+    margin-left: 8px;
+  }
+  .phase-marker { position: relative; padding-top: 2px; }
+  .phase-marker .num {
+    position: absolute; left: -16px; top: 0;
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--ground); border: 1px solid var(--line-bright);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 12px; color: var(--accent);
+  }
+  .phase.keystone .num { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 4px rgba(74,214,168,0.08); }
+  .phase.spinephase .num { border-color: var(--accent-2); color: var(--accent-2); }
+  .phase-body { padding: 0 0 34px 8px; }
+  .phase-body h3 {
+    margin: 0 0 4px; font-size: 18px; font-weight: 650; color: #E4EDEA;
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  }
+  .phase-body h3 .ref { font-family: var(--mono); font-size: 12px; color: var(--text-faint); font-weight: 400; }
+  .badge {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 4px; border: 1px solid var(--line-bright); color: var(--text-dim);
+  }
+  .badge.key { color: var(--accent); border-color: rgba(74,214,168,0.4); }
+  .badge.spine { color: var(--accent-2); border-color: rgba(232,184,75,0.4); }
+  .badge.exists { color: var(--text-dim); }
+  .phase-body p { margin: 8px 0 0; color: var(--text-dim); font-size: 15px; }
+  .phase-body .unlocks { margin-top: 10px; font-family: var(--mono); font-size: 12px; color: var(--text-faint); }
+  .phase-body .unlocks b { color: var(--accent); font-weight: 500; }
+
+  /* ---------------- FEATURE CARDS ---------------- */
+  .cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+  .card {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 22px 22px 24px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.012), transparent);
+    position: relative;
+  }
+  .card:hover { border-color: var(--line-bright); }
+  .card .cref {
+    font-family: var(--mono); font-size: 12px; color: var(--accent);
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;
+  }
+  .card .cref .state { color: var(--text-faint); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .card h4 { margin: 0 0 8px; font-size: 17px; font-weight: 650; color: #E4EDEA; letter-spacing: -0.01em; }
+  .card p { margin: 0; color: var(--text-dim); font-size: 14px; }
+  .card .foundation {
+    margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line);
+    font-family: var(--mono); font-size: 11.5px; color: var(--text-faint); line-height: 1.5;
+  }
+  .card .foundation b { color: var(--text-dim); font-weight: 500; }
+  .card.wide { grid-column: 1 / -1; }
+
+  /* ---------------- TRACE WATERFALL ---------------- */
+  .trace {
+    border: 1px solid var(--line-bright); border-radius: 10px; overflow: hidden;
+    background: var(--ground-2); font-family: var(--mono); font-size: 12.5px;
+  }
+  .trace-top {
+    padding: 12px 18px; border-bottom: 1px solid var(--line);
+    color: var(--text-faint); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    display: flex; justify-content: space-between;
+  }
+  .trace-top .tid { color: var(--accent); }
+  .span-rows { padding: 14px 18px; display: flex; flex-direction: column; gap: 7px; }
+  .span { display: grid; grid-template-columns: 240px 1fr; align-items: center; gap: 14px; }
+  .span .label { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .span .label .depth { color: var(--text-faint); }
+  .span .label .cat { color: var(--text-faint); font-size: 10.5px; }
+  .span .track { height: 16px; position: relative; background: rgba(255,255,255,0.02); border-radius: 3px; }
+  .span .bar {
+    position: absolute; top: 0; height: 16px; border-radius: 3px;
+    display: flex; align-items: center; padding: 0 7px; font-size: 10px; color: #08110E;
+    font-weight: 600; white-space: nowrap;
+  }
+  .bar.b-chat { background: #6FA8FF; }
+  .bar.b-ai { background: var(--accent); }
+  .bar.b-flow { background: var(--accent-2); }
+  .bar.b-mcp { background: #C88BE8; }
+  .bar.b-sandbox { background: var(--danger); color: #170A05; }
+  .trace-note { padding: 12px 18px; border-top: 1px solid var(--line); font-family: var(--sans); font-size: 13px; color: var(--text-dim); }
+  .trace-note b { color: var(--text); }
+
+  /* ---------------- OPEN QUESTIONS ---------------- */
+  .decisions { display: flex; flex-direction: column; gap: 12px; }
+  .decision {
+    border: 1px solid var(--line); border-left: 2px solid var(--accent); border-radius: 8px;
+    padding: 16px 20px; display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center;
+  }
+  .decision.settled { border-left-color: var(--accent); }
+  .decision.open { border-left-color: var(--accent-2); }
+  .decision .q { font-size: 14.5px; color: var(--text); }
+  .decision .q small { display: block; color: var(--text-faint); font-family: var(--mono); font-size: 11px; margin-top: 3px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .decision .verdict { font-family: var(--mono); font-size: 12px; text-align: right; white-space: nowrap; }
+  .decision.settled .verdict { color: var(--accent); }
+  .decision.open .verdict { color: var(--accent-2); }
+
+  /* ---------------- FOOT ---------------- */
+  footer { padding: 60px 0 90px; margin-top: 40px; border-top: 1px solid var(--line); }
+  footer .eyebrow { margin-bottom: 14px; }
+  footer p { color: var(--text-dim); max-width: 640px; }
+  footer .next { font-family: var(--mono); font-size: 13px; color: var(--text); margin-top: 20px; }
+  footer .next b { color: var(--accent); }
+
+  @media (max-width: 720px) {
+    .flowchart { grid-template-columns: 1fr; }
+    .boundary { width: auto; height: 78px; flex-direction: row; border-left: none; border-right: none; border-top: 1px dashed var(--line-bright); border-bottom: 1px dashed var(--line-bright); }
+    .boundary-tag { top: 4px; }
+    .cards { grid-template-columns: 1fr; }
+    .span { grid-template-columns: 150px 1fr; }
+    .decision { grid-template-columns: 1fr; }
+    .decision .verdict { text-align: left; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="hero">
+    <div class="tag">Corral · Product Roadmap · v0.8 → v1.0</div>
+    <h1>Host orchestrates.<br><span class="thin">The sandbox is a leaf.</span></h1>
+    <p class="lede">Eight large features, one trust rule, and an observability spine that threads through all of them. This is the shape of the work and the order it wants to be built in — not a spec, a map.</p>
+    <div class="ver mono">
+      <span>shipped · <b>v0.8.0 Logs</b></span>
+      <span>next · MCP · Flows · API surface</span>
+      <span>rule · one direction only</span>
+    </div>
+  </header>
+
+  <!-- THESIS: the trust boundary -->
+  <div class="thesis">
+    <div class="thesis-head">
+      <span>Trust model</span>
+      <span class="rule">// the constraint every feature obeys</span>
+    </div>
+    <div class="flowchart">
+      <div class="zone zone-host">
+        <div class="zone-label"><span class="dot"></span> Host — trusted control plane</div>
+        <div class="node">dashboard + API<small>your creds, GitHub, Claude</small></div>
+        <div class="node">host chat Claude<small>can create issues, start projects</small></div>
+        <div class="node">MCP connections<small>credentials live here</small></div>
+        <div class="node">flow engine + scheduler<small>orchestrates, launches work</small></div>
+      </div>
+      <div class="boundary">
+        <div class="boundary-tag">firewall boundary</div>
+        <div class="flow-arrow">
+          <span class="glyph">→</span>
+          <span class="lbl">launches</span>
+        </div>
+        <div class="flow-arrow flow-blocked">
+          <span class="glyph">⊘</span>
+          <span class="lbl">no reach back</span>
+        </div>
+      </div>
+      <div class="zone zone-sandbox">
+        <div class="zone-label"><span class="dot"></span> Sandbox — untrusted leaf</div>
+        <div class="node">sandclaude process<small>allowlist egress only</small></div>
+        <div class="node">receives a prompt<small>produces a branch / PR</small></div>
+        <div class="node">never calls the dashboard<small>host/port never in allowlist</small></div>
+        <div class="node">never touches MCP creds<small>gets results only if handed in</small></div>
+      </div>
+    </div>
+    <div class="thesis-foot">
+      Everything below inherits this: the <b>host</b> holds credentials, connections, and the API surface; it <b>launches</b> sandboxes as leaves. A sandbox receives work and returns a result — it <b>never</b> reaches back through the boundary. The OpenAPI/CLI/skill surface (#3) is a host-and-you control plane, never injected into the sandbox.
+    </div>
+  </div>
+
+  <!-- BUILD SEQUENCE -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">The spine · build order</div>
+      <h2>What unlocks what</h2>
+      <p>These aren't independent. #3 is the keystone — it turns the API into something the host Claude and CLI can drive, which is what most of #4 and half of #2 stand on. Observability (#0) threads through everything and is designed in early so we don't retrofit trace propagation later.</p>
+    </div>
+
+    <div class="spine">
+      <div class="phase spinephase">
+        <div class="phase-marker"><div class="num">0</div></div>
+        <div class="phase-body">
+          <h3>Observability spine <span class="badge spine">cross-cutting</span> <span class="ref">extends app_logs · migration 0009</span></h3>
+          <p>A distributed trace tree over the log store we just shipped: mint a <span class="mono">trace_id</span> at every root action, thread <span class="mono">span_id</span> / <span class="mono">parent_span_id</span> downstream. Click any log row → see the whole causal tree it belongs to. Designed first so #1–#4 emit into it from day one.</p>
+          <div class="unlocks">threads through → <b>all features below</b></div>
+        </div>
+      </div>
+
+      <div class="phase keystone">
+        <div class="phase-marker"><div class="num">3</div></div>
+        <div class="phase-body">
+          <h3>OpenAPI + host CLI + skill <span class="badge key">keystone</span> <span class="ref">~100 endpoints · permission-gated</span></h3>
+          <p>Document every endpoint, wrap it in a host CLI, and expose a skill — <b>for the host Claude and for you</b>, never the sandbox. Extends the existing <span class="mono">/api/tools</span> + <span class="mono">AutomationsToolsEnabled</span> pattern to the whole surface, gated in global settings.</p>
+          <div class="unlocks">unlocks → <b>#4 chat-everywhere · half of #2 flows</b></div>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-marker"><div class="num">1</div></div>
+        <div class="phase-body">
+          <h3>MCP integrations <span class="ref">host-only connections</span></h3>
+          <p>A GUI to connect MCPs (Anthropic marketplace-style). Connections and credentials live at the host; the sandbox gets nothing. This is the <i>source</i> for "pull the errors from the MCP" — feeds #4 and #2.</p>
+          <div class="unlocks">feeds → <b>#4 intents · #2 flow steps</b></div>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-marker"><div class="num">4</div></div>
+        <div class="phase-body">
+          <h3>Claude everywhere <span class="ref">global chat shell · intent chains</span></h3>
+          <p>The host chat reachable from every page — a persistent affordance, page-aware. "Create an issue anywhere." "Pull errors from the MCP, open an issue, start a project on it." Privileged host actions, host trust — same boundary as today's chat panel.</p>
+          <div class="unlocks">stands on → <b>#3 API surface · #1 MCP</b></div>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-marker"><div class="num">2</div></div>
+        <div class="phase-body">
+          <h3>Flows <span class="badge exists">schema exists</span> <span class="ref">auto_flows · DAG-ready</span></h3>
+          <p>The capstone. Wire MCP prompt → issue → sandclaude, passing data between steps. The tables (<span class="mono">auto_flow_steps</span>, <span class="mono">step_key</span>, <span class="mono">input_map_json</span>) already exist — this is <i>extend</i>, not build. Adds triggers, scheduling, and DAG execution.</p>
+          <div class="unlocks">wants first → <b>#1 MCP · #3 API</b></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FLOWS DETAIL -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">#2 · Flows in depth</div>
+      <h2>Three front-doors, one drift-tolerant clock</h2>
+      <p>A flow can start three ways, and everything it does is traceable back to which door it came through. Scheduling is deliberately not real cron — the laptop is sometimes off.</p>
+    </div>
+    <div class="cards">
+      <div class="card">
+        <div class="cref">Manual <span class="state">one-off</span></div>
+        <h4>Run now</h4>
+        <p>A button in the UI, <span class="mono">corral flow run &lt;name&gt;</span> on the CLI, or "run the triage flow" in host chat. Same entrypoint, three doors — the trigger source is recorded on every run.</p>
+      </div>
+      <div class="card">
+        <div class="cref">Scheduled <span class="state">pseudo-cron</span></div>
+        <h4>Drift-tolerant clock</h4>
+        <p>A ~1-minute tick reconciles each flow's <span class="mono">last_run_at</span> against its cadence. Machine was off for 3 days? A daily flow fires <b>once</b> on wake — never replays every missed day. Per-flow override.</p>
+      </div>
+      <div class="card wide">
+        <div class="cref">Composition <span class="state">the hard part</span></div>
+        <h4>Passing data step to step, with a UX that stays friendly</h4>
+        <p>MCP prompt → create issue → start a sandclaude on that issue → open a PR. Each step's output threads into the next via <span class="mono">{{steps.&lt;key&gt;.output}}</span>. The schema is DAG-ready today; execution goes from linear to dependency-ordered.</p>
+        <div class="foundation"><b>already in place:</b> auto_flows · auto_flow_steps (position, depends_on_json, input_map_json) · auto_runs history · linear runner. <b>to build:</b> trigger emission · scheduler · DAG execution · the builder UI.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TRACE -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">#0 · Follow the thread</div>
+      <h2>Everything is traceable</h2>
+      <p>A chat turn asks Claude to triage. Claude calls a flow. The flow pulls from an MCP, opens an issue, and launches a sandbox. One trace, one tree — reconstructed from <span class="mono">trace_id / span_id / parent_span_id</span> on the log rows.</p>
+    </div>
+    <div class="trace">
+      <div class="trace-top">
+        <span>trace waterfall</span>
+        <span class="tid">trace_id · 7f3a…c1</span>
+      </div>
+      <div class="span-rows">
+        <div class="span">
+          <div class="label">chat.turn <span class="cat">· host</span></div>
+          <div class="track"><div class="bar b-chat" style="left:0%; width:96%;">"triage today's errors"</div></div>
+        </div>
+        <div class="span">
+          <div class="label"><span class="depth">└ </span>ai.call <span class="cat">· claude</span></div>
+          <div class="track"><div class="bar b-ai" style="left:6%; width:78%;">plan + tool calls</div></div>
+        </div>
+        <div class="span">
+          <div class="label"><span class="depth">&nbsp;&nbsp;└ </span>flow.run <span class="cat">· triage</span></div>
+          <div class="track"><div class="bar b-flow" style="left:14%; width:66%;">3 steps</div></div>
+        </div>
+        <div class="span">
+          <div class="label"><span class="depth">&nbsp;&nbsp;&nbsp;&nbsp;└ </span>mcp.query <span class="cat">· errors</span></div>
+          <div class="track"><div class="bar b-mcp" style="left:20%; width:20%;">pull</div></div>
+        </div>
+        <div class="span">
+          <div class="label"><span class="depth">&nbsp;&nbsp;&nbsp;&nbsp;└ </span>issue.create <span class="cat">· github</span></div>
+          <div class="track"><div class="bar b-flow" style="left:40%; width:14%;">#412</div></div>
+        </div>
+        <div class="span">
+          <div class="label"><span class="depth">&nbsp;&nbsp;&nbsp;&nbsp;└ </span>sandbox.start <span class="cat">· leaf</span></div>
+          <div class="track"><div class="bar b-sandbox" style="left:54%; width:26%;">sandclaude → PR</div></div>
+        </div>
+      </div>
+      <div class="trace-note">
+        The <b>sandbox.start</b> span is where the trace crosses the boundary — the host records that it launched a leaf, but the leaf never emits back into this tree on its own. Its result returns through the launch, not through a call to the dashboard.
+      </div>
+    </div>
+  </section>
+
+  <!-- INDEPENDENT TRACKS -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Independent tracks · interleave anytime</div>
+      <h2>The standalone wins</h2>
+      <p>These don't wait on the spine. #7 is small and high-value; #8 is a real cost saver; #6 is the flashiest demo. Each can slot in between the bigger phases.</p>
+    </div>
+    <div class="cards">
+      <div class="card">
+        <div class="cref">#7 <span class="state">quick win</span></div>
+        <h4>Named prompts</h4>
+        <p>Save prompts by name and pick one when starting a project or working an issue — instead of custom, per-repo, or global only. Today prompts are a repo/global override catalog; this adds a real user-named library.</p>
+        <div class="foundation"><b>builds on:</b> prompts_catalog · three-level override · <span class="mono">claude_prompt</span> actions.</div>
+      </div>
+      <div class="card">
+        <div class="cref">#8 <span class="state">cost saver</span></div>
+        <h4>Reusable data cache</h4>
+        <p>Stop rebuilding DinD images and volume data every one-off. A named, snapshottable volume layer: copy-on-write clone for throwaway runs, update-in-place when a migration should persist the Postgres data.</p>
+        <div class="foundation"><b>builds on:</b> <span class="mono">DindVolumeName</span> deterministic per-workspace volume — no snapshot/clone today.</div>
+      </div>
+      <div class="card">
+        <div class="cref">#5 <span class="state">scoping</span></div>
+        <h4>Per-repo skills &amp; AGENT.md</h4>
+        <p>Attach skills and an AGENT.md to specific repos so a sandbox checkout carries the right context and capabilities for that codebase.</p>
+        <div class="foundation"><b>builds on:</b> repo-scoped config already threads into project start.</div>
+      </div>
+      <div class="card">
+        <div class="cref">#6 <span class="state">the demo</span></div>
+        <h4>Watch Claude work</h4>
+        <p>A headed view: port-bind from DinD and stream it into an iframe. Watch a Playwright run drive a browser and take a screenshot, live. Needs a display (Xvfb + noVNC), a little more than raw port binding.</p>
+        <div class="foundation"><b>builds on:</b> DinD port forwarding + firewall stream (SSE) already exist.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DECISIONS -->
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Decisions</div>
+      <h2>Settled and open</h2>
+      <p>What we've already agreed, and what the doc will lay out both ways for you to pick when we build.</p>
+    </div>
+    <div class="decisions">
+      <div class="decision settled">
+        <div class="q">Kickoff approach<small>settled</small></div>
+        <div class="verdict">→ whole-roadmap doc first</div>
+      </div>
+      <div class="decision settled">
+        <div class="q">Who can drive the API surface (#3)<small>settled</small></div>
+        <div class="verdict">→ host Claude + you only</div>
+      </div>
+      <div class="decision settled">
+        <div class="q">MCP trust boundary (#1)<small>settled</small></div>
+        <div class="verdict">→ host-only, sandbox never reaches</div>
+      </div>
+      <div class="decision settled">
+        <div class="q">Trace store (#0)<small>settled</small></div>
+        <div class="verdict">→ extend app_logs · migration 0009</div>
+      </div>
+      <div class="decision settled">
+        <div class="q">Missed pseudo-cron runs (#2)<small>settled</small></div>
+        <div class="verdict">→ fire once on wake · per-flow override</div>
+      </div>
+      <div class="decision open">
+        <div class="q">#4 chat shell shape — dock/drawer vs. bubble vs. Cmd-K<small>open · decide at #4</small></div>
+        <div class="verdict">→ TBD</div>
+      </div>
+      <div class="decision open">
+        <div class="q">#6 stream transport — noVNC vs. Playwright video/trace<small>open · decide at #6</small></div>
+        <div class="verdict">→ TBD</div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="eyebrow">Where this goes next</div>
+    <p>This is the map, not the spec. With the sequence and the settled decisions above, the next step is the full roadmap design doc — per-feature architecture, the migration 0009 shape, the flow trigger/scheduler model, and the #3 permission surface — written against the real code, not a sketch.</p>
+    <p class="next">next · write the full roadmap doc → then deep-dive <b>#0 + #3</b> as the first buildable slice.</p>
+  </footer>
+
+</div>
+
+</body>
+</html>

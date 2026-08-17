@@ -90,6 +90,11 @@ export function DocsDock() {
           {doc.blocks.map((b, i) => (
             <Block key={i} b={b} />
           ))}
+          {doc.more && (
+            <p className="docs-more">
+              Full guide: <code>{doc.more}</code> in the repo.
+            </p>
+          )}
           <p className="docs-foot">Press <kbd>⌘/</kbd> anywhere to open these docs.</p>
         </div>
       </aside>

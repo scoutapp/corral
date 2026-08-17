@@ -2483,7 +2483,8 @@ table.projects th, table.projects td {
   font-family: var(--mono, ui-monospace, monospace); font-size: 0.78rem; line-height: 1.45;
   white-space: pre-wrap; overflow-x: auto; color: var(--fg);
 }
-.docs-foot { margin: 1.4rem 0 0; padding-top: 0.8rem; border-top: 1px solid var(--border); font-size: 0.76rem; color: var(--muted); }
+.docs-more { margin: 1.3rem 0 0; font-size: 0.82rem; color: var(--fg); }
+.docs-foot { margin: 0.9rem 0 0; padding-top: 0.8rem; border-top: 1px solid var(--border); font-size: 0.76rem; color: var(--muted); }
 .docs-foot kbd {
   font-family: var(--mono, ui-monospace, monospace); font-size: 0.72rem;
   border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0.05rem 0.35rem; color: var(--fg);
