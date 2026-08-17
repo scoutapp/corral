@@ -19,6 +19,9 @@ export interface DocBlock {
 export interface DocPage {
   title: string;
   blocks: DocBlock[];
+  // Optional pointer to the in-repo deep-dive guide (path under docs/). Shown as
+  // a "Full guide" footer so the drawer stays short but says where more lives.
+  more?: string;
 }
 
 // docsFor returns the doc page for a route path, falling back to the landing doc.
@@ -52,6 +55,7 @@ const PROJECTS: DocPage = {
     { p: "Live status per project — whether the container and Claude are up, recent activity, and a peek at the last terminal line. It polls, so it stays fresh on its own." },
     { p: "Credentials never enter the sandbox — the host proxy injects them. So a project can use `gh`/`git` without a real token ever being inside the container." },
   ],
+  more: "docs/README.md",
 };
 
 const PROJECT: DocPage = {
@@ -80,6 +84,7 @@ const PROJECT: DocPage = {
     { h: "Change how it runs" },
     { p: "**Config** holds the restart-required bits: network protection, Docker-in-Docker + published ports, a DinD **data cache** to start from, SSH keys, and per-host credentials. Edits there prompt you to restart the project." },
   ],
+  more: "docs/live-view.md",
 };
 
 const REPO: DocPage = {
@@ -101,6 +106,7 @@ const REPO: DocPage = {
     { h: "Automations (Settings)" },
     { p: "Repo-scoped prompts, event hooks, and flows. Global ones apply everywhere; repo ones add on top." },
   ],
+  more: "docs/skills-and-context.md",
 };
 
 const PR_REVIEW: DocPage = {
@@ -110,6 +116,7 @@ const PR_REVIEW: DocPage = {
     { p: "Spin up a sandbox on the PR branch to verify a change hands-on, or comment/approve straight from here. Actions run as host operations against GitHub (never from inside the sandbox)." },
     { p: "Ask the Claude dock about the PR — it knows which PR you're looking at." },
   ],
+  more: "docs/README.md",
 };
 
 const GLOBAL: DocPage = {
@@ -125,6 +132,7 @@ const GLOBAL: DocPage = {
     },
     { p: "Anything set per-repo or per-project layers on top of these." },
   ],
+  more: "docs/README.md",
 };
 
 const AUTOMATIONS: DocPage = {
@@ -142,6 +150,7 @@ const AUTOMATIONS: DocPage = {
     { h: "A quick flow" },
     { p: "Add a flow, drop in steps (a prompt, a script, an MCP call), and give it a schedule or run it by hand. See runs in the **Run Log**." },
   ],
+  more: "docs/automations.md",
 };
 
 const RUN_LOG: DocPage = {
@@ -150,6 +159,7 @@ const RUN_LOG: DocPage = {
     { p: "History of automation + flow runs. Click a run to see its steps, timing, and output." },
     { p: "Use it to confirm a scheduled flow fired and to debug a step that failed." },
   ],
+  more: "docs/logs.md",
 };
 
 const LOGS: DocPage = {
@@ -158,6 +168,7 @@ const LOGS: DocPage = {
     { p: "A searchable, host-wide activity log across every project and the dashboard itself." },
     { p: "Filter by project or category, or search the text. Handy for “what happened around the time X broke?” — spans link related events together." },
   ],
+  more: "docs/logs.md",
 };
 
 const INTEGRATIONS: DocPage = {
@@ -168,4 +179,5 @@ const INTEGRATIONS: DocPage = {
     { h: "Connect one" },
     { p: "Add the server, complete any auth it needs, and it shows as **connected**. Remove it to stop the host Claude from using it." },
   ],
+  more: "docs/integrations.md",
 };

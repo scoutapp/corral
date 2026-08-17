@@ -109,7 +109,7 @@ export function FlowsManager() {
                     onClick={() => setSelected(f.id)}
                   >
                     {f.name}
-                    <span className="flows-list-count">{f.steps.length}</span>
+                    <span className="flows-list-count">{f.steps?.length ?? 0}</span>
                   </button>
                 </li>
               ))}
