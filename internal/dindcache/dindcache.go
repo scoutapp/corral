@@ -104,7 +104,7 @@ func dockerOut(timeout time.Duration, args ...string) (string, error) {
 }
 
 // volumeExists reports whether a docker volume with the exact name exists.
-func volumeExists(vol string) bool {
+func VolumeExists(vol string) bool {
 	out, err := dockerOut(dockerTimeout, "volume", "ls", "-q", "--filter", "name=^"+vol+"$")
 	if err != nil {
 		return false
@@ -128,7 +128,7 @@ func CopyVolume(src, dst string) error {
 	if src == "" || dst == "" {
 		return fmt.Errorf("copy volume: src and dst are required")
 	}
-	if !volumeExists(src) {
+	if !VolumeExists(src) {
 		return fmt.Errorf("copy volume: source %q does not exist", src)
 	}
 	// Ensure dst exists (docker volume create is idempotent).
@@ -193,10 +193,10 @@ func CreateFromVolume(name, srcVolume string) (Cache, error) {
 		return Cache{}, fmt.Errorf("invalid cache name %q: use letters, digits, dashes, underscores (max 64)", name)
 	}
 	dst := VolumeName(name)
-	if volumeExists(dst) {
+	if VolumeExists(dst) {
 		return Cache{}, fmt.Errorf("cache %q already exists", name)
 	}
-	if !volumeExists(srcVolume) {
+	if !VolumeExists(srcVolume) {
 		return Cache{}, fmt.Errorf("nothing to snapshot: this project has no DinD data yet (volume %q not found)", srcVolume)
 	}
 	if err := CopyVolume(srcVolume, dst); err != nil {
@@ -216,7 +216,7 @@ func SeedInto(cacheName, dstVolume string) error {
 		return fmt.Errorf("invalid cache name %q", cacheName)
 	}
 	src := VolumeName(cacheName)
-	if !volumeExists(src) {
+	if !VolumeExists(src) {
 		return fmt.Errorf("cache %q not found", cacheName)
 	}
 	return CopyVolume(src, dstVolume)
@@ -230,7 +230,7 @@ func Delete(name string) error {
 		return fmt.Errorf("invalid cache name %q", name)
 	}
 	vol := VolumeName(name)
-	if !volumeExists(vol) {
+	if !VolumeExists(vol) {
 		return fmt.Errorf("cache %q not found", name)
 	}
 	if _, err := dockerOut(dockerTimeout, "volume", "rm", "-f", vol); err != nil {
@@ -241,5 +241,5 @@ func Delete(name string) error {
 
 // Exists reports whether a cache with this name exists.
 func Exists(name string) bool {
-	return ValidName(name) && volumeExists(VolumeName(name))
+	return ValidName(name) && VolumeExists(VolumeName(name))
 }
