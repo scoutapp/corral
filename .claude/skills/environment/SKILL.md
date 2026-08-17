@@ -205,6 +205,22 @@ docker logs rails -f
 # (because the outer corral container has -p 3000:3000)
 ```
 
+**Making a service viewable in the dashboard Live View:**
+The dashboard has a **Live View** tab that embeds a web app you're running so the
+user can watch it live. For an inner (DinD) service to be viewable — and reachable
+by the dashboard at all — run its container with a **published port**:
+
+```bash
+docker run -d -p 3000:3000 --name web myapp
+```
+
+Publishing with `-p` exposes the service on the DinD bridge, which is what the
+dashboard reverse-proxies to. A container that only `EXPOSE`s a port, or binds a
+port privately inside its own network, will **not** appear in Live View and can't
+be reached from the host — always `-p <port>:<port>` the thing you want the user
+to see. (An app you run directly in this outer container, bound to `0.0.0.0` or
+`127.0.0.1`, is viewable without `-p`.)
+
 **Inner container network access:**
 - Inner containers go through the same allowlist proxy as everything else (transparently — see DinD section above)
 - If an inner container needs a domain not in the allowlist, add it to the plaintext allowlist **on the host** and reload:
