@@ -2413,3 +2413,16 @@ table.projects th, table.projects td {
   border: 1px solid var(--border); border-radius: 5px; padding: 0.15rem 0.4rem;
 }
 .launch-prompt-pick:hover { border-color: var(--accent); }
+
+/* Per-repo Skills & context (repo Settings). */
+.reposkills-head { display: flex; align-items: center; justify-content: space-between; margin: 0.5rem 0 0.5rem; }
+.reposkills-h4 { margin: 0; font-size: 0.9rem; color: var(--fg); }
+.reposkills-editor { display: flex; flex-direction: column; gap: 0.55rem; border: 1px solid var(--border); border-radius: 9px; padding: 0.9rem; background: color-mix(in srgb, var(--accent) 3%, transparent); }
+.reposkills-md { font-family: var(--mono, ui-monospace, monospace); font-size: 0.78rem; resize: vertical; width: 100%; }
+.reposkills-editor-actions { display: flex; gap: 0.7rem; margin-top: 0.4rem; }
+.reposkills-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.reposkills-item { display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--border); border-radius: 7px; padding: 0.5rem 0.75rem; background: color-mix(in srgb, var(--fg) 1.5%, transparent); }
+.reposkills-name { font-family: var(--mono, ui-monospace, monospace); font-size: 0.82rem; color: var(--fg); }
+.reposkills-item-actions { display: flex; align-items: center; gap: 0.5rem; }
+.reposkills-x { background: none; border: none; color: var(--muted); font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0 0.2rem; }
+.reposkills-x:hover { color: #E8734B; }
