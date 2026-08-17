@@ -1092,6 +1092,13 @@ table.projects th, table.projects td {
 .chat-root .msg.user .bubble { background: var(--user-bubble); border-radius: 14px 14px 4px 14px; padding: 9px 13px; }
 .chat-root .msg.user .avatar { background: var(--clay-soft); color: var(--clay); }
 .chat-root .bubble { min-width: 0; }
+/* Text selection inside the (light, cream-background) chat. Without an explicit
+   rule the browser default highlight is nearly invisible on the cream bg — the
+   "white highlight on a white page". Use a tinted clay highlight with dark text
+   so selecting Claude's response is clearly readable. Scoped to .chat-root so the
+   dark dashboard UI keeps its own selection styling. */
+.chat-root ::selection { background: color-mix(in srgb, var(--clay) 30%, transparent); color: var(--ink); }
+.chat-root ::-moz-selection { background: color-mix(in srgb, var(--clay) 30%, transparent); color: var(--ink); }
 .chat-root .bubble p { margin: 0 0 8px; }
 .chat-root .bubble p:last-child { margin-bottom: 0; }
 .chat-root .bubble pre {
@@ -2454,7 +2461,9 @@ table.projects th, table.projects td {
    on the right: launcher bottom-LEFT, panel slides in from the LEFT. Deliberately
    quieter than the accent-colored chat launcher so it reads as secondary. */
 .docsdock-launcher {
-  position: fixed; left: 18px; bottom: 18px; z-index: 60;
+  /* Bottom-RIGHT, stacked just above the "Ask Claude" launcher so the two don't
+     overlap and the left edge stays clear (it was getting in the way there). */
+  position: fixed; right: 18px; bottom: 68px; z-index: 60;
   display: inline-flex; align-items: center; gap: 0.4rem;
   background: var(--panel, var(--bg)); color: var(--fg);
   border: 1px solid var(--border); border-radius: 22px;
