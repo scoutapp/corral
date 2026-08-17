@@ -2388,3 +2388,20 @@ table.projects th, table.projects td {
   letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted);
   border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px;
 }
+
+/* Saved-prompts library (companion to the catalog carousel). */
+.promptlib { margin: 1.2rem 0; }
+.promptlib-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.6rem; }
+.promptlib-editor { border: 1px solid var(--border); border-radius: 9px; padding: 0.9rem; display: flex; flex-direction: column; gap: 0.55rem; background: color-mix(in srgb, var(--accent) 3%, transparent); }
+.promptlib-template { font-family: var(--mono, ui-monospace, monospace); font-size: 0.8rem; resize: vertical; }
+.promptlib-editor-actions { display: flex; gap: 0.7rem; }
+.promptlib-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.promptlib-item { display: flex; gap: 0.8rem; align-items: flex-start; justify-content: space-between; border: 1px solid var(--border); border-radius: 8px; padding: 0.7rem 0.85rem; background: color-mix(in srgb, var(--fg) 1.5%, transparent); }
+.promptlib-item-main { min-width: 0; }
+.promptlib-name { font-weight: 650; color: var(--fg); font-size: 0.9rem; }
+.promptlib-scope { margin-left: 0.5rem; font-family: var(--mono, ui-monospace, monospace); font-size: 0.62rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; }
+.promptlib-desc { display: block; font-size: 0.78rem; color: var(--muted); margin-top: 0.15rem; }
+.promptlib-preview { font-family: var(--mono, ui-monospace, monospace); font-size: 0.72rem; color: var(--text-faint, #526460); margin-top: 0.35rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46ch; }
+.promptlib-item-actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+.promptlib-x { background: none; border: none; color: var(--muted); font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0 0.2rem; }
+.promptlib-x:hover { color: #E8734B; }
