@@ -20,6 +20,12 @@ to open the docs drawer on any page.
   passthrough mode, ports.
 - [Logs](logs.md) — the host-wide activity log.
 
+## Going deeper
+
+- [Using Corral](usage.md) — the CLI and end-to-end workflow.
+- [Architecture](architecture.md) — how the pieces fit (proxy, firewall, container).
+- [Security model](security.md) — the trust boundary, in detail.
+
 ## The one rule worth knowing
 
 Trust goes **one direction**: the host drives the sandbox, never the reverse. The
