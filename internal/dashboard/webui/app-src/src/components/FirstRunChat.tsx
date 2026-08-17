@@ -22,7 +22,30 @@ export function FirstRunChat() {
 
   if (!state) return <div className="firstrun-loading">…</div>;
   if (!state.configured) return <FirstRunSetup onDone={load} />;
-  return <ChatPanel wsPath="/chat/ws" />;
+  return <ChatPanel wsPath={globalChatPath()} />;
+}
+
+// globalChatPath adds a light context hint from the current route, so the global
+// assistant knows where you are — "this repo" / "this PR" resolves to what you're
+// looking at. The backend folds it into the first turn.
+function globalChatPath(): string {
+  const ctx = pageContext(window.location.pathname);
+  return ctx ? `/chat/ws?ctx=${encodeURIComponent(ctx)}` : "/chat/ws";
+}
+
+// pageContext returns a short human hint for the current route, or "" if there's
+// no useful context (e.g. the projects list).
+export function pageContext(path: string): string {
+  let m = path.match(/^\/repos\/([^/]+)\/prs\/(\d+)/);
+  if (m) return `The user is viewing pull request #${m[2]} of repo ${m[1]}.`;
+  m = path.match(/^\/repos\/([^/]+)/);
+  if (m) return `The user is viewing repo ${m[1]}.`;
+  m = path.match(/^\/p\/([^/]+)/);
+  if (m) return `The user is viewing project ${m[1]}.`;
+  if (path.startsWith("/logs")) return "The user is viewing the activity logs.";
+  if (path.startsWith("/integrations")) return "The user is viewing the MCP integrations.";
+  if (path.startsWith("/automations")) return "The user is viewing automations and flows.";
+  return "";
 }
 
 function FirstRunSetup({ onDone }: { onDone: () => void }) {

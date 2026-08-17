@@ -15,6 +15,19 @@ import { useRouter, matchProject } from "../router";
 
 type Tab = "project" | "global";
 
+// contextLabel is a short chip showing where the global chat is scoped, mirroring
+// the fuller hint sent to the backend (see FirstRunChat.pageContext).
+function contextLabel(path: string): string {
+  let m = path.match(/^\/repos\/([^/]+)\/prs\/(\d+)/);
+  if (m) return `PR #${m[2]}`;
+  m = path.match(/^\/repos\/([^/]+)/);
+  if (m) return `repo ${m[1]}`;
+  if (path.startsWith("/logs")) return "logs";
+  if (path.startsWith("/integrations")) return "integrations";
+  if (path.startsWith("/automations")) return "flows";
+  return "";
+}
+
 export function ChatDock() {
   const { path } = useRouter();
   const projectId = matchProject(path);
@@ -67,6 +80,11 @@ export function ChatDock() {
         <header className="chatdock-head">
           <span className="chatdock-title">
             <span className="chatdock-spark">✦</span> Claude
+            {activeTab === "global" && contextLabel(path) && (
+              <span className="chatdock-ctx" title="Claude knows what page you're on">
+                {contextLabel(path)}
+              </span>
+            )}
           </span>
           <button type="button" className="chatdock-close" title="Close (Esc)" onClick={() => setOpen(false)}>
             ×

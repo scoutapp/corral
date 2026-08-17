@@ -2382,3 +2382,9 @@ table.projects th, table.projects td {
 .firstrun-opt-title { font-weight: 650; color: var(--fg); font-size: 0.88rem; }
 .firstrun-opt-desc { font-size: 0.78rem; color: var(--muted); margin-top: 0.15rem; }
 .firstrun-save { margin-top: 0.5rem; width: 100%; }
+
+.chatdock-ctx {
+  margin-left: 0.5rem; font-family: var(--mono, ui-monospace, monospace); font-size: 0.62rem;
+  letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px;
+}
