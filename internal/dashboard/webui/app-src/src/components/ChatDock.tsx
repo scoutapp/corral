@@ -1,21 +1,32 @@
 import { useEffect, useState } from "react";
 import { ChatPanel } from "./ChatPanel";
+import { FirstRunChat } from "./FirstRunChat";
+import { useRouter, matchProject } from "../router";
 
 // ChatDock — the app-wide "Claude everywhere" pane. Mounted once at the App root
 // (like the toast host), so it persists across navigation and is reachable from
 // every page. A slide-out drawer on the right: ⌘K (or the launcher button) opens
 // it, Esc closes it.
 //
-// This PR (shell) hosts the GLOBAL chat (/chat/ws). The next PR gives it a tab
-// bar on project pages — "This project" (the repo-scoped chat) alongside "Global"
-// — absorbing today's per-project ChatPanel into this one surface.
+// Contents follow the page: on a PROJECT route it shows two tabs — "This project"
+// (the repo-scoped /p/<id>/chat/ws) and "Global" (/chat/ws) — with the project
+// chat first. Everywhere else it's just the global chat, no tabs. One surface,
+// context-aware.
+
+type Tab = "project" | "global";
 
 export function ChatDock() {
+  const { path } = useRouter();
+  const projectId = matchProject(path);
+
   const [open, setOpen] = useState(false);
-  // Mount the WebSocket-backed panel only once opened, and keep it mounted after
-  // (so the conversation survives close/reopen) — but not before first open, to
-  // avoid a chat process for users who never touch it.
   const [everOpened, setEverOpened] = useState(false);
+  // Default to the project chat when on a project (you're looking at it); the
+  // global chat otherwise. Re-defaults to project whenever the project changes.
+  const [tab, setTab] = useState<Tab>("project");
+  useEffect(() => {
+    setTab(projectId ? "project" : "global");
+  }, [projectId]);
 
   // ⌘K / Ctrl-K toggles; Esc closes.
   useEffect(() => {
@@ -37,9 +48,11 @@ export function ChatDock() {
     setEverOpened(true);
   }
 
+  const showProjectTab = !!projectId;
+  const activeTab: Tab = showProjectTab ? tab : "global";
+
   return (
     <>
-      {/* Corner launcher — present on every page. */}
       <button
         type="button"
         className={`chatdock-launcher${open ? " open" : ""}`}
@@ -59,12 +72,47 @@ export function ChatDock() {
             ×
           </button>
         </header>
+
+        {showProjectTab && (
+          <div className="chatdock-tabs">
+            <button
+              type="button"
+              className={`chatdock-tab${activeTab === "project" ? " active" : ""}`}
+              onClick={() => setTab("project")}
+            >
+              This project
+            </button>
+            <button
+              type="button"
+              className={`chatdock-tab${activeTab === "global" ? " active" : ""}`}
+              onClick={() => setTab("global")}
+            >
+              Global
+            </button>
+          </div>
+        )}
+
         <div className="chatdock-body">
-          {everOpened && <ChatPanel wsPath="/chat/ws" />}
+          {everOpened && (
+            <>
+              {/* Both panels stay mounted (display-toggled) so switching tabs
+                  doesn't drop either conversation. The project panel only exists
+                  while on a project route. */}
+              {showProjectTab && (
+                <div style={{ display: activeTab === "project" ? "flex" : "none", flex: 1, minHeight: 0, flexDirection: "column" }}>
+                  <ChatPanel wsPath={`/p/${projectId}/chat/ws?tools=Read,Grep,Glob`} />
+                </div>
+              )}
+              <div style={{ display: activeTab === "global" ? "flex" : "none", flex: 1, minHeight: 0, flexDirection: "column" }}>
+                {/* The global chat's capability is a first-run choice; gate the
+                    panel behind it so we prompt before spawning the assistant. */}
+                <FirstRunChat />
+              </div>
+            </>
+          )}
         </div>
       </aside>
 
-      {/* Click-off scrim (doesn't dim the page much; just captures the click). */}
       {open && <div className="chatdock-scrim" onClick={() => setOpen(false)} />}
     </>
   );

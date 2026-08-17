@@ -2359,3 +2359,26 @@ table.projects th, table.projects td {
 @media (prefers-reduced-motion: reduce) {
   .chatdock { transition: none; }
 }
+
+/* ChatDock tabs (project vs global) + the first-run capability setup card. */
+.chatdock-tabs { display: flex; border-bottom: 1px solid var(--border); }
+.chatdock-tab {
+  flex: 1; background: none; border: none; padding: 0.55rem 0.5rem; cursor: pointer;
+  font-size: 0.82rem; color: var(--muted); border-bottom: 2px solid transparent;
+}
+.chatdock-tab:hover { color: var(--fg); }
+.chatdock-tab.active { color: var(--fg); border-bottom-color: var(--accent); }
+
+.firstrun { padding: 1.1rem 1.1rem 1.3rem; overflow-y: auto; }
+.firstrun-loading { padding: 1.5rem; color: var(--muted); }
+.firstrun-h { margin: 0 0 0.4rem; font-size: 1rem; color: var(--fg); }
+.firstrun-sub { margin: 0 0 1rem; font-size: 0.84rem; color: var(--muted); }
+.firstrun-opt {
+  display: flex; gap: 0.6rem; align-items: flex-start; border: 1px solid var(--border);
+  border-radius: 8px; padding: 0.7rem 0.8rem; margin-bottom: 0.6rem; cursor: pointer;
+}
+.firstrun-opt.sel { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.firstrun-opt input { margin-top: 0.2rem; }
+.firstrun-opt-title { font-weight: 650; color: var(--fg); font-size: 0.88rem; }
+.firstrun-opt-desc { font-size: 0.78rem; color: var(--muted); margin-top: 0.15rem; }
+.firstrun-save { margin-top: 0.5rem; width: 100%; }
