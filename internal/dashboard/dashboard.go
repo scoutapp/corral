@@ -1450,6 +1450,7 @@ func CmdDashboardServe(args []string) error {
 		server.apiToken = *apiToken
 	}
 	server.startLogRetention() // prune app_logs on start + hourly
+	server.startScheduleTick() // fire due flow schedules on start + every minute
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", *port),
 		Handler: server.routes(),
