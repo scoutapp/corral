@@ -58,6 +58,7 @@ export interface ConfigView {
   passthrough_firewall: boolean;
   dind_enabled: boolean;
   dind_ports: string[];
+  dind_cache?: DindCacheRef | null;
   launch_tmux: boolean;
   seccomp_mode: string;
   ssh_keys: string[];
@@ -65,6 +66,21 @@ export interface ConfigView {
   ssh_keys_effective: string[];
   container_up: boolean;
   source?: ProjectSource;
+}
+
+// A project's pin to a named DinD data cache (config.DindCacheRef).
+//   mode "copy"   — seed a fresh per-workspace volume from the cache (throwaway)
+//   mode "shared" — mount the cache volume directly (changes persist to it)
+export interface DindCacheRef {
+  name: string;
+  mode?: "copy" | "shared";
+}
+
+// GET /api/dind/caches -> { caches: DindCache[] } (dindcache.Cache)
+export interface DindCache {
+  name: string;
+  volume: string;
+  bytes: number;
 }
 
 // What a project was spawned from (a PR or issue), for the two-way back-link.
@@ -95,6 +111,8 @@ export interface ConfigEdit {
   passthrough_firewall?: boolean;
   dind_enabled?: boolean;
   dind_ports?: string[];
+  // Omit = no edit; null = clear the cache; object = set/replace it.
+  dind_cache?: DindCacheRef | null;
   launch_tmux?: boolean;
   seccomp_mode?: string;
   ssh_keys?: string[];

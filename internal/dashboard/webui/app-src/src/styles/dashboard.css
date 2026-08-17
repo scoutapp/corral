@@ -528,6 +528,27 @@ table.projects th, table.projects td {
 }
 .cfg-ssh-load { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.4rem; }
 
+/* DinD data-cache picker + manager (shown only when DinD is on). */
+.cfg-cache { display: flex; flex-direction: column; gap: 0.35rem; }
+.cfg-cache-row { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.cfg-cache-row .cfg-select { flex: 1 1 12rem; min-width: 10rem; }
+.cfg-cache-save { display: flex; gap: 0.4rem; margin-top: 0.5rem; align-items: center; }
+.cfg-cache-name { flex: 0 1 14rem; }
+.cfg-cache-list {
+  list-style: none; margin: 0.4rem 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.cfg-cache-list li {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 3px 6px; border-radius: 5px; font-size: 12px;
+}
+.cfg-cache-list li:hover { background: var(--panel); }
+.cfg-cache-del {
+  margin-left: auto; border: none; background: none; cursor: pointer;
+  color: var(--muted); font-size: 15px; line-height: 1; padding: 0 4px;
+}
+.cfg-cache-del:hover { color: var(--danger, #d33); }
+
 .cfg-modal {
   position: fixed; inset: 0; background: rgba(0,0,0,0.5);
   display: flex; align-items: center; justify-content: center; z-index: 10;
