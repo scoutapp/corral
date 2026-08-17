@@ -9,6 +9,7 @@ import { RunLogPage } from "./pages/RunLogPage";
 import { LogsPage } from "./pages/LogsPage";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
 import { ToastProvider } from "./components/Toasts";
+import { ChatDock } from "./components/ChatDock";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { useUpdateCheck } from "./hooks/useUpdateCheck";
 
@@ -40,6 +41,7 @@ export function App() {
       <RouterProvider>
         <UpdateBanner status={update} />
         <Routes />
+        <ChatDock />
       </RouterProvider>
     </ToastProvider>
   );
