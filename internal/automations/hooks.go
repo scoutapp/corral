@@ -165,26 +165,8 @@ func (r *Runner) runFlowSteps(ctx context.Context, flowID int64, rc RunContext) 
 	if err != nil {
 		return nil
 	}
-	vars := map[string]string{}
-	for k, v := range rc.Vars {
-		vars[k] = v
-	}
-	var out []StepResult
-	for _, step := range flow.Steps {
-		a, aerr := r.svc.Action(step.ActionID)
-		if aerr != nil {
-			out = append(out, StepResult{ActionID: step.ActionID, Status: StatusError, Err: "step action not found"})
-			break
-		}
-		sr := r.execute(ctx, a, RunContext{Event: rc.Event, RepoID: rc.RepoID, Vars: vars})
-		out = append(out, sr)
-		if sr.Status == StatusError {
-			break
-		}
-		if step.StepKey != "" {
-			vars["steps."+step.StepKey+".output"] = sr.Output
-		}
-	}
+	// Same dependency-ordered execution as RunFlow (honors depends_on).
+	out, _ := r.runOrderedSteps(ctx, flow.Steps, rc)
 	return out
 }
 

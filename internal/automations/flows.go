@@ -6,11 +6,11 @@ import (
 	"fmt"
 )
 
-// Flow execution: run a flow's steps in order, threading a variable bag so a
-// later step can reference an earlier one's output as {{steps.<key>.output}}.
-// Execution is LINEAR today; the data model (step_key + depends_on) is already
-// DAG-ready, so branching/parallel execution is an additive change here, not a
-// schema change.
+// Flow execution: run a flow's steps in DEPENDENCY order (see flow_dag.go),
+// threading a variable bag so a later step can reference an earlier one's output
+// as {{steps.<key>.output}}. Steps run sequentially; a step waits for the steps
+// it depends_on. A plain linear flow (no depends_on) runs in position order,
+// exactly as before.
 
 // FlowResult is the outcome of running a flow.
 type FlowResult struct {
@@ -35,42 +35,10 @@ func (r *Runner) RunFlow(ctx context.Context, flowID int64, trigger string, rc R
 		return FlowResult{}, err
 	}
 
-	// Work on a copy of the vars so step outputs accumulate without mutating the
-	// caller's map.
-	vars := map[string]string{}
-	for k, v := range rc.Vars {
-		vars[k] = v
-	}
+	// Run the steps in dependency order (honors depends_on; sequential).
+	steps, status := r.runOrderedSteps(ctx, flow.Steps, rc)
 
-	var (
-		result FlowResult
-		steps  []StepResult
-	)
-	for _, step := range flow.Steps {
-		a, aerr := r.svc.Action(step.ActionID)
-		if aerr != nil {
-			sr := StepResult{ActionID: step.ActionID, Status: StatusError, Err: "step action not found"}
-			steps = append(steps, sr)
-			result.Status = StatusError
-			break
-		}
-		sr := r.execute(ctx, a, RunContext{Event: rc.Event, RepoID: rc.RepoID, Vars: vars})
-		steps = append(steps, sr)
-		if sr.Status == StatusError {
-			result.Status = StatusError
-			break // pipeline stops at the first failure
-		}
-		// Expose this step's output to later steps.
-		if step.StepKey != "" {
-			vars["steps."+step.StepKey+".output"] = sr.Output
-		}
-	}
-
-	if result.Status == "" {
-		result.Status = StatusOK
-	}
-	result.Steps = steps
-	result.RunID = runID
+	result := FlowResult{Status: status, Steps: steps, RunID: runID}
 	if ferr := r.finishRun(runID, result.Status, steps); ferr != nil {
 		return result, ferr
 	}
