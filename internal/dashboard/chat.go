@@ -118,7 +118,31 @@ func (d *dashboardServer) handleChatWS(w http.ResponseWriter, r *http.Request, i
 		return
 	}
 	tools := parseChatTools(r.URL.Query().Get("tools"))
+	d.runChatSession(w, r, workspace, claudeBin, tools)
+}
 
+// handleGlobalChatWS is the app-wide "Claude everywhere" chat (/chat/ws) — not
+// tied to any project. It runs the host claude in a neutral, contained working
+// directory (~/.corral) rather than a repo, and its tool set comes from the
+// configured global-chat capability (read-only vs act), NOT the ?tools= param —
+// the global dock's power is a single deliberate setting, gated further by
+// API-writes. Same host-Claude trust basis as the project chat.
+func (d *dashboardServer) handleGlobalChatWS(w http.ResponseWriter, r *http.Request) {
+	claudeBin, err := resolveClaudeBin()
+	if err != nil {
+		http.Error(w, "the `claude` CLI could not be located — install Claude Code and restart the dashboard", http.StatusBadGateway)
+		return
+	}
+	cap, ok := d.ChatCapability()
+	tools := globalChatTools(cap, ok)
+	// Empty workspace → runChatTurn runs in the global chat dir (~/.corral).
+	d.runChatSession(w, r, "", claudeBin, tools)
+}
+
+// runChatSession upgrades to a WebSocket and drives the turn loop for a chat,
+// project-scoped (workspace set) or global (workspace ""). Shared by
+// handleChatWS and handleGlobalChatWS.
+func (d *dashboardServer) runChatSession(w http.ResponseWriter, r *http.Request, workspace, claudeBin string, tools []string) {
 	conn, err := terminalUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
@@ -350,8 +374,16 @@ func (d *dashboardServer) runChatTurn(ctx context.Context, claudeBin, workspace 
 	args := buildClaudeArgs(prompt, tools, sessionID)
 
 	cmd := exec.CommandContext(ctx, claudeBin, args...)
-	if _, serr := os.Stat(workspace); serr == nil {
-		cmd.Dir = workspace // land in the project so `claude` sees the repo
+	if workspace != "" {
+		if _, serr := os.Stat(workspace); serr == nil {
+			cmd.Dir = workspace // project chat: land in the repo so `claude` sees it
+		}
+	} else {
+		// Global chat: run in a neutral, contained dir (~/.corral) — nothing
+		// sensitive, stable, corral-owned. The global dock's real work is driving
+		// the API over the network, not reading files, so the cwd is just
+		// containment for Read/Grep.
+		cmd.Dir = globalChatDir()
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
