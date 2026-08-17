@@ -103,6 +103,10 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handleRepoSkills(w, r, strings.TrimPrefix(rest, "skills/"))
 	case strings.HasPrefix(rest, "repos/") && strings.HasSuffix(rest, "/agent-context"):
 		d.handleRepoAgentContext(w, r, strings.TrimSuffix(strings.TrimPrefix(rest, "repos/"), "/agent-context"))
+	case rest == "dind/caches":
+		d.handleDindCaches(w, r, "")
+	case strings.HasPrefix(rest, "dind/caches/"):
+		d.handleDindCaches(w, r, strings.TrimPrefix(rest, "dind/caches/"))
 	default:
 		routeNotFound(w, r)
 	}
@@ -337,9 +341,9 @@ func (d *dashboardServer) handleActionTest(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	var body struct {
-		Kind    string                   `json:"kind"`
-		Spec    string                   `json:"spec"`
-		Context automations.RunContext   `json:"context"`
+		Kind    string                 `json:"kind"`
+		Spec    string                 `json:"spec"`
+		Context automations.RunContext `json:"context"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Kind == "" {
 		http.Error(w, "kind and spec are required", http.StatusBadRequest)

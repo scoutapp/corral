@@ -1660,6 +1660,86 @@
           }
         }
       }
+    },
+    "/api/dind/caches": {
+      "get": {
+        "summary": "List DinD data caches",
+        "responses": {
+          "200": {
+            "description": "Caches",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "caches": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DindCache"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Snapshot a project's DinD volume into a named cache",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "project"],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "project": {
+                    "type": "string",
+                    "description": "project id whose DinD volume to snapshot"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DindCache"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dind/caches/{name}": {
+      "delete": {
+        "summary": "Delete a DinD data cache",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2509,6 +2589,23 @@
           },
           "content": {
             "type": "string"
+          }
+        }
+      },
+      "DindCache": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "cache slug (no corral-dind-cache- prefix)"
+          },
+          "volume": {
+            "type": "string",
+            "description": "backing docker volume name"
+          },
+          "bytes": {
+            "type": "integer",
+            "description": "on-disk size, best-effort (0 if unknown)"
           }
         }
       }
