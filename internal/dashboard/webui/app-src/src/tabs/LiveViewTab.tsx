@@ -9,9 +9,14 @@ import { getJSON } from "../api/client";
 // the container's listening ports as quick-picks; a free-text box covers
 // anything discovery misses.
 //
-// NOTE: iframe/origin isolation (the sandbox= attribute + hardening so the
-// untrusted app can't script the dashboard) is added in the next PR of this
-// milestone; this PR wires the tab + proxy + discovery.
+// ISOLATION: the app is UNTRUSTED, so the iframe is sandboxed. We deliberately
+// OMIT allow-same-origin: without it the framed content runs in an opaque origin
+// and cannot read the dashboard's cookies, DOM, localStorage, or make
+// same-origin requests to dashboard APIs — so embedding it can't become a
+// sandbox→dashboard escalation through the browser. We DO allow scripts/forms/
+// popups so real apps still work. The server half (frame-ancestors CSP, stripped
+// Set-Cookie/X-Frame-Options) lives in liveview.go's hardenLiveResponse.
+const LIVE_IFRAME_SANDBOX = "allow-scripts allow-forms allow-popups allow-modals";
 
 interface PortsResp {
   ports: number[];
@@ -114,6 +119,7 @@ export function LiveViewTab({ projectId, containerUp }: { projectId: string; con
             className="live-frame"
             src={src}
             title={`live view on port ${port}`}
+            sandbox={LIVE_IFRAME_SANDBOX}
           />
         </div>
       )}
