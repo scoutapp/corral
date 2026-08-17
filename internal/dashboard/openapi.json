@@ -1361,6 +1361,124 @@
           }
         }
       }
+    },
+    "/api/prompts/library": {
+      "get": {
+        "summary": "List saved (named) prompts",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Prompts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "prompts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/NamedPrompt"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Save a named prompt",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NamedPromptInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NamedPrompt"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/prompts/library/{id}": {
+      "put": {
+        "summary": "Update a named prompt",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "template": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a named prompt",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2122,6 +2240,56 @@
           "enabled": {
             "type": "boolean",
             "description": "default true"
+          }
+        }
+      },
+      "NamedPrompt": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "template": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "repo"
+            ]
+          },
+          "repoId": {
+            "type": "string"
+          }
+        }
+      },
+      "NamedPromptInput": {
+        "type": "object",
+        "required": [
+          "name",
+          "template"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "may not start with 'prompt:' (reserved)"
+          },
+          "template": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "repo": {
+            "type": "string",
+            "description": "repo id to scope to; omit for global"
           }
         }
       }
