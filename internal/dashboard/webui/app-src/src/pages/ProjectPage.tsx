@@ -13,13 +13,15 @@ import { DiffTab } from "../tabs/DiffTab";
 import { ConfigTab } from "../tabs/ConfigTab";
 import { MitmTab } from "../tabs/MitmTab";
 import { FirewallTab } from "../tabs/FirewallTab";
+import { LiveViewTab } from "../tabs/LiveViewTab";
 
-type Tab = "files" | "diff" | "container" | "mitm" | "firewall" | "config";
+type Tab = "files" | "diff" | "container" | "liveview" | "mitm" | "firewall" | "config";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "files", label: "Files" },
   { key: "diff", label: "Diff" },
   { key: "container", label: "Container" },
+  { key: "liveview", label: "Live View" },
   { key: "mitm", label: "Mitm Proxy" },
   { key: "firewall", label: "Firewall Log" },
   { key: "config", label: "Config" },
@@ -58,6 +60,7 @@ export function ProjectPage({ id }: { id: string }) {
     files: true,
     diff: false,
     container: false,
+    liveview: false,
     mitm: false,
     firewall: false,
     config: false,
@@ -257,6 +260,9 @@ export function ProjectPage({ id }: { id: string }) {
                 <p className="empty">{up ? "open to connect" : "container not running"}</p>
               )}
             </div>
+          </div>
+          <div id="tab-liveview" className="tab-panel" style={{ display: tab === "liveview" ? "flex" : "none", flexDirection: "column", flex: "1 1 auto", minHeight: 0 }}>
+            {seen.liveview && <LiveViewTab projectId={id} containerUp={!!up} />}
           </div>
           <div id="tab-mitm" className="tab-panel" style={{ display: tab === "mitm" ? "block" : "none" }}>
             {seen.mitm && <MitmTab projectId={id} mitmUp={!!me?.mitm_up} />}
