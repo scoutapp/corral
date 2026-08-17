@@ -1217,6 +1217,85 @@
           }
         }
       }
+    },
+    "/api/flows/{id}/schedule": {
+      "get": {
+        "summary": "Get a flow's pseudo-cron schedule",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Schedule or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schedule": {
+                      "$ref": "#/components/schemas/Schedule"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Set a flow's schedule (drift-tolerant pseudo-cron)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "description": "cadenceSeconds is the interval; catchUp fires once on wake when overdue (else the miss is skipped); enabled pauses it. Mutating \u2014 gated for CLI/Claude, not the browser. The tick that FIRES a scheduled flow is never gated.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved schedule"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove a flow's schedule",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1935,6 +2014,49 @@
           "header": {
             "type": "string",
             "description": "full Authorization header, e.g. 'Authorization: Bearer \u2026'"
+          }
+        }
+      },
+      "Schedule": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "flowId": {
+            "type": "integer"
+          },
+          "cadenceSeconds": {
+            "type": "integer"
+          },
+          "lastRunAt": {
+            "type": "string"
+          },
+          "catchUp": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ScheduleInput": {
+        "type": "object",
+        "required": [
+          "cadenceSeconds"
+        ],
+        "properties": {
+          "cadenceSeconds": {
+            "type": "integer",
+            "description": "interval between runs (e.g. 86400 = daily)"
+          },
+          "catchUp": {
+            "type": "boolean",
+            "description": "fire once on wake when overdue (default true)"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "default true"
           }
         }
       }

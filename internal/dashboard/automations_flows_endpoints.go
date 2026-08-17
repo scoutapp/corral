@@ -17,6 +17,7 @@ import (
 //	POST   /api/flows/<id>/steps append a step {actionId, position?, stepKey?, dependsOn?[]}
 //	DELETE /api/flows/<id>       delete
 //	POST   /api/flows/<id>:run   run ad-hoc (body = run context)
+//	GET/PUT/DELETE /api/flows/<id>/schedule   the flow's pseudo-cron schedule
 
 func (d *dashboardServer) handleFlows(w http.ResponseWriter, r *http.Request) {
 	svc := d.automationsService(w)
@@ -80,6 +81,11 @@ func (d *dashboardServer) handleFlowItem(w http.ResponseWriter, r *http.Request,
 	// "<id>/steps"
 	if idStr, ok := strings.CutSuffix(rest, "/steps"); ok {
 		d.handleFlowAddStep(w, r, svc, idStr)
+		return
+	}
+	// "<id>/schedule"
+	if idStr, ok := strings.CutSuffix(rest, "/schedule"); ok {
+		d.handleFlowSchedule(w, r, svc, idStr)
 		return
 	}
 
@@ -153,4 +159,62 @@ func (d *dashboardServer) handleFlowRun(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	writeJSON(w, res)
+}
+
+// handleFlowSchedule reads/sets/clears a flow's pseudo-cron schedule.
+//
+//	GET    /api/flows/<id>/schedule → { schedule: {...} | null }
+//	PUT    /api/flows/<id>/schedule   { cadenceSeconds, catchUp?, enabled? }
+//	DELETE /api/flows/<id>/schedule   remove it
+//
+// Setting/removing a schedule is a mutating call, so it obeys the API-writes gate
+// for the CLI/Claude (never the browser). The tick that FIRES a scheduled flow is
+// not gated — see startScheduleTick.
+func (d *dashboardServer) handleFlowSchedule(w http.ResponseWriter, r *http.Request, svc *automations.Service, idStr string) {
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "bad flow id", http.StatusBadRequest)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		sc, err := svc.ScheduleForFlow(id)
+		if err != nil {
+			writeJSON(w, map[string]any{"schedule": nil}) // none set
+			return
+		}
+		writeJSON(w, map[string]any{"schedule": sc})
+	case http.MethodPut:
+		var body struct {
+			CadenceSeconds int   `json:"cadenceSeconds"`
+			CatchUp        *bool `json:"catchUp"`
+			Enabled        *bool `json:"enabled"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad payload: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		catchUp := true
+		if body.CatchUp != nil {
+			catchUp = *body.CatchUp
+		}
+		enabled := true
+		if body.Enabled != nil {
+			enabled = *body.Enabled
+		}
+		sc, err := svc.SetSchedule(id, body.CadenceSeconds, catchUp, enabled)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, map[string]any{"schedule": sc})
+	case http.MethodDelete:
+		if err := svc.DeleteSchedule(id); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"ok": true})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
