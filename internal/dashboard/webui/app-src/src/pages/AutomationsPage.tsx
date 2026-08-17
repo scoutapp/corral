@@ -3,14 +3,16 @@ import { Link } from "../router";
 import { useBodyClass } from "../hooks/useBodyClass";
 import { AutomationsManager } from "../components/AutomationsManager";
 import { ScriptsLibrary } from "../components/ScriptsLibrary";
+import { FlowsManager } from "../components/FlowsManager";
 
-// Top-level Automations page. Two tabs:
+// Top-level Automations page. Three tabs:
 //   Automations — prompts, trigger cards (built-in + your steps), advanced.
+//   Flows       — compose multi-step flows, schedule + run them.
 //   Scripts     — the saved reusable bash-script library.
 // Per-repo overrides live in a repo's Settings tab; everything flows through the
 // API-first /api/* control plane.
 
-type Tab = "automations" | "scripts";
+type Tab = "automations" | "flows" | "scripts";
 
 export function AutomationsPage() {
   useBodyClass("console");
@@ -41,6 +43,13 @@ export function AutomationsPage() {
           </button>
           <button
             type="button"
+            className={`tab-btn${tab === "flows" ? " active" : ""}`}
+            onClick={() => setTab("flows")}
+          >
+            Flows
+          </button>
+          <button
+            type="button"
             className={`tab-btn${tab === "scripts" ? " active" : ""}`}
             onClick={() => setTab("scripts")}
           >
@@ -48,7 +57,7 @@ export function AutomationsPage() {
           </button>
         </div>
 
-        {tab === "automations" ? (
+        {tab === "automations" && (
           <>
             <p className="auto-intro">
               Turn events into your own units of work. Each card is something Corral already does — add
@@ -62,7 +71,20 @@ export function AutomationsPage() {
               </Link>
             </section>
           </>
-        ) : (
+        )}
+
+        {tab === "flows" && (
+          <>
+            <p className="auto-intro">
+              Wire actions into a multi-step flow. Each step hands its result to the next as{" "}
+              <code>{"{{steps.<key>.output}}"}</code>; a step can wait for others with <b>after</b>. Run a
+              flow now, or put it on a schedule.
+            </p>
+            <FlowsManager />
+          </>
+        )}
+
+        {tab === "scripts" && (
           <>
             <h2 className="auto-mgr-h" style={{ marginTop: 0 }}>
               Saved scripts
