@@ -81,7 +81,7 @@ func (d *dashboardServer) handleToolInvoke(w http.ResponseWriter, r *http.Reques
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&vars)
 	}
-	runner := automations.NewRunner(svc, automationsRegistry())
+	runner := d.automationsRunner(svc)
 	res, err := runner.RunAction(r.Context(), a.ID, automations.TriggerAPI, automations.RunContext{Vars: vars})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

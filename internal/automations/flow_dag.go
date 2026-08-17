@@ -142,7 +142,17 @@ func (r *Runner) runOrderedSteps(ctx context.Context, steps []FlowStep, rc RunCo
 			status = StatusError
 			break
 		}
-		sr := r.execute(ctx, a, RunContext{Event: rc.Event, RepoID: rc.RepoID, Vars: vars})
+		// Each step is a child span under the flow span, so the trace shows the
+		// per-step waterfall.
+		stepCtx, endStep := r.tracer().StartSpan(ctx, "automation", "flow.step",
+			"Step "+labelStep(step)+" ("+a.Kind+")",
+			map[string]any{"step": step.StepKey, "kind": a.Kind, "action": a.Name})
+		sr := r.execute(stepCtx, a, RunContext{Event: rc.Event, RepoID: rc.RepoID, Vars: vars})
+		if sr.Status == StatusError {
+			endStep(errFlowFailed)
+		} else {
+			endStep(nil)
+		}
 		out = append(out, sr)
 		if sr.Status == StatusError {
 			status = StatusError

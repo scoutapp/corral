@@ -100,11 +100,20 @@ type Runner struct {
 	svc *Service
 	reg *Registry
 	now func() time.Time // injectable for tests
+	trc Tracer           // optional; nil → no-op (see trace.go)
 }
 
 // NewRunner wires a runner. now defaults to time.Now.
 func NewRunner(svc *Service, reg *Registry) *Runner {
 	return &Runner{svc: svc, reg: reg, now: time.Now}
+}
+
+// WithTracer returns the runner configured to emit trace spans through t. The
+// dashboard wires an applog-backed tracer so flow/step runs appear in the Logs
+// trace waterfall; callers that don't need tracing just skip this.
+func (r *Runner) WithTracer(t Tracer) *Runner {
+	r.trc = t
+	return r
 }
 
 // RunAction executes a single action by ID and records the run. It returns the

@@ -48,7 +48,7 @@ func (d *dashboardServer) firePRHookEvent(ctx context.Context, prID int64, event
 		vars[k] = v
 	}
 
-	runner := automations.NewRunner(automations.New(s), automationsRegistry())
+	runner := d.automationsRunner(automations.New(s))
 	res, _ := runner.FireSecondary(ctx, event, automations.RunContext{RepoID: repoID, Vars: vars})
 	d.logAutomationRun(ctx, event, repoID, res)
 }
@@ -93,7 +93,7 @@ func (d *dashboardServer) fireProjectStartHooks(ctx context.Context, workspace s
 			vars["pr_url"] = cfg.Source.URL
 		}
 	}
-	runner := automations.NewRunner(automations.New(s), automationsRegistry())
+	runner := d.automationsRunner(automations.New(s))
 	res, _ := runner.FireSecondary(ctx, automations.EventProjectStart, automations.RunContext{RepoID: repoID, Vars: vars})
 	d.logAutomationRun(ctx, automations.EventProjectStart, repoID, res)
 }
