@@ -1107,6 +1107,10 @@ table.projects th, table.projects td {
 }
 .chat-root .bubble code:not(pre code) {
   background: #EBE7DE; border-radius: 4px; padding: 1px 5px;
+  /* Pin a dark color: without it the code text inherited --con-text (#C7CDD9,
+     the DARK-theme text color), rendering pale grey-blue on the pale #EBE7DE
+     background — nearly invisible. Use the chat's own ink. */
+  color: var(--ink);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em;
 }
 .chat-root .tool { max-width: 760px; margin: 0 auto 10px; padding-left: 36px; }
