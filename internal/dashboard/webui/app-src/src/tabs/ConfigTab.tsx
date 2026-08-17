@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getJSON, postJSON, postRaw } from "../api/client";
+import { delJSON, getJSON, postJSON, postRaw } from "../api/client";
 import type {
   ConfigDiffEntry,
   ConfigEdit,
   ConfigView,
   CredSet,
+  DindCache,
   SSHAvailableKey,
   SSHKeysStatus,
 } from "../api/types";
+import { fmtBytes } from "../lib/format";
 import { SSHLoadModal } from "../components/SSHLoadModal";
 
 // Config tab: fetch /p/<id>/config, render a live-reload zone and a
@@ -47,6 +49,12 @@ export function ConfigTab({ projectId, refreshKey }: { projectId: string; refres
   const [tmux, setTmux] = useState(false);
   const [seccomp, setSeccomp] = useState("");
 
+  // DinD data-cache: which cache this project starts from ("" = none) + mode.
+  const [cacheName, setCacheName] = useState("");
+  const [cacheMode, setCacheMode] = useState<"copy" | "shared">("copy");
+  const [caches, setCaches] = useState<DindCache[]>([]);
+  const [saveCacheName, setSaveCacheName] = useState("");
+
   // SSH picker
   const [available, setAvailable] = useState<SSHAvailableKey[]>([]);
   const [checkedExtras, setCheckedExtras] = useState<Record<string, boolean>>({});
@@ -68,6 +76,8 @@ export function ConfigTab({ projectId, refreshKey }: { projectId: string; refres
           setPassthrough(c.passthrough_firewall);
           setDind(c.dind_enabled);
           setDindPorts((c.dind_ports || []).join("\n"));
+          setCacheName(c.dind_cache?.name || "");
+          setCacheMode(c.dind_cache?.mode === "shared" ? "shared" : "copy");
           setTmux(c.launch_tmux);
           setSeccomp(c.seccomp_mode || "");
           setNewCreds([]);
@@ -89,6 +99,15 @@ export function ConfigTab({ projectId, refreshKey }: { projectId: string; refres
 
   useEffect(() => load(), [load]);
 
+  // DinD caches are host-wide (not per-project), so this list is independent of
+  // the project config. Fetched once; refreshed after a save/delete.
+  const refreshCaches = useCallback(() => {
+    getJSON<{ caches: DindCache[] }>("/api/dind/caches")
+      .then((r) => setCaches(r.caches || []))
+      .catch(() => setCaches([]));
+  }, []);
+  useEffect(() => refreshCaches(), [refreshCaches]);
+
   // dirty = the user has unsaved edits vs. the last-loaded config. Used to gate
   // the on-open refresh so re-entering the Config tab doesn't discard in-progress
   // edits. Compares the fields a reload would overwrite.
@@ -105,6 +124,8 @@ export function ConfigTab({ projectId, refreshKey }: { projectId: string; refres
       passthrough !== cfg.passthrough_firewall ||
       dind !== cfg.dind_enabled ||
       norm(dindPorts) !== norm((cfg.dind_ports || []).join("\n")) ||
+      cacheName !== (cfg.dind_cache?.name || "") ||
+      (!!cacheName && cacheMode !== (cfg.dind_cache?.mode === "shared" ? "shared" : "copy")) ||
       tmux !== cfg.launch_tmux ||
       seccomp !== (cfg.seccomp_mode || ""));
   const dirtyRef = useRef(dirty);
@@ -171,6 +192,8 @@ export function ConfigTab({ projectId, refreshKey }: { projectId: string; refres
       passthrough_firewall: passthrough,
       dind_enabled: dind,
       dind_ports: linesToList(dindPorts),
+      // null clears the cache; an object sets it. Only meaningful with DinD on.
+      dind_cache: cacheName ? { name: cacheName, mode: cacheMode } : null,
       launch_tmux: tmux,
       seccomp_mode: seccomp,
       ssh_keys: collectSSHExtras(),
@@ -234,6 +257,42 @@ export function ConfigTab({ projectId, refreshKey }: { projectId: string; refres
   function doRestart() {
     if (!window.confirm("Restart this project now? This kills the container and any running session in it.")) return;
     restartRequest(collectRestartEdit());
+  }
+
+  // Snapshot this project's current inner-docker data root into a named cache.
+  // Server-side this is a full container-mediated copy — slow for big data roots
+  // — so we surface an in-progress message and disable the button.
+  const [savingCache, setSavingCache] = useState(false);
+  async function saveAsCache() {
+    const nm = saveCacheName.trim();
+    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(nm)) {
+      setMsg({ text: "cache name: letters, digits, dashes, underscores (max 64)", err: true });
+      return;
+    }
+    setSavingCache(true);
+    setMsg({ text: `saving cache “${nm}” — copying the DinD volume, this can take a while…`, err: false });
+    try {
+      await postJSON("/api/dind/caches", { name: nm, project: projectId });
+      setSaveCacheName("");
+      setMsg({ text: `✓ saved cache “${nm}”`, err: false });
+      refreshCaches();
+    } catch (e) {
+      setMsg({ text: `save cache failed: ${(e as Error).message}`, err: true });
+    } finally {
+      setSavingCache(false);
+    }
+  }
+
+  async function deleteCache(nm: string) {
+    if (!window.confirm(`Delete DinD cache “${nm}”? Projects still set to use it will fail to start until you re-point them.`)) return;
+    try {
+      await delJSON(`/api/dind/caches/${encodeURIComponent(nm)}`);
+      if (cacheName === nm) setCacheName("");
+      setMsg({ text: `✓ deleted cache “${nm}”`, err: false });
+      refreshCaches();
+    } catch (e) {
+      setMsg({ text: `delete cache failed: ${(e as Error).message}`, err: true });
+    }
   }
 
   function addCred() {
@@ -408,6 +467,58 @@ export function ConfigTab({ projectId, refreshKey }: { projectId: string; refres
         <Field label="Published ports">
           <textarea className="cfg-edit" rows={Math.max(2, dindPorts.split("\n").length + 1)} spellCheck={false} value={dindPorts} onChange={(e) => setDindPorts(e.target.value)} />
         </Field>
+        {dind && (
+          <Field label="Start from cache">
+            <div className="cfg-cache">
+              <div className="cfg-cache-row">
+                <select className="cfg-select" value={cacheName} onChange={(e) => setCacheName(e.target.value)}>
+                  <option value="">None — fresh, empty inner docker</option>
+                  {caches.map((c) => (
+                    <option key={c.name} value={c.name}>
+                      {c.name} ({fmtBytes(c.bytes)})
+                    </option>
+                  ))}
+                </select>
+                {cacheName && (
+                  <select className="cfg-select" value={cacheMode} onChange={(e) => setCacheMode(e.target.value === "shared" ? "shared" : "copy")}>
+                    <option value="copy">Copy — throwaway (cache untouched)</option>
+                    <option value="shared">Shared — changes persist to the cache</option>
+                  </select>
+                )}
+              </div>
+              <div className="muted cfg-note">
+                A cache is a prebuilt inner-docker data root (images + volumes) so a project doesn't rebuild/re-seed each time. <b>Copy</b> seeds a fresh per-project volume from the cache on first start; <b>Shared</b> mounts the cache directly so a migration writes back. Changing this needs a restart.
+              </div>
+
+              <div className="cfg-cache-save">
+                <input
+                  className="cfg-edit cfg-cache-name"
+                  placeholder="new-cache-name"
+                  value={saveCacheName}
+                  spellCheck={false}
+                  onChange={(e) => setSaveCacheName(e.target.value)}
+                />
+                <button className="cfg-btn" disabled={savingCache || !saveCacheName.trim()} onClick={saveAsCache}>
+                  {savingCache ? "Saving…" : "Save current data as cache"}
+                </button>
+              </div>
+              <div className="muted cfg-note">Snapshots this project's current inner-docker data (built images + seeded volumes) into a reusable cache. Full copy — can take a while for large data roots.</div>
+
+              {caches.length > 0 && (
+                <ul className="cfg-cache-list">
+                  {caches.map((c) => (
+                    <li key={c.name}>
+                      <code>{c.name}</code> <span className="muted">{fmtBytes(c.bytes)}</span>
+                      <button className="cfg-cache-del" title="Delete cache" onClick={() => deleteCache(c.name)}>
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </Field>
+        )}
         <Field label="Launch tmux">
           <Toggle checked={tmux} onChange={setTmux} />
         </Field>
