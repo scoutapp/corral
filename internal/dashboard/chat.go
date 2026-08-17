@@ -17,6 +17,16 @@ import (
 	"github.com/scoutapp/corral/internal/config"
 )
 
+// withContextHint prepends a page-context note to a prompt on the first turn of a
+// global chat, so the assistant knows where the user is ("this repo" resolves).
+// firstTurn gates it — later turns already carry the context via --resume.
+func withContextHint(prompt, hint string, firstTurn bool) string {
+	if hint == "" || !firstTurn {
+		return prompt
+	}
+	return "[Context: " + hint + "]\n\n" + prompt
+}
+
 // truncate shortens s to at most n runes, appending an ellipsis when clipped.
 // Used for log messages built from free-text (chat prompts) so a row stays a
 // readable one-liner.
@@ -118,7 +128,7 @@ func (d *dashboardServer) handleChatWS(w http.ResponseWriter, r *http.Request, i
 		return
 	}
 	tools := parseChatTools(r.URL.Query().Get("tools"))
-	d.runChatSession(w, r, workspace, claudeBin, tools)
+	d.runChatSession(w, r, workspace, claudeBin, tools, "")
 }
 
 // handleGlobalChatWS is the app-wide "Claude everywhere" chat (/chat/ws) — not
@@ -135,14 +145,17 @@ func (d *dashboardServer) handleGlobalChatWS(w http.ResponseWriter, r *http.Requ
 	}
 	cap, ok := d.ChatCapability()
 	tools := globalChatTools(cap, ok)
+	// A short context hint from the page the user is on ("viewing repo X"), so the
+	// global assistant can resolve "this repo"/"this PR". Folded into the first turn.
+	contextHint := r.URL.Query().Get("ctx")
 	// Empty workspace → runChatTurn runs in the global chat dir (~/.corral).
-	d.runChatSession(w, r, "", claudeBin, tools)
+	d.runChatSession(w, r, "", claudeBin, tools, contextHint)
 }
 
 // runChatSession upgrades to a WebSocket and drives the turn loop for a chat,
 // project-scoped (workspace set) or global (workspace ""). Shared by
 // handleChatWS and handleGlobalChatWS.
-func (d *dashboardServer) runChatSession(w http.ResponseWriter, r *http.Request, workspace, claudeBin string, tools []string) {
+func (d *dashboardServer) runChatSession(w http.ResponseWriter, r *http.Request, workspace, claudeBin string, tools []string, contextHint string) {
 	conn, err := terminalUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
@@ -194,6 +207,11 @@ func (d *dashboardServer) runChatSession(w http.ResponseWriter, r *http.Request,
 			continue // ignore prompts while a turn is in flight, and empty prompts
 		}
 
+		// On the FIRST turn only, prepend the page-context hint (if any) so the
+		// assistant knows where the user is. Later turns already have the context
+		// via --resume, so we don't repeat it.
+		prompt := withContextHint(msg.Prompt, contextHint, sessionID == "")
+
 		// Run the turn in a goroutine so the read loop stays responsive to cancel.
 		ctx, cancel := context.WithCancel(r.Context())
 		turnMu.Lock()
@@ -224,7 +242,7 @@ func (d *dashboardServer) runChatSession(w http.ResponseWriter, r *http.Request,
 				_ = send(chatServerMsg{Type: "canceled"})
 			}
 			_ = send(chatServerMsg{Type: "turn_end"})
-		}(msg.Prompt)
+		}(prompt)
 	}
 }
 
