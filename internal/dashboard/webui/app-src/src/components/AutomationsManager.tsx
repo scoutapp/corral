@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { getJSON, postJSON } from "../api/client";
 import { PromptsCarousel } from "./PromptsCarousel";
+import { PromptLibrary } from "./PromptLibrary";
 import { BashStepEditor } from "./BashStepEditor";
 
 // AutomationsManager is the approachable actions/automations editor used by the
@@ -157,6 +158,10 @@ export function AutomationsManager({ repoId }: { repoId?: string }) {
       {/* 1. Prompts — the editable prompt catalog (carousel). Global on the
           Automations page; repo-scoped overrides in a repo's Settings tab. */}
       <PromptsCarousel repoId={repoId} onMsg={setMsg} />
+
+      {/* 1b. Saved prompts — the user's named library, picked at project/issue
+          start. Companion to the fixed catalog above. */}
+      <PromptLibrary repoId={repoId} onMsg={setMsg} />
 
       {/* 2. Automations — one card per trigger. */}
       <h3 className="auto-mgr-h">Automations{scoped ? " (this repo)" : ""}</h3>

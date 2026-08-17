@@ -12,6 +12,7 @@ import { getJSON, wsURL } from "../api/client";
 // the (possibly edited) prompt to send.
 
 type PromptItem = { key: string; effective: string; source: string };
+type NamedPrompt = { id: number; name: string; template: string };
 
 // renderVars fills {{name}} placeholders (mirrors the Go renderer; unknown vars
 // blank). Applied when seeding so the user sees/sends the FILLED prompt — the
@@ -37,6 +38,8 @@ export function LaunchPromptEditor({
 }) {
   const [source, setSource] = useState<string>("default");
   const [loaded, setLoaded] = useState(false);
+  // Saved named prompts the user can pick to fill this launch.
+  const [library, setLibrary] = useState<NamedPrompt[]>([]);
 
   // AI draft.
   const [aiOpen, setAiOpen] = useState(false);
@@ -60,8 +63,21 @@ export function LaunchPromptEditor({
         setLoaded(true);
       })
       .catch(() => setLoaded(true));
+    // Load the saved-prompt library for the picker (repo's own + global).
+    getJSON<{ prompts: NamedPrompt[] }>(`/api/prompts/library${q}`)
+      .then((d) => setLibrary(d.prompts || []))
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [promptKey, repoId]);
+
+  // Picking a saved prompt fills the editor (rendered with the current slot vars)
+  // and marks it dirty so it's sent on launch.
+  function pickSaved(id: string) {
+    const p = library.find((x) => String(x.id) === id);
+    if (!p) return;
+    onChange(vars ? renderVars(p.template, vars) : p.template);
+    onDirty?.(true);
+  }
 
   const draftWithAI = () => {
     if (!aiIntent.trim()) return;
@@ -100,9 +116,29 @@ export function LaunchPromptEditor({
     <div className="launch-prompt">
       <div className="launch-prompt-head">
         <span>Project-start prompt</span>
-        <span className="launch-prompt-src" title={`Inherited from the ${source} prompt`}>
-          from: {source}
-        </span>
+        <div className="launch-prompt-head-right">
+          {library.length > 0 && (
+            <select
+              className="launch-prompt-pick"
+              value=""
+              onChange={(e) => {
+                if (e.target.value) pickSaved(e.target.value);
+                e.target.value = "";
+              }}
+              title="Fill from one of your saved prompts"
+            >
+              <option value="">Use a saved prompt…</option>
+              {library.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <span className="launch-prompt-src" title={`Inherited from the ${source} prompt`}>
+            from: {source}
+          </span>
+        </div>
       </div>
       <p className="auto-hint" style={{ margin: "0 0 0.35rem" }}>
         Sent to Claude when the project starts. Edited here it applies to this launch only — change the
