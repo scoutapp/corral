@@ -15,6 +15,12 @@ type ProjectConfig struct {
 	DindPorts    []string `json:"dind_ports,omitempty"`
 	LaunchTmux   bool     `json:"launch_tmux,omitempty"`
 
+	// DindCache, when set, makes this project start its inner-docker data root
+	// FROM a reusable named cache (see internal/dindcache) instead of an empty
+	// per-workspace volume. Only meaningful when DindEnabled. Nil = no cache
+	// (the default: a fresh, isolated per-workspace volume).
+	DindCache *DindCacheRef `json:"dind_cache,omitempty"`
+
 	// PassthroughFirewall = "permissive but observed" mode (the saved form of
 	// --passthrough-firewall-and-write): proxy + mitm stay ON (HTTP/S inspected,
 	// credentials injected), but unknown domains are ALLOWED and logged to
@@ -62,6 +68,30 @@ type ProjectConfig struct {
 	Source *ProjectSource `json:"source,omitempty"`
 
 	CreatedAt string `json:"created_at"`
+}
+
+// DindCacheRef pins a project to a named DinD data cache and how it uses it.
+//
+//	Mode "copy"   — the project's own per-workspace volume is SEEDED from the
+//	                cache once (a full copy on first start), then diverges. The
+//	                cache is never modified. Throwaway-friendly.
+//	Mode "shared" — the project mounts the cache volume DIRECTLY; changes (e.g. a
+//	                migration) write back and persist into the cache.
+type DindCacheRef struct {
+	Name string `json:"name"`           // cache slug (no corral-dind-cache- prefix)
+	Mode string `json:"mode,omitempty"` // "copy" (default) | "shared"
+}
+
+// DindCacheModeShared / DindCacheModeCopy are the two DindCacheRef.Mode values.
+const (
+	DindCacheModeCopy   = "copy"
+	DindCacheModeShared = "shared"
+)
+
+// IsShared reports whether the ref uses the cache volume directly (shared mode).
+// Any mode other than "shared" — including the empty default — is copy mode.
+func (r *DindCacheRef) IsShared() bool {
+	return r != nil && r.Mode == DindCacheModeShared
 }
 
 // ProjectSource is the PR/issue a project was created from.

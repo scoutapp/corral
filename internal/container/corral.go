@@ -29,14 +29,15 @@ type Corral struct {
 	// saved setting.
 	EnforceAllowlist bool
 	DisableDind      bool
-	dindEnabled                 bool
-	dindPorts                   []string
-	seccompMode                 string          // "" default | "unconfined" | custom profile path
-	DevMode                     bool            // set by `dev`: launch detached in tmux for closed-loop development
-	detachedSession             string          // non-empty when container launched in background tmux session
-	mergedCredsFile             string          // non-empty when a merged temp creds file was written (cleaned up on stop)
-	workspace                   string          // project workspace path; set by startProxy so stopProxy can clean up the workspace-relative runtime.json
-	sshAgent                    *sshagent.Agent // non-nil when a scoped ssh-agent was started for this run (mounted + torn down on stop)
+	dindEnabled      bool
+	dindPorts        []string
+	dindCache        *config.DindCacheRef // non-nil: start inner-docker data from a named cache
+	seccompMode      string               // "" default | "unconfined" | custom profile path
+	DevMode          bool                 // set by `dev`: launch detached in tmux for closed-loop development
+	detachedSession  string               // non-empty when container launched in background tmux session
+	mergedCredsFile  string               // non-empty when a merged temp creds file was written (cleaned up on stop)
+	workspace        string               // project workspace path; set by startProxy so stopProxy can clean up the workspace-relative runtime.json
+	sshAgent         *sshagent.Agent      // non-nil when a scoped ssh-agent was started for this run (mounted + torn down on stop)
 }
 
 func NewCorral() (*Corral, error) {

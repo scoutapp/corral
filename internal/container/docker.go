@@ -405,16 +405,27 @@ func (sc *Corral) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) erro
 		// Bind mounts fail with "lchown /proc: permission denied" when Docker
 		// tries to extract image layers that contain /proc entries — named
 		// volumes avoid this because Docker manages ownership internally.
-		dindVol := config.DindVolumeName(cfg.Workspace)
+		// In SHARED cache mode this is the cache volume itself (writes persist to
+		// the cache); otherwise it's the per-workspace volume (which copy-mode has
+		// already seeded from the cache, or which no-cache uses empty).
+		dindVol := sc.dindDataVolume(cfg)
 		args = append(args, "-v", fmt.Sprintf("%s:/var/lib/docker-dind:rw", dindVol))
 
 		for _, port := range sc.dindPorts {
 			args = append(args, "-p", port)
 		}
+		cacheNote := ""
+		if sc.dindCache != nil && sc.dindCache.Name != "" {
+			mode := config.DindCacheModeCopy
+			if sc.dindCache.IsShared() {
+				mode = config.DindCacheModeShared
+			}
+			cacheNote = fmt.Sprintf(", cache: %s [%s]", sc.dindCache.Name, mode)
+		}
 		if len(sc.dindPorts) > 0 {
-			log.Printf("DinD enabled (ports: %s, volume: %s)", strings.Join(sc.dindPorts, ", "), dindVol)
+			log.Printf("DinD enabled (ports: %s, volume: %s%s)", strings.Join(sc.dindPorts, ", "), dindVol, cacheNote)
 		} else {
-			log.Printf("DinD enabled (volume: %s)", dindVol)
+			log.Printf("DinD enabled (volume: %s%s)", dindVol, cacheNote)
 		}
 	}
 
