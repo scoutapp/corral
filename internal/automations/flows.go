@@ -3,8 +3,13 @@ package automations
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 )
+
+// errFlowFailed marks a flow span's end as errored (a step failed). The detail is
+// in the step results / run row; the sentinel just flips the span to error.
+var errFlowFailed = errors.New("a flow step failed")
 
 // Flow execution: run a flow's steps in DEPENDENCY order (see flow_dag.go),
 // threading a variable bag so a later step can reference an earlier one's output
@@ -35,8 +40,20 @@ func (r *Runner) RunFlow(ctx context.Context, flowID int64, trigger string, rc R
 		return FlowResult{}, err
 	}
 
+	// Open a flow span; its steps nest under it in the trace. The run_id links the
+	// span to the auto_runs detail. Inherits the caller's trace when there is one
+	// (e.g. a chat turn triggering the flow), else mints its own.
+	ctx, endSpan := r.tracer().StartSpan(ctx, "automation", "flow.run",
+		"Ran flow "+flow.Name, map[string]any{"flow": flow.Name, "flowId": flowID, "trigger": trigger, "runId": runID})
+
 	// Run the steps in dependency order (honors depends_on; sequential).
 	steps, status := r.runOrderedSteps(ctx, flow.Steps, rc)
+
+	if status == StatusError {
+		endSpan(errFlowFailed)
+	} else {
+		endSpan(nil)
+	}
 
 	result := FlowResult{Status: status, Steps: steps, RunID: runID}
 	if ferr := r.finishRun(runID, result.Status, steps); ferr != nil {

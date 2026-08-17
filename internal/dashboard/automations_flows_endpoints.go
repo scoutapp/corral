@@ -146,7 +146,7 @@ func (d *dashboardServer) handleFlowRun(w http.ResponseWriter, r *http.Request, 
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&rc)
 	}
-	runner := automations.NewRunner(svc, automationsRegistry())
+	runner := d.automationsRunner(svc)
 	res, err := runner.RunFlow(r.Context(), id, automations.TriggerAPI, rc)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

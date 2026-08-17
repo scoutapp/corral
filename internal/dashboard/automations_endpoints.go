@@ -288,7 +288,7 @@ func (d *dashboardServer) handleActionRun(w http.ResponseWriter, r *http.Request
 		// An empty body is fine (manual run with no context).
 		_ = json.NewDecoder(r.Body).Decode(&rc)
 	}
-	runner := automations.NewRunner(svc, automationsRegistry())
+	runner := d.automationsRunner(svc)
 	res, err := runner.RunAction(r.Context(), id, automations.TriggerAPI, rc)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -333,7 +333,7 @@ func (d *dashboardServer) handleActionTest(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "kind and spec are required", http.StatusBadRequest)
 		return
 	}
-	runner := automations.NewRunner(svc, automationsRegistry())
+	runner := d.automationsRunner(svc)
 	res := runner.RunEphemeral(r.Context(), automations.Action{Kind: body.Kind, Spec: body.Spec, Name: "test"}, body.Context)
 	d.applog().InfoCtx(r.Context(), applog.Entry{
 		Level: levelForStatus(res.Status), Category: applog.CatScript, Event: "script.test",
