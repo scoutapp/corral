@@ -98,6 +98,7 @@ func DefaultRegistry() *Registry {
 type RegistryOptions struct {
 	Secrets    SecretResolver // {{secret.*}} resolution for webhook/slack
 	LoginShell string         // run bash steps via this login shell (full PATH); "" = bash -c
+	ClaudeBin  string         // absolute path to the host `claude` for mcp steps; "" disables KindMCP
 }
 
 // RegistryWithSecrets returns the built-in registry with a secret resolver wired
@@ -115,5 +116,6 @@ func RegistryWith(opts RegistryOptions) *Registry {
 	r.Register(KindWebhook, WebhookExecutor{Secrets: opts.Secrets})
 	r.Register(KindSlack, SlackExecutor{Secrets: opts.Secrets})
 	r.Register(KindBash, BashExecutor{LoginShell: opts.LoginShell})
+	r.Register(KindMCP, MCPExecutor{ClaudeBin: opts.ClaudeBin})
 	return r
 }

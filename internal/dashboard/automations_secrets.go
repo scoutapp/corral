@@ -41,9 +41,13 @@ func (credsSecretResolver) Secret(name string) (string, bool) {
 // placeholders resolve and bash steps run with the operator's full PATH (aws,
 // brew/nvm tools, …) — matching their terminal.
 func automationsRegistry() *automations.Registry {
+	// Resolve the host claude for mcp steps; empty is fine (KindMCP then reports a
+	// clear error instead of running).
+	claudeBin, _ := resolveClaudeBin()
 	return automations.RegistryWith(automations.RegistryOptions{
 		Secrets:    credsSecretResolver{},
 		LoginShell: loginShell(),
+		ClaudeBin:  claudeBin,
 	})
 }
 
