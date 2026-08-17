@@ -69,6 +69,50 @@ plainly: they can turn on **API access → Allow API writes** in the dashboard's
 Global settings, then you can retry. This gate is deliberate — it's how the user
 controls whether you can change things, not a bug.
 
+## Creating skills & scripts — use the API, NOT files
+
+When the user asks you to **create a skill or a tool/script for Corral**, create
+it through the API. Corral stores skills and scripts in its **database**, not as
+loose files — so **do not** write a `SKILL.md` or a `.sh` file on disk for this.
+Writing a file is the wrong tool here: it won't be registered with Corral, and
+the chat runs read-only by default so the write is denied anyway. Use these:
+
+**A script/tool** — a reusable bash action (callable from flows + event hooks).
+`spec` is a JSON *string* whose `script` is the shell body:
+
+```
+corral api POST /api/actions -d '{
+  "name": "notify-slack",
+  "kind": "bash",
+  "scope": "global",
+  "spec": "{\"script\":\"curl -sX POST $SLACK_URL -d \\\"text=$CORRAL_PR_TITLE\\\"\"}"
+}'
+```
+
+Scope `global` applies everywhere; `repo` (with `"repoId":"<id>"`) scopes it to
+one repo. Run-context values are exported to the script as `CORRAL_<UPPER_SNAKE>`.
+
+**A skill** — a reusable `SKILL.md` capability injected into a repo's sandboxes.
+Skills are **repo-scoped**; pass the repo id and the full markdown as `content`:
+
+```
+corral api POST /api/skills -d '{
+  "repo": "<repoId>",
+  "name": "review-rules",
+  "content": "---\nname: review-rules\ndescription: How we review code here\n---\n\nWhen reviewing, always ..."
+}'
+```
+
+Get `<repoId>` from `GET /repos`. The skill lands in the DB and Corral writes it
+into every sandbox cloned from that repo (at `.corral/skills/<name>/SKILL.md`) —
+you don't place the file yourself.
+
+To edit or remove: `PUT /api/actions/<id>` / `PUT /api/skills/<id>`, or
+`DELETE`. Re-read `GET /api/openapi.json` for the exact fields.
+
+> These are writes, so the API-writes gate above applies — if it 403s, ask the
+> user to enable API writes, then retry.
+
 ## Is a project working or waiting?
 
 `GET /status` returns each project's `activity`: `working` (a completion is
