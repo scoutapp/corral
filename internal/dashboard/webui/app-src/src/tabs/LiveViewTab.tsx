@@ -103,6 +103,11 @@ export function LiveViewTab({ projectId, containerUp }: { projectId: string; con
 
   return (
     <div className="live-view">
+      <div className="live-hint muted">
+        Pick a port and path above, or ask the <strong>Ask Claude</strong> host chat
+        (the global one — it can run <code>corral api</code>) to start your app and
+        set the Live View port for you.
+      </div>
       <div className="live-bar">
         <span className="live-label">Port</span>
         {ports.map((p) => (
