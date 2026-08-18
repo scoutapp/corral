@@ -13,6 +13,8 @@ const LAST_SEEN_KEY = "corral.prInbox.lastSeen";
 export function PRInboxSection() {
   const { navigate } = useRouter();
   const [items, setItems] = useState<InboxPr[] | null>(null);
+  const [currentUser, setCurrentUser] = useState("");
+  const [scope, setScope] = useState<"all" | "mine">("all");
   const [err, setErr] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const now = Date.now();
@@ -28,8 +30,11 @@ export function PRInboxSection() {
   }, []);
 
   useEffect(() => {
-    getJSON<{ prs: InboxPr[] }>("/prs/inbox")
-      .then((d) => setItems(d.prs || []))
+    getJSON<{ prs: InboxPr[]; currentUser?: string }>("/prs/inbox")
+      .then((d) => {
+        setItems(d.prs || []);
+        setCurrentUser(d.currentUser || "");
+      })
       .catch((e) => setErr((e as Error).message));
   }, []);
 
@@ -43,16 +48,20 @@ export function PRInboxSection() {
       </p>
     );
 
+  // "Mine" = PRs I authored (currentUser). Applied before the text search.
+  const mineCount = currentUser ? items.filter((it) => it.pr.author === currentUser).length : 0;
+  const scoped = scope === "mine" && currentUser ? items.filter((it) => it.pr.author === currentUser) : items;
+
   const q = query.trim().toLowerCase();
   const filtered = q
-    ? items.filter(
+    ? scoped.filter(
         (it) =>
           String(it.pr.number).includes(q) ||
           it.pr.title.toLowerCase().includes(q) ||
           it.repoName.toLowerCase().includes(q) ||
           it.pr.author.toLowerCase().includes(q),
       )
-    : items;
+    : scoped;
 
   const sorted = [...filtered].sort((a, b) =>
     (b.pr.updatedAt || "").localeCompare(a.pr.updatedAt || ""),
@@ -94,6 +103,17 @@ export function PRInboxSection() {
 
   return (
     <>
+      <div className="pr-scope-tabs">
+        <button type="button" className={`pr-scope-tab${scope === "all" ? " active" : ""}`} onClick={() => setScope("all")}>
+          All <span className="pr-scope-count">{items.length}</span>
+        </button>
+        {currentUser && (
+          <button type="button" className={`pr-scope-tab${scope === "mine" ? " active" : ""}`} onClick={() => setScope("mine")} title={`PRs authored by @${currentUser}`}>
+            Mine <span className="pr-scope-count">{mineCount}</span>
+          </button>
+        )}
+      </div>
+
       <div className="pr-toolbar">
         <input
           className="pr-search"
@@ -103,10 +123,15 @@ export function PRInboxSection() {
           onChange={(e) => setQuery(e.target.value)}
         />
         <span className="pr-toolbar-count">
-          {filtered.length} of {items.length}
+          {filtered.length} of {scoped.length}
         </span>
       </div>
 
+      {filtered.length === 0 && (
+        <p className="tab-note">
+          {scope === "mine" ? `No open PRs authored by @${currentUser}.` : "No PRs match your filter."}
+        </p>
+      )}
       {fresh.length > 0 && (
         <>
           <div className="inbox-divider new">▸ New (updated since last visit)</div>

@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // ghRepo is one entry from `gh repo list`.
@@ -236,4 +237,28 @@ func ghUserOrgs(ghBin string) []string {
 	}
 	// One login per line; Fields splits on whitespace/newlines and drops blanks.
 	return strings.Fields(string(out))
+}
+
+var (
+	ghCurrentUserOnce sync.Once
+	ghCurrentUserVal  string
+)
+
+// ghCurrentUser returns the authenticated GitHub login (for the PR inbox "Mine"
+// filter). Cached for the process lifetime — the login doesn't change — so the
+// inbox doesn't pay a gh call on every poll. Best-effort: "" on any failure, in
+// which case the client just can't offer a "Mine" filter.
+func ghCurrentUser() string {
+	ghCurrentUserOnce.Do(func() {
+		ghBin, err := exec.LookPath("gh")
+		if err != nil {
+			return
+		}
+		out, err := exec.Command(ghBin, "api", "user", "--jq", ".login").Output()
+		if err != nil {
+			return
+		}
+		ghCurrentUserVal = strings.TrimSpace(string(out))
+	})
+	return ghCurrentUserVal
 }
