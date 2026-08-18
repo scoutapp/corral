@@ -107,6 +107,8 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handleDindCaches(w, r, "")
 	case strings.HasPrefix(rest, "dind/caches/"):
 		d.handleDindCaches(w, r, strings.TrimPrefix(rest, "dind/caches/"))
+	case rest == "prs/prune":
+		d.handlePRPrune(w, r)
 	default:
 		routeNotFound(w, r)
 	}

@@ -2592,3 +2592,16 @@ table.projects th, table.projects td {
 .reposkills-x:hover { color: #E8734B; }
 .live-path-input { width: 9rem; cursor: text; }
 .live-path-label { margin-left: 0.3rem; }
+
+/* PR review: experimental "gauge, not a substitute for review" banner. */
+.pr-experimental-note {
+  border: 1px solid color-mix(in srgb, #E8B84B 45%, var(--con-line));
+  background: color-mix(in srgb, #E8B84B 10%, transparent);
+  color: var(--con-text); border-radius: 6px;
+  padding: 0.5rem 0.75rem; margin-bottom: 0.9rem; font-size: 0.82rem; line-height: 1.5;
+}
+.pr-experimental-note strong { color: var(--con-text); }
+
+/* Live View: hint to configure via the global Ask-Claude chat. */
+.live-hint { font-size: 0.8rem; line-height: 1.5; margin: 0 0.1rem 0.5rem; }
+.live-hint code { background: var(--con-ground); padding: 1px 5px; border-radius: 4px; font-family: ui-monospace, monospace; font-size: 0.85em; }

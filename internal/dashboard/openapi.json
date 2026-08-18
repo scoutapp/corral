@@ -1733,6 +1733,90 @@
         }
       }
     },
+    "/api/prs/prune": {
+      "get": {
+        "summary": "Count local PR records that a prune would delete (dry run)",
+        "description": "Counts local Corral DB PR records whose fetched_at is older than olderThanDays, without deleting. LOCAL ONLY — never touches GitHub.",
+        "parameters": [
+          {
+            "name": "olderThanDays",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 30,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "repo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "would_prune": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Prune old local PR records (local DB cleanup, not GitHub)",
+        "description": "Deletes local Corral DB PR records whose fetched_at is older than olderThanDays (default 30; floor 1), cascading to their blocks/links/chat. LOCAL ONLY — it does not close or delete anything on GitHub. Optional repo scopes it.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "olderThanDays": {
+                    "type": "integer",
+                    "default": 30,
+                    "minimum": 1
+                  },
+                  "repo": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pruned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "pruned": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/dind/caches": {
       "get": {
         "summary": "List DinD data caches",

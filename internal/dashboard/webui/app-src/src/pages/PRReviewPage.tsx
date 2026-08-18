@@ -624,6 +624,11 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
       </header>
 
       <div className="pr-review-page">
+        <div className="pr-experimental-note">
+          ⚠ <strong>Experimental — a gauge, not a substitute for review.</strong> This
+          analysis is an aid to help you orient quickly; it can miss things and be
+          wrong. Don’t rely on it in place of reading the diff and your own judgment.
+        </div>
         {pr && linksOpen && (
           <div className="pr-links-panel">
             <LinkedPRs prId={pr.id} />
