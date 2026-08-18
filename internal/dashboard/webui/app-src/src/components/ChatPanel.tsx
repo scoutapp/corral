@@ -4,9 +4,9 @@ import { renderMarkdown } from "../lib/markdown";
 
 // Ask Claude: a host-claude chat over /p/<id>/chat/ws. The user's turn is sent
 // as {prompt}; the server streams typed frames (text/tool_use/tool_result/
-// result/error/turn_end) rendered as bubbles + tool cards. Read-only tools by
-// default. Port of chat.js. NOTE: this runs the HOST claude (not sandboxed) —
-// the panel says so explicitly.
+// result/error/turn_end) rendered as bubbles + tool cards. NOTE: this runs the
+// HOST claude (not sandboxed) — the header warning says so, and (via canAct)
+// states honestly whether the session is read-only or can also run Bash.
 
 interface Msg {
   role: "user" | "assistant" | "meta";
@@ -50,7 +50,20 @@ function prettyJson(s: string): string {
 // that localStorage key. On mount the transcript is restored and the connection
 // reconnects with ?resume=<id>, so a full page reload continues the same session
 // instead of losing it. Omit for ephemeral chats (e.g. per-PR review).
-export function ChatPanel({ wsPath, getCtx, persistKey }: { wsPath: string; getCtx?: () => string; persistKey?: string }) {
+// canAct describes what the chat can actually do, so the header warning is
+// HONEST: "readonly" → Read/Grep/Glob only; "act" → also runs Bash (e.g. corral
+// api, docker) on the host. Defaults to readonly (the safe description).
+export function ChatPanel({
+  wsPath,
+  getCtx,
+  persistKey,
+  canAct = false,
+}: {
+  wsPath: string;
+  getCtx?: () => string;
+  persistKey?: string;
+  canAct?: boolean;
+}) {
   const msgsKey = persistKey ? `corral.chat.msgs.${persistKey}` : "";
   const sidKey = persistKey ? `corral.chat.sid.${persistKey}` : "";
 
@@ -242,7 +255,14 @@ export function ChatPanel({ wsPath, getCtx, persistKey }: { wsPath: string; getC
     <div className={`chat-root${busy ? " busy" : ""}`}>
       <div className="chat-topbar">
         <p className="muted cfg-note chat-warn">
-          ⚠ This runs the <strong>host</strong> Claude — it is <strong>not sandboxed</strong>. Read-only tools (Read, Grep, Glob) by default.
+          ⚠ This runs the <strong>host</strong> Claude — it is <strong>not sandboxed</strong>.{" "}
+          {canAct ? (
+            <>
+              It can <strong>act</strong> — Read/Grep/Glob plus <strong>Bash</strong> (runs commands, <code>corral api</code>) on your machine.
+            </>
+          ) : (
+            <>Read-only: Read, Grep, Glob — it can look, not act.</>
+          )}
         </p>
         {persistKey && msgs.length > 0 && (
           <button type="button" className="chat-newbtn" onClick={newChat} title="Start a fresh conversation">
