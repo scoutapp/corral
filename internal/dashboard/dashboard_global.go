@@ -115,6 +115,11 @@ type globalView struct {
 	// safe posture) but the "configured" flag distinguishes it from a deliberate off.
 	ApiWritesEnabled    bool `json:"api_writes_enabled"`
 	ApiWritesConfigured bool `json:"api_writes_configured"`
+
+	// DindDefault — the default Docker-in-Docker state for new projects. ON by
+	// default so a fresh sandbox can use Docker (it runs --privileged); off gives
+	// a tighter, unprivileged box. Per-project create can still override it.
+	DindDefault bool `json:"dind_default"`
 }
 
 func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Request) {
@@ -154,6 +159,7 @@ func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Reques
 	view.LogMaxRowsDefault = applog.DefaultRetention.MaxRows
 	view.ApiWritesEnabled = gs.ApiWritesAllowed()
 	view.ApiWritesConfigured = gs.ApiWritesConfigured()
+	view.DindDefault = gs.DindDefaultOn()
 
 	writeJSON(w, view)
 }
@@ -177,6 +183,7 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 		LogRetentionDays *int      `json:"log_retention_days,omitempty"`
 		LogMaxRows       *int      `json:"log_max_rows,omitempty"`
 		ApiWritesEnabled *bool     `json:"api_writes_enabled,omitempty"`
+		DindDefault      *bool     `json:"dind_default,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&edit); err != nil {
 		http.Error(w, "bad payload: "+err.Error(), http.StatusBadRequest)
@@ -286,6 +293,21 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 			results = append(results, "✓ API writes enabled (the corral CLI / Claude can now make changes)")
 		} else {
 			results = append(results, "✓ API writes disabled (read-only for the CLI / Claude)")
+		}
+	}
+
+	if edit.DindDefault != nil {
+		gs := config.ReadGlobalSettings()
+		v := *edit.DindDefault
+		gs.DindDefault = &v
+		if err := config.WriteGlobalSettings(gs); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if v {
+			results = append(results, "✓ new projects default to Docker-in-Docker (privileged; Docker works out of the box)")
+		} else {
+			results = append(results, "✓ new projects default to no Docker-in-Docker (tighter, unprivileged sandbox)")
 		}
 	}
 

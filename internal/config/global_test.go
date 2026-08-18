@@ -2,6 +2,25 @@ package config
 
 import "testing"
 
+func TestDindDefaultOn(t *testing.T) {
+	tru, fls := true, false
+	// nil (never set) → ON: a fresh install gets a working-Docker sandbox.
+	if !(&GlobalSettings{}).DindDefaultOn() {
+		t.Error("unset DindDefault should be ON")
+	}
+	if !(&GlobalSettings{DindDefault: &tru}).DindDefaultOn() {
+		t.Error("DindDefault=true should be ON")
+	}
+	if (&GlobalSettings{DindDefault: &fls}).DindDefaultOn() {
+		t.Error("DindDefault=false should be OFF")
+	}
+	// A nil *GlobalSettings is safe and reads as ON.
+	var gs *GlobalSettings
+	if !gs.DindDefaultOn() {
+		t.Error("nil settings should read DindDefault as ON")
+	}
+}
+
 func TestNormalizeRepo(t *testing.T) {
 	cases := []struct {
 		in     string

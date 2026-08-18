@@ -45,6 +45,23 @@ type GlobalSettings struct {
 	// until they decide — but unlike a plain bool, nil is distinguishable from a
 	// deliberate "off", which is what lets the UI know to ask.
 	ApiWritesEnabled *bool `json:"api_writes_enabled,omitempty"`
+
+	// DindDefault is the default Docker-in-Docker state for NEW projects that don't
+	// specify one at creation. A project needs DinD (which runs the container
+	// --privileged) to use Docker inside the sandbox; without it, `docker` fails
+	// deep in overlayfs with a cap_sys_admin error. So this DEFAULTS TO ON — a
+	// fresh sandbox "just works" for Docker — while a user who wants the tighter,
+	// unprivileged box can flip it off (globally here, or per-project).
+	//
+	// *bool so nil (never set — the fresh-install case) is distinguishable and
+	// resolves to the true default; false means the user deliberately chose off.
+	DindDefault *bool `json:"dind_default,omitempty"`
+}
+
+// DindDefaultOn reports the effective default DinD state for new projects. Nil
+// (never set) → ON, so a fresh install gets a working-Docker sandbox by default.
+func (gs *GlobalSettings) DindDefaultOn() bool {
+	return gs == nil || gs.DindDefault == nil || *gs.DindDefault
 }
 
 // ApiWritesAllowed reports the effective enforcement value: true only when the

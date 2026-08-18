@@ -53,13 +53,26 @@ func BuildShellCommand(parts []string) string {
 
 // AskYesNo prompts the user with a yes/no question
 func AskYesNo(prompt string) bool {
+	return AskYesNoDefault(prompt, false)
+}
+
+// AskYesNoDefault prompts with a default applied on an empty (just-Enter) answer.
+// The hint reflects the default ([Y/n] when def is true, [y/N] otherwise).
+func AskYesNoDefault(prompt string, def bool) bool {
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("%s [y/N]: ", prompt)
+	hint := "[y/N]"
+	if def {
+		hint = "[Y/n]"
+	}
+	fmt.Printf("%s %s: ", prompt, hint)
 	response, err := reader.ReadString('\n')
 	if err != nil {
-		return false
+		return def
 	}
 	response = strings.TrimSpace(strings.ToLower(response))
+	if response == "" {
+		return def
+	}
 	return response == "y" || response == "yes"
 }
 
