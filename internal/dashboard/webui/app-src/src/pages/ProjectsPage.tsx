@@ -105,6 +105,12 @@ export function ProjectsPage() {
     const ra = RANK[a.activity] ?? 3;
     const rb = RANK[b.activity] ?? 3;
     if (ra !== rb) return ra - rb;
+    // Within the same activity rank, most-recently-active first (so idle projects
+    // surface in recency order, not alphabetically). Fall back to name when the
+    // recency is equal/unknown so the order stays stable.
+    const da = a.last_active || 0;
+    const db = b.last_active || 0;
+    if (da !== db) return db - da;
     return a.name.localeCompare(b.name);
   });
 
