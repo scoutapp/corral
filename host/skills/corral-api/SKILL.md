@@ -138,6 +138,21 @@ View tab then opens that port + path by default. Send `{"port":0}` to clear it.
 For an inner (Docker-in-Docker) service to be viewable, run its container with
 `-p <port>:<port>` so it's reachable.
 
+## Pruning old PR records (local cleanup)
+
+Corral caches PRs it reviews in its LOCAL database. To clear out stale ones, use
+the prune endpoint. It deletes **local records only** — it never touches GitHub
+(nothing is closed or deleted upstream). Filtered on `fetched_at` (when Corral
+last cached the PR):
+
+```
+corral api GET  /api/prs/prune?olderThanDays=30      # dry run — how many would go
+corral api POST /api/prs/prune -d '{"olderThanDays":30}'   # actually prune
+```
+
+`olderThanDays` defaults to 30 and must be ≥ 1. Add `"repo":"<id>"` to scope it to
+one repo. Prefer the GET dry-run first and tell the user the count before pruning.
+
 ## Is a project working or waiting?
 
 `GET /status` returns each project's `activity`: `working` (a completion is
