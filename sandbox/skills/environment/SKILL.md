@@ -145,7 +145,23 @@ If Claude needs authenticated access:
 
 ## Docker-in-Docker (DinD)
 
-When `DIND_ENABLED=1` is set in the environment, an inner Docker daemon is running at `unix:///var/run/dind/docker.sock`. `DOCKER_HOST` is already exported to point there.
+When `DIND_ENABLED=1` is set in the environment, an inner Docker daemon is running at `unix:///var/run/dind/docker.sock`. `DOCKER_HOST` is exported to point there, so `docker` commands go to the inner daemon.
+
+### Running a project — try Docker first
+
+When the user wants to run/preview an app, **prefer Docker**:
+
+1. **Check for Docker.** `docker info` should work. If it reports "Cannot connect to the Docker daemon" or "is the docker daemon running", **do NOT conclude Docker is unavailable** — first check the socket:
+   ```bash
+   echo "$DOCKER_HOST"                                  # should be unix:///var/run/dind/docker.sock
+   export DOCKER_HOST=unix:///var/run/dind/docker.sock  # set it if empty, then retry
+   docker info
+   ```
+   The inner daemon can be up while a shell's `DOCKER_HOST` is unset — that's a stale env, not a missing daemon. Only if `docker info` still fails after pointing at that socket is Docker genuinely unavailable.
+2. **If the repo has a Dockerfile / docker-compose.yml, use it.** Build and run the documented way (`docker compose up --build`, or `docker build && docker run`). This is the correct, self-contained path — the app runs in the sandbox, and Live View can show it (publish the port with `-p`, then set the Live View port — see below).
+3. **Only if there is NO Dockerfile / compose file**, fall back to the project's documented non-Docker setup (its README — install deps, run the dev server directly). Don't invent host-proxy workarounds when Docker + a Dockerfile are available; that's fragile and not what the user wants.
+
+Publish the app's port with `-p <port>:<port>` so it's reachable, and — if you're the host chat assistant driving `corral api` — set the Live View port so the user lands on it (see the corral-api skill's "Live View" note).
 
 **Key facts:**
 - All `docker` commands you run go to the **inner daemon**, not the host
