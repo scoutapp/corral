@@ -42,7 +42,10 @@ function prettyJson(s: string): string {
 // drawer. It's WS-URL-agnostic: pass the chat WebSocket path (e.g.
 // `/p/<id>/chat/ws?tools=…` or `/prs/<id>/chat/ws`). The server streams the same
 // typed frames (text/tool_use/tool_result/result/error/turn_end) in both cases.
-export function ChatPanel({ wsPath }: { wsPath: string }) {
+// getCtx, when provided, returns a per-message page-context hint sent with each
+// prompt (so the WS URL stays stable across navigation — no reconnect). Called at
+// SEND time so the hint reflects the page the user is on when they send.
+export function ChatPanel({ wsPath, getCtx }: { wsPath: string; getCtx?: () => string }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [ready, setReady] = useState(false);
@@ -149,7 +152,7 @@ export function ChatPanel({ wsPath }: { wsPath: string }) {
     const text = input.trim();
     if (!ready || busy || !text) return;
     setMsgs((m) => [...m, { role: "user", html: renderMarkdown(text) }]);
-    wsRef.current?.send(JSON.stringify({ prompt: text }));
+    wsRef.current?.send(JSON.stringify({ prompt: text, ctx: getCtx?.() || "" }));
     setInput("");
     setBusy(true);
     scroll();
