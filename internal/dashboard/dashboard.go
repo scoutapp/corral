@@ -766,6 +766,12 @@ type statusRow struct {
 	Activity      string `json:"activity"` // working | waiting | off
 	AnthropicHits int    `json:"anthropic_hits"`
 	Peek          string `json:"peek"` // last non-empty terminal line, for the pane preview
+	// LastActive is Unix seconds of the project's most recent activity — the newer
+	// of its proxy.log mtime (written on every proxied request) and its last-start
+	// time. The landing page sorts same-activity projects by this (most recent
+	// first) so idle projects surface in recency order rather than alphabetically.
+	// 0 when unknown.
+	LastActive int64 `json:"last_active"`
 }
 
 // handleStatus returns live status for every registered project as JSON. The
@@ -786,7 +792,7 @@ func (d *dashboardServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 	var wg sync.WaitGroup
 	for i, p := range reg.Projects {
 		wg.Add(1)
-		go func(i int, workspace string) {
+		go func(i int, workspace, lastStarted string) {
 			defer wg.Done()
 			st := projectLiveStatus(workspace)
 			row := statusRow{
@@ -798,17 +804,37 @@ func (d *dashboardServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 				MitmUp:        st.MitmUp,
 				Activity:      st.Activity,
 				AnthropicHits: st.AnthropicHits,
+				LastActive:    projectLastActive(workspace, lastStarted),
 			}
 			if st.TmuxUp {
 				row.Peek = tmuxLastLine(st.Session)
 			}
 			rows[i] = row
-		}(i, p.Workspace)
+		}(i, p.Workspace, p.LastStarted)
 	}
 	wg.Wait()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"projects": rows, "boot_id": d.bootID})
+}
+
+// projectLastActive returns Unix seconds of a project's most recent activity —
+// the newer of its proxy.log mtime (touched on every proxied request, so it
+// tracks real work) and its last-start time. Used only for sort ordering, so a
+// missing log or unparseable time just contributes 0. Cheap: one Stat + one parse.
+func projectLastActive(workspace, lastStarted string) int64 {
+	var newest int64
+	if fi, err := os.Stat(filepath.Join(logsDirForWorkspace(workspace), "proxy.log")); err == nil {
+		newest = fi.ModTime().Unix()
+	}
+	if lastStarted != "" {
+		if t, err := time.Parse(time.RFC3339, lastStarted); err == nil {
+			if s := t.Unix(); s > newest {
+				newest = s
+			}
+		}
+	}
+	return newest
 }
 
 // handleRemoveProject unregisters a project from the dashboard registry

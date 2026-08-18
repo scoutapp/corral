@@ -15,6 +15,7 @@ export interface StatusRow {
   activity: "working" | "waiting" | "off" | string;
   anthropic_hits: number;
   peek: string;
+  last_active: number; // Unix seconds of most recent activity (for recency sort)
 }
 
 export interface StatusResponse {
