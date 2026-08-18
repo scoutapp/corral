@@ -400,6 +400,14 @@ func (sc *Corral) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) erro
 	// DinD: signal entrypoint to start inner dockerd and expose ports
 	if sc.dindEnabled {
 		args = append(args, "-e", "DIND_ENABLED=1")
+		// Set DOCKER_HOST at the CONTAINER level so EVERY process sees the inner
+		// daemon's socket — not just the entrypoint. The entrypoint's own `export
+		// DOCKER_HOST` doesn't reach a later `docker exec` shell (a new process),
+		// so Claude's shell saw an empty DOCKER_HOST, `docker` hit the nonexistent
+		// default /var/run/docker.sock, and it wrongly concluded "no Docker daemon"
+		// even though DinD was running. A run-level -e fixes it for exec shells,
+		// tmux, and Claude alike. (Path matches DIND_SOCKET in entrypoint.sh.)
+		args = append(args, "-e", "DOCKER_HOST=unix:///var/run/dind/docker.sock")
 
 		// Use a named volume for the inner Docker data root.
 		// Bind mounts fail with "lchown /proc: permission denied" when Docker
