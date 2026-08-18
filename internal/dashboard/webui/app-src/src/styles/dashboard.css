@@ -1069,6 +1069,17 @@ table.projects th, table.projects td {
    Ported from the old chat.html.tmpl inline styles; scoped under .chat-root and
    mapped to the React ChatPanel's element/class names (was full-page body +
    #composer). Vars are namespaced so they don't leak into the dashboard theme. */
+/* Chat top bar: the "not sandboxed" warning + a New chat button. */
+.chat-topbar { display: flex; align-items: stretch; border-bottom: 1px solid var(--border, #222); }
+.chat-topbar .chat-warn { flex: 1 1 auto; padding: 0.4rem 0.6rem; margin: 0; border-bottom: none; }
+.chat-newbtn {
+  flex: 0 0 auto; align-self: center; margin: 0 0.5rem; padding: 0.25rem 0.6rem;
+  font-size: 0.75rem; cursor: pointer; white-space: nowrap;
+  background: var(--cream-hi, #FBFAF7); color: var(--clay, #C15F3C);
+  border: 1px solid var(--line, #E3E0D8); border-radius: 6px;
+}
+.chat-newbtn:hover { border-color: var(--clay, #C15F3C); }
+
 .chat-root {
   --cream: #F5F4EE; --cream-hi: #FBFAF7; --clay: #C15F3C; --clay-soft: #E8D9CE;
   --ink: #2B2A27; --c-muted: #706C64; --line: #E3E0D8; --user-bubble: #ECE7DE;
