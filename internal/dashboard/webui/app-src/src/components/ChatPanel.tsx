@@ -102,11 +102,17 @@ export function ChatPanel({ wsPath, getCtx, persistKey }: { wsPath: string; getC
     const path = sid ? `${wsPath}${wsPath.includes("?") ? "&" : "?"}resume=${encodeURIComponent(sid)}` : wsPath;
     const ws = new WebSocket(wsURL(path));
     wsRef.current = ws;
+    // Set true by the cleanup when we're deliberately tearing down (unmount, or a
+    // New-chat/reconnect) — so we don't show a scary "disconnected" notice for an
+    // intentional close.
+    let closingIntentionally = false;
     ws.onopen = () => setReady(true);
     ws.onclose = () => {
       setReady(false);
       setBusy(false);
-      setMsgs((m) => [...m, { role: "meta", text: "disconnected — reopen the panel to reconnect", error: true }]);
+      if (!closingIntentionally) {
+        setMsgs((m) => [...m, { role: "meta", text: "disconnected — reopen the panel to reconnect", error: true }]);
+      }
     };
     ws.onmessage = (ev) => {
       let m: Record<string, unknown>;
@@ -190,6 +196,7 @@ export function ChatPanel({ wsPath, getCtx, persistKey }: { wsPath: string; getC
       }
     };
     return () => {
+      closingIntentionally = true;
       try {
         ws.close();
       } catch {
