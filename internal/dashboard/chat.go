@@ -106,14 +106,15 @@ type chatClientMsg struct {
 // chatServerMsg is a typed frame the server forwards to the browser. Only the
 // fields relevant to a given Type are populated.
 type chatServerMsg struct {
-	Type    string `json:"type"`              // "text" | "tool_use" | "tool_result" | "result" | "error" | "turn_end" | "canceled"
-	Text    string `json:"text,omitempty"`    // assistant text / error message
-	Tool    string `json:"tool,omitempty"`    // tool name for tool_use
-	Input   string `json:"input,omitempty"`   // tool input (JSON) for tool_use
-	Result  string `json:"result,omitempty"`  // tool result content for tool_result
-	CostUSD string `json:"costUsd,omitempty"` // formatted cost on result
-	Model   string `json:"model,omitempty"`   // model id on result
-	IsError bool   `json:"isError,omitempty"` // result subtype != success
+	Type      string `json:"type"`                // "text" | "tool_use" | "tool_result" | "result" | "error" | "turn_end" | "canceled" | "session"
+	Text      string `json:"text,omitempty"`      // assistant text / error message
+	Tool      string `json:"tool,omitempty"`      // tool name for tool_use
+	Input     string `json:"input,omitempty"`     // tool input (JSON) for tool_use
+	Result    string `json:"result,omitempty"`    // tool result content for tool_result
+	CostUSD   string `json:"costUsd,omitempty"`   // formatted cost on result
+	Model     string `json:"model,omitempty"`     // model id on result
+	IsError   bool   `json:"isError,omitempty"`   // result subtype != success
+	SessionID string `json:"sessionId,omitempty"` // Claude session id (type "session"), for reload-resume
 }
 
 // handleChatWS runs a Claude-Desktop-style chat over a WebSocket. Each client
@@ -134,7 +135,7 @@ func (d *dashboardServer) handleChatWS(w http.ResponseWriter, r *http.Request, i
 		return
 	}
 	tools := parseChatTools(r.URL.Query().Get("tools"))
-	d.runChatSession(w, r, workspace, claudeBin, tools, "")
+	d.runChatSession(w, r, workspace, claudeBin, tools, "", r.URL.Query().Get("resume"))
 }
 
 // handleGlobalChatWS is the app-wide "Claude everywhere" chat (/chat/ws) — not
@@ -152,16 +153,19 @@ func (d *dashboardServer) handleGlobalChatWS(w http.ResponseWriter, r *http.Requ
 	cap, ok := d.ChatCapability()
 	tools := globalChatTools(cap, ok)
 	// A short context hint from the page the user is on ("viewing repo X"), so the
-	// global assistant can resolve "this repo"/"this PR". Folded into the first turn.
+	// global assistant can resolve "this repo"/"this PR". Now sent per-message, but
+	// still read here for backward compatibility. resume=<id> continues a prior
+	// Claude session after a reload (the browser persists the id we emit).
 	contextHint := r.URL.Query().Get("ctx")
+	resume := r.URL.Query().Get("resume")
 	// Empty workspace → runChatTurn runs in the global chat dir (~/.corral).
-	d.runChatSession(w, r, "", claudeBin, tools, contextHint)
+	d.runChatSession(w, r, "", claudeBin, tools, contextHint, resume)
 }
 
 // runChatSession upgrades to a WebSocket and drives the turn loop for a chat,
 // project-scoped (workspace set) or global (workspace ""). Shared by
 // handleChatWS and handleGlobalChatWS.
-func (d *dashboardServer) runChatSession(w http.ResponseWriter, r *http.Request, workspace, claudeBin string, tools []string, contextHint string) {
+func (d *dashboardServer) runChatSession(w http.ResponseWriter, r *http.Request, workspace, claudeBin string, tools []string, contextHint, resume string) {
 	conn, err := terminalUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
@@ -181,7 +185,9 @@ func (d *dashboardServer) runChatSession(w http.ResponseWriter, r *http.Request,
 	var turnMu sync.Mutex
 	var turnCancel context.CancelFunc
 	var busy bool
-	sessionID := "" // captured from the first turn, reused via --resume
+	// Seeded from a client-supplied resume id (reload continuity); otherwise
+	// captured from the first turn and reused via --resume within this connection.
+	sessionID := resume
 
 	for {
 		_, data, err := conn.ReadMessage()
@@ -465,8 +471,11 @@ func parseChatEvent(line []byte, sessionID string, send func(chatServerMsg) erro
 	if json.Unmarshal(line, &ev) != nil {
 		return sessionID
 	}
-	if ev.SessionID != "" {
+	if ev.SessionID != "" && ev.SessionID != sessionID {
 		sessionID = ev.SessionID
+		// Tell the browser the session id so it can persist it and, after a reload,
+		// reconnect with resume=<id> to continue the same Claude conversation.
+		_ = send(chatServerMsg{Type: "session", SessionID: sessionID})
 	}
 	switch ev.Type {
 	case "assistant":

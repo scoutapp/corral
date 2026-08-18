@@ -45,13 +45,32 @@ function prettyJson(s: string): string {
 // getCtx, when provided, returns a per-message page-context hint sent with each
 // prompt (so the WS URL stays stable across navigation — no reconnect). Called at
 // SEND time so the hint reflects the page the user is on when they send.
-export function ChatPanel({ wsPath, getCtx }: { wsPath: string; getCtx?: () => string }) {
-  const [msgs, setMsgs] = useState<Msg[]>([]);
+//
+// persistKey, when provided, persists the transcript + Claude session id under
+// that localStorage key. On mount the transcript is restored and the connection
+// reconnects with ?resume=<id>, so a full page reload continues the same session
+// instead of losing it. Omit for ephemeral chats (e.g. per-PR review).
+export function ChatPanel({ wsPath, getCtx, persistKey }: { wsPath: string; getCtx?: () => string; persistKey?: string }) {
+  const msgsKey = persistKey ? `corral.chat.msgs.${persistKey}` : "";
+  const sidKey = persistKey ? `corral.chat.sid.${persistKey}` : "";
+
+  const [msgs, setMsgs] = useState<Msg[]>(() => {
+    if (!msgsKey) return [];
+    try {
+      const raw = localStorage.getItem(msgsKey);
+      return raw ? (JSON.parse(raw) as Msg[]) : [];
+    } catch {
+      return [];
+    }
+  });
   const [input, setInput] = useState("");
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [reconnect, setReconnect] = useState(0); // bump to force a fresh connection
   const wsRef = useRef<WebSocket | null>(null);
   const logRef = useRef<HTMLDivElement | null>(null);
+  // The Claude session id (persisted), passed as ?resume= on (re)connect.
+  const sessionIdRef = useRef<string>(persistKey ? localStorage.getItem(sidKey) || "" : "");
 
   // streaming accumulators for the in-flight assistant turn
   const curText = useRef("");
@@ -64,8 +83,24 @@ export function ChatPanel({ wsPath, getCtx }: { wsPath: string; getCtx?: () => s
     });
   }, []);
 
+  // Persist the transcript so a reload restores it. Skip transient "meta" rows
+  // (disconnect/stopped notices) so they don't pile up across reloads.
   useEffect(() => {
-    const ws = new WebSocket(wsURL(wsPath));
+    if (!msgsKey) return;
+    try {
+      const durable = msgs.filter((m) => m.role !== "meta");
+      localStorage.setItem(msgsKey, JSON.stringify(durable));
+    } catch {
+      /* storage full / disabled — transcript just won't persist */
+    }
+  }, [msgs, msgsKey]);
+
+  useEffect(() => {
+    // Reconnect with the persisted session id so a reload continues the same
+    // Claude conversation (server --resumes it).
+    const sid = sessionIdRef.current;
+    const path = sid ? `${wsPath}${wsPath.includes("?") ? "&" : "?"}resume=${encodeURIComponent(sid)}` : wsPath;
+    const ws = new WebSocket(wsURL(path));
     wsRef.current = ws;
     ws.onopen = () => setReady(true);
     ws.onclose = () => {
@@ -81,6 +116,21 @@ export function ChatPanel({ wsPath, getCtx }: { wsPath: string; getCtx?: () => s
         return;
       }
       switch (m.type as string) {
+        case "session": {
+          // Claude's session id — remember it so a reload can resume.
+          const sid = (m.sessionId as string) || "";
+          if (sid) {
+            sessionIdRef.current = sid;
+            if (sidKey) {
+              try {
+                localStorage.setItem(sidKey, sid);
+              } catch {
+                /* storage full / disabled — resume just won't persist */
+              }
+            }
+          }
+          break;
+        }
         case "text": {
           curText.current += (m.text as string) || "";
           setMsgs((prev) => {
@@ -146,7 +196,8 @@ export function ChatPanel({ wsPath, getCtx }: { wsPath: string; getCtx?: () => s
         /* ignore */
       }
     };
-  }, [wsPath, scroll]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsPath, scroll, reconnect]);
 
   const submit = () => {
     const text = input.trim();
@@ -161,11 +212,37 @@ export function ChatPanel({ wsPath, getCtx }: { wsPath: string; getCtx?: () => s
     if (ready && busy) wsRef.current?.send(JSON.stringify({ action: "cancel" }));
   };
 
+  // newChat clears the persisted transcript + session id, then bumps the reconnect
+  // nonce so the connect effect tears down and reopens WITHOUT a resume id — a
+  // fresh Claude session.
+  const newChat = () => {
+    sessionIdRef.current = "";
+    if (sidKey) {
+      try {
+        localStorage.removeItem(sidKey);
+      } catch {
+        /* ignore */
+      }
+    }
+    setMsgs([]);
+    curText.current = "";
+    curAssistantIdx.current = null;
+    lastToolIdx.current = null;
+    setReconnect((n) => n + 1);
+  };
+
   return (
     <div className={`chat-root${busy ? " busy" : ""}`}>
-      <p className="muted cfg-note" style={{ padding: "0.4rem 0.6rem", borderBottom: "1px solid var(--border, #222)" }}>
-        ⚠ This runs the <strong>host</strong> Claude — it is <strong>not sandboxed</strong>. Read-only tools (Read, Grep, Glob) by default.
-      </p>
+      <div className="chat-topbar">
+        <p className="muted cfg-note chat-warn">
+          ⚠ This runs the <strong>host</strong> Claude — it is <strong>not sandboxed</strong>. Read-only tools (Read, Grep, Glob) by default.
+        </p>
+        {persistKey && msgs.length > 0 && (
+          <button type="button" className="chat-newbtn" onClick={newChat} title="Start a fresh conversation">
+            New chat
+          </button>
+        )}
+      </div>
       <div className="chat-log" id="log" ref={logRef}>
         {msgs.map((m, i) => {
           if (m.role === "meta")

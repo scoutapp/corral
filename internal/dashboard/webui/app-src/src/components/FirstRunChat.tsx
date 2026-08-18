@@ -34,7 +34,7 @@ export function FirstRunChat() {
   }
   // A STABLE WS URL: the page-context hint is sent per-message (getCtx), not baked
   // into the URL — so moving between pages doesn't reconnect and drop the session.
-  return <ChatPanel wsPath="/chat/ws" getCtx={() => pageContext(window.location.pathname)} />;
+  return <ChatPanel wsPath="/chat/ws" getCtx={() => pageContext(window.location.pathname)} persistKey="global" />;
 }
 
 // pageContext returns a short human hint for the current route, or "" if there's
