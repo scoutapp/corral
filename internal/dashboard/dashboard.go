@@ -742,6 +742,9 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	case sub == "live-ports":
 		// /p/<id>/live-ports — listening TCP ports in the container (discovery).
 		d.handleLivePorts(w, r, id)
+	case sub == "live-port":
+		// /p/<id>/live-port — get/set the Live View default port (a stored pref).
+		d.handleLivePort(w, r, id)
 	case strings.HasPrefix(sub, "live/"):
 		// /p/<id>/live/<port>/<path…> — reverse-proxy to the app on <port> inside
 		// the container.
