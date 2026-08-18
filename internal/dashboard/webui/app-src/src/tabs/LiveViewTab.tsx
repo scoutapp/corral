@@ -27,6 +27,10 @@ export function LiveViewTab({ projectId, containerUp }: { projectId: string; con
   const [ports, setPorts] = useState<number[]>([]);
   const [port, setPort] = useState<number | null>(null);
   const [input, setInput] = useState("");
+  // The path under the port to open (for apps served under a sub-path, e.g.
+  // "/docs/node/" where "/" 404s). "" = the app root.
+  const [path, setPath] = useState("");
+  const [pathInput, setPathInput] = useState("");
   // Bumped to force the iframe to reload the current port.
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -49,10 +53,13 @@ export function LiveViewTab({ projectId, containerUp }: { projectId: string; con
   // so if Claude sets it while the tab is open, the view moves there — unless the
   // user has manually picked a port, in which case we leave their choice alone.
   const refreshPreferred = useCallback(() => {
-    getJSON<{ port: number }>(`/p/${projectId}/live-port`)
+    getJSON<{ port: number; path?: string }>(`/p/${projectId}/live-port`)
       .then((r) => {
         if (r.port && !userPicked.current) {
           setPort((cur) => (cur == null || cur !== r.port ? r.port : cur));
+          const pth = r.path || "";
+          setPath((cur) => (cur !== pth ? pth : cur));
+          setPathInput((cur) => (cur === "" ? pth : cur));
         }
       })
       .catch(() => {});
@@ -76,7 +83,14 @@ export function LiveViewTab({ projectId, containerUp }: { projectId: string; con
     if (p >= 1 && p <= 65535) go(p);
   };
 
-  const src = port != null ? `/p/${projectId}/live/${port}/` : "";
+  // The iframe src: /p/<id>/live/<port><path>. path already has a leading slash
+  // (or is ""); default to "/" so the app gets a rooted request.
+  const src = port != null ? `/p/${projectId}/live/${port}${path || "/"}` : "";
+
+  const applyPath = () => {
+    setPath(pathInput.trim());
+    setReloadKey((k) => k + 1);
+  };
 
   if (!containerUp) {
     return (
@@ -107,6 +121,20 @@ export function LiveViewTab({ projectId, containerUp }: { projectId: string; con
           }}
         />
         <button className="live-btn" onClick={goInput} disabled={!input.trim()}>
+          Go
+        </button>
+        <span className="live-label live-path-label">Path</span>
+        <input
+          className="live-port-input live-path-input"
+          placeholder="/"
+          value={pathInput}
+          onChange={(e) => setPathInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") applyPath();
+          }}
+          title="Open the app at this path (e.g. /docs/node/)"
+        />
+        <button className="live-btn" onClick={applyPath} title="Open this path">
           Go
         </button>
         <span className="live-spacer" />

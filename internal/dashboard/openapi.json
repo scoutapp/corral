@@ -971,8 +971,8 @@
         }
       },
       "put": {
-        "summary": "Set the port the Live View tab shows by default",
-        "description": "After starting a web app in the sandbox, set the user-facing port to watch (e.g. a docs site on 1313), so the Live View tab opens it without the user hunting for it. Send 0 to clear.",
+        "summary": "Set the port (and path) the Live View tab shows by default",
+        "description": "After starting a web app in the sandbox, set the user-facing port to watch (e.g. a docs site on 1313), so the Live View tab opens it without the user hunting for it. Include `path` when the app serves under a sub-path (e.g. \"/docs/node/\") — the app's root \"/\" may 404 and show a blank page. Send port 0 to clear.",
         "parameters": [
           {
             "name": "id",
@@ -994,6 +994,10 @@
                   "port": {
                     "type": "integer",
                     "description": "1-65535, or 0 to clear"
+                  },
+                  "path": {
+                    "type": "string",
+                    "description": "optional path to open, e.g. /docs/node/ (blank = app root)"
                   }
                 }
               }

@@ -123,11 +123,20 @@ UI), tell the dashboard which port to show so the user doesn't have to hunt for 
 corral api PUT /p/<projectId>/live-port -d '{"port":1313}'
 ```
 
+If the app serves its content under a **sub-path** (its root `/` 404s or is
+blank — e.g. a docs site at `/docs/node/`), include the path so Live View opens
+the right page:
+
+```
+corral api PUT /p/<projectId>/live-port -d '{"port":1313,"path":"/docs/node/"}'
+```
+
 Pick the **user-facing** app — the docs site, the UI, the thing they asked to see
-— not a database, cache, or internal service (5432, 6379, …). The Live View tab
-then opens that port by default. Send `{"port":0}` to clear it. For an inner
-(Docker-in-Docker) service to be viewable, run its container with `-p
-<port>:<port>` so it's reachable.
+— not a database, cache, or internal service (5432, 6379, …). Verify the path
+actually returns 200 before setting it (curl it inside the sandbox). The Live
+View tab then opens that port + path by default. Send `{"port":0}` to clear it.
+For an inner (Docker-in-Docker) service to be viewable, run its container with
+`-p <port>:<port>` so it's reachable.
 
 ## Is a project working or waiting?
 
