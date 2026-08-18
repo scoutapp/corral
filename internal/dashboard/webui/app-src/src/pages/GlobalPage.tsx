@@ -43,6 +43,7 @@ export function GlobalPage() {
   const [logDays, setLogDays] = useState("");
   const [logRows, setLogRows] = useState("");
   const [apiWrites, setApiWrites] = useState(false);
+  const [dindDefault, setDindDefault] = useState(true);
   // Global assistant capability (separate DB-backed setting; null until first run).
   const [assistantCap, setAssistantCap] = useState<"readonly" | "act" | null>(null);
 
@@ -67,6 +68,7 @@ export function GlobalPage() {
           setLogDays(data.log_retention_days ? String(data.log_retention_days) : "");
           setLogRows(data.log_max_rows ? String(data.log_max_rows) : "");
           setApiWrites(!!data.api_writes_enabled);
+          setDindDefault(data.dind_default !== false); // default ON
           if (okMsg) setMsg({ text: okMsg, err: false });
         })
         .catch((e) => setMsg({ text: `failed to load: ${(e as Error).message}`, err: true }));
@@ -121,6 +123,7 @@ export function GlobalPage() {
     edit.log_retention_days = logDays.trim() ? Math.max(0, parseInt(logDays, 10) || 0) : 0;
     edit.log_max_rows = logRows.trim() ? Math.max(0, parseInt(logRows, 10) || 0) : 0;
     edit.api_writes_enabled = apiWrites;
+    edit.dind_default = dindDefault;
     setApplying(true);
     try {
       const r = await postJSON<{ results?: string[] }>("/global/apply", edit);
@@ -440,6 +443,24 @@ export function GlobalPage() {
               <div className="muted cfg-note">
                 Reads (listing flows, logs, PRs) are always allowed. With this off, the CLI and Claude can look
                 but not act; turn it on to let them start projects, create issues, and run flows. Off by default.
+              </div>
+            </div>
+          </section>
+
+          <section className="cfg-section">
+            <h3>
+              New sandboxes <span className="muted">— defaults for projects you create</span>
+            </h3>
+            <div className="cfg-field">
+              <label className="cfg-ssh-item">
+                <input type="checkbox" checked={dindDefault} onChange={(e) => setDindDefault(e.target.checked)} />{" "}
+                <span className="cfg-ssh-name">Default Docker-in-Docker</span>
+              </label>
+              <div className="muted cfg-note">
+                On (default): new sandboxes run <b>privileged</b> so Docker works inside them (build images, run
+                <code> docker compose</code>). Off gives a tighter, unprivileged box — pick this if you don't need
+                Docker and want stronger isolation. A single project can override this when it's created or in its
+                Config tab.
               </div>
             </div>
           </section>

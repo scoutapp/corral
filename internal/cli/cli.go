@@ -170,8 +170,9 @@ func cmdInit() error {
 
 	log.Println()
 
-	// Docker-in-Docker
-	if config.AskYesNo("Enable Docker-in-Docker (inner containers, Claude-accessible)?") {
+	// Docker-in-Docker — default to the global setting (ON unless the user turned
+	// it off), so a fresh project can use Docker out of the box.
+	if config.AskYesNoDefault("Enable Docker-in-Docker (inner containers, Claude-accessible)?", config.ReadGlobalSettings().DindDefaultOn()) {
 		opts.DindEnabled = true
 		log.Println("Docker-in-Docker enabled — Claude can start inner containers")
 		log.Println()

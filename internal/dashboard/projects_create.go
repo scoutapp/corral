@@ -118,8 +118,10 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 		// domains). EnforceAllowlist opts into the strict allowlist (block unknown
 		// + REJECT direct TCP) — the "more restrictive" choice.
 		EnforceAllowlist bool     `json:"enforceAllowlist"`
-		Dind             bool     `json:"dind"`
-		Tmux             bool     `json:"tmux"`
+		// Dind: nil → use the global default (DindDefaultOn, which is ON); an
+		// explicit true/false overrides it for this project.
+		Dind  *bool    `json:"dind"`
+		Tmux  bool     `json:"tmux"`
 		Ports            []string `json:"ports"`
 		// Source records a PR/issue this project was spawned from (back-link).
 		Source *config.ProjectSource `json:"source"`
@@ -157,9 +159,15 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 	if body.Proxy != nil {
 		proxy = *body.Proxy
 	}
+	// DinD: an explicit value in the create body wins; otherwise the global
+	// default (DindDefaultOn — ON unless the user turned it off in Global settings).
+	dind := config.ReadGlobalSettings().DindDefaultOn()
+	if body.Dind != nil {
+		dind = *body.Dind
+	}
 	if _, statErr := os.Stat(config.ProjectDirFor(workspace)); os.IsNotExist(statErr) {
 		if _, err := project.InitProject(workspace, project.InitOptions{
-			ProxyEnabled: proxy, DindEnabled: body.Dind, LaunchTmux: body.Tmux, DindPorts: body.Ports,
+			ProxyEnabled: proxy, DindEnabled: dind, LaunchTmux: body.Tmux, DindPorts: body.Ports,
 			// Passthrough is the default; only strict when the caller opts in AND the
 			// proxy is on (passthrough is meaningless without the proxy).
 			PassthroughFirewall: proxy && !body.EnforceAllowlist,
