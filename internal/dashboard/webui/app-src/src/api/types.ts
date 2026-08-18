@@ -260,6 +260,7 @@ export interface GhRepo {
   nameWithOwner: string;
   url: string;
   isPrivate?: boolean;
+  pushedAt?: string; // last code-push time (RFC3339), for the picker's "N ago"
 }
 
 // GET /gh/issues?repo=owner/name -> { available, issues: GhIssue[], reason? }

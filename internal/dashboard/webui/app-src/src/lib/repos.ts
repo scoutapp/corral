@@ -30,7 +30,14 @@ export function relDate(iso: string | undefined, now: number): string {
 }
 
 export function repoItems(ghRepos: GhRepo[]): TAItem[] {
-  return ghRepos.map((g) => ({ value: g.nameWithOwner, label: g.nameWithOwner, hint: g.isPrivate ? "private" : "" }));
+  const now = Date.now();
+  return ghRepos.map((g) => {
+    // hint = "private · 2d ago" (either part optional). The backend already sorts
+    // the list most-recently-pushed first, so this reads top-to-bottom by recency.
+    const pushed = relDate(g.pushedAt, now);
+    const parts = [g.isPrivate ? "private" : "", pushed].filter(Boolean);
+    return { value: g.nameWithOwner, label: g.nameWithOwner, hint: parts.join(" · ") };
+  });
 }
 
 // Turn a typed/picked repo value + branch into a create-project repo spec.

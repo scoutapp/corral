@@ -14,6 +14,9 @@ type ghRepo struct {
 	NameWithOwner string `json:"nameWithOwner"`
 	URL           string `json:"url"`
 	IsPrivate     bool   `json:"isPrivate"`
+	// PushedAt is the last code-push time (RFC3339). Surfaced in the picker as a
+	// relative "N ago" and used to sort the list most-recently-active first.
+	PushedAt string `json:"pushedAt"`
 }
 
 // handleGhRepos lists repositories the host `gh` CLI can access, for the
@@ -58,7 +61,14 @@ func (d *dashboardServer) handleGhRepos(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	sort.Slice(merged, func(i, j int) bool { return merged[i].NameWithOwner < merged[j].NameWithOwner })
+	// Most-recently-pushed first (RFC3339 sorts lexically), so active repos are at
+	// the top of the picker; name breaks ties / handles a missing pushedAt.
+	sort.Slice(merged, func(i, j int) bool {
+		if merged[i].PushedAt != merged[j].PushedAt {
+			return merged[i].PushedAt > merged[j].PushedAt
+		}
+		return merged[i].NameWithOwner < merged[j].NameWithOwner
+	})
 	writeFilesJSON(w, map[string]any{"available": true, "repos": merged})
 }
 
@@ -69,7 +79,7 @@ func ghRepoList(ghBin, owner string) ([]ghRepo, error) {
 	if owner != "" {
 		args = append(args, owner)
 	}
-	args = append(args, "--limit", "500", "--json", "nameWithOwner,url,isPrivate")
+	args = append(args, "--limit", "500", "--json", "nameWithOwner,url,isPrivate,pushedAt")
 	out, err := exec.Command(ghBin, args...).Output()
 	if err != nil {
 		return nil, err
