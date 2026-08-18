@@ -95,6 +95,12 @@ func parseChatTools(raw string) []string {
 type chatClientMsg struct {
 	Prompt string `json:"prompt"`
 	Action string `json:"action"` // "" (send prompt) | "cancel"
+	// Ctx is a per-message page-context hint ("viewing repo X"). Sent with each
+	// prompt so the WebSocket URL can stay STABLE across navigation — the context
+	// travels with the turn instead of being baked into the connection URL (which
+	// would force a reconnect, and a fresh Claude session, on every page change).
+	// Only applied on the first turn (later turns already have it via --resume).
+	Ctx string `json:"ctx,omitempty"`
 }
 
 // chatServerMsg is a typed frame the server forwards to the browser. Only the
@@ -209,8 +215,14 @@ func (d *dashboardServer) runChatSession(w http.ResponseWriter, r *http.Request,
 
 		// On the FIRST turn only, prepend the page-context hint (if any) so the
 		// assistant knows where the user is. Later turns already have the context
-		// via --resume, so we don't repeat it.
-		prompt := withContextHint(msg.Prompt, contextHint, sessionID == "")
+		// via --resume, so we don't repeat it. The hint comes with THIS message
+		// (msg.Ctx) — reflecting the page the user is on right now — falling back to
+		// any connection-level hint (project chats still pass one at connect).
+		hint := msg.Ctx
+		if hint == "" {
+			hint = contextHint
+		}
+		prompt := withContextHint(msg.Prompt, hint, sessionID == "")
 
 		// Run the turn in a goroutine so the read loop stays responsive to cancel.
 		ctx, cancel := context.WithCancel(r.Context())

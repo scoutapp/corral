@@ -32,15 +32,9 @@ export function FirstRunChat() {
   if (!cap.configured || !writes.api_writes_configured) {
     return <FirstRunSetup cap={cap} writes={writes} onDone={load} />;
   }
-  return <ChatPanel wsPath={globalChatPath()} />;
-}
-
-// globalChatPath adds a light context hint from the current route, so the global
-// assistant knows where you are — "this repo" / "this PR" resolves to what you're
-// looking at. The backend folds it into the first turn.
-function globalChatPath(): string {
-  const ctx = pageContext(window.location.pathname);
-  return ctx ? `/chat/ws?ctx=${encodeURIComponent(ctx)}` : "/chat/ws";
+  // A STABLE WS URL: the page-context hint is sent per-message (getCtx), not baked
+  // into the URL — so moving between pages doesn't reconnect and drop the session.
+  return <ChatPanel wsPath="/chat/ws" getCtx={() => pageContext(window.location.pathname)} />;
 }
 
 // pageContext returns a short human hint for the current route, or "" if there's
