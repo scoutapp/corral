@@ -55,6 +55,23 @@ func TestErrorReasonCapturedInLog(t *testing.T) {
 	}
 }
 
+// TestIsWebSocketPath covers the WS-path classifier that reframes long-lived
+// connections as ws.open/ws.close instead of one stuck-looking request row.
+func TestIsWebSocketPath(t *testing.T) {
+	ws := []string{"/chat/ws", "/p/abc/terminal/ws", "/p/abc/container/ws", "/host/ws", "/p/abc/firewall/stream"}
+	for _, p := range ws {
+		if !isWebSocketPath(p) {
+			t.Errorf("isWebSocketPath(%q) = false, want true", p)
+		}
+	}
+	notWS := []string{"/api/flows", "/status", "/p/abc/config", "/repos"}
+	for _, p := range notWS {
+		if isWebSocketPath(p) {
+			t.Errorf("isWebSocketPath(%q) = true, want false", p)
+		}
+	}
+}
+
 // TestErrorReasonEmptyForSuccess ensures success responses aren't buffered / don't
 // get a spurious reason.
 func TestErrorReasonEmptyForSuccess(t *testing.T) {

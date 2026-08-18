@@ -43,6 +43,24 @@ func (d *dashboardServer) logRequests(next http.Handler) http.Handler {
 			r = r.WithContext(applog.WithSpan(r.Context(), traceID, spanID))
 		}
 
+		// WebSocket endpoints block in ServeHTTP for the ENTIRE connection lifetime,
+		// so a single request row would only appear at close, with a duration = the
+		// whole session — the "stuck at 10s then nothing" look. Log the OPEN as its
+		// own immediate event (duration 0) so the connection shows up right away; the
+		// real per-turn/per-frame activity is logged separately (chat.turn spans,
+		// etc.). The close still logs below with the connection duration.
+		if isWebSocketPath(path) {
+			d.applog().Log(applog.Entry{
+				Level:    applog.LevelInfo,
+				Category: applog.CatHTTP,
+				Event:    "ws.open",
+				Message:  applog.Fmt("WS open %s", path),
+				Meta:     map[string]any{"method": r.Method, "path": path},
+				TraceID:  traceID,
+				SpanID:   spanID,
+			})
+		}
+
 		sw := &statusWriter{ResponseWriter: w, status: 200}
 		start := time.Now()
 		next.ServeHTTP(sw, r)
@@ -67,6 +85,12 @@ func (d *dashboardServer) logRequests(next http.Handler) http.Handler {
 			msg = applog.Fmt("%s %s → %d: %s", r.Method, path, sw.status, reason)
 			meta["error"] = reason
 		}
+		// For a WebSocket, this fires at CLOSE — reframe it as ws.close with the
+		// connection lifetime, rather than a delayed "request" that looks stuck.
+		if isWebSocketPath(path) {
+			event = "ws.close"
+			msg = applog.Fmt("WS close %s (%s)", path, (time.Duration(dur) * time.Millisecond).String())
+		}
 		// The request row is the root span itself (single row — it already has its
 		// own duration; no separate .start/.end needed). Children use span pairs.
 		d.applog().Log(applog.Entry{
@@ -86,6 +110,15 @@ func (d *dashboardServer) logRequests(next http.Handler) http.Handler {
 func skipLogPath(p string) bool {
 	return p == "/healthz" || p == "/favicon.ico" ||
 		strings.HasPrefix(p, "/static/")
+}
+
+// isWebSocketPath reports whether a path is a long-lived WebSocket endpoint. These
+// block in ServeHTTP for the whole connection, so we log an immediate ws.open and,
+// at close, a ws.close with the lifetime — instead of one delayed request row that
+// looks stuck. Matches the chat/terminal/stream endpoints (all end in /ws, plus
+// the SSE-ish firewall stream).
+func isWebSocketPath(p string) bool {
+	return strings.HasSuffix(p, "/ws") || strings.HasSuffix(p, "/stream")
 }
 
 // errorReason returns a short, single-line reason for an error response, from the
