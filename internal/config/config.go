@@ -21,6 +21,13 @@ type ProjectConfig struct {
 	// (the default: a fresh, isolated per-workspace volume).
 	DindCache *DindCacheRef `json:"dind_cache,omitempty"`
 
+	// LiveViewPort is the port the dashboard's Live View tab opens by default —
+	// the user-facing web app the host Claude wants the user to watch (e.g. a docs
+	// site on 1313, not a db on 5432). Claude sets it via PUT /p/<id>/live-port
+	// after it starts something; the tab reads it. 0 = unset (the tab falls back to
+	// auto-selecting the first discovered listening port).
+	LiveViewPort int `json:"live_view_port,omitempty"`
+
 	// PassthroughFirewall = "permissive but observed" mode (the saved form of
 	// --passthrough-firewall-and-write): proxy + mitm stay ON (HTTP/S inspected,
 	// credentials injected), but unknown domains are ALLOWED and logged to

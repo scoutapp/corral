@@ -113,6 +113,22 @@ To edit or remove: `PUT /api/actions/<id>` / `PUT /api/skills/<id>`, or
 > These are writes, so the API-writes gate above applies — if it 403s, ask the
 > user to enable API writes, then retry.
 
+## Live View — point the user at the right port
+
+The dashboard has a **Live View** tab that embeds a web app running in a project's
+sandbox. When YOU start a web app in a project (a docs site, a dev server, an app
+UI), tell the dashboard which port to show so the user doesn't have to hunt for it:
+
+```
+corral api PUT /p/<projectId>/live-port -d '{"port":1313}'
+```
+
+Pick the **user-facing** app — the docs site, the UI, the thing they asked to see
+— not a database, cache, or internal service (5432, 6379, …). The Live View tab
+then opens that port by default. Send `{"port":0}` to clear it. For an inner
+(Docker-in-Docker) service to be viewable, run its container with `-p
+<port>:<port>` so it's reachable.
+
 ## Is a project working or waiting?
 
 `GET /status` returns each project's `activity`: `working` (a completion is

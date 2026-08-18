@@ -939,6 +939,74 @@
         }
       }
     },
+    "/p/{id}/live-port": {
+      "get": {
+        "summary": "Get the Live View default port (0 = unset)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The stored preferred port",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "port": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Set the port the Live View tab shows by default",
+        "description": "After starting a web app in the sandbox, set the user-facing port to watch (e.g. a docs site on 1313), so the Live View tab opens it without the user hunting for it. Send 0 to clear.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["port"],
+                "properties": {
+                  "port": {
+                    "type": "integer",
+                    "description": "1-65535, or 0 to clear"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved"
+          }
+        }
+      }
+    },
     "/p/{id}/stop": {
       "post": {
         "summary": "Stop a project's container",

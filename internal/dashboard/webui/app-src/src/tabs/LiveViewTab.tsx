@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getJSON } from "../api/client";
 
 // Live View tab (#6): watch a web app the sandbox is running, embedded via an
@@ -30,21 +30,44 @@ export function LiveViewTab({ projectId, containerUp }: { projectId: string; con
   // Bumped to force the iframe to reload the current port.
   const [reloadKey, setReloadKey] = useState(0);
 
+  // Whether the user has manually chosen a port this session. Once they have, we
+  // stop overriding their choice with the stored/discovered default.
+  const userPicked = useRef(false);
+
   const refreshPorts = useCallback(() => {
     getJSON<PortsResp>(`/p/${projectId}/live-ports`)
       .then((r) => {
         setPorts(r.ports || []);
         // Auto-select the first discovered port if nothing is chosen yet.
-        setPort((cur) => (cur == null && r.ports && r.ports.length ? r.ports[0] : cur));
+        setPort((cur) => (cur == null && !userPicked.current && r.ports && r.ports.length ? r.ports[0] : cur));
       })
       .catch(() => setPorts([]));
   }, [projectId]);
 
+  // The stored preferred port (the host Claude sets it after starting a web app,
+  // via PUT /p/<id>/live-port). It takes priority over first-discovered. Poll it
+  // so if Claude sets it while the tab is open, the view moves there — unless the
+  // user has manually picked a port, in which case we leave their choice alone.
+  const refreshPreferred = useCallback(() => {
+    getJSON<{ port: number }>(`/p/${projectId}/live-port`)
+      .then((r) => {
+        if (r.port && !userPicked.current) {
+          setPort((cur) => (cur == null || cur !== r.port ? r.port : cur));
+        }
+      })
+      .catch(() => {});
+  }, [projectId]);
+
   useEffect(() => {
-    if (containerUp) refreshPorts();
-  }, [containerUp, refreshPorts]);
+    if (!containerUp) return;
+    refreshPorts();
+    refreshPreferred();
+    const t = setInterval(refreshPreferred, 4000);
+    return () => clearInterval(t);
+  }, [containerUp, refreshPorts, refreshPreferred]);
 
   const go = (p: number) => {
+    userPicked.current = true;
     setPort(p);
     setReloadKey((k) => k + 1);
   };
