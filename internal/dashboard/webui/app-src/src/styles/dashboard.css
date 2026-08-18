@@ -2605,3 +2605,13 @@ table.projects th, table.projects td {
 /* Live View: hint to configure via the global Ask-Claude chat. */
 .live-hint { font-size: 0.8rem; line-height: 1.5; margin: 0 0.1rem 0.5rem; }
 .live-hint code { background: var(--con-ground); padding: 1px 5px; border-radius: 4px; font-family: ui-monospace, monospace; font-size: 0.85em; }
+
+/* PR inbox: All / Mine scope tabs. */
+.pr-scope-tabs { display: flex; gap: 0.2rem; margin: 0 0 0.6rem; border-bottom: 1px solid var(--con-line); }
+.pr-scope-tab {
+  background: none; border: none; cursor: pointer; padding: 0.35rem 0.7rem;
+  font-size: 0.84rem; color: var(--con-muted); border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.pr-scope-tab:hover { color: var(--con-text); }
+.pr-scope-tab.active { color: var(--con-text); border-bottom-color: var(--con-working); font-weight: 600; }
+.pr-scope-count { font-size: 0.72rem; color: var(--con-muted); margin-left: 0.15rem; }

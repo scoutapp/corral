@@ -405,7 +405,9 @@ func (d *dashboardServer) handlePRInbox(w http.ResponseWriter, r *http.Request) 
 			})
 		}
 	}
-	writeFilesJSON(w, map[string]any{"prs": out})
+	// currentUser lets the client offer a "Mine" tab (PRs I authored). Cached, so
+	// this doesn't cost a gh call per poll. Empty when it can't be determined.
+	writeFilesJSON(w, map[string]any{"prs": out, "currentUser": ghCurrentUser()})
 }
 
 // handlePRItem serves per-PR actions parsed from the path after "/prs/":
