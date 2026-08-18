@@ -28,6 +28,11 @@ type ProjectConfig struct {
 	// auto-selecting the first discovered listening port).
 	LiveViewPort int `json:"live_view_port,omitempty"`
 
+	// LiveViewPath is the path the Live View opens at, for apps served under a
+	// sub-path (e.g. "/docs/node/") where the root "/" 404s → a blank page. Set
+	// alongside LiveViewPort. "" or "/" = the app root (the common case).
+	LiveViewPath string `json:"live_view_path,omitempty"`
+
 	// PassthroughFirewall = "permissive but observed" mode (the saved form of
 	// --passthrough-firewall-and-write): proxy + mitm stay ON (HTTP/S inspected,
 	// credentials injected), but unknown domains are ALLOWED and logged to

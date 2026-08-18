@@ -2590,3 +2590,5 @@ table.projects th, table.projects td {
 .reposkills-item-actions { display: flex; align-items: center; gap: 0.5rem; }
 .reposkills-x { background: none; border: none; color: var(--muted); font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0 0.2rem; }
 .reposkills-x:hover { color: #E8734B; }
+.live-path-input { width: 9rem; cursor: text; }
+.live-path-label { margin-left: 0.3rem; }

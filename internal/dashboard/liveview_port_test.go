@@ -60,12 +60,17 @@ func TestLivePortEndpoint(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Set 1313 → persisted, GET returns it.
-	resp = do("PUT", "/p/"+id+"/live-port", `{"port":1313}`)
+	// Set 1313 + a sub-path → persisted, GET returns both. The path is normalized
+	// (a leading slash is added).
+	resp = do("PUT", "/p/"+id+"/live-port", `{"port":1313,"path":"docs/node/"}`)
 	if resp.StatusCode != 200 {
 		t.Fatalf("PUT status = %d", resp.StatusCode)
 	}
 	resp.Body.Close()
+	cfgAfter, _ := config.ReadConfig(config.ProjectDirFor(workspace))
+	if cfgAfter.LiveViewPort != 1313 || cfgAfter.LiveViewPath != "/docs/node/" {
+		t.Errorf("after set: port=%d path=%q, want 1313 /docs/node/", cfgAfter.LiveViewPort, cfgAfter.LiveViewPath)
+	}
 	resp = do("GET", "/p/"+id+"/live-port", "")
 	if got := decodePort(t, resp); got != 1313 {
 		t.Errorf("after set, port = %d, want 1313", got)
