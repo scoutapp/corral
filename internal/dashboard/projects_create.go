@@ -134,6 +134,9 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 	if body.RepoID != "" && len(body.Repos) == 0 {
 		body.Repos = []repoSpec{{RepoID: body.RepoID, Branch: body.Branch}}
 	}
+	// Infer the mode when omitted, so a semantically-complete payload just works
+	// (the common case: give a repo + branch → clone it). Explicit mode still wins.
+	body.Mode = inferCreateMode(body.Mode, body.Path, body.Name, len(body.Repos) > 0)
 
 	workspace, err := d.resolveNewWorkspace(body.Mode, body.Path, body.Name, body.Repos)
 	if err != nil {
@@ -386,6 +389,26 @@ func (d *dashboardServer) renderProjectPrompt(key, repoID, ownerName string, has
 	return strings.TrimSpace(prompt)
 }
 
+// inferCreateMode fills in a missing project-create mode from the other fields,
+// so callers don't have to memorize the enum: repos → clone, path → existing,
+// name → new. An explicit mode is returned unchanged; if nothing is inferable it
+// stays "" (the handler then returns a clear error).
+func inferCreateMode(mode, path, name string, hasRepos bool) string {
+	if strings.TrimSpace(mode) != "" {
+		return mode
+	}
+	switch {
+	case hasRepos:
+		return "clone"
+	case strings.TrimSpace(path) != "":
+		return "existing"
+	case strings.TrimSpace(name) != "":
+		return "new"
+	default:
+		return ""
+	}
+}
+
 // resolveNewWorkspace produces the workspace path for each create mode, doing
 // the filesystem work (mkdir / clone) but not the project init.
 func (d *dashboardServer) resolveNewWorkspace(mode, path, name string, specs []repoSpec) (string, error) {
@@ -435,6 +458,8 @@ func (d *dashboardServer) resolveNewWorkspace(mode, path, name string, specs []r
 		}
 		return d.cloneMultiRepoWorkspace(name, specs)
 
+	case "":
+		return "", fmt.Errorf("nothing to create: pass a repoId/repos (to clone), a path (existing dir), or a name (blank project)")
 	default:
 		return "", fmt.Errorf("unknown mode: %q (want existing|new|clone)", mode)
 	}
