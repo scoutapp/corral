@@ -2299,8 +2299,10 @@ table.projects th, table.projects td {
 .tab-btn.tab-link { text-decoration: none; display: inline-flex; align-items: center; }
 
 /* Logs page. */
-/* Logs page: tab bar in the header + the per-panel refresh toolbar. */
-.logs-tabs { display: flex; gap: 0.4rem; }
+/* Logs page: a prominent tab strip below the header (matches the sandbox tabs),
+   aligned to the same centered content width as the panels below. */
+.logs-page-tabs { max-width: 880px; margin: 0 auto; padding: 0 1.5rem; }
+.logs-page-tabs .tabs { margin-bottom: 0; }
 .logs-panel-toolbar { display: flex; justify-content: flex-end; margin-bottom: 0.4rem; }
 
 /* Conversations panel (Logs "Conversations" tab + sandbox tab). */
