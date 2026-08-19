@@ -22,8 +22,13 @@ import (
 //	GET /api/conversations/<id>/messages   its messages (?q= filters within the conversation)
 
 // handleConversations dispatches /api/conversations[/...]. rest is the path after
-// "conversations" ("" | "facets" | "search" | "<id>" | "<id>/messages").
+// "conversations" ("" | "facets" | "search" | "analyze" | "<id>" | "<id>/messages" | "<id>/chain").
 func (d *dashboardServer) handleConversations(w http.ResponseWriter, r *http.Request, rest string) {
+	// analyze is a POST (spawns a captured worker); everything else is a read.
+	if rest == "analyze" {
+		d.handleConversationsAnalyze(w, r)
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

@@ -3012,6 +3012,59 @@
           }
         }
       }
+    },
+    "/api/conversations/analyze": {
+      "post": {
+        "summary": "Analyze a captured conversation with AI (recursive, captured)",
+        "description": "Spawns a fresh Claude to analyze the given conversation's transcript and returns its job id (watch it in the Work tab). The analysis runs as a log-analysis worker whose OWN conversation is captured, with parent_conversation_id = the analyzed conversation \u2014 so it joins the causal chain. Mutating (spawns host Claude): subject to the API-writes gate.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "conversationId"
+                ],
+                "properties": {
+                  "conversationId": {
+                    "type": "integer"
+                  },
+                  "question": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Analysis started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "jobId": {
+                      "type": "string"
+                    },
+                    "analyzing": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "conversationId required"
+          },
+          "404": {
+            "description": "conversation not found"
+          }
+        }
+      }
     }
   },
   "components": {

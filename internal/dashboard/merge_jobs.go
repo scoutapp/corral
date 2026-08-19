@@ -75,6 +75,11 @@ type mergeJob struct {
 	// create a worker), for the cross-origin causal chain. 0 when unspawned.
 	ParentConversationID int64 `json:"parentConversationId,omitempty"`
 
+	// CaptureKind overrides the origin_kind recorded for this job's captured
+	// conversation (empty → "worker"). Used by specialized workers like
+	// log-analysis so their conversations are distinguishable.
+	CaptureKind string `json:"captureKind,omitempty"`
+
 	// lastEventUnix is the wall-clock (unix seconds) of the most recent streamed
 	// event, updated in emit(). It drives the "working vs idle" activity signal:
 	// output in the last few seconds → working, quiet → idle. Kept as an int64 so
