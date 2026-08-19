@@ -3275,6 +3275,90 @@
           }
         }
       }
+    },
+    "/api/prs/{id}/stack": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Detect stacked PRs from git ancestry (local mirror, not GitHub)",
+        "description": "Reports which other open PRs this one is stacked ON (their head commit is an ancestor of this PR's head \u2014 this branch contains their commits) and which are stacked on IT. Derived from the repo's local bare mirror via `git merge-base --is-ancestor` \u2014 works whether or not they're marked stacked on GitHub. relation is 'direct' (branched off the other's tip: base==head) or 'transitive' (further back in history).",
+        "responses": {
+          "200": {
+            "description": "Stack relationships",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "stackedOn": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "prId": {
+                            "type": "integer"
+                          },
+                          "number": {
+                            "type": "integer"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "headSha": {
+                            "type": "string"
+                          },
+                          "relation": {
+                            "type": "string",
+                            "enum": [
+                              "direct",
+                              "transitive"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "dependents": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "prId": {
+                            "type": "integer"
+                          },
+                          "number": {
+                            "type": "integer"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "headSha": {
+                            "type": "string"
+                          },
+                          "relation": {
+                            "type": "string",
+                            "enum": [
+                              "direct",
+                              "transitive"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

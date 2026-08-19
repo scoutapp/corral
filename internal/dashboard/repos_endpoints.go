@@ -531,6 +531,35 @@ func (d *dashboardServer) handlePRLinksGet(w http.ResponseWriter, r *http.Reques
 	writeFilesJSON(w, map[string]any{"links": links})
 }
 
+// handlePRStack: GET /prs/<id>/stack — which other open PRs this one is stacked
+// ON (their head is an ancestor of this PR's head) and which are stacked on IT,
+// derived from the repo's local git mirror (no GitHub needed). direct = branched
+// off the other's tip; transitive = further back in history.
+func (d *dashboardServer) handlePRStack(w http.ResponseWriter, r *http.Request, prID int64) {
+	s, err := d.getStore()
+	if err != nil {
+		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	svc := prreview.New(s)
+	repoID, err := svc.RepoIDForPR(prID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	repo, err := repos.Get(repoID)
+	if err != nil || repo.CachePath == "" {
+		http.Error(w, "repo has no local git mirror to derive stacking from", http.StatusBadRequest)
+		return
+	}
+	res, err := svc.Stack(prID, repo.CachePath)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeFilesJSON(w, res)
+}
+
 func (d *dashboardServer) handlePRLinkSuggest(w http.ResponseWriter, r *http.Request, prID int64) {
 	s, err := d.getStore()
 	if err != nil {

@@ -292,7 +292,20 @@ corral api POST   /api/prs/<prId>/links -d '{"linkedPrId":42,"relationship":"dep
 corral api DELETE /api/prs/<prId>/links/<linkId>
 ```
 
+**Detect stacked PRs** from git ancestry (the repo's local mirror, not GitHub):
+
+```
+corral api GET /api/prs/<prId>/stack
+```
+
+Returns `stackedOn` (PRs this one is built on — their head commit is an ancestor
+of this PR's head) and `dependents` (PRs stacked on this one), each labeled
+`direct` (branched off the other's tip) or `transitive` (further back in history).
+Works whether or not they're marked stacked on GitHub. Good for "what has to
+merge before this?" — pair with a `depends_on` link to record it.
+
 There's also a CLI: `corral pr links <prId>`, `corral pr suggest <prId>`,
+`corral pr stack <prId>`,
 `corral pr link <prId> <linkedPrId> [--rel depends_on] [--note "..."]`,
 `corral pr unlink <prId> <linkId>`.
 

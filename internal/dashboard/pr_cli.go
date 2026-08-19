@@ -31,6 +31,8 @@ func CmdPR(args []string) error {
 		return prLinksList(rest)
 	case "suggest":
 		return prLinksSuggest(rest)
+	case "stack":
+		return prStack(rest)
 	case "link":
 		return prLinkAdd(rest)
 	case "unlink":
@@ -45,6 +47,7 @@ func prUsage() error {
 
   links   <prId>                          list a PR's local links
   suggest <prId>                          suggest PRs to link (by changed-file overlap)
+  stack   <prId>                          detect stacked PRs (git ancestry, from the mirror)
   link    <prId> <linkedPrId> [flags]     link two PRs
   unlink  <prId> <linkId>                 remove a link
 
@@ -106,6 +109,21 @@ func prLinksSuggest(args []string) error {
 		return err
 	}
 	status, body, err := dashboardRequest("GET", fmt.Sprintf("/api/prs/%d/links/suggest", id), "")
+	if err != nil {
+		return err
+	}
+	return prPrintResult(status, body)
+}
+
+func prStack(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: corral pr stack <prId>")
+	}
+	id, err := parsePRID(args[0])
+	if err != nil {
+		return err
+	}
+	status, body, err := dashboardRequest("GET", fmt.Sprintf("/api/prs/%d/stack", id), "")
 	if err != nil {
 		return err
 	}
