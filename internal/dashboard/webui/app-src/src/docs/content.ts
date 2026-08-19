@@ -124,6 +124,7 @@ const PR_REVIEW: DocPage = {
         "**Merge** — a plain `gh pr merge`, no rebase. Fails if GitHub says the PR isn't mergeable.",
       ],
     },
+    { p: "The rebase modes wait for CI: after rebasing they watch the PR's required checks and only merge once they're green — and they merge as a normal user (no admin override), so failing checks or branch protection block the merge rather than being bypassed." },
     { p: "The **strategy** (squash / merge commit / rebase) is separate from the mode. It resolves per-repo → global → ask: the first time you merge a repo with nothing set, a modal asks and remembers your choice for that repo. Only methods your GitHub repo actually allows are offered." },
     { p: "Set the default mode + strategy in **Global settings → PR merging**. The rebase-and-merge procedure Claude follows is the editable **pr.merge** prompt in **Automations → Prompts**." },
   ],
