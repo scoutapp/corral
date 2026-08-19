@@ -972,7 +972,7 @@
       },
       "put": {
         "summary": "Set the port (and path) the Live View tab shows by default",
-        "description": "After starting a web app in the sandbox, set the user-facing port to watch (e.g. a docs site on 1313), so the Live View tab opens it without the user hunting for it. Include `path` when the app serves under a sub-path (e.g. \"/docs/node/\") — the app's root \"/\" may 404 and show a blank page. Send port 0 to clear.",
+        "description": "After starting a web app in the sandbox, set the user-facing port to watch (e.g. a docs site on 1313), so the Live View tab opens it without the user hunting for it. Include `path` when the app serves under a sub-path (e.g. \"/docs/node/\") \u2014 the app's root \"/\" may 404 and show a blank page. Send port 0 to clear.",
         "parameters": [
           {
             "name": "id",
@@ -989,7 +989,9 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["port"],
+                "required": [
+                  "port"
+                ],
                 "properties": {
                   "port": {
                     "type": "integer",
@@ -1736,7 +1738,7 @@
     "/api/prs/prune": {
       "get": {
         "summary": "Count local PR records that a prune would delete (dry run)",
-        "description": "Counts local Corral DB PR records whose fetched_at is older than olderThanDays, without deleting. LOCAL ONLY — never touches GitHub.",
+        "description": "Counts local Corral DB PR records whose fetched_at is older than olderThanDays, without deleting. LOCAL ONLY \u2014 never touches GitHub.",
         "parameters": [
           {
             "name": "olderThanDays",
@@ -1777,7 +1779,7 @@
       },
       "post": {
         "summary": "Prune old local PR records (local DB cleanup, not GitHub)",
-        "description": "Deletes local Corral DB PR records whose fetched_at is older than olderThanDays (default 30; floor 1), cascading to their blocks/links/chat. LOCAL ONLY — it does not close or delete anything on GitHub. Optional repo scopes it.",
+        "description": "Deletes local Corral DB PR records whose fetched_at is older than olderThanDays (default 30; floor 1), cascading to their blocks/links/chat. LOCAL ONLY \u2014 it does not close or delete anything on GitHub. Optional repo scopes it.",
         "requestBody": {
           "required": false,
           "content": {
@@ -1849,7 +1851,10 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["name", "project"],
+                "required": [
+                  "name",
+                  "project"
+                ],
                 "properties": {
                   "name": {
                     "type": "string"
@@ -1893,6 +1898,306 @@
         "responses": {
           "200": {
             "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/prs/{id}/notes": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "List a PR's local notes",
+        "description": "Private, LOCAL notes on a PR \u2014 stored only in Corral's DB, never posted to GitHub (unlike a PR comment). Newest first.",
+        "responses": {
+          "200": {
+            "description": "Notes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "prId": {
+                            "type": "integer"
+                          },
+                          "body": {
+                            "type": "string"
+                          },
+                          "author": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add a local note to a PR",
+        "description": "Adds a private, local note (never sent to GitHub). Body required; author is an optional free-text label.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "body": {
+                    "type": "string"
+                  },
+                  "author": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created note",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "note": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "prId": {
+                          "type": "integer"
+                        },
+                        "body": {
+                          "type": "string"
+                        },
+                        "author": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/prs/{id}/notes/{noteId}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "noteId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "delete": {
+        "summary": "Delete a local PR note",
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/prs/{id}/merge": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Merge a PR (host | plain)",
+        "description": "Merges a PR. mode \"plain\" does a direct `gh pr merge` (fails if not mergeable). mode \"host\" starts a detached host-merge background job (rebase onto base, resolve conflicts, wait for CI, merge) and returns its jobId \u2014 watch it in the Work tab; NOT sandboxed. If no merge strategy is set for the repo or globally (and none is passed), returns 400 telling you to set a per-repo default first. mode defaults to the global default mode.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "host",
+                      "sandbox",
+                      "plain"
+                    ]
+                  },
+                  "strategy": {
+                    "type": "string",
+                    "enum": [
+                      "squash",
+                      "merge",
+                      "rebase"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Merged or job started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "mode": {
+                      "type": "string"
+                    },
+                    "strategy": {
+                      "type": "string"
+                    },
+                    "jobId": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No strategy set / invalid mode or strategy"
+          }
+        }
+      }
+    },
+    "/api/repos/{id}/merge-strategy": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Get a repo's merge-strategy state",
+        "description": "Returns the merge methods GitHub allows for the repo, the per-repo preference, the global default, and the resolved effective strategy.",
+        "responses": {
+          "200": {
+            "description": "Strategy state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "allowed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "preferred": {
+                      "type": "string"
+                    },
+                    "global_default": {
+                      "type": "string"
+                    },
+                    "effective": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Set a repo's PREFERRED merge strategy",
+        "description": "Sets the per-repo merge strategy preference (the preferred place to record a choice \u2014 repo beats global). Empty string clears it. This is what to call when a merge errored because no strategy was set.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "strategy": {
+                    "type": "string",
+                    "enum": [
+                      "squash",
+                      "merge",
+                      "rebase",
+                      ""
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "preferred": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

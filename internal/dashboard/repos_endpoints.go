@@ -469,6 +469,12 @@ func (d *dashboardServer) handlePRItem(w http.ResponseWriter, r *http.Request, r
 		d.handlePRAnalyze(w, r, prID)
 	case action == "issues" && r.Method == http.MethodGet:
 		d.handlePRIssues(w, r, prID)
+	case action == "notes" && r.Method == http.MethodGet:
+		d.handlePRNotesGet(w, r, prID)
+	case action == "notes" && r.Method == http.MethodPost:
+		d.handlePRNoteAdd(w, r, prID)
+	case strings.HasPrefix(action, "notes/") && r.Method == http.MethodDelete:
+		d.handlePRNoteRemove(w, r, strings.TrimPrefix(action, "notes/"))
 	case action == "links" && r.Method == http.MethodGet:
 		d.handlePRLinksGet(w, r, prID)
 	case action == "links" && r.Method == http.MethodPost:

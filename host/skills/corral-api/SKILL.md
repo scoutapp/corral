@@ -153,6 +153,47 @@ corral api POST /api/prs/prune -d '{"olderThanDays":30}'   # actually prune
 `olderThanDays` defaults to 30 and must be ≥ 1. Add `"repo":"<id>"` to scope it to
 one repo. Prefer the GET dry-run first and tell the user the count before pruning.
 
+## Merging a PR
+
+```
+corral api POST /api/prs/<prId>/merge -d '{"mode":"plain"}'   # direct gh merge
+corral api POST /api/prs/<prId>/merge -d '{"mode":"host"}'    # background host job → {jobId}
+```
+
+- **mode `plain`** does a direct `gh pr merge` and fails if GitHub says the PR
+  isn't mergeable (branch protection, required checks). It does NOT rebase.
+- **mode `host`** starts a detached background job that rebases onto the base
+  branch, resolves conflicts, waits for CI, and merges, then returns `{jobId}`.
+  It runs the operator's HOST Claude — **not sandboxed**. The user watches it in
+  the dashboard's Work tab.
+- `mode` defaults to the user's configured default. `sandbox` mode is
+  dashboard-only (it spins up a project); use `host` for a headless merge.
+
+**The merge STRATEGY** (squash / merge / rebase) resolves per-repo → global. If
+neither is set, the merge returns a 400 telling you to set one. **Set the
+PER-REPO preference first** (it beats global and is the right default):
+
+```
+corral api GET /api/repos/<repoId>/merge-strategy
+# → { allowed:[...], preferred:"", global_default:"", effective:"squash" }
+corral api PUT /api/repos/<repoId>/merge-strategy -d '{"strategy":"squash"}'
+```
+
+Only offer a `strategy` in `allowed` (what GitHub permits for that repo). Prefer
+setting the per-repo preference over a global default unless the user explicitly
+wants it applied to every repo (global lives in the dashboard's Global settings).
+
+## PR notes (private, local)
+
+Notes are **local annotations stored only in Corral** — never posted to GitHub
+(that's what a PR comment does). A scratchpad for the user/team:
+
+```
+corral api GET    /api/prs/<prId>/notes
+corral api POST   /api/prs/<prId>/notes -d '{"body":"watch the migration in 0012"}'
+corral api DELETE /api/prs/<prId>/notes/<noteId>
+```
+
 ## Is a project working or waiting?
 
 `GET /status` returns each project's `activity`: `working` (a completion is
