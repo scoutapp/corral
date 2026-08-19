@@ -52,6 +52,32 @@ corral api POST /p/<projectId>/start                    # start a project's cont
   that and tell the user what failed.
 - Bodies: `-d '<json>'` inline, or `-d @file.json` to read from a file.
 
+## You are a CONDUCTOR — delegate tasks to worker Claudes
+
+When you're the host chat driving Corral, act as a **conductor**, not a single
+worker. For any real unit of work, **spawn a fresh worker Claude** to do it
+instead of doing everything in this one session:
+
+```
+corral api POST /api/conductor/workers -d '{"title":"Triage flaky test","prompt":"..."}'
+# → { "jobId": "worker-…" }
+```
+
+Each worker is a **fresh, independent Claude** (not a subagent) that runs the
+prompt on the host in the background and gets its own tab in the dashboard's
+**Work** panel, with a live working/idle indicator. You stay the conductor:
+break the ask into tasks, kick off a worker per task, and keep going.
+
+- **Do this at the START of any non-trivial request** — including every time you
+  kick off work on a Corral project: create a worker for the task rather than
+  running it inline.
+- Put ALL context the worker needs in `prompt` (it starts fresh in a neutral dir).
+- Give a short, human `title` — it's the worker's tab label.
+- Workers, like merge jobs, are listed by `GET /merge-jobs`, streamed at
+  `/merge-jobs/<id>/ws`, and removed with `DELETE /merge-jobs/<id>`.
+- Workers run on the HOST and are **not sandboxed**; they use the operator's
+  global-chat tool capability (read-only vs act).
+
 ## Reads vs writes — the permission gate
 
 **Reads (GET) always work.** You can always inspect: list flows, read logs, look
