@@ -16,17 +16,21 @@ type MergeJob = {
   repoName: string;
   strategy: string;
   status: string; // preparing | running | idle | done | failed | canceled | interrupted
+  activity?: string; // "working" | "idle" | "" — live output-recency signal (server-side)
   createdAt: string;
 };
 
 // A job is "live" (still doing or able to do work) in these states.
 const LIVE = new Set(["preparing", "running", "idle"]);
 
-// statusDot maps a job status to a small colored indicator class.
-function statusClass(status: string): string {
-  if (status === "running" || status === "preparing") return "work-dot running";
-  if (status === "idle") return "work-dot idle";
-  if (status === "failed" || status === "canceled" || status === "interrupted") return "work-dot err";
+// statusClass maps a job to its indicator dot. For a LIVE job the server-side
+// activity signal drives it (recent output = working/green pulse, quiet = idle/
+// dim). Terminal statuses keep their own color.
+function statusClass(job: { status: string; activity?: string }): string {
+  if (LIVE.has(job.status)) {
+    return job.activity === "idle" ? "work-dot idle" : "work-dot running";
+  }
+  if (job.status === "failed" || job.status === "canceled" || job.status === "interrupted") return "work-dot err";
   return "work-dot done";
 }
 
@@ -94,11 +98,11 @@ export function WorkTab({ onCount }: { onCount?: (n: number) => void }) {
         {jobs.map((j) => (
           <div key={j.id} className={`work-rail-item${active === j.id ? " active" : ""}`}>
             <button type="button" className="work-rail-btn" onClick={() => setActive(j.id)} title={`${j.status} · ${j.strategy}`}>
-              <i className={statusClass(j.status)} />
+              <i className={statusClass(j)} />
               <span className="work-rail-label">
                 {j.repoName} <span className="work-rail-pr">#{j.prNumber}</span>
               </span>
-              <span className="work-rail-status">{j.status}</span>
+              <span className="work-rail-status">{LIVE.has(j.status) && j.activity ? j.activity : j.status}</span>
             </button>
             <button type="button" className="work-rail-close" title="Close job (ends it if running)" onClick={() => close(j)}>
               ✕

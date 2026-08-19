@@ -57,6 +57,13 @@ type mergeJob struct {
 
 	Branch string `json:"branch"` // PR head branch (checked out)
 
+	// lastEventUnix is the wall-clock (unix seconds) of the most recent streamed
+	// event, updated in emit(). It drives the "working vs idle" activity signal:
+	// output in the last few seconds → working, quiet → idle. Kept as an int64 so
+	// it's cheap to read/write under the mutex; not persisted (activity is a
+	// live-only notion).
+	lastEventUnix int64
+
 	// Runtime-only (not persisted directly; Status is what persists).
 	mu          sync.Mutex
 	cancel      context.CancelFunc
@@ -240,13 +247,39 @@ func (j *mergeJob) emit(m chatServerMsg) error {
 			_ = f.Close()
 		}
 	}
+	j.mu.Lock()
+	j.lastEventUnix = time.Now().Unix()
 	if m.Type == "session" {
-		j.mu.Lock()
 		j.sessionID = m.SessionID
-		j.mu.Unlock()
 	}
+	j.mu.Unlock()
 	j.fanout(mergeJobEvent{Msg: m})
 	return nil
+}
+
+// activityIdleAfter is how long a job can go without a streamed event before it
+// reads as "idle" rather than "working". A var so tests can shorten it.
+var activityIdleAfter = 6 * time.Second
+
+// activity reports "working" | "idle" for a still-live job (running/idle status),
+// based on how recently it last emitted. For terminal statuses it returns "" —
+// the caller shows the status itself. This is the server-side signal the Work-tab
+// dot uses (no client-side DOM watching needed).
+func (j *mergeJob) activity() string {
+	j.mu.Lock()
+	status := j.Status
+	last := j.lastEventUnix
+	j.mu.Unlock()
+	if status != mergeJobRunning && status != mergeJobIdle && status != mergeJobPreparing {
+		return ""
+	}
+	if last == 0 {
+		return "working" // just started, nothing emitted yet — assume working
+	}
+	if time.Now().Unix()-last <= int64(activityIdleAfter.Seconds()) {
+		return "working"
+	}
+	return "idle"
 }
 
 // fanout delivers an event to every subscriber, dropping to a job-closed marker

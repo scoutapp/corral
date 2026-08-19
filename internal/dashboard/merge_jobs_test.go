@@ -63,6 +63,41 @@ func TestMergeJobRegistryPersistence(t *testing.T) {
 	}
 }
 
+// TestJobActivity covers the working/idle derivation from last-event age.
+func TestJobActivity(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CORRAL_HOME", home)
+
+	j := &mergeJob{ID: "pr1-act", Status: mergeJobRunning, subscribers: map[chan mergeJobEvent]struct{}{}}
+
+	// Nothing emitted yet on a running job → assume working.
+	if a := j.activity(); a != "working" {
+		t.Fatalf("fresh running job: want working, got %q", a)
+	}
+
+	// A recent emit → working.
+	_ = j.emit(chatServerMsg{Type: "text", Text: "hi"})
+	if a := j.activity(); a != "working" {
+		t.Fatalf("just after emit: want working, got %q", a)
+	}
+
+	// Backdate the last event past the idle window → idle.
+	j.mu.Lock()
+	j.lastEventUnix = j.lastEventUnix - int64(activityIdleAfter.Seconds()) - 1
+	j.mu.Unlock()
+	if a := j.activity(); a != "idle" {
+		t.Fatalf("after idle window: want idle, got %q", a)
+	}
+
+	// A terminal status reports no activity (the status itself is shown).
+	j.mu.Lock()
+	j.Status = mergeJobDone
+	j.mu.Unlock()
+	if a := j.activity(); a != "" {
+		t.Fatalf("terminal job: want empty activity, got %q", a)
+	}
+}
+
 // TestReplayTranscript round-trips events through the on-disk transcript.
 func TestReplayTranscript(t *testing.T) {
 	home := t.TempDir()
