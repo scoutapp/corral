@@ -356,6 +356,18 @@ func newMergeJobID(prNumber int) string {
 	return fmt.Sprintf("pr%d-%s", prNumber, tok)
 }
 
+// newWorkerJobID makes a short id for a conductor worker job.
+func newWorkerJobID() string {
+	tok, err := randomToken()
+	if err != nil || tok == "" {
+		return "worker-job"
+	}
+	if len(tok) > 12 {
+		tok = tok[:12]
+	}
+	return "worker-" + tok
+}
+
 // nowRFC3339 returns the current time formatted; isolated so tests can see it's
 // the only time source here (Date.now-equivalent). Real time is fine on the host
 // dashboard (unlike workflow scripts).

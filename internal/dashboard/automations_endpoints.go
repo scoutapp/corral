@@ -109,6 +109,8 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handleDindCaches(w, r, strings.TrimPrefix(rest, "dind/caches/"))
 	case rest == "prs/prune":
 		d.handlePRPrune(w, r)
+	case rest == "conductor/workers":
+		d.handleConductorWorkerCreate(w, r)
 	case strings.HasPrefix(rest, "prs/"):
 		// PR-scoped API routes: /api/prs/<id>/notes[/<noteId>], /api/prs/<id>/merge.
 		d.handleAPIPRItem(w, r, strings.TrimPrefix(rest, "prs/"))
