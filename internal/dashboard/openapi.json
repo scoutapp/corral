@@ -3359,6 +3359,254 @@
           }
         }
       }
+    },
+    "/api/prs/inbox": {
+      "get": {
+        "summary": "List open PRs across all repos (the inbox)",
+        "description": "Open PRs aggregated across every GitHub repo in the Repos list, live via gh. Each carries its repo id + GitHub NUMBER (not a Corral internal id \u2014 these aren't cached yet). To act on one, first POST /api/repos/{id}/prs/fetch with its number to cache it and get its internal id.",
+        "responses": {
+          "200": {
+            "description": "Inbox",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "prs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "repoId": {
+                            "type": "string"
+                          },
+                          "repoName": {
+                            "type": "string"
+                          },
+                          "pr": {
+                            "type": "object",
+                            "properties": {
+                              "number": {
+                                "type": "integer"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "url": {
+                                "type": "string"
+                              },
+                              "author": {
+                                "type": "string"
+                              },
+                              "isDraft": {
+                                "type": "boolean"
+                              },
+                              "reviewDecision": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "currentUser": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{id}/prs": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "List a repo's cached PRs (with internal ids)",
+        "description": "PRs Corral has fetched/reviewed for this repo, each with its INTERNAL id (the key used by /api/prs/{id}/notes|merge|links|stack|\u2026). A PR appears here once fetched (see prs/fetch).",
+        "responses": {
+          "200": {
+            "description": "Cached PRs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "prs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer",
+                            "description": "Corral internal id \u2014 the key for /api/prs/{id}/* actions"
+                          },
+                          "repoId": {
+                            "type": "string"
+                          },
+                          "number": {
+                            "type": "integer"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string"
+                          },
+                          "headRef": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{id}/prs/open": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "List a repo's live open PRs from GitHub",
+        "description": "The repo's currently-open PRs via gh (by GitHub number). Fetch one to get an internal id to act on.",
+        "responses": {
+          "200": {
+            "description": "Open PRs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "prs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "number": {
+                            "type": "integer"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          },
+                          "author": {
+                            "type": "string"
+                          },
+                          "isDraft": {
+                            "type": "boolean"
+                          },
+                          "reviewDecision": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{id}/prs/fetch": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Cache a PR from GitHub \u2192 get its internal id",
+        "description": "Fetches a PR's metadata + diff via gh and stores it, returning the PR incl. its Corral internal id. This is the bridge from a GitHub number (inbox/open) to an id you can act on. Mutating (writes the cache + gh): subject to the API-writes gate.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "number": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Fetched PR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "pr": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "description": "Corral internal id \u2014 the key for /api/prs/{id}/* actions"
+                        },
+                        "repoId": {
+                          "type": "string"
+                        },
+                        "number": {
+                          "type": "integer"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "headRef": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "number required / not a GitHub remote"
+          }
+        }
+      }
     }
   },
   "components": {

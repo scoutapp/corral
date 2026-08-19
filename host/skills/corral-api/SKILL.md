@@ -212,6 +212,26 @@ corral api POST /api/prs/prune -d '{"olderThanDays":30}'   # actually prune
 `olderThanDays` defaults to 30 and must be ≥ 1. Add `"repo":"<id>"` to scope it to
 one repo. Prefer the GET dry-run first and tell the user the count before pruning.
 
+## Finding PRs (and getting the id to act on them)
+
+The per-PR endpoints (`/api/prs/<prId>/...` for merge, notes, links, stack,
+analysis) take a Corral **internal PR id**, not a GitHub number. There are two id
+spaces, so discovery is a two-step flow:
+
+```
+corral api GET  /api/prs/inbox                       # open PRs across ALL repos (repo id + GH NUMBER)
+corral api GET  /api/repos/<repoId>/prs/open         # one repo's live open PRs (GH numbers)
+corral api GET  /api/repos/<repoId>/prs              # one repo's CACHED PRs (with internal ids)
+corral api POST /api/repos/<repoId>/prs/fetch -d '{"number":42}'   # cache a PR → returns its internal id
+```
+
+So the usual path is: list the inbox / a repo's open PRs → note the repo id +
+number → **fetch** it (which returns the internal `id`) → then use that id with
+the merge/notes/links/stack endpoints. A PR already in `/api/repos/<id>/prs`
+already has its internal id.
+
+CLI: `corral pr list [--repo <id>] [--open]`, `corral pr fetch --repo <id> --number <n>`.
+
 ## Merging a PR
 
 ```

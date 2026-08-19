@@ -109,6 +109,16 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handleDindCaches(w, r, strings.TrimPrefix(rest, "dind/caches/"))
 	case rest == "prs/prune":
 		d.handlePRPrune(w, r)
+	case rest == "prs/inbox" && r.Method == http.MethodGet:
+		// Open PRs across every repo (with repo id + GitHub number). To act on one,
+		// fetch it first (POST /api/repos/<id>/prs/fetch) to get its internal id.
+		d.handlePRInbox(w, r)
+	case strings.HasPrefix(rest, "repos/") && strings.HasSuffix(rest, "/prs") && r.Method == http.MethodGet:
+		d.handleRepoPRs(w, r, strings.TrimSuffix(strings.TrimPrefix(rest, "repos/"), "/prs"))
+	case strings.HasPrefix(rest, "repos/") && strings.HasSuffix(rest, "/prs/open") && r.Method == http.MethodGet:
+		d.handleRepoOpenPRs(w, r, strings.TrimSuffix(strings.TrimPrefix(rest, "repos/"), "/prs/open"))
+	case strings.HasPrefix(rest, "repos/") && strings.HasSuffix(rest, "/prs/fetch") && r.Method == http.MethodPost:
+		d.handleRepoPRFetch(w, r, strings.TrimSuffix(strings.TrimPrefix(rest, "repos/"), "/prs/fetch"))
 	case rest == "conductor/workers":
 		d.handleConductorWorkerCreate(w, r)
 	case rest == "conversations":
