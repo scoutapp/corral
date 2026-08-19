@@ -111,6 +111,10 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handlePRPrune(w, r)
 	case rest == "conductor/workers":
 		d.handleConductorWorkerCreate(w, r)
+	case rest == "conversations":
+		d.handleConversations(w, r, "")
+	case strings.HasPrefix(rest, "conversations/"):
+		d.handleConversations(w, r, strings.TrimPrefix(rest, "conversations/"))
 	case strings.HasPrefix(rest, "prs/"):
 		// PR-scoped API routes: /api/prs/<id>/notes[/<noteId>], /api/prs/<id>/merge.
 		d.handleAPIPRItem(w, r, strings.TrimPrefix(rest, "prs/"))
