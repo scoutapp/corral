@@ -169,6 +169,8 @@ func (d *dashboardServer) handleAPIPRItem(w http.ResponseWriter, r *http.Request
 		d.handlePRLinkAdd(w, r, prID)
 	case action == "links/suggest" && r.Method == http.MethodGet:
 		d.handlePRLinkSuggest(w, r, prID)
+	case action == "stack" && r.Method == http.MethodGet:
+		d.handlePRStack(w, r, prID)
 	case strings.HasPrefix(action, "links/") && r.Method == http.MethodDelete:
 		d.handlePRLinkRemove(w, r, strings.TrimPrefix(action, "links/"))
 	default:
