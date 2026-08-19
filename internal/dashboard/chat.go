@@ -238,11 +238,14 @@ func (d *dashboardServer) runChatSession(w http.ResponseWriter, r *http.Request,
 		prompt := withContextHint(msg.Prompt, hint, sessionID == "")
 
 		// Capture the user's prompt (the raw text, not the context-hinted wrapper)
-		// before the turn — the stream doesn't echo it back. Best-effort.
+		// before the turn — the stream doesn't echo it back. Best-effort. This also
+		// ensures the conversation row exists so its id can drive cross-origin links.
 		cap.recordPrompt(msg.Prompt)
 
 		// Run the turn in a goroutine so the read loop stays responsive to cancel.
-		ctx, cancel := context.WithCancel(r.Context())
+		// Carry the driving conversation id so runChatTurn can stamp it into the
+		// spawned claude's env (cross-origin linkage).
+		ctx, cancel := context.WithCancel(withConvID(r.Context(), cap.ConvID()))
 		turnMu.Lock()
 		turnCancel = cancel
 		busy = true
@@ -421,6 +424,17 @@ func (d *dashboardServer) runChatTurn(ctx context.Context, claudeBin, workspace 
 	args := buildClaudeArgs(prompt, tools, sessionID)
 
 	cmd := exec.CommandContext(ctx, claudeBin, args...)
+	// Cross-origin linkage: stamp the conversation driving THIS turn into the
+	// subprocess env. If the spawned claude drives `corral api` (via the skill),
+	// the CLI forwards this as a header so any work it kicks off (a worker, a
+	// created project) records parent_conversation_id = this conversation — letting
+	// the UI follow the causal chain across the request/process boundary.
+	if convID := convIDFrom(ctx); convID > 0 {
+		cmd.Env = append(os.Environ(), fmt.Sprintf("CORRAL_PARENT_CONVERSATION_ID=%d", convID))
+		if tid := applog.TraceID(ctx); tid != "" {
+			cmd.Env = append(cmd.Env, "CORRAL_PARENT_TRACE_ID="+tid)
+		}
+	}
 	if workspace != "" {
 		if _, serr := os.Stat(workspace); serr == nil {
 			cmd.Dir = workspace // project chat: land in the repo so `claude` sees it

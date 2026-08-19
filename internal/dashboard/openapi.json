@@ -2976,6 +2976,42 @@
           }
         }
       }
+    },
+    "/api/conversations/{id}/chain": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Get the causal chain (forest) a conversation belongs to",
+        "description": "Walks parent_conversation_id to the root, then collects all descendants \u2014 every conversation spawned in the same chain (e.g. a global chat, the project it created via the API, and that project's conversations). Ordered by creation. Use with GET /api/logs/trace/{traceId} to render the shared trace waterfall.",
+        "responses": {
+          "200": {
+            "description": "Chain",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "conversations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

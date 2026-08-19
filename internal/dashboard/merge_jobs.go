@@ -70,6 +70,11 @@ type mergeJob struct {
 
 	Branch string `json:"branch"` // PR head branch (checked out)
 
+	// ParentConversationID links this job's captured conversation back to the
+	// conversation that spawned it (e.g. a global chat that called the API to
+	// create a worker), for the cross-origin causal chain. 0 when unspawned.
+	ParentConversationID int64 `json:"parentConversationId,omitempty"`
+
 	// lastEventUnix is the wall-clock (unix seconds) of the most recent streamed
 	// event, updated in emit(). It drives the "working vs idle" activity signal:
 	// output in the last few seconds → working, quiet → idle. Kept as an int64 so

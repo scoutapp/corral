@@ -191,6 +191,77 @@ func (s *ConvStore) Messages(convID int64, q string) ([]MessageRow, error) {
 	return out, rows.Err()
 }
 
+// Chain returns the causal forest around a conversation: it walks
+// parent_conversation_id up to the root, then collects all descendants of that
+// root (BFS), so the caller gets every conversation in the same spawned chain —
+// e.g. a global chat, the project it created, and that project's conversations.
+// Ordered by id (creation order). A conversation with no links returns just
+// itself. Bounded to avoid pathological cycles.
+func (s *ConvStore) Chain(convID int64) ([]Conversation, error) {
+	if s == nil || s.db == nil {
+		return nil, nil
+	}
+	// Walk up to the root via parent_conversation_id (cap the depth defensively).
+	rootID := convID
+	seenUp := map[int64]bool{}
+	for i := 0; i < 100; i++ {
+		if seenUp[rootID] {
+			break // cycle guard
+		}
+		seenUp[rootID] = true
+		var parent int64
+		err := s.db.QueryRow(`SELECT COALESCE(parent_conversation_id,0) FROM conversations WHERE id = ?`, rootID).Scan(&parent)
+		if err != nil || parent == 0 {
+			break
+		}
+		rootID = parent
+	}
+
+	// BFS all descendants of the root.
+	ids := []int64{rootID}
+	seen := map[int64]bool{rootID: true}
+	for i := 0; i < len(ids); i++ {
+		rows, err := s.db.Query(`SELECT id FROM conversations WHERE parent_conversation_id = ? ORDER BY id`, ids[i])
+		if err != nil {
+			return nil, err
+		}
+		var children []int64
+		for rows.Next() {
+			var cid int64
+			if err := rows.Scan(&cid); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			if !seen[cid] {
+				seen[cid] = true
+				children = append(children, cid)
+			}
+		}
+		rows.Close()
+		ids = append(ids, children...)
+		if len(ids) > 1000 {
+			break // safety cap
+		}
+	}
+
+	// Fetch each conversation's metadata, ordered by id.
+	out := make([]Conversation, 0, len(ids))
+	for _, id := range ids {
+		c, err := s.Get(id)
+		if err != nil {
+			continue // a member vanished (pruned) — skip it
+		}
+		out = append(out, c)
+	}
+	// Sort by id ascending for a stable, creation-ordered forest.
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && out[j].ID < out[j-1].ID; j-- {
+			out[j], out[j-1] = out[j-1], out[j]
+		}
+	}
+	return out, nil
+}
+
 // Origins returns the distinct origin_kind values present (for filter menus).
 func (s *ConvStore) Origins() ([]string, error) { return s.distinct("origin_kind") }
 
