@@ -156,6 +156,44 @@ examples:
 	return nil
 }
 
+// dashboardRequest issues one request to the running dashboard (auto-discovering
+// its loopback URL + token), returning the status code and response body. Shared
+// by the typed CLIs (e.g. `corral pr link`) that hit specific endpoints instead
+// of the generic `corral api`. jsonBody is sent as-is with a JSON content type
+// when non-empty. It forwards the parent-conversation header like CmdAPI does.
+func dashboardRequest(method, path, jsonBody string) (int, []byte, error) {
+	base, token, err := resolveDashboardTarget("", "")
+	if err != nil {
+		return 0, nil, err
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	var body io.Reader
+	if jsonBody != "" {
+		body = strings.NewReader(jsonBody)
+	}
+	req, err := http.NewRequest(strings.ToUpper(method), strings.TrimRight(base, "/")+path, body)
+	if err != nil {
+		return 0, nil, err
+	}
+	if jsonBody != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if pc := os.Getenv("CORRAL_PARENT_CONVERSATION_ID"); pc != "" {
+		req.Header.Set("X-Corral-Parent-Conversation", pc)
+	}
+	req.AddCookie(&http.Cookie{Name: dashboardCookieName, Value: token})
+
+	resp, err := (&http.Client{Timeout: 120 * time.Second}).Do(req)
+	if err != nil {
+		return 0, nil, fmt.Errorf("request %s %s: %w", method, path, err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, b, nil
+}
+
 // apiValueFlags are the `corral api` flags that consume the following argument as
 // their value (in the space-separated `-d value` form). Used by splitAPIArgs to
 // skip a flag's value when hunting for the two positionals. Boolean flags (-i,

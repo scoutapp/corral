@@ -163,6 +163,14 @@ func (d *dashboardServer) handleAPIPRItem(w http.ResponseWriter, r *http.Request
 		d.handlePRBlocks(w, r, prID)
 	case action == "risk" && r.Method == http.MethodGet:
 		d.handlePRRiskGet(w, r, prID)
+	case action == "links" && r.Method == http.MethodGet:
+		d.handlePRLinksGet(w, r, prID)
+	case action == "links" && r.Method == http.MethodPost:
+		d.handlePRLinkAdd(w, r, prID)
+	case action == "links/suggest" && r.Method == http.MethodGet:
+		d.handlePRLinkSuggest(w, r, prID)
+	case strings.HasPrefix(action, "links/") && r.Method == http.MethodDelete:
+		d.handlePRLinkRemove(w, r, strings.TrimPrefix(action, "links/"))
 	default:
 		routeNotFound(w, r)
 	}

@@ -278,6 +278,24 @@ corral api POST   /api/prs/<prId>/notes -d '{"body":"watch the migration in 0012
 corral api DELETE /api/prs/<prId>/notes/<noteId>
 ```
 
+## Linking PRs (local relationships)
+
+Relate two PRs in Corral's DB — shown on the PR page. These are **LOCAL** links
+(tests / tested_by / related / depends_on + a note); nothing is pushed to GitHub.
+`linkedPrId` and the ids below are Corral's INTERNAL PR ids (not GitHub numbers) —
+get them from the list/suggest output.
+
+```
+corral api GET    /api/prs/<prId>/links            # existing links
+corral api GET    /api/prs/<prId>/links/suggest    # candidates, ranked by file overlap
+corral api POST   /api/prs/<prId>/links -d '{"linkedPrId":42,"relationship":"depends_on","note":"needs the schema change"}'
+corral api DELETE /api/prs/<prId>/links/<linkId>
+```
+
+There's also a CLI: `corral pr links <prId>`, `corral pr suggest <prId>`,
+`corral pr link <prId> <linkedPrId> [--rel depends_on] [--note "..."]`,
+`corral pr unlink <prId> <linkId>`.
+
 ## Is a project working or waiting?
 
 `GET /status` returns each project's `activity`: `working` (a completion is
