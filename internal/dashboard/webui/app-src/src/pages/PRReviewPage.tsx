@@ -157,6 +157,7 @@ function MergeControl({
   const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
   const [launchedProject, setLaunchedProject] = useState<string | null>(null);
   const [hostOpen, setHostOpen] = useState(false); // host-merge drawer
+  const [hostPrompt, setHostPrompt] = useState(""); // the prompt the host merge was launched with (shown in the drawer)
   const [askOpen, setAskOpen] = useState(false); // first-time strategy modal
   // The strategy chosen in the ▾ menu / modal for THIS merge; falls back to the
   // resolved effective strategy.
@@ -216,7 +217,11 @@ function MergeControl({
         setMsg({ text: "Merged ✓", err: false });
       } else if (mode === "host") {
         // Open the live host-merge drawer; the server auto-submits the merge
-        // prompt on connect. Nothing to POST here.
+        // prompt on connect. Fetch that same prompt so we can show what Claude
+        // was told (best-effort — the drawer still works if this fails).
+        getJSON<{ prompt: string }>(`/prs/${prId}/merge-prompt`)
+          .then((info) => setHostPrompt(info.prompt || ""))
+          .catch(() => {});
         setHostOpen(true);
         setMsg({ text: "Merging on host — see the drawer", err: false });
       } else {
@@ -364,6 +369,15 @@ function MergeControl({
               </button>
             </span>
           </div>
+          <div className="merge-host-prompt-hint">
+            The prompt below is editable in <Link to="/automations">Automations → Prompts</Link> (pr.merge).
+          </div>
+          {hostPrompt && (
+            <details className="merge-host-prompt">
+              <summary>Prompt sent to Claude</summary>
+              <pre>{hostPrompt}</pre>
+            </details>
+          )}
           <div className="chat-panel-iframe">
             <ChatPanel wsPath={`/prs/${prId}/merge-host/ws`} canAct persistKey={`merge-host-${prId}`} />
           </div>
