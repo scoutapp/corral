@@ -1688,26 +1688,6 @@ table.projects th, table.projects td {
 }
 .merge-ask-cancel:hover { color: var(--con-text); }
 
-/* Host-merge drawer: faint "editable in Automations" hint + the sent prompt. */
-.merge-host-prompt-hint {
-  font-size: 0.72rem; color: var(--con-muted);
-  padding: 0.3rem 0.6rem 0; line-height: 1.4;
-}
-.merge-host-prompt-hint a { color: var(--con-muted); text-decoration: underline; }
-.merge-host-prompt-hint a:hover { color: var(--con-text); }
-.merge-host-prompt {
-  margin: 0.25rem 0.6rem 0.35rem; font-size: 0.75rem;
-  border: 1px solid var(--con-line); border-radius: 6px; background: var(--con-panel, #12161f);
-}
-.merge-host-prompt summary {
-  cursor: pointer; padding: 0.35rem 0.5rem; color: var(--con-muted); user-select: none;
-}
-.merge-host-prompt summary:hover { color: var(--con-text); }
-.merge-host-prompt pre {
-  margin: 0; padding: 0.4rem 0.6rem 0.55rem; max-height: 11rem; overflow: auto;
-  white-space: pre-wrap; word-break: break-word;
-  color: var(--con-text); border-top: 1px solid var(--con-line);
-}
 .pr-action-panel {
   display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
   margin-top: 0.6rem;
@@ -2524,6 +2504,49 @@ table.projects th, table.projects td {
 }
 .chatdock-tab:hover { color: var(--fg); }
 .chatdock-tab.active { color: var(--fg); border-bottom-color: var(--accent); }
+.chatdock-tab-count {
+  display: inline-block; min-width: 1.1em; padding: 0 0.3em; margin-left: 0.25em;
+  font-size: 0.72rem; line-height: 1.4; text-align: center;
+  background: var(--accent); color: #0b0d12; border-radius: 999px;
+}
+
+/* Work tab: left rail of host-merge jobs + a viewer for the selected one. */
+.work-tab { display: flex; flex: 1; min-height: 0; }
+.work-rail {
+  width: 11rem; flex: 0 0 11rem; overflow-y: auto;
+  border-right: 1px solid var(--border);
+}
+.work-rail-item { display: flex; align-items: stretch; border-bottom: 1px solid var(--border); }
+.work-rail-btn {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem;
+  align-items: flex-start; text-align: left; background: none; border: none;
+  padding: 0.5rem 0.4rem 0.5rem 0.55rem; cursor: pointer; color: var(--fg); font-size: 0.8rem;
+}
+.work-rail-item.active { background: rgba(255,255,255,0.04); }
+.work-rail-item.active .work-rail-btn { box-shadow: inset 2px 0 0 var(--accent); }
+.work-rail-label { display: flex; gap: 0.25rem; align-items: baseline; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.work-rail-pr { color: var(--muted); }
+.work-rail-status { font-size: 0.68rem; color: var(--muted); text-transform: capitalize; }
+.work-rail-close {
+  flex: 0 0 auto; background: none; border: none; color: var(--muted); cursor: pointer;
+  padding: 0 0.45rem; font-size: 0.85rem;
+}
+.work-rail-close:hover { color: var(--fg); }
+.work-dot { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; margin-right: 0.35rem; background: var(--muted); }
+.work-dot.running { background: #5ce6a8; animation: work-pulse 1.4s ease-in-out infinite; }
+.work-dot.idle { background: #7aa2f7; }
+.work-dot.done { background: var(--muted); }
+.work-dot.err { background: #e5678a; }
+@keyframes work-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.work-view { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.work-view-head { display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--border); }
+.work-view-title { font-size: 0.8rem; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work-view-hint { font-size: 0.7rem; color: var(--muted); padding: 0.3rem 0.6rem 0; }
+.work-view-hint a { color: var(--muted); text-decoration: underline; }
+.work-view-hint a:hover { color: var(--fg); }
+.work-view-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.work-empty { padding: 1.1rem; color: var(--muted); font-size: 0.85rem; line-height: 1.5; }
 
 .firstrun { padding: 1.1rem 1.1rem 1.3rem; overflow-y: auto; }
 .firstrun-loading { padding: 1.5rem; color: var(--muted); }

@@ -119,7 +119,7 @@ const PR_REVIEW: DocPage = {
     { p: "The Merge button is a split-button: the ▾ picks how the merge runs." },
     {
       list: [
-        "**Merge with host** (default) — rebase-and-merge on your host for speed. Opens a live Claude drawer that rebases onto the base branch, resolves conflicts, and merges. **Not sandboxed** — it runs your host Claude with Bash against a real checkout.",
+        "**Merge with host** (default) — rebase-and-merge on your host for speed. Runs as a background job in the **Work** tab of the Claude dock (⌘K): it rebases onto the base branch, resolves conflicts, waits for CI, and merges. The job keeps running if you navigate away — come back to it any time from the Work tab. **Not sandboxed** — it runs your host Claude with Bash against a real checkout.",
         "**Merge with sandbox** — the same, but in a one-shot sandbox on the PR branch. Slower to start, but isolated; the sandbox tears itself down once the PR lands (toggle off in Global settings).",
         "**Merge** — a plain `gh pr merge`, no rebase. Fails if GitHub says the PR isn't mergeable.",
       ],

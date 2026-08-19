@@ -156,8 +156,6 @@ function MergeControl({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
   const [launchedProject, setLaunchedProject] = useState<string | null>(null);
-  const [hostOpen, setHostOpen] = useState(false); // host-merge drawer
-  const [hostPrompt, setHostPrompt] = useState(""); // the prompt the host merge was launched with (shown in the drawer)
   const [askOpen, setAskOpen] = useState(false); // first-time strategy modal
   // The strategy chosen in the ▾ menu / modal for THIS merge; falls back to the
   // resolved effective strategy.
@@ -216,14 +214,12 @@ function MergeControl({
         await postJSON(`/prs/${prId}/merge`, { method });
         setMsg({ text: "Merged ✓", err: false });
       } else if (mode === "host") {
-        // Open the live host-merge drawer; the server auto-submits the merge
-        // prompt on connect. Fetch that same prompt so we can show what Claude
-        // was told (best-effort — the drawer still works if this fails).
-        getJSON<{ prompt: string }>(`/prs/${prId}/merge-prompt`)
-          .then((info) => setHostPrompt(info.prompt || ""))
-          .catch(() => {});
-        setHostOpen(true);
-        setMsg({ text: "Merging on host — see the drawer", err: false });
+        // Start a DETACHED host-merge job on the server, then open the Work tab
+        // focused on it. The job keeps running if you navigate away — the Work
+        // tab (in the Claude dock) lets you come back to it.
+        await postJSON(`/prs/${prId}/merge-host/start`, {});
+        window.dispatchEvent(new CustomEvent("corral:open-work"));
+        setMsg({ text: "Merging on host — see the Work tab (⌘K)", err: false });
       } else {
         // sandbox: create a one-shot project on the PR branch, start it, submit
         // the merge prompt, then arm the poll-and-teardown watcher.
@@ -352,37 +348,6 @@ function MergeControl({
         </div>
       )}
 
-      {/* Host-merge drawer: a live Claude session on a throwaway host checkout. */}
-      {hostOpen && (
-        <div className="chat-panel" id="merge-host-panel">
-          <div className="chat-panel-bar">
-            <span>
-              <i className="screen-dot" />
-              merge on host · PR #{pr.number}
-              <span className="ai-warn" title="Runs your host machine's Claude with Bash against a real git checkout; not sandboxed">
-                host · not sandboxed
-              </span>
-            </span>
-            <span className="chat-panel-actions">
-              <button type="button" title="Close" onClick={() => setHostOpen(false)}>
-                ✕
-              </button>
-            </span>
-          </div>
-          <div className="merge-host-prompt-hint">
-            The prompt below is editable in <Link to="/automations">Automations → Prompts</Link> (pr.merge).
-          </div>
-          {hostPrompt && (
-            <details className="merge-host-prompt">
-              <summary>Prompt sent to Claude</summary>
-              <pre>{hostPrompt}</pre>
-            </details>
-          )}
-          <div className="chat-panel-iframe">
-            <ChatPanel wsPath={`/prs/${prId}/merge-host/ws`} canAct persistKey={`merge-host-${prId}`} />
-          </div>
-        </div>
-      )}
     </span>
   );
 }

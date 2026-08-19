@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ChatPanel } from "./ChatPanel";
 import { FirstRunChat } from "./FirstRunChat";
+import { WorkTab } from "./WorkTab";
 import { useRouter, matchProject } from "../router";
 
 // ChatDock — the app-wide "Claude everywhere" pane. Mounted once at the App root
@@ -13,7 +14,7 @@ import { useRouter, matchProject } from "../router";
 // chat first. Everywhere else it's just the global chat, no tabs. One surface,
 // context-aware.
 
-type Tab = "project" | "global";
+type Tab = "project" | "global" | "work";
 
 // contextLabel is a short chip showing where the global chat is scoped, mirroring
 // the fuller hint sent to the backend (see FirstRunChat.pageContext).
@@ -37,9 +38,42 @@ export function ChatDock() {
   // Default to the project chat when on a project (you're looking at it); the
   // global chat otherwise. Re-defaults to project whenever the project changes.
   const [tab, setTab] = useState<Tab>("project");
+  const [workCount, setWorkCount] = useState(0);
   useEffect(() => {
     setTab(projectId ? "project" : "global");
   }, [projectId]);
+
+  // Poll the host-merge job count so the "Work" tab appears/updates even before
+  // the dock is opened. Lightweight (a small JSON list); the WorkTab itself does
+  // the richer polling + streaming once shown.
+  useEffect(() => {
+    let live = true;
+    const poll = () => {
+      fetch("/merge-jobs", { credentials: "same-origin" })
+        .then((r) => (r.ok ? r.json() : { jobs: [] }))
+        .then((d: { jobs?: unknown[] }) => live && setWorkCount((d.jobs || []).length))
+        .catch(() => {});
+    };
+    poll();
+    const t = setInterval(poll, 5000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, []);
+
+  // Other surfaces (e.g. the PR "Merge with host" button) ask the dock to open
+  // on the Work tab via a window event, so a launched job is immediately visible.
+  useEffect(() => {
+    const openWork = () => {
+      setWorkCount((c) => Math.max(c, 1)); // ensure the tab renders before its poll catches up
+      setTab("work");
+      setOpen(true);
+      setEverOpened(true);
+    };
+    window.addEventListener("corral:open-work", openWork);
+    return () => window.removeEventListener("corral:open-work", openWork);
+  }, []);
 
   // ⌘K / Ctrl-K toggles; Esc closes.
   useEffect(() => {
@@ -62,7 +96,17 @@ export function ChatDock() {
   }
 
   const showProjectTab = !!projectId;
-  const activeTab: Tab = showProjectTab ? tab : "global";
+  const showWorkTab = workCount > 0;
+  // Resolve the effective tab: honor the chosen tab when it's available, else
+  // fall back to global. (project only on a project route; work only when jobs
+  // exist.)
+  const activeTab: Tab =
+    tab === "project" && showProjectTab
+      ? "project"
+      : tab === "work" && showWorkTab
+        ? "work"
+        : "global";
+  const showTabs = showProjectTab || showWorkTab;
 
   return (
     <>
@@ -91,15 +135,17 @@ export function ChatDock() {
           </button>
         </header>
 
-        {showProjectTab && (
+        {showTabs && (
           <div className="chatdock-tabs">
-            <button
-              type="button"
-              className={`chatdock-tab${activeTab === "project" ? " active" : ""}`}
-              onClick={() => setTab("project")}
-            >
-              This project
-            </button>
+            {showProjectTab && (
+              <button
+                type="button"
+                className={`chatdock-tab${activeTab === "project" ? " active" : ""}`}
+                onClick={() => setTab("project")}
+              >
+                This project
+              </button>
+            )}
             <button
               type="button"
               className={`chatdock-tab${activeTab === "global" ? " active" : ""}`}
@@ -107,6 +153,16 @@ export function ChatDock() {
             >
               Global
             </button>
+            {showWorkTab && (
+              <button
+                type="button"
+                className={`chatdock-tab${activeTab === "work" ? " active" : ""}`}
+                onClick={() => setTab("work")}
+                title="Host-merge jobs running in the background"
+              >
+                Work <span className="chatdock-tab-count">{workCount}</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -126,6 +182,13 @@ export function ChatDock() {
                     panel behind it so we prompt before spawning the assistant. */}
                 <FirstRunChat />
               </div>
+              {/* Work tab: only mounted when active, so its job viewer WS opens
+                  lazily. It reports the live count back to keep the tab in sync. */}
+              {activeTab === "work" && (
+                <div style={{ display: "flex", flex: 1, minHeight: 0, flexDirection: "column" }}>
+                  <WorkTab onCount={setWorkCount} />
+                </div>
+              )}
             </>
           )}
         </div>
