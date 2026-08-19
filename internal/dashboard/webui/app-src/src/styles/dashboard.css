@@ -1656,6 +1656,36 @@ table.projects th, table.projects td {
 .pr-actions-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .pr-actions-msg { font-size: 0.8rem; color: var(--con-working); }
 .pr-actions-msg.err { color: var(--con-waiting); }
+.pr-actions-link { font-size: 0.8rem; margin-left: 0.4rem; color: var(--con-working); }
+
+/* Merge split-button: sits inline in the action row (override split-btn's
+   default margin-left:auto so it doesn't get shoved to the far right). */
+.merge-control { display: inline-flex; align-items: center; gap: 0.4rem; }
+.merge-control .split-btn { margin-left: 0; }
+/* The "host" (not-sandboxed) mode warns via a warm border on the primary. */
+.split-main.warn { border-color: var(--con-waiting) !important; }
+.split-menu-item:disabled { opacity: 0.45; cursor: not-allowed; }
+.split-menu-item:disabled:hover { background: transparent; }
+
+/* First-time "how should this repo be merged?" modal. */
+.merge-ask-backdrop {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(0,0,0,0.5);
+  display: flex; align-items: center; justify-content: center;
+}
+.merge-ask {
+  background: var(--con-bg); border: 1px solid var(--con-line); border-radius: 8px;
+  padding: 1.1rem 1.2rem; max-width: 26rem; width: calc(100% - 2rem);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+}
+.merge-ask-head { font-weight: 600; margin-bottom: 0.4rem; }
+.merge-ask-options { display: flex; flex-direction: column; gap: 0.4rem; margin: 0.8rem 0 0.6rem; }
+.merge-ask-options .btn { justify-content: flex-start; }
+.merge-ask-cancel {
+  background: none; border: none; color: var(--con-muted); cursor: pointer;
+  font-size: 0.85rem; padding: 0.2rem 0;
+}
+.merge-ask-cancel:hover { color: var(--con-text); }
 .pr-action-panel {
   display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
   margin-top: 0.6rem;

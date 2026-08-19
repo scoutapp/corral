@@ -1,6 +1,7 @@
 package prreview
 
 import (
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -122,6 +123,54 @@ func (s *Service) Merge(prID int64, ownerName, method string) error {
 	}
 	_, err = runGh("pr", "merge", fmt.Sprint(ref.Number), "--repo", ownerName, flag)
 	return err
+}
+
+// MergeInfo carries the stored PR fields the "merge in sandbox" flow needs to
+// build its launch prompt (number/title/url + the PR branch to check out).
+type MergeInfo struct {
+	Number  int
+	Title   string
+	URL     string
+	HeadRef string
+}
+
+// PRMergeInfo loads a PR's number/title/url/head-ref for the merge-in-sandbox
+// launch prompt.
+func (s *Service) PRMergeInfo(prID int64) (MergeInfo, error) {
+	var mi MergeInfo
+	err := s.db.QueryRow(
+		`SELECT pr_number, COALESCE(title,''), COALESCE(github_url,''), COALESCE(head_ref,'')
+		   FROM prs WHERE id = ?`, prID,
+	).Scan(&mi.Number, &mi.Title, &mi.URL, &mi.HeadRef)
+	return mi, err
+}
+
+// MergeState is a live snapshot of a PR's merge status, read straight from
+// GitHub (not the local cache) — used to poll a "merge in sandbox" job to
+// completion.
+type MergeState struct {
+	State  string `json:"state"` // OPEN | MERGED | CLOSED
+	Merged bool   `json:"-"`     // convenience: State == MERGED
+	Number int    `json:"number"`
+}
+
+// PRMergeState reads a PR's current merge status from GitHub via
+// `gh pr view <n> --json state,number`. ownerName is the "owner/name" repo slug.
+func (s *Service) PRMergeState(prID int64, ownerName string) (MergeState, error) {
+	ref, err := s.prRef(prID)
+	if err != nil {
+		return MergeState{}, err
+	}
+	out, err := runGh("pr", "view", fmt.Sprint(ref.Number), "--repo", ownerName, "--json", "state,number")
+	if err != nil {
+		return MergeState{}, err
+	}
+	var ms MergeState
+	if err := json.Unmarshal([]byte(out), &ms); err != nil {
+		return MergeState{}, err
+	}
+	ms.Merged = strings.EqualFold(ms.State, "MERGED")
+	return ms, nil
 }
 
 // LineComment posts a review comment anchored to a diff line. side is "RIGHT"

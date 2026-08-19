@@ -37,6 +37,18 @@ type Repo struct {
 	AddedAt       string `json:"added_at"`       // RFC3339
 	Pinned        bool   `json:"pinned"`         // pinned repos sort to the top of the list
 	Color         string `json:"color"`          // label color (hex); assigned on first sight, editable
+
+	// PreferredMergeStrategy is this repo's editable default merge method
+	// ("squash"|"merge"|"rebase"), resolved ahead of the global default when a PR
+	// is merged. Empty = fall back to the global setting. Only a preference: it's
+	// clamped to AllowedMergeStrategies (what GitHub actually permits) at use time.
+	PreferredMergeStrategy string `json:"preferred_merge_strategy,omitempty"`
+
+	// AllowedMergeStrategies is the set of merge methods GitHub permits for this
+	// repo (from repos/<owner>/<name>'s allow_squash_merge / allow_merge_commit /
+	// allow_rebase_merge), cached here so the picker only offers valid choices.
+	// Nil/empty = unknown (not yet fetched); callers then allow all three.
+	AllowedMergeStrategies []string `json:"allowed_merge_strategies,omitempty"`
 }
 
 type registry struct {
@@ -105,6 +117,43 @@ func SetPinned(id string, pinned bool) error {
 	for i := range reg.Repos {
 		if reg.Repos[i].ID == id {
 			reg.Repos[i].Pinned = pinned
+			return writeRegistry(reg)
+		}
+	}
+	return fmt.Errorf("repo not found: %s", id)
+}
+
+// SetPreferredMergeStrategy records a repo's preferred merge method. An empty
+// value clears the preference (fall back to the global default). A non-empty
+// value must be one of squash|merge|rebase.
+func SetPreferredMergeStrategy(id, strategy string) error {
+	if strategy != "" && strategy != "squash" && strategy != "merge" && strategy != "rebase" {
+		return fmt.Errorf("invalid merge strategy: %q", strategy)
+	}
+	reg, err := readRegistry()
+	if err != nil {
+		return err
+	}
+	for i := range reg.Repos {
+		if reg.Repos[i].ID == id {
+			reg.Repos[i].PreferredMergeStrategy = strategy
+			return writeRegistry(reg)
+		}
+	}
+	return fmt.Errorf("repo not found: %s", id)
+}
+
+// SetAllowedMergeStrategies caches the merge methods GitHub permits for a repo
+// (pulled from the API). Stored so the picker only offers valid choices without
+// re-hitting GitHub each time.
+func SetAllowedMergeStrategies(id string, allowed []string) error {
+	reg, err := readRegistry()
+	if err != nil {
+		return err
+	}
+	for i := range reg.Repos {
+		if reg.Repos[i].ID == id {
+			reg.Repos[i].AllowedMergeStrategies = allowed
 			return writeRegistry(reg)
 		}
 	}

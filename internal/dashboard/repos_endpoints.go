@@ -111,6 +111,10 @@ func (d *dashboardServer) handleRepoItem(w http.ResponseWriter, r *http.Request,
 		d.handleRepoPin(w, r, id)
 	case action == "color" && r.Method == http.MethodPost:
 		d.handleRepoColor(w, r, id)
+	case action == "merge-strategy" && r.Method == http.MethodGet:
+		d.handleRepoMergeStrategyGet(w, r, id)
+	case action == "merge-strategy" && r.Method == http.MethodPost:
+		d.handleRepoMergeStrategySet(w, r, id)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -449,6 +453,12 @@ func (d *dashboardServer) handlePRItem(w http.ResponseWriter, r *http.Request, r
 		d.handlePRAction(w, r, prID, "comment")
 	case action == "merge" && r.Method == http.MethodPost:
 		d.handlePRAction(w, r, prID, "merge")
+	case action == "merge-prompt" && r.Method == http.MethodGet:
+		d.handlePRMergePrompt(w, r, prID)
+	case action == "merge-watch" && r.Method == http.MethodPost:
+		d.handlePRMergeWatch(w, r, prID)
+	case action == "merge-host/ws" && r.Method == http.MethodGet:
+		d.handlePRMergeHostWS(w, r, prID)
 	case action == "line-comment" && r.Method == http.MethodPost:
 		d.handlePRLineComment(w, r, prID)
 	case action == "risk" && r.Method == http.MethodGet:
