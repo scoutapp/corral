@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "../router";
 import { getJSON } from "../api/client";
 import { useBodyClass } from "../hooks/useBodyClass";
+import { ConversationsPanel } from "../components/ConversationsPanel";
 
 // LogsPage — the host-wide application log: everything the app does or runs
 // (AI analysis, PR actions, project lifecycle, automation runs, scripts, HTTP
@@ -84,9 +85,10 @@ function fmtTime(ts: string): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-export function LogsPage() {
-  useBodyClass("console");
-
+// AppLogsPanel is the application activity log (the original Logs page body): a
+// keyset-paginated, filterable, searchable log with an inline trace waterfall.
+// It's the "Logs" tab of the LogsPage shell below.
+function AppLogsPanel() {
   const [logs, setLogs] = useState<LogRecord[]>([]);
   const [cursor, setCursor] = useState<number>(0); // next-older cursor; 0 = no more
   const [loading, setLoading] = useState(false);
@@ -196,20 +198,14 @@ export function LogsPage() {
   const visible = logs.filter((l) => !(hideHttp && !category && l.category === "http"));
 
   return (
-    <>
-      <header className="console-header">
-        <div className="brand">
-          <Link to="/" className="back">
-            ← All projects
-          </Link>
-          <span className="brand-name">Logs</span>
-          <button type="button" className="brand-sub auto-btn link" onClick={loadFirst}>
-            ⟳ refresh
-          </button>
-        </div>
-      </header>
-
-      <div className="auto-page">
+    <div className="auto-page">
+      {/* A small refresh affordance stays inside the panel (the shell header owns
+          the title + tab bar). */}
+      <div className="logs-panel-toolbar">
+        <button type="button" className="auto-btn link" onClick={loadFirst}>
+          ⟳ refresh
+        </button>
+      </div>
         <div className="logs-filters">
           <input
             className="auto-input logs-search"
@@ -325,6 +321,42 @@ export function LogsPage() {
           )}
         </div>
       </div>
+  );
+}
+
+// LogsPage is the shell: a header with two tabs — the application activity Log
+// and the captured Conversations — switching between AppLogsPanel and
+// ConversationsPanel. The /logs route renders this.
+export function LogsPage() {
+  useBodyClass("console");
+  const [tab, setTab] = useState<"logs" | "conversations">("logs");
+  return (
+    <>
+      <header className="console-header">
+        <div className="brand">
+          <Link to="/" className="back">
+            ← All projects
+          </Link>
+          <span className="brand-name">Logs</span>
+        </div>
+        <div className="logs-tabs">
+          <button
+            type="button"
+            className={`dock-toggle${tab === "logs" ? " on" : ""}`}
+            onClick={() => setTab("logs")}
+          >
+            Activity log
+          </button>
+          <button
+            type="button"
+            className={`dock-toggle${tab === "conversations" ? " on" : ""}`}
+            onClick={() => setTab("conversations")}
+          >
+            Conversations
+          </button>
+        </div>
+      </header>
+      {tab === "logs" ? <AppLogsPanel /> : <ConversationsPanel />}
     </>
   );
 }

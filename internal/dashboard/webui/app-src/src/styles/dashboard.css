@@ -2299,6 +2299,44 @@ table.projects th, table.projects td {
 .tab-btn.tab-link { text-decoration: none; display: inline-flex; align-items: center; }
 
 /* Logs page. */
+/* Logs page: tab bar in the header + the per-panel refresh toolbar. */
+.logs-tabs { display: flex; gap: 0.4rem; }
+.logs-panel-toolbar { display: flex; justify-content: flex-end; margin-bottom: 0.4rem; }
+
+/* Conversations panel (Logs "Conversations" tab + sandbox tab). */
+.conv-panel, .conv-detail { display: flex; flex-direction: column; min-height: 0; }
+.conv-toolbar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.conv-search { flex: 1; min-width: 200px; }
+.conv-origin { min-width: 9rem; }
+.conv-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.conv-row { border: 1px solid var(--border); border-radius: 6px; padding: 0.45rem 0.6rem; }
+.conv-head {
+  display: flex; align-items: center; gap: 0.5rem; width: 100%;
+  background: none; border: none; color: var(--fg); cursor: pointer; text-align: left; font: inherit;
+}
+.conv-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-byline { font-size: 0.72rem; color: var(--muted); margin-top: 0.2rem; }
+.conv-origin-chip {
+  font-size: 0.68rem; padding: 0.05rem 0.4rem; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--muted); white-space: nowrap;
+}
+.conv-status-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--muted); flex: 0 0 auto; }
+.conv-status-dot.running { background: #5ce6a8; }
+.conv-status-dot.err { background: #e5678a; }
+.conv-status-dot.done { background: var(--muted); }
+.conv-detail-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+.conv-detail-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-chain-hint { font-size: 0.72rem; color: var(--muted); }
+.conv-msgs { list-style: none; margin: 0.6rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.conv-msg { border-left: 2px solid var(--border); padding: 0.2rem 0 0.2rem 0.6rem; font-size: 0.85rem; }
+.conv-msg.role-user { border-left-color: #7aa2f7; }
+.conv-msg.role-assistant { border-left-color: #5ce6a8; }
+.conv-msg.err { border-left-color: #e5678a; }
+.conv-msg-role { font-size: 0.66rem; text-transform: uppercase; color: var(--muted); margin-right: 0.5rem; letter-spacing: 0.04em; }
+.conv-msg-text { white-space: pre-wrap; word-break: break-word; }
+.conv-msg-tool code { color: var(--muted); word-break: break-all; }
+.conv-msg-toolresult { color: var(--muted); white-space: pre-wrap; word-break: break-word; }
+
 .logs-filters { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.75rem; }
 .logs-search { flex: 1; min-width: 180px; }
 .logs-hidehttp { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.78rem; color: var(--muted); }
