@@ -51,7 +51,10 @@ func (d *dashboardServer) handleGhIssueDraftWS(w http.ResponseWriter, r *http.Re
 	}
 	defer conn.Close()
 
-	send := func(m chatServerMsg) error { return conn.WriteJSON(m) }
+	rawSend := func(m chatServerMsg) error { return conn.WriteJSON(m) }
+	// Capture the draft conversation (both turns in one row); best-effort.
+	capt, send, finalize := d.captureSend(context.Background(), convOrigin{Kind: "issue-draft", RepoID: repoID}, rawSend)
+	defer finalize("done")
 
 	// First (only) client message carries the rough description.
 	_, data, err := conn.ReadMessage()
@@ -66,6 +69,7 @@ func (d *dashboardServer) handleGhIssueDraftWS(w http.ResponseWriter, r *http.Re
 		_ = send(chatServerMsg{Type: "error", Text: "a description is required"})
 		return
 	}
+	capt.recordPrompt(in.Description)
 
 	// Fresh temp checkout of the repo mirror so claude can read the code. Removed
 	// when we return (socket close / done).

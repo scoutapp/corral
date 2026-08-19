@@ -41,9 +41,10 @@ func (d *dashboardServer) handleBlockChatWS(w http.ResponseWriter, r *http.Reque
 	// byte-identical to before; an override wraps the context with custom
 	// framing).
 	var preamble string
+	var repoID string
 	if s, err := d.getStore(); err == nil {
+		repoID, _ = prreview.New(s).RepoIDForPR(prID)
 		if ctxStr, err := prreview.New(s).ChatContext(prID, blockID); err == nil {
-			repoID, _ := prreview.New(s).RepoIDForPR(prID)
 			preamble = automations.New(s).RenderPrompt(
 				automations.PromptChatPreamble, repoID, map[string]string{"context": ctxStr})
 			if strings.TrimSpace(preamble) == "" {
@@ -59,11 +60,16 @@ func (d *dashboardServer) handleBlockChatWS(w http.ResponseWriter, r *http.Reque
 	defer conn.Close()
 
 	var writeMu sync.Mutex
-	send := func(m chatServerMsg) error {
+	rawSend := func(m chatServerMsg) error {
 		writeMu.Lock()
 		defer writeMu.Unlock()
 		return conn.WriteJSON(m)
 	}
+	// Capture the PR-review conversation (best-effort; never blocks the stream).
+	capt, send, finalize := d.captureSend(r.Context(), convOrigin{
+		Kind: "pr-review-chat", OriginID: strconv.FormatInt(prID, 10), RepoID: repoID,
+	}, rawSend)
+	defer finalize("done")
 
 	var turnMu sync.Mutex
 	var turnCancel context.CancelFunc
@@ -99,6 +105,9 @@ func (d *dashboardServer) handleBlockChatWS(w http.ResponseWriter, r *http.Reque
 		if running || strings.TrimSpace(msg.Prompt) == "" {
 			continue
 		}
+
+		// Capture the user's raw question (not the preamble-wrapped prompt).
+		capt.recordPrompt(msg.Prompt)
 
 		// Inject context on the first turn; later turns rely on --resume.
 		prompt := msg.Prompt
