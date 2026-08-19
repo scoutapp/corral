@@ -145,6 +145,10 @@ export interface GlobalView {
   log_max_rows: number; // 0 = use default
   log_retention_days_default: number;
   log_max_rows_default: number;
+  conv_retention_days: number; // captured-conversations DB; 0 = use default
+  conv_max_rows: number;
+  conv_retention_days_default: number;
+  conv_max_rows_default: number;
   api_writes_enabled: boolean; // corral api CLI / Claude may make mutating calls
   dind_default: boolean; // default Docker-in-Docker state for new projects (ON by default)
   merge_strategy: string; // global default merge method ("" = never set → ask per repo)
@@ -160,6 +164,8 @@ export interface GlobalEdit {
   update_repo?: string; // "" clears the override (back to default)
   log_retention_days?: number; // 0 = back to default
   log_max_rows?: number;
+  conv_retention_days?: number; // 0 = back to default
+  conv_max_rows?: number;
   api_writes_enabled?: boolean;
   dind_default?: boolean;
   merge_strategy?: string; // "" clears the global default (repos ask on first merge)

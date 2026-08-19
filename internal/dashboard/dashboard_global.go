@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/scoutapp/corral/internal/applog"
 	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/convstore"
 	"github.com/scoutapp/corral/internal/creds"
 	"github.com/scoutapp/corral/internal/session"
 	sshagent "github.com/scoutapp/corral/internal/ssh"
@@ -108,6 +109,13 @@ type globalView struct {
 	LogRetentionDaysDefault int `json:"log_retention_days_default"`
 	LogMaxRowsDefault       int `json:"log_max_rows_default"`
 
+	// Captured-conversations DB retention (conversations.db). Zero = built-in
+	// defaults, surfaced so the UI can show them as placeholders.
+	ConvRetentionDays        int `json:"conv_retention_days"`
+	ConvMaxRows              int `json:"conv_max_rows"`
+	ConvRetentionDaysDefault int `json:"conv_retention_days_default"`
+	ConvMaxRowsDefault       int `json:"conv_max_rows_default"`
+
 	// ApiWritesEnabled — whether the corral api CLI / host Claude skill may make
 	// mutating calls. ApiWritesConfigured is false when the user has never chosen
 	// (nil) — the UI keys on that to prompt in the first-run setup, mirroring the
@@ -166,6 +174,10 @@ func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Reques
 	view.LogMaxRows = gs.LogMaxRows
 	view.LogRetentionDaysDefault = applog.DefaultRetention.MaxAgeDays
 	view.LogMaxRowsDefault = applog.DefaultRetention.MaxRows
+	view.ConvRetentionDays = gs.ConvRetentionDays
+	view.ConvMaxRows = gs.ConvMaxRows
+	view.ConvRetentionDaysDefault = convstore.DefaultRetention.MaxAgeDays
+	view.ConvMaxRowsDefault = convstore.DefaultRetention.MaxRows
 	view.ApiWritesEnabled = gs.ApiWritesAllowed()
 	view.ApiWritesConfigured = gs.ApiWritesConfigured()
 	view.DindDefault = gs.DindDefaultOn()
@@ -194,6 +206,8 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 		UpdateRepo        *string   `json:"update_repo,omitempty"`
 		LogRetentionDays  *int      `json:"log_retention_days,omitempty"`
 		LogMaxRows        *int      `json:"log_max_rows,omitempty"`
+		ConvRetentionDays *int      `json:"conv_retention_days,omitempty"`
+		ConvMaxRows       *int      `json:"conv_max_rows,omitempty"`
 		ApiWritesEnabled  *bool     `json:"api_writes_enabled,omitempty"`
 		DindDefault       *bool     `json:"dind_default,omitempty"`
 		MergeStrategy     *string   `json:"merge_strategy,omitempty"`
@@ -292,6 +306,21 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		results = append(results, "✓ log retention updated")
+	}
+
+	if edit.ConvRetentionDays != nil || edit.ConvMaxRows != nil {
+		gs := config.ReadGlobalSettings()
+		if edit.ConvRetentionDays != nil {
+			gs.ConvRetentionDays = *edit.ConvRetentionDays // 0 = back to default
+		}
+		if edit.ConvMaxRows != nil {
+			gs.ConvMaxRows = *edit.ConvMaxRows
+		}
+		if err := config.WriteGlobalSettings(gs); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		results = append(results, "✓ conversation retention updated")
 	}
 
 	if edit.ApiWritesEnabled != nil {

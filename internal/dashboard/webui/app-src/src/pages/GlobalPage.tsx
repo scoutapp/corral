@@ -42,6 +42,8 @@ export function GlobalPage() {
   // Log retention: "" means "use default"; the placeholder shows the default.
   const [logDays, setLogDays] = useState("");
   const [logRows, setLogRows] = useState("");
+  const [convDays, setConvDays] = useState("");
+  const [convRows, setConvRows] = useState("");
   const [apiWrites, setApiWrites] = useState(false);
   const [dindDefault, setDindDefault] = useState(true);
   // PR merge defaults. mergeStrategy "" = ask per repo on first merge.
@@ -71,6 +73,8 @@ export function GlobalPage() {
           setUpdateRepo(data.update_repo || "");
           setLogDays(data.log_retention_days ? String(data.log_retention_days) : "");
           setLogRows(data.log_max_rows ? String(data.log_max_rows) : "");
+          setConvDays(data.conv_retention_days ? String(data.conv_retention_days) : "");
+          setConvRows(data.conv_max_rows ? String(data.conv_max_rows) : "");
           setApiWrites(!!data.api_writes_enabled);
           setDindDefault(data.dind_default !== false); // default ON
           setMergeStrategy(data.merge_strategy || ""); // "" = ask per repo
@@ -129,6 +133,8 @@ export function GlobalPage() {
     // 0 clears the override → back to the built-in default.
     edit.log_retention_days = logDays.trim() ? Math.max(0, parseInt(logDays, 10) || 0) : 0;
     edit.log_max_rows = logRows.trim() ? Math.max(0, parseInt(logRows, 10) || 0) : 0;
+    edit.conv_retention_days = convDays.trim() ? Math.max(0, parseInt(convDays, 10) || 0) : 0;
+    edit.conv_max_rows = convRows.trim() ? Math.max(0, parseInt(convRows, 10) || 0) : 0;
     edit.api_writes_enabled = apiWrites;
     edit.dind_default = dindDefault;
     edit.merge_strategy = mergeStrategy; // "" clears the global default
@@ -437,6 +443,42 @@ export function GlobalPage() {
                   onChange={(e) => setLogRows(e.target.value)}
                 />
                 <div className="muted cfg-note">Blank = default ({g.log_max_rows_default.toLocaleString()} rows). The newest are kept.</div>
+              </div>
+            </div>
+          </section>
+
+          <section className="cfg-zone">
+            <h3>
+              Conversation retention <span className="muted">— how long captured Claude conversations are kept</span>
+            </h3>
+            <div className="cfg-field">
+              <div className="cfg-label">Keep for (days)</div>
+              <div className="cfg-value">
+                <input
+                  className="cfg-edit dnd-hour-select"
+                  type="number"
+                  min={0}
+                  placeholder={String(g.conv_retention_days_default)}
+                  value={convDays}
+                  onChange={(e) => setConvDays(e.target.value)}
+                />
+                <div className="muted cfg-note">
+                  Blank = default ({g.conv_retention_days_default} days). Kept even after a project is deleted; pruned hourly. Stored separately from the activity log.
+                </div>
+              </div>
+            </div>
+            <div className="cfg-field">
+              <div className="cfg-label">Max conversations</div>
+              <div className="cfg-value">
+                <input
+                  className="cfg-edit dnd-hour-select"
+                  type="number"
+                  min={0}
+                  placeholder={String(g.conv_max_rows_default)}
+                  value={convRows}
+                  onChange={(e) => setConvRows(e.target.value)}
+                />
+                <div className="muted cfg-note">Blank = default ({g.conv_max_rows_default.toLocaleString()} conversations). The newest are kept.</div>
               </div>
             </div>
           </section>

@@ -33,6 +33,13 @@ type GlobalSettings struct {
 	LogRetentionDays int `json:"log_retention_days,omitempty"`
 	LogMaxRows       int `json:"log_max_rows,omitempty"`
 
+	// ConvRetentionDays / ConvMaxRows bound the captured-conversations DB
+	// (conversations.db), independent of the app-log caps above. Zero means "use
+	// the built-in default" (30 days / 500k conversations). Kept separate so an
+	// aggressive conversation cap never evicts app_logs (and vice-versa).
+	ConvRetentionDays int `json:"conv_retention_days,omitempty"`
+	ConvMaxRows       int `json:"conv_max_rows,omitempty"`
+
 	// ApiWritesEnabled gates MUTATING API calls (POST/PUT/DELETE) made with the
 	// API token — i.e. the `corral api` CLI and the host Claude skill. Reads are
 	// always allowed, but a write needs explicit opt-in since it can start
