@@ -24,6 +24,7 @@ builds:
     goarch: [amd64, arm64]
     tags:
       - sqlite_omit_load_extension
+      - sqlite_fts5   # full-text conversation search (internal/convstore)
     # Static SQLite/libc link so the artifact isn't tied to the runner's glibc.
     # amd64 uses the native gcc; arm64 uses the cross-compiler.
     overrides:

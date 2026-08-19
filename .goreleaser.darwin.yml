@@ -24,6 +24,7 @@ builds:
     # Native clang links libSystem; portable across supported macOS versions.
     tags:
       - sqlite_omit_load_extension
+      - sqlite_fts5   # full-text conversation search (internal/convstore)
     ldflags:
       - -s -w
       - -X github.com/scoutapp/corral/internal/config.Version={{.Version}}
