@@ -99,9 +99,6 @@ func (d *dashboardServer) startMergeJob(prID int64) (*mergeJob, error) {
 
 		subscribers: map[chan mergeJobEvent]struct{}{},
 	}
-	// Fresh transcript for this job id.
-	_ = os.MkdirAll(mergeJobsDir(), 0700)
-	_ = os.Remove(transcriptPath(job.ID))
 	d.mergeJobs.add(job)
 
 	d.applog().Log(applog.Entry{
@@ -153,6 +150,9 @@ func (d *dashboardServer) runMergeJob(claudeBin string, job *mergeJob) {
 		d.mergeJobs.setStatus(job, mergeJobRunning)
 		capt.recordPrompt(prompt)
 		job.mu.Lock()
+		if job.ConvID == 0 {
+			job.ConvID = capt.ConvID() // DB is the replay source of truth
+		}
 		sid := job.sessionID
 		job.mu.Unlock()
 		newSession, canceled := d.runChatTurn(ctx, claudeBin, job.Checkout, tools, prompt, sid, send)
@@ -264,7 +264,7 @@ func (d *dashboardServer) attachMergeJobWS(w http.ResponseWriter, r *http.Reques
 	// Replay history so a freshly-opened viewer sees what happened, then subscribe
 	// to live events. subscribe() may immediately deliver a Done for a finished
 	// job (after replay the viewer then knows the stream is complete).
-	replayTranscript(job.ID, send)
+	d.replayJob(job, send)
 	ch := job.subscribe()
 	defer job.unsubscribe(ch)
 

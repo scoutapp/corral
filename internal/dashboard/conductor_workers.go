@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
@@ -78,8 +77,6 @@ func (d *dashboardServer) startWorkerJob(prompt, title string, parentConvID int6
 
 		subscribers: map[chan mergeJobEvent]struct{}{},
 	}
-	_ = os.MkdirAll(mergeJobsDir(), 0700)
-	_ = os.Remove(transcriptPath(job.ID)) // fresh transcript for this id
 	d.mergeJobs.add(job)
 
 	d.applog().Log(applog.Entry{
@@ -128,6 +125,9 @@ func (d *dashboardServer) runWorkerJob(claudeBin string, job *mergeJob) {
 		d.mergeJobs.setStatus(job, mergeJobRunning)
 		capt.recordPrompt(prompt)
 		job.mu.Lock()
+		if job.ConvID == 0 {
+			job.ConvID = capt.ConvID() // DB is the replay source of truth
+		}
 		sid := job.sessionID
 		job.mu.Unlock()
 		newSession, canceled := d.runChatTurn(ctx, claudeBin, workdir, tools, prompt, sid, send)

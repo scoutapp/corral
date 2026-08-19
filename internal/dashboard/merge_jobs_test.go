@@ -2,7 +2,6 @@ package dashboard
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -46,17 +45,10 @@ func TestMergeJobRegistryPersistence(t *testing.T) {
 		t.Fatalf("reloaded job metadata mismatch: %+v", got)
 	}
 
-	// Write a transcript file, then remove the job — the transcript should go too.
-	_ = os.MkdirAll(mergeJobsDir(), 0700)
-	tp := transcriptPath("pr7-abc")
-	if err := os.WriteFile(tp, []byte(`{"type":"text","text":"hi"}`+"\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
+	// Removing a job drops it from the registry (the captured conversation lives in
+	// the conversations DB and is intentionally NOT deleted here).
 	if !reg2.remove("pr7-abc") {
 		t.Fatal("remove reported job not found")
-	}
-	if _, err := os.Stat(tp); !os.IsNotExist(err) {
-		t.Fatalf("transcript should be removed after remove(); stat err=%v", err)
 	}
 	if reg2.get("pr7-abc") != nil {
 		t.Fatal("job still present after remove")
@@ -95,33 +87,5 @@ func TestJobActivity(t *testing.T) {
 	j.mu.Unlock()
 	if a := j.activity(); a != "" {
 		t.Fatalf("terminal job: want empty activity, got %q", a)
-	}
-}
-
-// TestReplayTranscript round-trips events through the on-disk transcript.
-func TestReplayTranscript(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("CORRAL_HOME", home)
-	_ = os.MkdirAll(mergeJobsDir(), 0700)
-
-	j := &mergeJob{ID: "pr3-xyz", subscribers: map[chan mergeJobEvent]struct{}{}}
-	j.emit(chatServerMsg{Type: "text", Text: "line one"})
-	j.emit(chatServerMsg{Type: "tool_use", Tool: "Bash", Input: `{"command":"git status"}`})
-
-	var got []chatServerMsg
-	replayTranscript("pr3-xyz", func(m chatServerMsg) error {
-		got = append(got, m)
-		return nil
-	})
-	if len(got) != 2 {
-		t.Fatalf("replay got %d events, want 2", len(got))
-	}
-	if got[0].Text != "line one" || got[1].Tool != "Bash" {
-		t.Fatalf("replay content mismatch: %+v", got)
-	}
-
-	// Transcript lives under CORRAL_HOME/merge-jobs.
-	if _, err := os.Stat(filepath.Join(home, "merge-jobs", "pr3-xyz.jsonl")); err != nil {
-		t.Fatalf("expected transcript file: %v", err)
 	}
 }

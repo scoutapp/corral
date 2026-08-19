@@ -1,7 +1,6 @@
 package dashboard
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/convstore"
 )
 
 // The merge-job registry backs "Merge with host": a host `claude` that rebases a
@@ -22,10 +22,11 @@ import (
 // Each job:
 //   - runs the host claude under its OWN context (cancelled only by an explicit
 //     delete, never by a socket closing),
-//   - appends every streamed event to a transcript file (JSONL) so a re-opened
-//     viewer replays history then live-tails, and the transcript survives a
-//     dashboard restart,
-//   - fans each event out to any attached WS viewers.
+//   - captures every streamed event into the conversations DB (via the capture
+//     tee wrapping emit); a re-opened viewer replays that history from the DB
+//     then live-tails, and the record survives a dashboard restart AND the job's
+//     own removal (it's kept per the conversation-retention setting),
+//   - fans each event out to any attached WS viewers (in-memory, for liveness).
 //
 // An index file records job metadata so the Work tab can list jobs across a
 // restart; a job whose process didn't survive the restart is marked interrupted.
@@ -80,6 +81,11 @@ type mergeJob struct {
 	// log-analysis so their conversations are distinguishable.
 	CaptureKind string `json:"captureKind,omitempty"`
 
+	// ConvID is the conversations-DB id this job's transcript is stored under. The
+	// DB is the source of truth for replay (the Work-tab viewer reads it); set once
+	// the capturer creates the row. 0 until the first frame is captured.
+	ConvID int64 `json:"convId,omitempty"`
+
 	// lastEventUnix is the wall-clock (unix seconds) of the most recent streamed
 	// event, updated in emit(). It drives the "working vs idle" activity signal:
 	// output in the last few seconds → working, quiet → idle. Kept as an int64 so
@@ -114,11 +120,8 @@ func newMergeJobRegistry(d *dashboardServer) *mergeJobRegistry {
 	return &mergeJobRegistry{d: d, jobs: map[string]*mergeJob{}}
 }
 
-// mergeJobsDir is where transcripts + the index live.
+// mergeJobsDir is where the job metadata index lives.
 func mergeJobsDir() string { return filepath.Join(config.CorralHome(), "merge-jobs") }
-
-// transcriptPath is a job's JSONL event log.
-func transcriptPath(id string) string { return filepath.Join(mergeJobsDir(), id+".jsonl") }
 
 // indexPath is the persisted metadata index for all jobs.
 func mergeJobIndexPath() string { return filepath.Join(mergeJobsDir(), "index.json") }
@@ -153,7 +156,7 @@ func (r *mergeJobRegistry) load() {
 }
 
 // persist writes the metadata index (called after any status change). The
-// transcript files are written incrementally as events stream.
+// conversation transcript itself lives in the conversations DB, not here.
 func (r *mergeJobRegistry) persist() {
 	r.mu.Lock()
 	list := make([]*mergeJob, 0, len(r.jobs))
@@ -230,7 +233,8 @@ func (r *mergeJobRegistry) remove(id string) bool {
 	if checkout != "" {
 		_ = os.RemoveAll(checkout)
 	}
-	_ = os.Remove(transcriptPath(id))
+	// The captured conversation is intentionally NOT deleted here — it lives in the
+	// conversations DB, outliving the job, kept per the retention setting.
 	r.persist()
 	return true
 }
@@ -261,18 +265,12 @@ func (j *mergeJob) unsubscribe(ch chan mergeJobEvent) {
 	j.mu.Unlock()
 }
 
-// emit appends an event to the transcript and fans it out to subscribers. This
-// is the `send` used by the job's claude turn — signature matches runChatTurn's
-// send (returns error; always nil, the job never fails a write mid-turn).
+// emit fans an event out to live subscribers and updates the activity clock. It
+// no longer writes a JSONL transcript — the conversations DB (written by the
+// capture tee that wraps emit) is the durable, searchable, retained source of
+// truth, and replay reads from it. This is just the in-memory live fanout.
+// Signature matches runChatTurn's send (returns error; always nil).
 func (j *mergeJob) emit(m chatServerMsg) error {
-	// Append to the transcript (JSONL). Best-effort — a transcript write failure
-	// shouldn't stop the live stream.
-	if line, err := json.Marshal(m); err == nil {
-		if f, ferr := os.OpenFile(transcriptPath(j.ID), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600); ferr == nil {
-			_, _ = f.Write(append(line, '\n'))
-			_ = f.Close()
-		}
-	}
 	j.mu.Lock()
 	j.lastEventUnix = time.Now().Unix()
 	if m.Type == "session" {
@@ -326,21 +324,45 @@ func (j *mergeJob) fanout(ev mergeJobEvent) {
 	}
 }
 
-// replayTranscript reads the on-disk transcript and calls send for each event.
-// Used when a viewer attaches so it sees history before live output.
-func replayTranscript(id string, send func(chatServerMsg) error) {
-	f, err := os.Open(transcriptPath(id))
+// replayJob replays a job's captured history from the conversations DB so a
+// freshly-attached viewer sees what happened before live output. Reads the job's
+// conversation messages (in order) and re-emits them as the chatServerMsg frames
+// the Work-tab viewer renders. Best-effort: no conversation id / unopenable DB →
+// nothing to replay (a still-preparing job just gets live frames).
+func (d *dashboardServer) replayJob(job *mergeJob, send func(chatServerMsg) error) {
+	job.mu.Lock()
+	convID := job.ConvID
+	job.mu.Unlock()
+	if convID == 0 {
+		return
+	}
+	cs, err := d.getConvStore()
 	if err != nil {
 		return
 	}
-	defer f.Close()
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	for sc.Scan() {
-		var m chatServerMsg
-		if json.Unmarshal(sc.Bytes(), &m) == nil {
-			_ = send(m)
-		}
+	msgs, err := cs.Messages(convID, "")
+	if err != nil {
+		return
+	}
+	for _, m := range msgs {
+		_ = send(convMessageToFrame(m))
+	}
+}
+
+// convMessageToFrame maps a stored conversation message back to the chatServerMsg
+// the Work-tab viewer renders (inverse of the capture tee's frame→message map).
+func convMessageToFrame(m convstore.MessageRow) chatServerMsg {
+	switch m.Type {
+	case "tool_use":
+		return chatServerMsg{Type: "tool_use", Tool: m.ToolName, Input: m.ToolInput}
+	case "tool_result":
+		return chatServerMsg{Type: "tool_result", Result: m.ToolResult, IsError: m.IsError}
+	case "result":
+		return chatServerMsg{Type: "result", Model: m.Model, CostUSD: m.CostUSD, IsError: m.IsError}
+	case "error":
+		return chatServerMsg{Type: "error", Text: m.Text, IsError: true}
+	default:
+		return chatServerMsg{Type: "text", Text: m.Text}
 	}
 }
 
