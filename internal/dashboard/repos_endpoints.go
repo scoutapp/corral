@@ -3,6 +3,7 @@ package dashboard
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os/exec"
@@ -804,7 +805,10 @@ func (d *dashboardServer) handlePREnrich(w http.ResponseWriter, r *http.Request,
 		Message: applog.Fmt("Analyze PR #%d", num),
 		RepoID:  repoID, Meta: map[string]any{"pr": num},
 	})
-	blocks, err := svc.WithPromptResolver(d.promptResolver()).ExtractBlocks(ctx, prID, prreview.NewClaudeRunner(claudeBin))
+	enrichRunner := d.capturingRunner(ctx, convOrigin{
+		Kind: "analysis", OriginID: fmt.Sprintf("enrich-%d", prID), RepoID: repoID, PRNumber: num,
+	}, prreview.NewClaudeRunner(claudeBin))
+	blocks, err := svc.WithPromptResolver(d.promptResolver()).ExtractBlocks(ctx, prID, enrichRunner)
 	if err != nil {
 		endSpan(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -848,7 +852,10 @@ func (d *dashboardServer) handlePRAnalyze(w http.ResponseWriter, r *http.Request
 		Message: applog.Fmt("Risk assessment PR #%d", rNum),
 		RepoID:  rRepoID, Meta: map[string]any{"pr": rNum},
 	})
-	v, err := rsvc.WithPromptResolver(d.promptResolver()).AnalyzeRisk(ctx, prID, prreview.NewClaudeRunner(claudeBin))
+	riskRunner := d.capturingRunner(ctx, convOrigin{
+		Kind: "analysis", OriginID: fmt.Sprintf("risk-%d", prID), RepoID: rRepoID, PRNumber: rNum,
+	}, prreview.NewClaudeRunner(claudeBin))
+	v, err := rsvc.WithPromptResolver(d.promptResolver()).AnalyzeRisk(ctx, prID, riskRunner)
 	if err != nil {
 		endSpan(err)
 		http.Error(w, err.Error(), http.StatusBadGateway)

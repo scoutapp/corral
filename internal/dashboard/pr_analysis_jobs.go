@@ -103,7 +103,10 @@ func (d *dashboardServer) startEnrich(prID int64) error {
 			Message: applog.Fmt("Analyze PR #%d (api)", num),
 			RepoID:  repoID, Meta: map[string]any{"pr": num, "via": "api"},
 		})
-		_, aerr := svc.WithPromptResolver(d.promptResolver()).ExtractBlocks(ctx, prID, prreview.NewClaudeRunner(claudeBin))
+		runner := d.capturingRunner(ctx, convOrigin{
+			Kind: "analysis", OriginID: fmt.Sprintf("enrich-%d", prID), RepoID: repoID, PRNumber: num,
+		}, prreview.NewClaudeRunner(claudeBin))
+		_, aerr := svc.WithPromptResolver(d.promptResolver()).ExtractBlocks(ctx, prID, runner)
 		endSpan(aerr)
 		if aerr == nil {
 			d.firePRHookEvent(ctx, prID, automations.EventPRAnalyze, nil)
@@ -136,7 +139,10 @@ func (d *dashboardServer) startRisk(prID int64) error {
 			Message: applog.Fmt("Risk assessment PR #%d (api)", num),
 			RepoID:  repoID, Meta: map[string]any{"pr": num, "via": "api"},
 		})
-		_, aerr := svc.WithPromptResolver(d.promptResolver()).AnalyzeRisk(ctx, prID, prreview.NewClaudeRunner(claudeBin))
+		runner := d.capturingRunner(ctx, convOrigin{
+			Kind: "analysis", OriginID: fmt.Sprintf("risk-%d", prID), RepoID: repoID, PRNumber: num,
+		}, prreview.NewClaudeRunner(claudeBin))
+		_, aerr := svc.WithPromptResolver(d.promptResolver()).AnalyzeRisk(ctx, prID, runner)
 		endSpan(aerr)
 		d.analysisJobs.finish(prID, "risk", aerr)
 	}()

@@ -201,3 +201,95 @@ func (c *convCapturer) ensureStarted(cs *convstore.ConvStore) int64 {
 func ptrKey(c *convCapturer) string {
 	return fmt.Sprintf("%p", c)
 }
+
+// aiRunner mirrors prreview.aiRunner (Run(ctx, prompt) (string, error)) so the
+// dashboard can wrap it without prreview depending on convstore.
+type aiRunner interface {
+	Run(ctx context.Context, prompt string) (string, error)
+}
+
+// capturingRunner wraps an aiRunner so each one-shot Run (the non-stream
+// enrich/risk path) is recorded as a user(prompt)/assistant(response) message
+// pair in a SINGLE conversation — so a whole enrich run (many block calls + the
+// summary) is one conversation, not dozens. Best-effort: capture failures never
+// affect the wrapped Run's result.
+type capturingRunner struct {
+	inner  aiRunner
+	d      *dashboardServer
+	origin convOrigin
+	trace  string
+	span   string
+
+	mu     sync.Mutex
+	convID int64
+}
+
+// capturingRunner returns an aiRunner that records each Run into one conversation
+// of the given origin. If the inner runner is nil (no claude) or the conversations
+// DB is unavailable, it returns the inner runner unchanged (nil stays nil), so
+// the analysis path behaves exactly as before.
+func (d *dashboardServer) capturingRunner(ctx context.Context, origin convOrigin, inner aiRunner) aiRunner {
+	if inner == nil {
+		return inner
+	}
+	if _, err := d.getConvStore(); err != nil {
+		return inner
+	}
+	return &capturingRunner{
+		inner:  inner,
+		d:      d,
+		origin: origin,
+		trace:  applog.TraceID(ctx),
+		span:   applog.SpanID(ctx),
+	}
+}
+
+// Run records the prompt + response (or error) around the wrapped call.
+func (r *capturingRunner) Run(ctx context.Context, prompt string) (string, error) {
+	cs, csErr := r.d.getConvStore()
+	id := r.ensureConv(cs, csErr)
+	if id != 0 {
+		_ = cs.AppendMessage(id, convstore.Message{Role: "user", Type: "text", Text: prompt})
+	}
+	out, err := r.inner.Run(ctx, prompt)
+	if id != 0 {
+		if err != nil {
+			_ = cs.AppendMessage(id, convstore.Message{Role: "assistant", Type: "error", Text: err.Error(), IsError: true})
+		} else {
+			_ = cs.AppendMessage(id, convstore.Message{Role: "assistant", Type: "text", Text: out})
+		}
+	}
+	return out, err
+}
+
+// ensureConv lazily creates the single conversation for this runner. Returns 0 if
+// capture is unavailable.
+func (r *capturingRunner) ensureConv(cs *convstore.ConvStore, csErr error) int64 {
+	if csErr != nil {
+		return 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.convID != 0 {
+		return r.convID
+	}
+	id, err := cs.StartConversation(convstore.ConvMeta{
+		OriginKind:           r.origin.Kind,
+		OriginID:             r.origin.OriginID,
+		ProjectID:            r.origin.ProjectID,
+		ProjectLabel:         r.origin.ProjectLabel,
+		RepoID:               r.origin.RepoID,
+		PRNumber:             r.origin.PRNumber,
+		TraceID:              r.trace,
+		RootSpanID:           r.span,
+		ParentConversationID: r.origin.ParentConversationID,
+		ConvKey:              r.origin.Kind + ":" + r.origin.OriginID + ":" + fmtRunnerKey(r),
+	})
+	if err != nil {
+		return 0
+	}
+	r.convID = id
+	return id
+}
+
+func fmtRunnerKey(r *capturingRunner) string { return fmt.Sprintf("%p", r) }
