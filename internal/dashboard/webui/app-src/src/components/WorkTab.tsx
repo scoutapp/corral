@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getJSON, delJSON } from "../api/client";
+import { getJSON, delJSON, postJSON } from "../api/client";
 import { ChatPanel } from "./ChatPanel";
 
 // WorkTab is the ChatDock's "Work" surface: the list of host-merge background
@@ -46,6 +46,11 @@ export function WorkTab({ onCount }: { onCount?: (n: number) => void }) {
   const [jobs, setJobs] = useState<MergeJob[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const loadedOnce = useRef(false);
+  // "New task" composer: spawn a fresh worker Claude with a title + prompt.
+  const [composing, setComposing] = useState(false);
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskPrompt, setTaskPrompt] = useState("");
+  const [spawning, setSpawning] = useState(false);
 
   const refresh = useCallback(() => {
     getJSON<{ jobs: MergeJob[] }>("/merge-jobs")
@@ -88,20 +93,87 @@ export function WorkTab({ onCount }: { onCount?: (n: number) => void }) {
     refresh();
   };
 
+  const spawnWorker = async () => {
+    if (!taskPrompt.trim()) return;
+    setSpawning(true);
+    try {
+      const r = await postJSON<{ jobId: string }>("/api/conductor/workers", {
+        title: taskTitle.trim() || undefined,
+        prompt: taskPrompt,
+      });
+      setComposing(false);
+      setTaskTitle("");
+      setTaskPrompt("");
+      setActive(r.jobId); // focus the new worker
+      refresh();
+    } catch {
+      /* ignore; surfaced by the next poll if it started */
+    } finally {
+      setSpawning(false);
+    }
+  };
+
+  const activeJob = jobs.find((j) => j.id === active) || null;
+
+  // The "New task" composer, shared by the empty-state and the rail header.
+  const composer = (
+    <div className="work-compose">
+      <input
+        className="work-compose-title"
+        type="text"
+        placeholder="Task title (optional)"
+        value={taskTitle}
+        onChange={(e) => setTaskTitle(e.target.value)}
+      />
+      <textarea
+        className="work-compose-prompt"
+        rows={4}
+        placeholder="What should this worker Claude do? It runs fresh and independent, in the background."
+        value={taskPrompt}
+        onChange={(e) => setTaskPrompt(e.target.value)}
+      />
+      <div className="work-compose-actions">
+        <button type="button" className="btn primary" disabled={spawning || !taskPrompt.trim()} onClick={spawnWorker}>
+          {spawning ? "Starting…" : "Start worker"}
+        </button>
+        <button type="button" className="btn" onClick={() => setComposing(false)}>
+          Cancel
+        </button>
+      </div>
+      <div className="work-compose-note ai-warn">host · not sandboxed · uses your global chat capability</div>
+    </div>
+  );
+
   if (loadedOnce.current && jobs.length === 0) {
     return (
-      <div className="work-empty">
-        No merge jobs. Start one with <b>Merge with host</b> on a PR — it runs here in the
-        background, so you can navigate away and come back.
+      <div className="work-tab-empty">
+        {composing ? (
+          composer
+        ) : (
+          <>
+            <div className="work-empty">
+              No background jobs yet. Delegate a task to a fresh worker Claude, or start a{" "}
+              <b>Merge with host</b> on a PR — both run here so you can navigate away and come back.
+            </div>
+            <button type="button" className="btn primary work-new-btn" onClick={() => setComposing(true)}>
+              + New task
+            </button>
+          </>
+        )}
       </div>
     );
   }
 
-  const activeJob = jobs.find((j) => j.id === active) || null;
-
   return (
     <div className="work-tab">
       <div className="work-rail">
+        <div className="work-rail-head">
+          <span>Jobs</span>
+          <button type="button" className="work-rail-new" title="Delegate a task to a new worker Claude" onClick={() => setComposing((v) => !v)}>
+            + New
+          </button>
+        </div>
+        {composing && <div className="work-rail-compose">{composer}</div>}
         {jobs.map((j) => (
           <div key={j.id} className={`work-rail-item${active === j.id ? " active" : ""}`}>
             <button type="button" className="work-rail-btn" onClick={() => setActive(j.id)} title={`${j.status} · ${j.strategy}`}>

@@ -2574,6 +2574,29 @@ table.projects th, table.projects td {
 .work-view-hint a:hover { color: var(--fg); }
 .work-view-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .work-empty { padding: 1.1rem; color: var(--muted); font-size: 0.85rem; line-height: 1.5; }
+.work-tab-empty { padding: 1.1rem; display: flex; flex-direction: column; gap: 0.7rem; }
+.work-new-btn { align-self: flex-start; }
+
+/* Rail header + "New task" worker composer. */
+.work-rail-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.4rem 0.5rem; font-size: 0.72rem; color: var(--muted);
+  border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.04em;
+}
+.work-rail-new {
+  background: none; border: none; color: var(--accent); cursor: pointer;
+  font-size: 0.72rem; text-transform: none; letter-spacing: 0;
+}
+.work-rail-new:hover { text-decoration: underline; }
+.work-rail-compose { border-bottom: 1px solid var(--border); }
+.work-compose { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.5rem; }
+.work-compose-title, .work-compose-prompt {
+  font: inherit; padding: 0.35rem 0.45rem; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg, #0f1115); color: var(--fg);
+}
+.work-compose-prompt { resize: vertical; }
+.work-compose-actions { display: flex; gap: 0.4rem; }
+.work-compose-note { font-size: 0.68rem; }
 
 .firstrun { padding: 1.1rem 1.1rem 1.3rem; overflow-y: auto; }
 .firstrun-loading { padding: 1.5rem; color: var(--muted); }
