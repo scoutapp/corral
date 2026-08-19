@@ -139,6 +139,39 @@ To edit or remove: `PUT /api/actions/<id>` / `PUT /api/skills/<id>`, or
 > These are writes, so the API-writes gate above applies — if it 403s, ask the
 > user to enable API writes, then retry.
 
+## Conversation logs — debug what other Claudes did
+
+Corral captures EVERY Claude conversation in the app — the global chat, project
+"Ask Claude", PR-review chat, merge/worker jobs, one-shot analyses, the draft
+flows, and the Claude running inside each sandbox — into a searchable store
+(including tool calls). Use it to debug: "what did that worker actually run?",
+"which conversation touched this file?", "trace how this project got started".
+
+Over the API:
+
+```
+corral api GET /api/conversations                      # recent, newest-first
+corral api GET "/api/conversations?origin=sandbox&project=<id>"
+corral api GET "/api/conversations/search?q=flaky+test" # full-text across ALL messages/tools
+corral api GET /api/conversations/<id>/messages         # one conversation's messages
+corral api GET "/api/conversations/<id>/messages?q=grep" # search within one conversation
+corral api GET /api/conversations/<id>/chain            # the causal chain it belongs to
+```
+
+The **chain** is the payoff: it follows `parent_conversation_id` up to the root
+and gathers descendants, so from any conversation you can see the whole spawned
+tree — e.g. a global chat → the worker/project it kicked off via this very API →
+that project's own conversations. Combine with `GET /api/logs/trace/{traceId}`
+(from a conversation's `traceId`) to see the timing waterfall.
+
+There's also a CLI (reads the DB directly, no dashboard needed):
+
+```
+corral conversations --grep "flaky test"    # search
+corral conversations show <id>              # print a conversation's messages
+corral conversations chain <id>            # the causal chain
+```
+
 ## Live View — point the user at the right port
 
 The dashboard has a **Live View** tab that embeds a web app running in a project's
