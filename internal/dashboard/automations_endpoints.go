@@ -109,6 +109,40 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handleDindCaches(w, r, strings.TrimPrefix(rest, "dind/caches/"))
 	case rest == "prs/prune":
 		d.handlePRPrune(w, r)
+	case strings.HasPrefix(rest, "prs/"):
+		// PR-scoped API routes: /api/prs/<id>/notes[/<noteId>], /api/prs/<id>/merge.
+		d.handleAPIPRItem(w, r, strings.TrimPrefix(rest, "prs/"))
+	case strings.HasPrefix(rest, "repos/") && strings.HasSuffix(rest, "/merge-strategy"):
+		d.handleAPIRepoMergeStrategy(w, r, strings.TrimSuffix(strings.TrimPrefix(rest, "repos/"), "/merge-strategy"))
+	default:
+		routeNotFound(w, r)
+	}
+}
+
+// handleAPIPRItem dispatches PR-scoped /api routes. rest is the path after
+// "prs/" (e.g. "42/notes", "42/notes/7", "42/merge"). These reuse the same
+// handlers as the browser PR routes; the API-writes gate (applied in handleRoot)
+// already fences the mutating ones.
+func (d *dashboardServer) handleAPIPRItem(w http.ResponseWriter, r *http.Request, rest string) {
+	parts := strings.SplitN(rest, "/", 2)
+	prID, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		routeNotFound(w, r)
+		return
+	}
+	action := ""
+	if len(parts) > 1 {
+		action = parts[1]
+	}
+	switch {
+	case action == "notes" && r.Method == http.MethodGet:
+		d.handlePRNotesGet(w, r, prID)
+	case action == "notes" && r.Method == http.MethodPost:
+		d.handlePRNoteAdd(w, r, prID)
+	case strings.HasPrefix(action, "notes/") && r.Method == http.MethodDelete:
+		d.handlePRNoteRemove(w, r, strings.TrimPrefix(action, "notes/"))
+	case action == "merge" && r.Method == http.MethodPost:
+		d.handleAPIPRMerge(w, r, prID)
 	default:
 		routeNotFound(w, r)
 	}

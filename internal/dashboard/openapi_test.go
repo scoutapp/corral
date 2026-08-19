@@ -73,6 +73,7 @@ func TestOpenAPINoDrift(t *testing.T) {
 	// assert the route resolves (not 404), not that the resource is found.
 	fill := strings.NewReplacer(
 		"{id}", "1",
+		"{noteId}", "1",
 		"{name}", "x",
 		"{key}", "project.start",
 		"{traceId}", "abc",

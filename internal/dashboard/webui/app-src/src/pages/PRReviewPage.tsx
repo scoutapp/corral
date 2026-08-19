@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "../router";
-import { getJSON, postJSON, postRaw, wsURL } from "../api/client";
+import { getJSON, postJSON, postRaw, delJSON, wsURL } from "../api/client";
 import type { CachedRepo, LinkedIssue, PrItem } from "../api/types";
 import { useBodyClass } from "../hooks/useBodyClass";
 import { ChatPanel } from "../components/ChatPanel";
@@ -739,6 +739,91 @@ function PRDescription({ prId, body }: { prId: number; body?: string }) {
   );
 }
 
+// PRNote is one local, private annotation on a PR (stored in Corral's DB, never
+// posted to GitHub).
+type PRNote = { id: number; prId: number; body: string; author?: string; createdAt: string };
+
+// PRNotes is the private-notes panel: add/read/delete local notes on a PR. These
+// are NEVER sent to GitHub — a scratchpad for you and your team. Mirrors the
+// links panel's shape.
+function PRNotes({ prId }: { prId: number }) {
+  const [notes, setNotes] = useState<PRNote[] | null>(null);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = () => {
+    getJSON<{ notes: PRNote[] }>(`/prs/${prId}/notes`)
+      .then((d) => setNotes(d.notes || []))
+      .catch((e) => setErr((e as Error).message));
+  };
+  useEffect(load, [prId]);
+
+  const add = () => {
+    if (!draft.trim()) return;
+    setBusy(true);
+    setErr(null);
+    postJSON(`/prs/${prId}/notes`, { body: draft })
+      .then(() => {
+        setDraft("");
+        load();
+      })
+      .catch((e) => setErr((e as Error).message))
+      .finally(() => setBusy(false));
+  };
+
+  const remove = (id: number) => {
+    delJSON(`/prs/${prId}/notes/${id}`)
+      .then(load)
+      .catch((e) => setErr((e as Error).message));
+  };
+
+  return (
+    <div className="pr-notes-panel">
+      <div className="pr-notes-head">
+        🗒 Notes <span className="pr-notes-sub">private · local only, never posted to GitHub</span>
+      </div>
+      <div className="pr-notes-add">
+        <textarea
+          className="pr-notes-input"
+          rows={2}
+          placeholder="Add a private note about this PR…"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            // ⌘/Ctrl-Enter to save.
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") add();
+          }}
+        />
+        <button type="button" className="btn primary" disabled={busy || !draft.trim()} onClick={add}>
+          {busy ? "Saving…" : "Add note"}
+        </button>
+      </div>
+      {err && <p className="tab-note err">{err}</p>}
+      {notes === null ? (
+        <p className="tab-note">Loading notes…</p>
+      ) : notes.length === 0 ? (
+        <p className="pr-notes-empty">No notes yet.</p>
+      ) : (
+        <ul className="pr-notes-list">
+          {notes.map((n) => (
+            <li key={n.id} className="pr-note">
+              <div className="pr-note-body">{n.body}</div>
+              <div className="pr-note-meta">
+                {n.author ? `${n.author} · ` : ""}
+                {n.createdAt}
+                <button type="button" className="pr-note-del" title="Delete note" onClick={() => remove(n.id)}>
+                  ✕
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function PRReviewPage({ repoId, number }: { repoId: string; number: number }) {
   useBodyClass("console");
   const [repo, setRepo] = useState<CachedRepo | null>(null);
@@ -748,6 +833,7 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
   const [chatOpen, setChatOpen] = useState(false);
   const [startOpen, setStartOpen] = useState(false);
   const [linksOpen, setLinksOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   // Force a re-pull from GitHub: re-fetches the PR (body + diff) and re-extracts
@@ -829,6 +915,14 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
             >
               🔗 Linked PRs
             </button>
+            <button
+              type="button"
+              className={`dock-toggle${notesOpen ? " on" : ""}`}
+              title="Private notes on this PR — local only, never posted to GitHub"
+              onClick={() => setNotesOpen((v) => !v)}
+            >
+              🗒 Notes
+            </button>
             <VerifyLaunch repoId={repoId} pr={pr} repoName={repo?.name} />
             <button
               type="button"
@@ -861,6 +955,7 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
             <LinkedPRs prId={pr.id} />
           </div>
         )}
+        {pr && notesOpen && <PRNotes prId={pr.id} />}
         {pr && <PRActions prId={pr.id} repoId={repoId} pr={pr} repoName={repo?.name} />}
         {err ? (
           <p className="tab-note err">Failed to load PR #{number}: {err}</p>
