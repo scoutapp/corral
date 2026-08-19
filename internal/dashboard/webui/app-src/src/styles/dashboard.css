@@ -1687,6 +1687,27 @@ table.projects th, table.projects td {
   font-size: 0.85rem; padding: 0.2rem 0;
 }
 .merge-ask-cancel:hover { color: var(--con-text); }
+
+/* Host-merge drawer: faint "editable in Automations" hint + the sent prompt. */
+.merge-host-prompt-hint {
+  font-size: 0.72rem; color: var(--con-muted);
+  padding: 0.3rem 0.6rem 0; line-height: 1.4;
+}
+.merge-host-prompt-hint a { color: var(--con-muted); text-decoration: underline; }
+.merge-host-prompt-hint a:hover { color: var(--con-text); }
+.merge-host-prompt {
+  margin: 0.25rem 0.6rem 0.35rem; font-size: 0.75rem;
+  border: 1px solid var(--con-line); border-radius: 6px; background: var(--con-panel, #12161f);
+}
+.merge-host-prompt summary {
+  cursor: pointer; padding: 0.35rem 0.5rem; color: var(--con-muted); user-select: none;
+}
+.merge-host-prompt summary:hover { color: var(--con-text); }
+.merge-host-prompt pre {
+  margin: 0; padding: 0.4rem 0.6rem 0.55rem; max-height: 11rem; overflow: auto;
+  white-space: pre-wrap; word-break: break-word;
+  color: var(--con-text); border-top: 1px solid var(--con-line);
+}
 .pr-action-panel {
   display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
   margin-top: 0.6rem;
