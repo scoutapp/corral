@@ -120,6 +120,15 @@ type globalView struct {
 	// default so a fresh sandbox can use Docker (it runs --privileged); off gives
 	// a tighter, unprivileged box. Per-project create can still override it.
 	DindDefault bool `json:"dind_default"`
+
+	// Merge defaults for the PR merge split-button. MergeStrategy is the global
+	// default method (squash|merge|rebase); EMPTY string when the user never set
+	// one, so a repo without its own preference asks on first merge. MergeMode is
+	// which execution mode is primary (sandbox|host|plain; default "sandbox").
+	// MergeAutoTeardown is whether a merge sandbox auto-removes itself once merged.
+	MergeStrategy     string `json:"merge_strategy"`
+	MergeMode         string `json:"merge_mode"`
+	MergeAutoTeardown bool   `json:"merge_auto_teardown"`
 }
 
 func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Request) {
@@ -160,6 +169,9 @@ func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Reques
 	view.ApiWritesEnabled = gs.ApiWritesAllowed()
 	view.ApiWritesConfigured = gs.ApiWritesConfigured()
 	view.DindDefault = gs.DindDefaultOn()
+	view.MergeStrategy = gs.MergeStrategy // raw ("" = never set → ask per repo)
+	view.MergeMode = gs.MergeModeOrDefault()
+	view.MergeAutoTeardown = gs.MergeAutoTeardownOn()
 
 	writeJSON(w, view)
 }
@@ -174,16 +186,19 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var edit struct {
-		SetCreds         []credSet `json:"set_creds,omitempty"`
-		UnsetCreds       []string  `json:"unset_creds,omitempty"`
-		MonitorHosts     *[]string `json:"monitor_hosts,omitempty"`
-		MitmPorts        *[]string `json:"mitm_ports,omitempty"`
-		SSHKeys          *[]string `json:"ssh_keys,omitempty"`
-		UpdateRepo       *string   `json:"update_repo,omitempty"`
-		LogRetentionDays *int      `json:"log_retention_days,omitempty"`
-		LogMaxRows       *int      `json:"log_max_rows,omitempty"`
-		ApiWritesEnabled *bool     `json:"api_writes_enabled,omitempty"`
-		DindDefault      *bool     `json:"dind_default,omitempty"`
+		SetCreds          []credSet `json:"set_creds,omitempty"`
+		UnsetCreds        []string  `json:"unset_creds,omitempty"`
+		MonitorHosts      *[]string `json:"monitor_hosts,omitempty"`
+		MitmPorts         *[]string `json:"mitm_ports,omitempty"`
+		SSHKeys           *[]string `json:"ssh_keys,omitempty"`
+		UpdateRepo        *string   `json:"update_repo,omitempty"`
+		LogRetentionDays  *int      `json:"log_retention_days,omitempty"`
+		LogMaxRows        *int      `json:"log_max_rows,omitempty"`
+		ApiWritesEnabled  *bool     `json:"api_writes_enabled,omitempty"`
+		DindDefault       *bool     `json:"dind_default,omitempty"`
+		MergeStrategy     *string   `json:"merge_strategy,omitempty"`
+		MergeMode         *string   `json:"merge_mode,omitempty"`
+		MergeAutoTeardown *bool     `json:"merge_auto_teardown,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&edit); err != nil {
 		http.Error(w, "bad payload: "+err.Error(), http.StatusBadRequest)
@@ -308,6 +323,57 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 			results = append(results, "✓ new projects default to Docker-in-Docker (privileged; Docker works out of the box)")
 		} else {
 			results = append(results, "✓ new projects default to no Docker-in-Docker (tighter, unprivileged sandbox)")
+		}
+	}
+
+	if edit.MergeStrategy != nil {
+		raw := strings.TrimSpace(*edit.MergeStrategy)
+		// Empty clears the global default (repos then ask on first merge). A
+		// non-empty value must be one of the three GitHub methods.
+		if raw != "" && !config.ValidMergeStrategy(raw) {
+			http.Error(w, "merge_strategy must be squash|merge|rebase (or empty to clear)", http.StatusBadRequest)
+			return
+		}
+		gs := config.ReadGlobalSettings()
+		gs.MergeStrategy = raw
+		if err := config.WriteGlobalSettings(gs); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if raw == "" {
+			results = append(results, "✓ global merge strategy cleared (each repo is asked on its first merge)")
+		} else {
+			results = append(results, "✓ global merge strategy set to "+raw)
+		}
+	}
+
+	if edit.MergeMode != nil {
+		raw := strings.TrimSpace(*edit.MergeMode)
+		if !config.ValidMergeMode(raw) {
+			http.Error(w, "merge_mode must be sandbox|host|plain", http.StatusBadRequest)
+			return
+		}
+		gs := config.ReadGlobalSettings()
+		gs.MergeMode = raw
+		if err := config.WriteGlobalSettings(gs); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		results = append(results, "✓ default merge mode set to "+raw)
+	}
+
+	if edit.MergeAutoTeardown != nil {
+		gs := config.ReadGlobalSettings()
+		v := *edit.MergeAutoTeardown
+		gs.MergeAutoTeardown = &v
+		if err := config.WriteGlobalSettings(gs); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if v {
+			results = append(results, "✓ merge sandboxes auto-remove themselves once the PR is merged")
+		} else {
+			results = append(results, "✓ merge sandboxes are left running after merge (remove them manually)")
 		}
 	}
 

@@ -118,6 +118,45 @@ func (d *dashboardServer) handleGhBranches(w http.ResponseWriter, r *http.Reques
 	writeFilesJSON(w, map[string]any{"available": true, "branches": branches})
 }
 
+// ghAllowedMergeMethods reads which merge methods GitHub permits for a repo, via
+// `gh api repos/<owner>/<name>` (allow_squash_merge / allow_merge_commit /
+// allow_rebase_merge). Returns the enabled methods in a stable order
+// (squash, merge, rebase). Best-effort: nil on any failure, which callers treat
+// as "unknown → allow all three".
+func ghAllowedMergeMethods(ownerName string) []string {
+	if !validOwnerName(ownerName) {
+		return nil
+	}
+	ghBin, err := exec.LookPath("gh")
+	if err != nil {
+		return nil
+	}
+	out, err := exec.Command(ghBin, "api", "repos/"+ownerName,
+		"--jq", "{squash: .allow_squash_merge, merge: .allow_merge_commit, rebase: .allow_rebase_merge}").Output()
+	if err != nil {
+		return nil
+	}
+	var flags struct {
+		Squash bool `json:"squash"`
+		Merge  bool `json:"merge"`
+		Rebase bool `json:"rebase"`
+	}
+	if err := json.Unmarshal(out, &flags); err != nil {
+		return nil
+	}
+	allowed := []string{}
+	if flags.Squash {
+		allowed = append(allowed, "squash")
+	}
+	if flags.Merge {
+		allowed = append(allowed, "merge")
+	}
+	if flags.Rebase {
+		allowed = append(allowed, "rebase")
+	}
+	return allowed
+}
+
 // ghIssue is one entry from `gh issue list`. Author/CreatedAt are surfaced in the
 // UI; Body is used for issue-spawn seeding.
 type ghIssue struct {

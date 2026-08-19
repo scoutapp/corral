@@ -25,20 +25,17 @@ import {
 // comment, request changes, merge — thin `gh` wrappers. Each opens an inline
 // panel (body / merge-method) and confirms before submitting, since all of
 // these write to GitHub.
-type ActionKind = "approve" | "comment" | "request-changes" | "merge" | null;
-function PRActions({ prId }: { prId: number }) {
+type ActionKind = "approve" | "comment" | "request-changes" | null;
+function PRActions({ prId, repoId, pr, repoName }: { prId: number; repoId: string; pr: PrItem; repoName?: string }) {
   const [open, setOpen] = useState<ActionKind>(null);
   const [body, setBody] = useState("");
-  const [method, setMethod] = useState("squash");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
 
   const submit = (kind: Exclude<ActionKind, null>) => {
     setBusy(true);
     setMsg(null);
-    const payload =
-      kind === "merge" ? { method } : kind === "approve" ? { body } : { body };
-    postJSON(`/prs/${prId}/${kind}`, payload)
+    postJSON(`/prs/${prId}/${kind}`, { body })
       .then(() => {
         setMsg({ text: labelFor(kind) + " ✓", err: false });
         setOpen(null);
@@ -65,26 +62,11 @@ function PRActions({ prId }: { prId: number }) {
         <button type="button" className={`btn${open === "request-changes" ? " primary" : ""}`} onClick={() => toggle("request-changes")}>
           ✗ Request changes
         </button>
-        <button type="button" className={`btn${open === "merge" ? " primary" : ""}`} onClick={() => toggle("merge")}>
-          ⑃ Merge
-        </button>
+        <MergeControl prId={prId} repoId={repoId} pr={pr} repoName={repoName} />
         {msg && <span className={`pr-actions-msg${msg.err ? " err" : ""}`}>{msg.text}</span>}
       </div>
 
-      {open === "merge" ? (
-        <div className="pr-action-panel">
-          <span>Merge method:</span>
-          <select value={method} onChange={(e) => setMethod(e.target.value)}>
-            <option value="squash">Squash and merge</option>
-            <option value="merge">Create a merge commit</option>
-            <option value="rebase">Rebase and merge</option>
-          </select>
-          <button type="button" className="btn primary" disabled={busy} onClick={() => submit("merge")}>
-            {busy ? "Merging…" : "Confirm merge"}
-          </button>
-          <span className="pr-action-warn">This merges the PR on GitHub.</span>
-        </div>
-      ) : open ? (
+      {open ? (
         <div className="pr-action-panel col">
           <textarea
             className="pr-action-body"
@@ -120,9 +102,275 @@ function labelFor(kind: Exclude<ActionKind, null>): string {
       return "Commented";
     case "request-changes":
       return "Requested changes";
-    case "merge":
-      return "Merged";
   }
+}
+
+// MergeMode is which execution path the Merge split-button runs.
+type MergeMode = "sandbox" | "host" | "plain";
+
+// mergeModeLabel is the human name shown on the button / menu for each mode.
+function mergeModeLabel(m: MergeMode): string {
+  return m === "host" ? "Merge with host" : m === "sandbox" ? "Merge with sandbox" : "Merge";
+}
+
+// MergeStrategyState is what /repos/<id>/merge-strategy returns.
+type MergeStrategyState = {
+  allowed: string[]; // GitHub-permitted methods ([] = unknown → all three)
+  preferred: string; // repo preference ("" = none)
+  global_default: string; // global default ("" = never set)
+  effective: string; // resolved method a merge would use
+};
+
+const ALL_STRATEGIES = ["squash", "merge", "rebase"];
+const STRATEGY_LABEL: Record<string, string> = {
+  squash: "Squash and merge",
+  merge: "Create a merge commit",
+  rebase: "Rebase and merge",
+};
+
+// MergeControl is the PR merge split-button: a primary action that runs the
+// default execution mode (sandbox | host | plain, from Global settings) with the
+// resolved merge strategy, plus a ▾ menu to switch mode and strategy per-merge.
+// The strategy resolves repo → global → ask: the first time you merge a repo
+// with no preference set anywhere, a small modal asks and remembers the choice
+// for that repo. Only GitHub-allowed methods are ever offered.
+//
+// "host" opens the host-merge drawer (a live Claude session on a throwaway host
+// checkout — fast, NOT sandboxed). "sandbox" launches a one-shot container that
+// rebases + merges, then arms the poll-and-teardown watcher. "plain" is the
+// classic direct `gh pr merge`.
+function MergeControl({
+  prId,
+  repoId,
+  pr,
+  repoName,
+}: {
+  prId: number;
+  repoId: string;
+  pr: PrItem;
+  repoName?: string;
+}) {
+  const [mode, setMode] = useState<MergeMode>("host");
+  const [strat, setStrat] = useState<MergeStrategyState | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
+  const [launchedProject, setLaunchedProject] = useState<string | null>(null);
+  const [hostOpen, setHostOpen] = useState(false); // host-merge drawer
+  const [askOpen, setAskOpen] = useState(false); // first-time strategy modal
+  // The strategy chosen in the ▾ menu / modal for THIS merge; falls back to the
+  // resolved effective strategy.
+  const [chosenStrat, setChosenStrat] = useState<string>("");
+
+  // Load the global default mode + this repo's strategy state on mount.
+  useEffect(() => {
+    getJSON<{ merge_mode?: string }>("/global/config")
+      .then((g) => {
+        const m = g.merge_mode;
+        if (m === "host" || m === "sandbox" || m === "plain") setMode(m);
+      })
+      .catch(() => {});
+    getJSON<MergeStrategyState>(`/repos/${encodeURIComponent(repoId)}/merge-strategy`)
+      .then((s) => {
+        setStrat(s);
+        setChosenStrat(s.effective || "");
+      })
+      .catch(() => {});
+  }, [repoId]);
+
+  // The methods to offer: GitHub-allowed, or all three when unknown.
+  const options = strat && strat.allowed.length ? strat.allowed : ALL_STRATEGIES;
+  // "Ask first" = no repo preference AND no global default set anywhere.
+  const needsAsk = !!strat && !strat.preferred && !strat.global_default;
+
+  // saveRepoStrategy persists a per-repo preference (from the modal or ▾ menu).
+  const saveRepoStrategy = async (method: string) => {
+    try {
+      await postJSON(`/repos/${encodeURIComponent(repoId)}/merge-strategy`, { strategy: method });
+      setStrat((s) => (s ? { ...s, preferred: method, effective: method } : s));
+    } catch {
+      /* best-effort; the merge still uses `method` for this run */
+    }
+  };
+
+  // Kick off the primary action. If we still need to ask for a strategy, open the
+  // modal first; the modal's Confirm calls runMerge with the chosen method.
+  const start = () => {
+    setMsg(null);
+    if (needsAsk) {
+      setAskOpen(true);
+      return;
+    }
+    runMerge(chosenStrat || strat?.effective || "squash");
+  };
+
+  // runMerge executes the selected mode with the given strategy.
+  const runMerge = async (method: string) => {
+    setAskOpen(false);
+    setMenuOpen(false);
+    setBusy(true);
+    setMsg(null);
+    try {
+      if (mode === "plain") {
+        await postJSON(`/prs/${prId}/merge`, { method });
+        setMsg({ text: "Merged ✓", err: false });
+      } else if (mode === "host") {
+        // Open the live host-merge drawer; the server auto-submits the merge
+        // prompt on connect. Nothing to POST here.
+        setHostOpen(true);
+        setMsg({ text: "Merging on host — see the drawer", err: false });
+      } else {
+        // sandbox: create a one-shot project on the PR branch, start it, submit
+        // the merge prompt, then arm the poll-and-teardown watcher.
+        const info = await getJSON<{ prompt: string; branch: string }>(`/prs/${prId}/merge-prompt`);
+        const created = await postJSON<{ id: string }>("/projects/create", {
+          mode: "clone",
+          name: `${repoName || "pr"}-merge-${pr.number}`,
+          repos: [{ repoId, branch: info.branch || pr.headRef || undefined }],
+          source: { kind: "pr", repo_id: repoId, number: pr.number, url: pr.githubUrl, title: pr.title },
+        });
+        const id = created.id;
+        setLaunchedProject(id);
+        await postJSON(`/p/${id}/start`).catch(() => {});
+        await postRaw(`/p/${id}/populate-prompt`, { prompt: info.prompt, submit: true }).catch(() => {});
+        await postJSON(`/prs/${prId}/merge-watch`, { projectId: id }).catch(() => {});
+        setMsg({ text: "Merge sandbox launched", err: false });
+      }
+    } catch (e) {
+      setMsg({ text: (e as Error).message, err: true });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const notSandboxed = mode === "host";
+
+  return (
+    <span className="merge-control">
+      <span className="split-btn">
+        <button
+          type="button"
+          className={`btn primary split-main${notSandboxed ? " warn" : ""}`}
+          disabled={busy}
+          title={
+            mode === "host"
+              ? "Rebase & merge on the host (fast — NOT sandboxed)"
+              : mode === "sandbox"
+                ? "Rebase & merge in a one-shot sandbox, then tear it down"
+                : "Merge the PR on GitHub (no rebase)"
+          }
+          onClick={start}
+        >
+          {busy ? "Working…" : `⑃ ${mergeModeLabel(mode)}`}
+        </button>
+        <button
+          type="button"
+          className="btn primary split-caret"
+          disabled={busy}
+          aria-label="Merge options"
+          title="Choose merge mode & strategy"
+          onClick={() => setMenuOpen((o) => !o)}
+        >
+          ▾
+        </button>
+
+        {menuOpen && (
+          <div className="split-menu" role="menu">
+            <div className="split-menu-head">Mode</div>
+            {(["host", "sandbox", "plain"] as MergeMode[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                className={`split-menu-item${mode === m ? " active" : ""}`}
+                onClick={() => setMode(m)}
+              >
+                {mergeModeLabel(m)}
+                {m === "host" && <span className="split-menu-scope">not sandboxed</span>}
+                {m === "plain" && <span className="split-menu-scope">no rebase</span>}
+              </button>
+            ))}
+            <div className="split-menu-sep" />
+            <div className="split-menu-head">
+              Strategy{strat && strat.preferred ? " · repo default" : strat && strat.global_default ? " · global default" : ""}
+            </div>
+            {ALL_STRATEGIES.map((s) => {
+              const allowedHere = options.includes(s);
+              const active = (chosenStrat || strat?.effective) === s;
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  className={`split-menu-item${active ? " active" : ""}`}
+                  disabled={!allowedHere}
+                  title={allowedHere ? "" : "Disabled for this repo on GitHub"}
+                  onClick={() => {
+                    setChosenStrat(s);
+                    saveRepoStrategy(s); // remember the choice for this repo
+                  }}
+                >
+                  {STRATEGY_LABEL[s]}
+                  {!allowedHere && <span className="split-menu-scope">off on GitHub</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </span>
+
+      {msg && <span className={`pr-actions-msg${msg.err ? " err" : ""}`}>{msg.text}</span>}
+      {launchedProject && (
+        <a className="pr-actions-link" href={`/p/${launchedProject}/`} title="Open the merge sandbox">
+          open sandbox ↗
+        </a>
+      )}
+
+      {/* First-time strategy modal: shown when nothing is set repo- or globally. */}
+      {askOpen && (
+        <div className="merge-ask-backdrop" onClick={() => setAskOpen(false)}>
+          <div className="merge-ask" onClick={(e) => e.stopPropagation()}>
+            <div className="merge-ask-head">How should {repoName || "this repo"} be merged?</div>
+            <p className="muted">
+              Pick the merge method for this repository. It'll be remembered as this repo's default (you can change
+              it later in the ▾ menu). Only methods GitHub allows for the repo are shown.
+            </p>
+            <div className="merge-ask-options">
+              {options.map((s) => (
+                <button key={s} type="button" className="btn" onClick={() => runMerge(s)}>
+                  {STRATEGY_LABEL[s]}
+                </button>
+              ))}
+            </div>
+            <button type="button" className="merge-ask-cancel" onClick={() => setAskOpen(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Host-merge drawer: a live Claude session on a throwaway host checkout. */}
+      {hostOpen && (
+        <div className="chat-panel" id="merge-host-panel">
+          <div className="chat-panel-bar">
+            <span>
+              <i className="screen-dot" />
+              merge on host · PR #{pr.number}
+              <span className="ai-warn" title="Runs your host machine's Claude with Bash against a real git checkout; not sandboxed">
+                host · not sandboxed
+              </span>
+            </span>
+            <span className="chat-panel-actions">
+              <button type="button" title="Close" onClick={() => setHostOpen(false)}>
+                ✕
+              </button>
+            </span>
+          </div>
+          <div className="chat-panel-iframe">
+            <ChatPanel wsPath={`/prs/${prId}/merge-host/ws`} canAct persistKey={`merge-host-${prId}`} />
+          </div>
+        </div>
+      )}
+    </span>
+  );
 }
 
 // VerifyLaunch fires a sandbox project to verify the PR, ASYNCHRONOUSLY: it
@@ -634,7 +882,7 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
             <LinkedPRs prId={pr.id} />
           </div>
         )}
-        {pr && <PRActions prId={pr.id} />}
+        {pr && <PRActions prId={pr.id} repoId={repoId} pr={pr} repoName={repo?.name} />}
         {err ? (
           <p className="tab-note err">Failed to load PR #{number}: {err}</p>
         ) : !pr ? (

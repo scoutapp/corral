@@ -17,11 +17,11 @@ package automations
 
 // PromptDef describes one catalog entry.
 type PromptDef struct {
-	Key     string   `json:"key"`
-	Name    string   `json:"name"`
-	UsedWhen string  `json:"usedWhen"` // the "where is this used" callout
-	Default string   `json:"default"`  // built-in template
-	Slots   []string `json:"slots"`    // slot names the code fills
+	Key      string   `json:"key"`
+	Name     string   `json:"name"`
+	UsedWhen string   `json:"usedWhen"` // the "where is this used" callout
+	Default  string   `json:"default"`  // built-in template
+	Slots    []string `json:"slots"`    // slot names the code fills
 }
 
 // Prompt keys — the stable identifiers call sites use.
@@ -29,6 +29,7 @@ const (
 	PromptProjectStart   = "project.start"
 	PromptProjectIssue   = "project.issue"
 	PromptPRVerify       = "pr.verify"
+	PromptPRMerge        = "pr.merge"
 	PromptAnalyzeBlock   = "analyze.block"
 	PromptAnalyzeSummary = "analyze.summary"
 	PromptRisk           = "pr.risk"
@@ -58,23 +59,23 @@ const sshGuidanceSlot = "{{ssh_guidance}}"
 func PromptCatalog() []PromptDef {
 	return []PromptDef{
 		{
-			Key:  PromptProjectStart,
-			Name: "Project start",
+			Key:      PromptProjectStart,
+			Name:     "Project start",
 			UsedWhen: "Typed into Claude when a plain sandbox project launches (New project, or Verify-in-sandbox without a preset).",
 			Default: "You're working in a sandboxed checkout of {{repo}} on branch {{branch}}. " +
 				"Explore the codebase, then help with the task at hand. " + sshGuidanceSlot,
 			Slots: []string{"repo", "branch", "ssh_guidance"},
 		},
 		{
-			Key:  PromptProjectIssue,
-			Name: "Project start (from an issue)",
+			Key:      PromptProjectIssue,
+			Name:     "Project start (from an issue)",
 			UsedWhen: "Typed into Claude when a project is created from a GitHub issue.",
-			Default: "Work on {{repo}} issue #{{number}}: {{title}}. The full description is in ISSUE.md at the workspace root. You're on branch {{branch}}. " + sshGuidanceSlot,
-			Slots:   []string{"repo", "number", "title", "branch", "ssh_guidance"},
+			Default:  "Work on {{repo}} issue #{{number}}: {{title}}. The full description is in ISSUE.md at the workspace root. You're on branch {{branch}}. " + sshGuidanceSlot,
+			Slots:    []string{"repo", "number", "title", "branch", "ssh_guidance"},
 		},
 		{
-			Key:  PromptPRVerify,
-			Name: "Verify PR in sandbox",
+			Key:      PromptPRVerify,
+			Name:     "Verify PR in sandbox",
 			UsedWhen: "Auto-submitted to Claude when you click ▶ Verify in sandbox on a PR (using the built-in prompt).",
 			Default: `Verify PR #{{pr_number}} ("{{pr_title}}") works. You're on its branch. ` +
 				"Explore the change, run the relevant tests or the app, and report whether it behaves correctly " +
@@ -82,8 +83,25 @@ func PromptCatalog() []PromptDef {
 			Slots: []string{"pr_number", "pr_title", "pr_url"},
 		},
 		{
-			Key:  PromptAnalyzeBlock,
-			Name: "Analyze — block risk",
+			Key:      PromptPRMerge,
+			Name:     "Rebase & merge PR in sandbox",
+			UsedWhen: "Auto-submitted to Claude when you click \"Rebase & merge in sandbox\" on a PR. Runs in a one-shot sandbox checked out on the PR's branch; the sandbox is torn down once the PR is merged (if auto-teardown is on).",
+			Default: "You're in a sandboxed checkout of {{repo}} on PR #{{pr_number}}'s branch ({{branch}}). " +
+				"Your job: get this PR mergeable via **{{strategy}}** and merge it, following best practices. " +
+				"The PR is {{pr_url}} (\"{{pr_title}}\"). The base branch is {{default_branch}}.\n\n" +
+				"Procedure:\n" +
+				"1. Fetch and update your local view of the base: `git fetch origin` and note `origin/{{default_branch}}`.\n" +
+				"2. Rebase this branch onto the latest base: `git rebase origin/{{default_branch}}`.\n" +
+				"3. Resolve any conflicts carefully — understand both sides before you pick, don't blindly take one. Re-run the build/tests after resolving so you know the result still works.\n" +
+				"4. Push the rebased branch (force-with-lease, since a rebase rewrites history): `git push --force-with-lease`. Then complete the merge on GitHub with **{{strategy}}** — e.g. `gh pr merge {{pr_number}} --{{strategy}}`.\n" +
+				"5. If this PR sits in a STACK of dependent branches, work from the bottom up: after merging the base of the stack, go back to step 1 for the next branch, rebasing it onto the freshly-updated {{default_branch}} and re-targeting its base if needed.\n" +
+				"6. When resolving conflicts across a stack, before dropping any branch as redundant, get the diff stats between the branches (`git diff --stat A...B`) to confirm they really are equivalent — keeping in mind that a rebase changes commit shas, so compare TREES/diffs, not commit identity. Only drop a branch when its changes are genuinely already present.\n\n" +
+				"Be conservative: if a conflict is ambiguous or the tests don't pass after a rebase, STOP and report what you found rather than force a merge. Report the final state (merged / blocked and why) when you're done.",
+			Slots: []string{"repo", "branch", "strategy", "pr_number", "pr_title", "pr_url", "default_branch"},
+		},
+		{
+			Key:      PromptAnalyzeBlock,
+			Name:     "Analyze — block risk",
 			UsedWhen: "Sent once per code block when you click Analyze with AI on a PR. Must return the JSON described at the end.",
 			Default: "Analyze this code diff block from a pull request for RISK — how likely " +
 				"is this specific change to introduce a bug or cause problems.\n\n" +
@@ -115,8 +133,8 @@ func PromptCatalog() []PromptDef {
 			Slots: []string{"pr_title", "file", "heuristics", "diff"},
 		},
 		{
-			Key:  PromptAnalyzeSummary,
-			Name: "Analyze — PR summary",
+			Key:      PromptAnalyzeSummary,
+			Name:     "Analyze — PR summary",
 			UsedWhen: "Sent during Analyze with AI to produce the short (<100 char) PR summary.",
 			Default: "Summarize this pull request in under 100 characters.\n" +
 				"PR Title: {{pr_title}}\n" +
@@ -125,8 +143,8 @@ func PromptCatalog() []PromptDef {
 			Slots: []string{"pr_title", "key_changes"},
 		},
 		{
-			Key:  PromptRisk,
-			Name: "PR risk assessment",
+			Key:      PromptRisk,
+			Name:     "PR risk assessment",
 			UsedWhen: "Sent when the PR-level Risk assessment runs. Must return the JSON described at the end.",
 			Default: "You are a senior engineer reviewing a pull request for risk and impact.\n\n" +
 				"PR Title: {{title}}\n\n" +
@@ -144,8 +162,8 @@ func PromptCatalog() []PromptDef {
 			Slots: []string{"title", "file_health", "block_context", "diff"},
 		},
 		{
-			Key:  PromptChatPreamble,
-			Name: "Ask Claude — context preamble",
+			Key:      PromptChatPreamble,
+			Name:     "Ask Claude — context preamble",
 			UsedWhen: "Prepended to the first message when you Ask Claude about a PR or block. {{context}} holds the PR summary, block diff, and hot files Corral assembles; wrap it with your own instructions.",
 			// Default is passthrough — the assembled {{context}} already contains
 			// the intro + focus lines, so an unedited preamble changes nothing. A
@@ -154,8 +172,8 @@ func PromptCatalog() []PromptDef {
 			Slots:   []string{"context"},
 		},
 		{
-			Key:  PromptDraftIssue,
-			Name: "Draft an issue with AI — instructions",
+			Key:      PromptDraftIssue,
+			Name:     "Draft an issue with AI — instructions",
 			UsedWhen: "The instruction given to the host Claude when you click Draft with AI on a new issue (before it researches the repo).",
 			Default: "You are drafting a GitHub issue for this repository. " +
 				"Research the codebase (read relevant files, grep, explore the structure) so the issue is concrete and grounded in the actual code. " +
@@ -164,8 +182,8 @@ func PromptCatalog() []PromptDef {
 			Slots: []string{"description"},
 		},
 		{
-			Key:  PromptDraftPrompt,
-			Name: "Build a prompt with AI — instructions",
+			Key:      PromptDraftPrompt,
+			Name:     "Build a prompt with AI — instructions",
 			UsedWhen: "The instruction given to the host Claude when you click Build with AI on the project-start prompt.",
 			Default: "You are writing a project-start prompt: the first instruction given to Claude Code when it " +
 				"opens a sandboxed checkout of a repository to work on it. " +
@@ -175,8 +193,8 @@ func PromptCatalog() []PromptDef {
 			Slots: []string{"description"},
 		},
 		{
-			Key:  PromptSSHGuidance,
-			Name: "SSH push guidance",
+			Key:      PromptSSHGuidance,
+			Name:     "SSH push guidance",
 			UsedWhen: "Added to the project-start prompts (plain + from-issue) when an SSH key is configured, so Claude pushes over the SSH remote instead of HTTPS. Omitted when no key is set.",
 			Default:  DefaultSSHPushGuidance,
 			Slots:    []string{"ssh_remote"},

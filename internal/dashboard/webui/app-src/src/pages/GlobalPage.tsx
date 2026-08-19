@@ -44,6 +44,10 @@ export function GlobalPage() {
   const [logRows, setLogRows] = useState("");
   const [apiWrites, setApiWrites] = useState(false);
   const [dindDefault, setDindDefault] = useState(true);
+  // PR merge defaults. mergeStrategy "" = ask per repo on first merge.
+  const [mergeStrategy, setMergeStrategy] = useState("");
+  const [mergeMode, setMergeMode] = useState("host");
+  const [mergeAutoTeardown, setMergeAutoTeardown] = useState(true);
   // Global assistant capability (separate DB-backed setting; null until first run).
   const [assistantCap, setAssistantCap] = useState<"readonly" | "act" | null>(null);
 
@@ -69,6 +73,9 @@ export function GlobalPage() {
           setLogRows(data.log_max_rows ? String(data.log_max_rows) : "");
           setApiWrites(!!data.api_writes_enabled);
           setDindDefault(data.dind_default !== false); // default ON
+          setMergeStrategy(data.merge_strategy || ""); // "" = ask per repo
+          setMergeMode(data.merge_mode || "host");
+          setMergeAutoTeardown(data.merge_auto_teardown !== false); // default ON
           if (okMsg) setMsg({ text: okMsg, err: false });
         })
         .catch((e) => setMsg({ text: `failed to load: ${(e as Error).message}`, err: true }));
@@ -124,6 +131,9 @@ export function GlobalPage() {
     edit.log_max_rows = logRows.trim() ? Math.max(0, parseInt(logRows, 10) || 0) : 0;
     edit.api_writes_enabled = apiWrites;
     edit.dind_default = dindDefault;
+    edit.merge_strategy = mergeStrategy; // "" clears the global default
+    edit.merge_mode = mergeMode;
+    edit.merge_auto_teardown = mergeAutoTeardown;
     setApplying(true);
     try {
       const r = await postJSON<{ results?: string[] }>("/global/apply", edit);
@@ -461,6 +471,50 @@ export function GlobalPage() {
                 <code> docker compose</code>). Off gives a tighter, unprivileged box — pick this if you don't need
                 Docker and want stronger isolation. A single project can override this when it's created or in its
                 Config tab.
+              </div>
+            </div>
+          </section>
+
+          <section className="cfg-section">
+            <h3>
+              PR merging <span className="muted">— defaults for the Merge button on a PR</span>
+            </h3>
+            <div className="cfg-field">
+              <span className="cfg-ssh-name">Default merge mode</span>
+              <select className="cfg-select" value={mergeMode} onChange={(e) => setMergeMode(e.target.value)}>
+                <option value="host">Merge with host — rebase &amp; merge on the host (fast, not sandboxed)</option>
+                <option value="sandbox">Merge with sandbox — rebase &amp; merge in a one-shot container</option>
+                <option value="plain">Merge — plain gh merge, no rebase</option>
+              </select>
+              <div className="muted cfg-note">
+                Which action the Merge button runs by default. The ▾ next to it always lets you pick a different
+                mode per-merge. "Sandbox" and "host" run Claude with the editable <code>pr.merge</code> prompt
+                (Automations → Prompts) to rebase onto the base branch, resolve conflicts, and merge; "host" skips
+                the container for speed but <b>is not sandboxed</b>.
+              </div>
+            </div>
+            <div className="cfg-field">
+              <span className="cfg-ssh-name">Default merge strategy</span>
+              <select className="cfg-select" value={mergeStrategy} onChange={(e) => setMergeStrategy(e.target.value)}>
+                <option value="">Ask per repo (remember the first choice)</option>
+                <option value="squash">Squash and merge</option>
+                <option value="merge">Create a merge commit</option>
+                <option value="rebase">Rebase and merge</option>
+              </select>
+              <div className="muted cfg-note">
+                The method used when merging. A repo can set its own preference (which wins); leave this on "Ask per
+                repo" to be prompted the first time you merge each repo and have that choice remembered for it. Only
+                methods your GitHub repo actually allows are offered.
+              </div>
+            </div>
+            <div className="cfg-field">
+              <label className="cfg-ssh-item">
+                <input type="checkbox" checked={mergeAutoTeardown} onChange={(e) => setMergeAutoTeardown(e.target.checked)} />{" "}
+                <span className="cfg-ssh-name">Auto-remove the merge sandbox once merged</span>
+              </label>
+              <div className="muted cfg-note">
+                On (default): after a "merge with sandbox" job lands the PR, its one-shot container is torn down
+                automatically. Turn off if you want to inspect how conflicts were resolved before removing it.
               </div>
             </div>
           </section>

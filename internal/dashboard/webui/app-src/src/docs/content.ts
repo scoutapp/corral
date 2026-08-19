@@ -115,6 +115,17 @@ const PR_REVIEW: DocPage = {
     { p: "Corral's analysis of one PR — a fast read before you dive in." },
     { p: "Spin up a sandbox on the PR branch to verify a change hands-on, or comment/approve straight from here. Actions run as host operations against GitHub (never from inside the sandbox)." },
     { p: "Ask the Claude dock about the PR — it knows which PR you're looking at." },
+    { h: "Merging" },
+    { p: "The Merge button is a split-button: the ▾ picks how the merge runs." },
+    {
+      list: [
+        "**Merge with host** (default) — rebase-and-merge on your host for speed. Opens a live Claude drawer that rebases onto the base branch, resolves conflicts, and merges. **Not sandboxed** — it runs your host Claude with Bash against a real checkout.",
+        "**Merge with sandbox** — the same, but in a one-shot sandbox on the PR branch. Slower to start, but isolated; the sandbox tears itself down once the PR lands (toggle off in Global settings).",
+        "**Merge** — a plain `gh pr merge`, no rebase. Fails if GitHub says the PR isn't mergeable.",
+      ],
+    },
+    { p: "The **strategy** (squash / merge commit / rebase) is separate from the mode. It resolves per-repo → global → ask: the first time you merge a repo with nothing set, a modal asks and remembers your choice for that repo. Only methods your GitHub repo actually allows are offered." },
+    { p: "Set the default mode + strategy in **Global settings → PR merging**. The rebase-and-merge procedure Claude follows is the editable **pr.merge** prompt in **Automations → Prompts**." },
   ],
   more: "docs/README.md",
 };
@@ -127,6 +138,7 @@ const GLOBAL: DocPage = {
       list: [
         "Default SSH keys loaded into every sandbox's scoped agent.",
         "Global automations (prompts, hooks, flows) that apply everywhere.",
+        "**PR merging** — the default merge mode (sandbox / host / plain), the default strategy, and whether a merge sandbox auto-tears-down.",
         "The dashboard's own preferences.",
       ],
     },

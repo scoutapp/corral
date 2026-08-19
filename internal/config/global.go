@@ -56,6 +56,64 @@ type GlobalSettings struct {
 	// *bool so nil (never set — the fresh-install case) is distinguishable and
 	// resolves to the true default; false means the user deliberately chose off.
 	DindDefault *bool `json:"dind_default,omitempty"`
+
+	// MergeStrategy is the default method the PR merge UI pre-selects and the
+	// "rebase & merge in sandbox" flow tells Claude to use: "squash" | "merge" |
+	// "rebase". Empty = the built-in default ("squash"). It's only a default — the
+	// per-merge UI can still pick a different method.
+	MergeStrategy string `json:"merge_strategy,omitempty"`
+
+	// MergeAutoTeardown controls whether a "merge in sandbox" job auto-removes its
+	// one-shot sandbox once the PR is merged. DEFAULTS TO ON — a merge sandbox is a
+	// fire-and-forget worker, so cleaning it up automatically is the expected
+	// behavior; a user who wants to inspect how conflicts were resolved before the
+	// box disappears can flip it off (then tear down manually).
+	//
+	// *bool so nil (never set) resolves to the ON default, distinguishable from a
+	// deliberate off.
+	MergeAutoTeardown *bool `json:"merge_auto_teardown,omitempty"`
+
+	// MergeMode is which merge EXECUTION mode the PR merge split-button makes
+	// primary: "host" (host Claude with Bash against a throwaway host checkout —
+	// fast, not sandboxed), "sandbox" (one-shot container, Claude rebases/merges,
+	// torn down), or "plain" (`gh pr merge`, today's behavior). Empty = the
+	// built-in default ("host") — lead with speed; the ▾ dropdown always lets you
+	// pick any mode per-merge, and this only sets the default primary action.
+	MergeMode string `json:"merge_mode,omitempty"`
+}
+
+// ValidMergeMode reports whether s is one of the three merge execution modes.
+func ValidMergeMode(s string) bool {
+	return s == "sandbox" || s == "host" || s == "plain"
+}
+
+// MergeModeOrDefault returns the effective default merge mode, falling back to
+// "host" (the fast path) when unset or invalid.
+func (gs *GlobalSettings) MergeModeOrDefault() string {
+	if gs != nil && ValidMergeMode(gs.MergeMode) {
+		return gs.MergeMode
+	}
+	return "host"
+}
+
+// ValidMergeStrategy reports whether s is one of the three GitHub merge methods.
+func ValidMergeStrategy(s string) bool {
+	return s == "squash" || s == "merge" || s == "rebase"
+}
+
+// MergeStrategyOrDefault returns the effective default merge method, falling back
+// to "squash" when unset or invalid.
+func (gs *GlobalSettings) MergeStrategyOrDefault() string {
+	if gs != nil && ValidMergeStrategy(gs.MergeStrategy) {
+		return gs.MergeStrategy
+	}
+	return "squash"
+}
+
+// MergeAutoTeardownOn reports the effective auto-teardown default for merge
+// sandboxes. Nil (never set) → ON, so a merge worker cleans itself up by default.
+func (gs *GlobalSettings) MergeAutoTeardownOn() bool {
+	return gs == nil || gs.MergeAutoTeardown == nil || *gs.MergeAutoTeardown
 }
 
 // DindDefaultOn reports the effective default DinD state for new projects. Nil
