@@ -44,13 +44,13 @@ func (d *dashboardServer) handleAPIRepoMergeStrategy(w http.ResponseWriter, r *h
 // global default (or passed explicitly in the request); otherwise it errors,
 // steering the caller to set the PER-REPO default first.
 //
-//	POST /api/prs/<id>/merge   { "mode": "host"|"sandbox"|"plain", "strategy?": "..." }
+//		POST /api/prs/<id>/merge   { "mode": "host"|"sandbox"|"plain", "strategy?": "..." }
 //
-//   - plain:   merges directly via `gh pr merge` (fails if not mergeable).
-//   - host:    starts a detached host-merge background job → { jobId } (watch it in
-//     the Work tab). NOT sandboxed.
-//   - sandbox: reports that sandbox mode is launched from the dashboard (it needs a
-//     project + interactive start that the headless API doesn't drive).
+//	  - plain:   merges directly via `gh pr merge` (fails if not mergeable).
+//	  - host:    starts a detached host-merge background job → { jobId } (watch it in
+//	    the Work tab). NOT sandboxed.
+//	  - sandbox: reports that sandbox mode is launched from the dashboard (it needs a
+//	    project + interactive start that the headless API doesn't drive).
 func (d *dashboardServer) handleAPIPRMerge(w http.ResponseWriter, r *http.Request, prID int64) {
 	var body struct {
 		Mode     string `json:"mode"`

@@ -2201,6 +2201,286 @@
           }
         }
       }
+    },
+    "/api/prs/{id}/enrich": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Start AI analysis (enrich) on a PR \u2014 fire and return",
+        "description": "Kicks off the per-block AI analysis (title/explanation/edge-cases/risk + a PR summary) via host Claude, in the BACKGROUND, and returns immediately. Poll GET /api/prs/{id}/analysis for completion, then read GET /api/prs/{id}/blocks. Idempotent while running.",
+        "responses": {
+          "200": {
+            "description": "Started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "claude CLI unavailable"
+          }
+        }
+      }
+    },
+    "/api/prs/{id}/analyze": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Start the PR-level risk verdict \u2014 fire and return",
+        "description": "Kicks off the PR risk assessment via host Claude in the BACKGROUND; returns immediately. Poll GET /api/prs/{id}/analysis, then read GET /api/prs/{id}/risk.",
+        "responses": {
+          "200": {
+            "description": "Started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "claude CLI unavailable"
+          }
+        }
+      }
+    },
+    "/api/prs/{id}/analysis": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Poll AI analysis job status (enrich + risk)",
+        "description": "Returns the background-job state for both the enrich and risk analyses of a PR, so a caller knows when a fired analysis has finished.",
+        "responses": {
+          "200": {
+            "description": "Job states",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enrich": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "idle",
+                            "running",
+                            "done",
+                            "failed"
+                          ]
+                        },
+                        "error": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "risk": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "idle",
+                            "running",
+                            "done",
+                            "failed"
+                          ]
+                        },
+                        "error": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/prs/{id}/blocks": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Read a PR's analyzed blocks",
+        "description": "The hotness-ranked code blocks for a PR, including any AI enrichment. Read after enrich finishes.",
+        "responses": {
+          "200": {
+            "description": "Blocks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "blocks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "status": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/prs/{id}/risk": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Read a PR's stored risk verdict",
+        "description": "The last computed risk assessment (null if never analyzed). Read after analyze finishes.",
+        "responses": {
+          "200": {
+            "description": "Risk",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "risk": {
+                      "type": "object",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{id}/analyze": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Run repo forensics (git history hotness) \u2014 not AI",
+        "description": "Computes per-file git-history signals (churn, fix ratio, staleness) used to rank PR blocks. Synchronous; git-only, no LLM. Poll/read GET /api/repos/{id}/analysis-status.",
+        "responses": {
+          "200": {
+            "description": "Analyzed"
+          },
+          "400": {
+            "description": "repo has no local cache"
+          }
+        }
+      }
+    },
+    "/api/repos/{id}/analysis-status": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Whether a repo's forensics analysis is present/fresh",
+        "responses": {
+          "200": {
+            "description": "Status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "analyzed": {
+                      "type": "boolean"
+                    },
+                    "upToDate": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

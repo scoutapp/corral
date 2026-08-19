@@ -183,6 +183,31 @@ Only offer a `strategy` in `allowed` (what GitHub permits for that repo). Prefer
 setting the per-repo preference over a global default unless the user explicitly
 wants it applied to every repo (global lives in the dashboard's Global settings).
 
+## Running AI analysis on a PR
+
+The AI analysis (per-block "Analyze with AI" + the PR risk verdict) runs host
+Claude and takes a while, so the API is **fire-and-return**: start it, then poll.
+
+```
+corral api POST /api/prs/<prId>/enrich     # start per-block AI analysis (background)
+corral api POST /api/prs/<prId>/analyze    # start the PR risk verdict (background)
+corral api GET  /api/prs/<prId>/analysis   # poll → { enrich:{status}, risk:{status} }
+```
+
+`status` is `idle | running | done | failed`. Once `done`, read the results:
+
+```
+corral api GET /api/prs/<prId>/blocks      # analyzed blocks (after enrich)
+corral api GET /api/prs/<prId>/risk        # risk verdict (after analyze)
+```
+
+Block ranking uses repo git-history forensics (not AI). Refresh it with:
+
+```
+corral api POST /api/repos/<repoId>/analyze          # git-only, synchronous
+corral api GET  /api/repos/<repoId>/analysis-status  # analyzed / up-to-date?
+```
+
 ## PR notes (private, local)
 
 Notes are **local annotations stored only in Corral** — never posted to GitHub

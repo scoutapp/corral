@@ -114,6 +114,10 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handleAPIPRItem(w, r, strings.TrimPrefix(rest, "prs/"))
 	case strings.HasPrefix(rest, "repos/") && strings.HasSuffix(rest, "/merge-strategy"):
 		d.handleAPIRepoMergeStrategy(w, r, strings.TrimSuffix(strings.TrimPrefix(rest, "repos/"), "/merge-strategy"))
+	case strings.HasPrefix(rest, "repos/") && strings.HasSuffix(rest, "/analyze") && r.Method == http.MethodPost:
+		d.handleRepoAnalyze(w, r, strings.TrimSuffix(strings.TrimPrefix(rest, "repos/"), "/analyze"))
+	case strings.HasPrefix(rest, "repos/") && strings.HasSuffix(rest, "/analysis-status") && r.Method == http.MethodGet:
+		d.handleRepoAnalysisStatus(w, r, strings.TrimSuffix(strings.TrimPrefix(rest, "repos/"), "/analysis-status"))
 	default:
 		routeNotFound(w, r)
 	}
@@ -143,6 +147,16 @@ func (d *dashboardServer) handleAPIPRItem(w http.ResponseWriter, r *http.Request
 		d.handlePRNoteRemove(w, r, strings.TrimPrefix(action, "notes/"))
 	case action == "merge" && r.Method == http.MethodPost:
 		d.handleAPIPRMerge(w, r, prID)
+	case action == "enrich" && r.Method == http.MethodPost:
+		d.handleAPIPREnrich(w, r, prID)
+	case action == "analyze" && r.Method == http.MethodPost:
+		d.handleAPIPRRiskStart(w, r, prID)
+	case action == "analysis" && r.Method == http.MethodGet:
+		d.handleAPIPRAnalysisStatus(w, r, prID)
+	case action == "blocks" && r.Method == http.MethodGet:
+		d.handlePRBlocks(w, r, prID)
+	case action == "risk" && r.Method == http.MethodGet:
+		d.handlePRRiskGet(w, r, prID)
 	default:
 		routeNotFound(w, r)
 	}
