@@ -326,6 +326,10 @@ type dashboardServer struct {
 	// detached host `claude` (its own lifetime, independent of any WebSocket), so
 	// you can navigate away and re-attach. See merge_jobs.go.
 	mergeJobs *mergeJobRegistry
+	// analysisJobs tracks fire-and-return AI analysis runs (enrich / risk) started
+	// via the API, so a caller can poll status instead of blocking. See
+	// pr_analysis_jobs.go.
+	analysisJobs *analysisJobTracker
 }
 
 func newDashboardServer(token string) *dashboardServer {
@@ -333,6 +337,7 @@ func newDashboardServer(token string) *dashboardServer {
 	apiTok, _ := randomToken()
 	d := &dashboardServer{terms: make(map[*termSession]struct{}), token: token, apiToken: apiTok, bootID: boot}
 	d.mergeJobs = newMergeJobRegistry(d)
+	d.analysisJobs = newAnalysisJobTracker()
 	return d
 }
 
@@ -781,7 +786,6 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-
 // statusRow is the per-project JSON the landing page polls for live pane updates.
 type statusRow struct {
 	ID            string `json:"id"`
@@ -1048,7 +1052,8 @@ func parseProxyLogStamp(s string) int64 {
 //     (mitmweb has no record of them — the log is the only source).
 //
 // Log line shape (see allowlist-proxy/main.go):
-//   2026/08/05 00:56:02 DIRECT   http-intake.logs.us5.datadoghq.com:443 (not-monitored)
+//
+//	2026/08/05 00:56:02 DIRECT   http-intake.logs.us5.datadoghq.com:443 (not-monitored)
 func (d *dashboardServer) handleMitmDirect(w http.ResponseWriter, r *http.Request, id string) {
 	workspace, err := lookupWorkspaceByID(id)
 	if err != nil {
