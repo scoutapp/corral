@@ -117,12 +117,12 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 		// Firewall default is passthrough (proxy + mitm on, allow+log unknown
 		// domains). EnforceAllowlist opts into the strict allowlist (block unknown
 		// + REJECT direct TCP) — the "more restrictive" choice.
-		EnforceAllowlist bool     `json:"enforceAllowlist"`
+		EnforceAllowlist bool `json:"enforceAllowlist"`
 		// Dind: nil → use the global default (DindDefaultOn, which is ON); an
 		// explicit true/false overrides it for this project.
 		Dind  *bool    `json:"dind"`
 		Tmux  bool     `json:"tmux"`
-		Ports            []string `json:"ports"`
+		Ports []string `json:"ports"`
 		// Source records a PR/issue this project was spawned from (back-link).
 		Source *config.ProjectSource `json:"source"`
 	}
@@ -192,6 +192,14 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 	if err := RegisterProject(workspace); err != nil {
 		http.Error(w, "register: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Cross-origin linkage: if a captured Claude drove this create (via corral
+	// api), the spawning conversation id rode in on this header. Persist it so the
+	// sandbox conversation tailer can chain this project's captured conversations
+	// back to their origin. Best-effort.
+	if pc := strings.TrimSpace(r.Header.Get("X-Corral-Parent-Conversation")); pc != "" {
+		_ = os.WriteFile(filepath.Join(config.ProjectDirFor(workspace), "parent-conversation"), []byte(pc), 0600)
 	}
 
 	// Pre-trust the workspace in ~/.claude.json so the container's Claude (which

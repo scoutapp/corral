@@ -1544,10 +1544,11 @@ func CmdDashboardServe(args []string) error {
 	if *apiToken != "" {
 		server.apiToken = *apiToken
 	}
-	server.startLogRetention()  // prune app_logs on start + hourly
-	server.startConvRetention() // prune conversations.db on start + hourly
-	server.startScheduleTick()  // fire due flow schedules on start + every minute
-	server.mergeJobs.load()     // restore host-merge jobs (transcripts survive restart)
+	server.startLogRetention()    // prune app_logs on start + hourly
+	server.startConvRetention()   // prune conversations.db on start + hourly
+	server.startSandboxConvTail() // mirror running sandboxes' own Claude transcripts
+	server.startScheduleTick()    // fire due flow schedules on start + every minute
+	server.mergeJobs.load()       // restore host-merge jobs (transcripts survive restart)
 	// Reconcile any conversation left "running" by a previous run (its process is
 	// gone) → "interrupted". Best-effort; ignore an unopenable convstore.
 	if cs, err := server.getConvStore(); err == nil {
