@@ -1674,9 +1674,10 @@ table.projects th, table.projects td {
   display: flex; align-items: center; justify-content: center;
 }
 .merge-ask {
-  background: var(--con-bg); border: 1px solid var(--con-line); border-radius: 8px;
+  background: var(--con-panel, #12161f); border: 1px solid var(--con-line); border-radius: 8px;
+  color: var(--con-text);
   padding: 1.1rem 1.2rem; max-width: 26rem; width: calc(100% - 2rem);
-  box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.55);
 }
 .merge-ask-head { font-weight: 600; margin-bottom: 0.4rem; }
 .merge-ask-options { display: flex; flex-direction: column; gap: 0.4rem; margin: 0.8rem 0 0.6rem; }
