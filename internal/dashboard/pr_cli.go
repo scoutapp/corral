@@ -27,6 +27,10 @@ func CmdPR(args []string) error {
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
+	case "list":
+		return prList(rest)
+	case "fetch":
+		return prFetch(rest)
 	case "links":
 		return prLinksList(rest)
 	case "suggest":
@@ -45,6 +49,8 @@ func CmdPR(args []string) error {
 func prUsage() error {
 	fmt.Fprint(os.Stderr, `usage: corral pr <command>
 
+  list    [--repo <id>] [--open]          list PRs (inbox across repos, or one repo)
+  fetch   --repo <id> --number <n>        cache a PR from GitHub, print its internal id
   links   <prId>                          list a PR's local links
   suggest <prId>                          suggest PRs to link (by changed-file overlap)
   stack   <prId>                          detect stacked PRs (git ancestry, from the mirror)
@@ -83,6 +89,71 @@ func parsePRID(s string) (int64, error) {
 		return 0, fmt.Errorf("invalid pr id %q (expected a Corral internal id)", s)
 	}
 	return id, nil
+}
+
+// prList lists PRs. With no --repo it's the cross-repo inbox (open PRs, keyed by
+// repo + GitHub number). With --repo it lists that repo's CACHED PRs (which carry
+// the internal id used by the other pr commands); add --open for the repo's live
+// open PRs from GitHub.
+func prList(args []string) error {
+	var repoID string
+	var open bool
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--repo":
+			if i+1 < len(args) {
+				repoID = args[i+1]
+				i++
+			}
+		case "--open":
+			open = true
+		}
+	}
+	var path string
+	switch {
+	case repoID == "":
+		path = "/api/prs/inbox"
+	case open:
+		path = "/api/repos/" + repoID + "/prs/open"
+	default:
+		path = "/api/repos/" + repoID + "/prs"
+	}
+	status, body, err := dashboardRequest("GET", path, "")
+	if err != nil {
+		return err
+	}
+	return prPrintResult(status, body)
+}
+
+// prFetch caches a PR from GitHub into Corral and prints it (including its
+// internal id) — the bridge from "a PR number I found in the inbox" to "an
+// internal id I can act on" (notes/merge/links/stack/…).
+func prFetch(args []string) error {
+	var repoID string
+	var number int64
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--repo":
+			if i+1 < len(args) {
+				repoID = args[i+1]
+				i++
+			}
+		case "--number":
+			if i+1 < len(args) {
+				number, _ = strconv.ParseInt(args[i+1], 10, 64)
+				i++
+			}
+		}
+	}
+	if repoID == "" || number <= 0 {
+		return fmt.Errorf("usage: corral pr fetch --repo <id> --number <n>")
+	}
+	payload, _ := json.Marshal(map[string]any{"number": number})
+	status, body, err := dashboardRequest("POST", "/api/repos/"+repoID+"/prs/fetch", string(payload))
+	if err != nil {
+		return err
+	}
+	return prPrintResult(status, body)
 }
 
 func prLinksList(args []string) error {
