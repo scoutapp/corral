@@ -78,6 +78,33 @@ break the ask into tasks, kick off a worker per task, and keep going.
 - Workers run on the HOST and are **not sandboxed**; they use the operator's
   global-chat tool capability (read-only vs act).
 
+### When a worker operates on a Corral project (sandbox)
+
+A worker itself runs on the host, but its *task* often lives inside a project's
+sandbox container (e.g. "verify this PR", "get the app running"). When you write
+such a worker prompt, tell it how to reach and run the app inside the sandbox:
+
+- **Run commands inside the sandbox** with `corral project exec <projectId> -- <cmd>`
+  (fall back to `docker exec <container> …` if needed). Say so explicitly in the
+  prompt and give the project id + workspace path.
+- **Prefer Docker-in-Docker for services.** Sandboxes usually have an inner Docker
+  daemon (`DIND_ENABLED=1`, with `DOCKER_HOST` already exported inside the
+  container). If the app ships a `docker-compose.yml` / `Dockerfile` / Procfile
+  with a container convention, bring dependencies up that way —
+  `docker compose up -d` or `docker run` for Postgres/Redis/etc. Inner volumes
+  persist under the project's `dind-data/`, so this is the durable, repeatable
+  path. Instruct the worker to check for `DOCKER_HOST` and a compose/Dockerfile
+  first.
+- **But not every app is containerized — fall back gracefully.** If the app has no
+  compose/Dockerfile (or it doesn't cover the needed services), the worker should
+  **install the requirements directly in the sandbox** to get it running: the
+  language runtime (e.g. via `mise`/`asdf`/system packages), the app's
+  dependencies (`bundle install`, `npm ci`, `pip install`, …), and any datastore
+  it can run in-container or point at an available host/service endpoint. Getting
+  the app runnable is the goal; DinD is the preferred means, not a hard
+  requirement. Make this fallback explicit in the prompt so the worker doesn't get
+  stuck insisting on Docker for an app that doesn't support it.
+
 ## Reads vs writes — the permission gate
 
 **Reads (GET) always work.** You can always inspect: list flows, read logs, look

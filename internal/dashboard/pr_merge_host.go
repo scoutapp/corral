@@ -206,6 +206,38 @@ func (j *mergeJob) steerCh() chan string {
 	return j.steer
 }
 
+// queueSteer accepts a follow-up prompt from a viewer and, crucially, gives
+// visible feedback. The run loop only *reads* steerCh() while parked idle
+// between turns, so a steer sent to a busy worker (mid-turn) sits buffered and
+// silent — which reads to the user as "my message didn't send". We instead emit
+// a transcript line so every viewer sees the message was received, whether it
+// runs now (worker idle) or is queued until the current turn finishes. The steer
+// buffer is large; if it ever fills, say so rather than dropping silently.
+func (j *mergeJob) queueSteer(prompt string) {
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return
+	}
+	j.mu.Lock()
+	busy := j.Status == mergeJobRunning || j.Status == mergeJobPreparing
+	j.mu.Unlock()
+
+	select {
+	case j.steerCh() <- prompt:
+		if busy {
+			// The run loop is mid-turn and won't read this until the turn ends.
+			j.emit(chatServerMsg{Type: "text",
+				Text: "\n💬 Message received — the worker is mid-step; it'll pick this up when the current step finishes.\n"})
+		}
+		// When idle, the loop consumes it immediately and the resulting turn is
+		// its own visible acknowledgment, so no extra line is needed.
+	default:
+		// Buffer full (many steers stacked up on a stuck turn). Never drop silently.
+		j.emit(chatServerMsg{Type: "error",
+			Text: "\n⚠️ Couldn't queue your message — several are already waiting for the worker to finish its current step. Try again once it catches up.\n"})
+	}
+}
+
 // handlePRMergeHostWS (kept for the existing PR-page drawer) attaches to this
 // PR's live host-merge job — starting one on the fly if none is running yet, so
 // a client that just opens this WS (the pre-Work-tab drawer) still kicks off and
@@ -286,10 +318,7 @@ func (d *dashboardServer) attachMergeJobWS(w http.ResponseWriter, r *http.Reques
 				continue
 			}
 			if strings.TrimSpace(msg.Prompt) != "" {
-				select {
-				case job.steerCh() <- msg.Prompt:
-				default:
-				}
+				job.queueSteer(msg.Prompt)
 			}
 		}
 	}()
