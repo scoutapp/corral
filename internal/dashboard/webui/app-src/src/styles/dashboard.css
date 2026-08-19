@@ -2570,7 +2570,14 @@ table.projects th, table.projects td {
 
 .chatdock {
   position: fixed; top: 0; right: 0; height: 100vh; width: min(440px, 92vw);
-  z-index: 70; background: var(--bg); border-left: 1px solid var(--border);
+  z-index: 70;
+  /* Raised-surface shade, one step off the page --bg, so the dock reads as a
+     panel floating over the page instead of blending into it. The chat tabs
+     paint their own opaque cream surface on top; this shade is what the Work
+     tab and the dock chrome (header + tab strip) sit on — without it the Work
+     tab's grey was the same value as the page behind it and the edge vanished. */
+  background: var(--panel);
+  border-left: 1px solid var(--border);
   box-shadow: -16px 0 48px -20px rgba(0,0,0,0.7);
   display: flex; flex-direction: column;
   transform: translateX(100%); transition: transform 0.18s ease;
@@ -2610,6 +2617,9 @@ table.projects th, table.projects td {
 .work-rail {
   width: 11rem; flex: 0 0 11rem; overflow-y: auto;
   border-right: 1px solid var(--border);
+  /* Recess the rail a touch below the dock panel so the list vs. viewer split
+     reads as two layers, not one flat grey sheet. */
+  background: color-mix(in srgb, var(--bg) 55%, var(--panel));
 }
 .work-rail-item { display: flex; align-items: stretch; border-bottom: 1px solid var(--border); }
 .work-rail-btn {
