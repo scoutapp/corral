@@ -2531,6 +2531,451 @@
           }
         }
       }
+    },
+    "/api/conversations": {
+      "get": {
+        "summary": "List captured Claude conversations (keyset, filterable, deep-search)",
+        "description": "Newest-first keyset page of captured conversations. Filters: origin, project, repo, trace, parent. q is a full-text (FTS5) search across ALL message text/tool calls \u2014 returns conversations with a matching message. Reads are always allowed.",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "origin",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "trace",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "parent",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "conversations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "originKind": {
+                            "type": "string"
+                          },
+                          "projectId": {
+                            "type": "string"
+                          },
+                          "projectLabel": {
+                            "type": "string"
+                          },
+                          "repoId": {
+                            "type": "string"
+                          },
+                          "prNumber": {
+                            "type": "integer"
+                          },
+                          "traceId": {
+                            "type": "string"
+                          },
+                          "parentConversationId": {
+                            "type": "integer"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "messageCount": {
+                            "type": "integer"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "nextCursor": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversations/facets": {
+      "get": {
+        "summary": "Distinct conversation origins + projects (filter menus)",
+        "responses": {
+          "200": {
+            "description": "Facets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "origins": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "projects": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversations/search": {
+      "get": {
+        "summary": "Deep search across all conversations (alias of list with q)",
+        "description": "Same as GET /api/conversations with a q; a friendlier path for a full-text search. Filters compose with q.",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "origin",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "trace",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "parent",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "conversations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "originKind": {
+                            "type": "string"
+                          },
+                          "projectId": {
+                            "type": "string"
+                          },
+                          "projectLabel": {
+                            "type": "string"
+                          },
+                          "repoId": {
+                            "type": "string"
+                          },
+                          "prNumber": {
+                            "type": "integer"
+                          },
+                          "traceId": {
+                            "type": "string"
+                          },
+                          "parentConversationId": {
+                            "type": "integer"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "messageCount": {
+                            "type": "integer"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "nextCursor": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversations/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Get one conversation's metadata",
+        "responses": {
+          "200": {
+            "description": "Conversation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "conversation": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "originKind": {
+                          "type": "string"
+                        },
+                        "projectId": {
+                          "type": "string"
+                        },
+                        "projectLabel": {
+                          "type": "string"
+                        },
+                        "repoId": {
+                          "type": "string"
+                        },
+                        "prNumber": {
+                          "type": "integer"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        },
+                        "parentConversationId": {
+                          "type": "integer"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "messageCount": {
+                          "type": "integer"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not found"
+          }
+        }
+      }
+    },
+    "/api/conversations/{id}/messages": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Get a conversation's messages (in order); ?q= searches within it",
+        "description": "Returns the conversation's messages ordered by seq. With ?q=, returns only messages matching the in-conversation full-text search.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "messages": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "seq": {
+                            "type": "integer"
+                          },
+                          "role": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "toolName": {
+                            "type": "string"
+                          },
+                          "toolInput": {
+                            "type": "string"
+                          },
+                          "toolResult": {
+                            "type": "string"
+                          },
+                          "isError": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
