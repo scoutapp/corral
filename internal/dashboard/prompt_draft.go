@@ -52,7 +52,10 @@ func (d *dashboardServer) handlePromptDraftWS(w http.ResponseWriter, r *http.Req
 		return
 	}
 	defer conn.Close()
-	send := func(m chatServerMsg) error { return conn.WriteJSON(m) }
+	rawSend := func(m chatServerMsg) error { return conn.WriteJSON(m) }
+	// Capture the draft conversation (both turns in one row); best-effort.
+	capt, send, finalize := d.captureSend(context.Background(), convOrigin{Kind: "prompt-draft", RepoID: repoID}, rawSend)
+	defer finalize("done")
 
 	_, data, err := conn.ReadMessage()
 	if err != nil {
@@ -66,6 +69,7 @@ func (d *dashboardServer) handlePromptDraftWS(w http.ResponseWriter, r *http.Req
 		_ = send(chatServerMsg{Type: "error", Text: "a description is required"})
 		return
 	}
+	capt.recordPrompt(in.Description)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

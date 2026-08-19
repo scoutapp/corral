@@ -128,32 +128,41 @@ func (d *dashboardServer) runMergeJob(claudeBin string, job *mergeJob) {
 	defer cancel()
 	defer job.finish()
 
+	// Capture this merge's conversation into the conversations DB (best-effort;
+	// never blocks job.emit / the Work-tab stream). Origin carries PR linkage.
+	capt, send, finalize := d.captureSend(ctx, convOrigin{
+		Kind: jobKindMerge, OriginID: job.ID,
+		RepoID: job.RepoID, PRNumber: job.PRNumber,
+	}, job.emit)
+	defer finalize(mergeJobDone)
+
 	// Prepare the throwaway host checkout on the PR branch (CloneLocal repoints
 	// origin at the real remote, so push / gh merge use host git/gh auth).
-	job.emit(chatServerMsg{Type: "text", Text: fmt.Sprintf("Preparing a host checkout of %s on %s…\n", job.RepoName, prBranchLabel(job))})
+	send(chatServerMsg{Type: "text", Text: fmt.Sprintf("Preparing a host checkout of %s on %s…\n", job.RepoName, prBranchLabel(job))})
 	_ = os.RemoveAll(job.Checkout)
 	if err := repos.CloneLocal(job.RepoID, job.Checkout, prMergeBranch(d, job)); err != nil {
-		job.emit(chatServerMsg{Type: "error", Text: "failed to prepare host checkout: " + err.Error()})
+		send(chatServerMsg{Type: "error", Text: "failed to prepare host checkout: " + err.Error()})
 		d.mergeJobs.setStatus(job, mergeJobFailed)
 		return
 	}
 
 	tools := []string{"Bash", "Read", "Edit", "Write", "Grep", "Glob"}
 
-	// runTurn streams one claude turn's events into the job (transcript + fanout).
+	// runTurn streams one claude turn's events into the job (transcript + fanout + capture).
 	runTurn := func(prompt string) bool {
 		d.mergeJobs.setStatus(job, mergeJobRunning)
+		capt.recordPrompt(prompt)
 		job.mu.Lock()
 		sid := job.sessionID
 		job.mu.Unlock()
-		newSession, canceled := d.runChatTurn(ctx, claudeBin, job.Checkout, tools, prompt, sid, job.emit)
+		newSession, canceled := d.runChatTurn(ctx, claudeBin, job.Checkout, tools, prompt, sid, send)
 		job.mu.Lock()
 		job.sessionID = newSession
 		job.mu.Unlock()
 		if canceled {
-			job.emit(chatServerMsg{Type: "canceled"})
+			send(chatServerMsg{Type: "canceled"})
 		}
-		job.emit(chatServerMsg{Type: "turn_end"})
+		send(chatServerMsg{Type: "turn_end"})
 		return canceled
 	}
 

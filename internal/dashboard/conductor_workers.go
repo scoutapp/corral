@@ -103,19 +103,27 @@ func (d *dashboardServer) runWorkerJob(claudeBin string, job *mergeJob) {
 	tools := globalChatTools(cap, ok)
 	workdir := globalChatDir()
 
+	// Capture this worker's conversation into the conversations DB (best-effort;
+	// never blocks job.emit / the Work-tab stream). One conversation per job.
+	capt, send, finalize := d.captureSend(ctx, convOrigin{
+		Kind: jobKindWorker, OriginID: job.ID,
+	}, job.emit)
+	defer finalize(mergeJobDone)
+
 	runTurn := func(prompt string) bool {
 		d.mergeJobs.setStatus(job, mergeJobRunning)
+		capt.recordPrompt(prompt)
 		job.mu.Lock()
 		sid := job.sessionID
 		job.mu.Unlock()
-		newSession, canceled := d.runChatTurn(ctx, claudeBin, workdir, tools, prompt, sid, job.emit)
+		newSession, canceled := d.runChatTurn(ctx, claudeBin, workdir, tools, prompt, sid, send)
 		job.mu.Lock()
 		job.sessionID = newSession
 		job.mu.Unlock()
 		if canceled {
-			job.emit(chatServerMsg{Type: "canceled"})
+			send(chatServerMsg{Type: "canceled"})
 		}
-		job.emit(chatServerMsg{Type: "turn_end"})
+		send(chatServerMsg{Type: "turn_end"})
 		return canceled
 	}
 
