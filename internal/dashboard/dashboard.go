@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/convstore"
 	"github.com/scoutapp/corral/internal/mcp"
 	"github.com/scoutapp/corral/internal/session"
 	"github.com/scoutapp/corral/internal/store"
@@ -316,6 +317,10 @@ type dashboardServer struct {
 	// Review feature and is opened lazily on first use so the dashboard still
 	// starts if the DB can't be opened; PR-review endpoints then report the error.
 	store *store.Store
+	// convStore is the SECOND, write-heavy database (~/.corral/conversations.db)
+	// that captures every Claude conversation in the app. Opened lazily like store
+	// so capture failures never block the dashboard or the live chat stream.
+	convStore *convstore.ConvStore
 	// mcpClientOverride, when set (tests only), replaces the real `claude mcp`
 	// client so /api/mcp handlers don't shell out to the CLI.
 	mcpClientOverride *mcp.Client
@@ -355,6 +360,24 @@ func (d *dashboardServer) getStore() (*store.Store, error) {
 		return nil, err
 	}
 	d.store = s
+	return s, nil
+}
+
+// getConvStore opens the conversations database on first use and caches the
+// handle (mirrors getStore). Opened lazily and independently of the app DB so a
+// convstore problem never blocks dashboard startup; capture call sites treat an
+// error as "skip capture" and never fail the live stream.
+func (d *dashboardServer) getConvStore() (*convstore.ConvStore, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.convStore != nil {
+		return d.convStore, nil
+	}
+	s, err := convstore.Open()
+	if err != nil {
+		return nil, err
+	}
+	d.convStore = s
 	return s, nil
 }
 

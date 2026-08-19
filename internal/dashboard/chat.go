@@ -135,7 +135,8 @@ func (d *dashboardServer) handleChatWS(w http.ResponseWriter, r *http.Request, i
 		return
 	}
 	tools := parseChatTools(r.URL.Query().Get("tools"))
-	d.runChatSession(w, r, workspace, claudeBin, tools, "", r.URL.Query().Get("resume"))
+	origin := convOrigin{Kind: "project-chat", ProjectID: ProjectID(workspace), ProjectLabel: filepath.Base(workspace)}
+	d.runChatSession(w, r, workspace, claudeBin, tools, "", r.URL.Query().Get("resume"), origin)
 }
 
 // handleGlobalChatWS is the app-wide "Claude everywhere" chat (/chat/ws) — not
@@ -159,13 +160,13 @@ func (d *dashboardServer) handleGlobalChatWS(w http.ResponseWriter, r *http.Requ
 	contextHint := r.URL.Query().Get("ctx")
 	resume := r.URL.Query().Get("resume")
 	// Empty workspace → runChatTurn runs in the global chat dir (~/.corral).
-	d.runChatSession(w, r, "", claudeBin, tools, contextHint, resume)
+	d.runChatSession(w, r, "", claudeBin, tools, contextHint, resume, convOrigin{Kind: "global-chat"})
 }
 
 // runChatSession upgrades to a WebSocket and drives the turn loop for a chat,
 // project-scoped (workspace set) or global (workspace ""). Shared by
 // handleChatWS and handleGlobalChatWS.
-func (d *dashboardServer) runChatSession(w http.ResponseWriter, r *http.Request, workspace, claudeBin string, tools []string, contextHint, resume string) {
+func (d *dashboardServer) runChatSession(w http.ResponseWriter, r *http.Request, workspace, claudeBin string, tools []string, contextHint, resume string, origin convOrigin) {
 	conn, err := terminalUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
@@ -174,11 +175,17 @@ func (d *dashboardServer) runChatSession(w http.ResponseWriter, r *http.Request,
 
 	// writeMu serializes writes; the read loop and the running turn both write.
 	var writeMu sync.Mutex
-	send := func(m chatServerMsg) error {
+	rawSend := func(m chatServerMsg) error {
 		writeMu.Lock()
 		defer writeMu.Unlock()
 		return conn.WriteJSON(m)
 	}
+
+	// Tee every frame into the conversations DB (best-effort; never blocks the
+	// live stream). One capturer per connection = one conversation across all its
+	// turns. finalize stamps the terminal status when the socket closes.
+	cap, send, finalize := d.captureSend(r.Context(), origin, rawSend)
+	defer finalize("done")
 
 	// turnCancel, when non-nil, cancels the in-flight turn's process; guarded by
 	// turnMu since it's set by the read loop and cleared by the turn goroutine.
@@ -230,6 +237,10 @@ func (d *dashboardServer) runChatSession(w http.ResponseWriter, r *http.Request,
 		}
 		prompt := withContextHint(msg.Prompt, hint, sessionID == "")
 
+		// Capture the user's prompt (the raw text, not the context-hinted wrapper)
+		// before the turn — the stream doesn't echo it back. Best-effort.
+		cap.recordPrompt(msg.Prompt)
+
 		// Run the turn in a goroutine so the read loop stays responsive to cancel.
 		ctx, cancel := context.WithCancel(r.Context())
 		turnMu.Lock()
@@ -242,7 +253,7 @@ func (d *dashboardServer) runChatSession(w http.ResponseWriter, r *http.Request,
 			// does in-turn (and, once #3/#4 land, the API actions it drives) nests
 			// under this span. Untraced context → StartSpan mints a fresh trace_id.
 			turnCtx, endTurn := d.applog().StartSpan(ctx, applog.Entry{
-				Category:  applog.CatChat, Event: "chat.turn",
+				Category: applog.CatChat, Event: "chat.turn",
 				Message:   applog.Fmt("Chat turn: %s", truncate(prompt, 80)),
 				ProjectID: ProjectID(workspace),
 			})
@@ -540,4 +551,3 @@ func toolResultText(raw json.RawMessage) string {
 func formatUSD(v float64) string {
 	return fmt.Sprintf("$%.2f", v)
 }
-
