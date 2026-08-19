@@ -31,7 +31,10 @@ if ! command -v go >/dev/null 2>&1; then
   echo "Error: 'go' is not installed. Install Go 1.21+ and re-run." >&2
   exit 1
 fi
-go build -o "$REPO_DIR/corral" "$REPO_DIR/cmd/corral"
+# -tags sqlite_fts5: the conversations DB (internal/convstore) uses SQLite FTS5
+# for full-text conversation search, which the go-sqlite3 driver only compiles in
+# under this build tag. Must match the release build (.goreleaser.*.yml).
+go build -tags sqlite_fts5 -o "$REPO_DIR/corral" "$REPO_DIR/cmd/corral"
 
 # The dashboard's Terminal tab is a self-contained PTY-over-WebSocket bridge built
 # into the binary (see internal/dashboard/terminal.go) — it no longer needs the
