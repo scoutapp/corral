@@ -2304,6 +2304,8 @@ table.projects th, table.projects td {
 .logs-panel-toolbar { display: flex; justify-content: flex-end; margin-bottom: 0.4rem; }
 
 /* Conversations panel (Logs "Conversations" tab + sandbox tab). */
+.conv-tab { padding: 0.9rem 1rem; }
+.conv-tab-note { font-size: 0.75rem; margin-bottom: 0.7rem; line-height: 1.4; }
 .conv-panel, .conv-detail { display: flex; flex-direction: column; min-height: 0; }
 .conv-toolbar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.75rem; }
 .conv-search { flex: 1; min-width: 200px; }

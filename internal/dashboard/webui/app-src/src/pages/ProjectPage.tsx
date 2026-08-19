@@ -14,8 +14,9 @@ import { ConfigTab } from "../tabs/ConfigTab";
 import { MitmTab } from "../tabs/MitmTab";
 import { FirewallTab } from "../tabs/FirewallTab";
 import { LiveViewTab } from "../tabs/LiveViewTab";
+import { ConversationsTab } from "../tabs/ConversationsTab";
 
-type Tab = "files" | "diff" | "container" | "liveview" | "mitm" | "firewall" | "config";
+type Tab = "files" | "diff" | "container" | "liveview" | "mitm" | "firewall" | "conversations" | "config";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "files", label: "Files" },
@@ -24,6 +25,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "liveview", label: "Live View" },
   { key: "mitm", label: "Mitm Proxy" },
   { key: "firewall", label: "Firewall Log" },
+  { key: "conversations", label: "Conversations" },
   { key: "config", label: "Config" },
 ];
 
@@ -63,6 +65,7 @@ export function ProjectPage({ id }: { id: string }) {
     liveview: false,
     mitm: false,
     firewall: false,
+    conversations: false,
     config: false,
   });
   // Bumped each time the Config tab is (re)activated, so ConfigTab re-fetches
@@ -269,6 +272,9 @@ export function ProjectPage({ id }: { id: string }) {
           </div>
           <div id="tab-firewall" className="tab-panel" style={{ display: tab === "firewall" ? "block" : "none" }}>
             {seen.firewall && <FirewallTab projectId={id} />}
+          </div>
+          <div id="tab-conversations" className="tab-panel" style={{ display: tab === "conversations" ? "block" : "none", flex: "1 1 auto", minHeight: 0, overflow: "auto" }}>
+            {seen.conversations && <ConversationsTab projectId={id} />}
           </div>
           <div id="tab-config" className="tab-panel" style={{ display: tab === "config" ? "block" : "none", flex: "1 1 auto", minHeight: 0 }}>
             {seen.config && <ConfigTab projectId={id} refreshKey={configRefresh} />}
