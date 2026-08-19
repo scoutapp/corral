@@ -84,6 +84,7 @@ func (d *dashboardServer) startMergeJob(prID int64) (*mergeJob, error) {
 
 	job := &mergeJob{
 		ID:        newMergeJobID(mi.Number),
+		Kind:      jobKindMerge,
 		PRID:      prID,
 		RepoID:    repoID,
 		OwnerName: ownerName,
@@ -302,8 +303,14 @@ func (d *dashboardServer) handleMergeJobsList(w http.ResponseWriter, r *http.Req
 	list := d.mergeJobs.list()
 	out := make([]map[string]any, 0, len(list))
 	for _, j := range list {
+		kind := j.Kind
+		if kind == "" {
+			kind = jobKindMerge
+		}
 		out = append(out, map[string]any{
 			"id":        j.ID,
+			"kind":      kind,
+			"title":     j.Title,
 			"prId":      j.PRID,
 			"repoId":    j.RepoID,
 			"prNumber":  j.PRNumber,

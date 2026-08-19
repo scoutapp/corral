@@ -17,11 +17,19 @@ type MergeJob = {
   strategy: string;
   status: string; // preparing | running | idle | done | failed | canceled | interrupted
   activity?: string; // "working" | "idle" | "" — live output-recency signal (server-side)
+  kind?: string; // "merge" | "worker"
+  title?: string; // worker label (worker kind)
   createdAt: string;
 };
 
 // A job is "live" (still doing or able to do work) in these states.
 const LIVE = new Set(["preparing", "running", "idle"]);
+
+// jobLabel is the human name for a job: a worker's title, else "repo #PR".
+function jobLabel(j: { kind?: string; title?: string; repoName: string; prNumber: number }): string {
+  if (j.kind === "worker") return j.title || "worker";
+  return `${j.repoName} #${j.prNumber}`;
+}
 
 // statusClass maps a job to its indicator dot. For a LIVE job the server-side
 // activity signal drives it (recent output = working/green pulse, quiet = idle/
@@ -67,9 +75,8 @@ export function WorkTab({ onCount }: { onCount?: (n: number) => void }) {
 
   const close = async (job: MergeJob) => {
     if (LIVE.has(job.status)) {
-      const ok = window.confirm(
-        `"${job.repoName} #${job.prNumber}" is still merging. Stop it and remove the job?`,
-      );
+      const verb = job.kind === "worker" ? "still running" : "still merging";
+      const ok = window.confirm(`"${jobLabel(job)}" is ${verb}. Stop it and remove the job?`);
       if (!ok) return;
     }
     try {
@@ -100,7 +107,13 @@ export function WorkTab({ onCount }: { onCount?: (n: number) => void }) {
             <button type="button" className="work-rail-btn" onClick={() => setActive(j.id)} title={`${j.status} · ${j.strategy}`}>
               <i className={statusClass(j)} />
               <span className="work-rail-label">
-                {j.repoName} <span className="work-rail-pr">#{j.prNumber}</span>
+                {j.kind === "worker" ? (
+                  j.title || "worker"
+                ) : (
+                  <>
+                    {j.repoName} <span className="work-rail-pr">#{j.prNumber}</span>
+                  </>
+                )}
               </span>
               <span className="work-rail-status">{LIVE.has(j.status) && j.activity ? j.activity : j.status}</span>
             </button>
@@ -115,17 +128,20 @@ export function WorkTab({ onCount }: { onCount?: (n: number) => void }) {
         {activeJob ? (
           <>
             <div className="work-view-head">
-              <span className="ai-warn" title="Runs your host machine's Claude with Bash against a real git checkout; not sandboxed">
+              <span className="ai-warn" title="Runs your host machine's Claude; not sandboxed">
                 host · not sandboxed
               </span>
               <span className="work-view-title">
-                {activeJob.repoName} #{activeJob.prNumber} · {activeJob.strategy}
+                {jobLabel(activeJob)}
+                {activeJob.kind !== "worker" && activeJob.strategy ? ` · ${activeJob.strategy}` : ""}
               </span>
             </div>
-            <div className="work-view-hint">
-              This runs the editable <b>pr.merge</b> prompt — change it in{" "}
-              <a href="/automations">Automations → Prompts</a>.
-            </div>
+            {activeJob.kind !== "worker" && (
+              <div className="work-view-hint">
+                This runs the editable <b>pr.merge</b> prompt — change it in{" "}
+                <a href="/automations">Automations → Prompts</a>.
+              </div>
+            )}
             {/* Re-mount the panel per job id so switching jobs points the WS at the
                 right one and replays that job's transcript. */}
             <div className="work-view-panel">

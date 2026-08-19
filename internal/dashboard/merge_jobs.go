@@ -41,9 +41,22 @@ const (
 	mergeJobInterrupted = "interrupted" // process didn't survive a dashboard restart
 )
 
-// mergeJob is one background host-merge job.
+// Job kinds. The registry holds any detached host-Claude job; Kind distinguishes
+// them so the Work tab and handlers can treat them appropriately.
+const (
+	jobKindMerge  = "merge"  // rebase-and-merge a PR (RepoName/PRNumber/Strategy set)
+	jobKindWorker = "worker" // a conductor-spawned task worker (Title/Prompt set)
+)
+
+// mergeJob is one background host-Claude job. Despite the name it's the generic
+// job type for the registry: a "merge" kind (rebase-and-merge a PR) or a
+// "worker" kind (a conductor-spawned task Claude). Merge-specific fields
+// (RepoName/PRNumber/Strategy/Branch/Checkout) are empty for workers; Title
+// labels a worker (empty for merges, which label by repo #PR).
 type mergeJob struct {
 	ID        string `json:"id"`
+	Kind      string `json:"kind"`  // merge | worker (empty legacy value = merge)
+	Title     string `json:"title"` // worker label (workers only)
 	PRID      int64  `json:"prId"`
 	RepoID    string `json:"repoId"`
 	OwnerName string `json:"ownerName"`
@@ -116,6 +129,9 @@ func (r *mergeJobRegistry) load() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, j := range persisted {
+		if j.Kind == "" {
+			j.Kind = jobKindMerge // legacy jobs predate the kind field
+		}
 		switch j.Status {
 		case mergeJobRunning, mergeJobPreparing, mergeJobIdle:
 			j.Status = mergeJobInterrupted
