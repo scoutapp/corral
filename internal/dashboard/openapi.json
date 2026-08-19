@@ -914,7 +914,28 @@
         },
         "responses": {
           "200": {
-            "description": "Created"
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "workspace": {
+                      "type": "string"
+                    },
+                    "start_prompt": {
+                      "type": "string"
+                    },
+                    "issue_prompt": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -4109,15 +4130,100 @@
       },
       "ProjectCreateInput": {
         "type": "object",
+        "description": "Create a project. Mode is INFERRED when omitted: repoId/repos \u2192 clone, path \u2192 existing, name \u2192 new. Pass mode explicitly to override.",
         "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "clone",
+              "existing",
+              "new"
+            ],
+            "description": "Optional. clone = fresh clone of repoId/repos at branch; existing = register an existing dir at path; new = blank workspace named name. Inferred from the other fields if omitted."
+          },
           "repoId": {
-            "type": "string"
+            "type": "string",
+            "description": "A Corral repo id to clone (shorthand for a single-repo clone). See GET /repos."
           },
           "branch": {
-            "type": "string"
+            "type": "string",
+            "description": "Branch to check out for repoId (default: the repo's default branch)."
+          },
+          "repos": {
+            "type": "array",
+            "description": "Multi-repo clone: each entry {repoId|url|localPath, branch?, dir?}. Alternative to repoId.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "repoId": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                },
+                "localPath": {
+                  "type": "string"
+                },
+                "branch": {
+                  "type": "string"
+                },
+                "dir": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "name": {
+            "type": "string",
+            "description": "Workspace name (mode=new; also labels a clone)."
+          },
+          "path": {
+            "type": "string",
+            "description": "An existing directory to register (mode=existing), or a parent dir for a new workspace."
           },
           "prompt": {
-            "type": "string"
+            "type": "string",
+            "description": "First prompt auto-submitted to Claude when the sandbox starts."
+          },
+          "dind": {
+            "type": "boolean",
+            "description": "Docker-in-Docker for this project (default: the global setting)."
+          },
+          "proxy": {
+            "type": "boolean"
+          },
+          "enforceAllowlist": {
+            "type": "boolean"
+          },
+          "tmux": {
+            "type": "boolean"
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source": {
+            "type": "object",
+            "description": "Back-link to a PR/issue this project was spawned from.",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "repo_id": {
+                "type": "string"
+              },
+              "number": {
+                "type": "integer"
+              },
+              "url": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
           }
         }
       },
