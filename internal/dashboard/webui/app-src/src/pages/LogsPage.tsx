@@ -339,23 +339,27 @@ export function LogsPage() {
           </Link>
           <span className="brand-name">Logs</span>
         </div>
-        <div className="logs-tabs">
+      </header>
+      {/* A prominent tab strip (same treatment as the sandbox project tabs)
+          rather than tucked-away header buttons. */}
+      <div className="logs-page-tabs">
+        <div className="tabs">
           <button
             type="button"
-            className={`dock-toggle${tab === "logs" ? " on" : ""}`}
+            className={`tab-btn${tab === "logs" ? " active" : ""}`}
             onClick={() => setTab("logs")}
           >
             Activity log
           </button>
           <button
             type="button"
-            className={`dock-toggle${tab === "conversations" ? " on" : ""}`}
+            className={`tab-btn${tab === "conversations" ? " active" : ""}`}
             onClick={() => setTab("conversations")}
           >
             Conversations
           </button>
         </div>
-      </header>
+      </div>
       {tab === "logs" ? <AppLogsPanel /> : <ConversationsPanel />}
     </>
   );
