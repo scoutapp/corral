@@ -74,6 +74,7 @@ func TestOpenAPINoDrift(t *testing.T) {
 	fill := strings.NewReplacer(
 		"{id}", "1",
 		"{noteId}", "1",
+		"{linkId}", "1",
 		"{name}", "x",
 		"{key}", "project.start",
 		"{traceId}", "abc",

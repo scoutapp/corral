@@ -941,6 +941,9 @@ func Main() {
 	case "conversations":
 		err = dashboard.CmdConversations(os.Args[2:])
 
+	case "pr":
+		err = dashboard.CmdPR(os.Args[2:])
+
 	case "api":
 		err = dashboard.CmdAPI(os.Args[2:])
 

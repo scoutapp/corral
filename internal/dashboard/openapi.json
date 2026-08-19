@@ -3065,6 +3065,216 @@
           }
         }
       }
+    },
+    "/api/prs/{id}/links": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "get": {
+        "summary": "List a PR's local links (Corral relationships, not GitHub)",
+        "description": "Returns the PRs this one is linked to in Corral's DB (with the target PR's number/title). Local only \u2014 nothing on GitHub.",
+        "responses": {
+          "200": {
+            "description": "Links",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "links": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "prId": {
+                            "type": "integer"
+                          },
+                          "linkedPrId": {
+                            "type": "integer"
+                          },
+                          "relationship": {
+                            "type": "string"
+                          },
+                          "note": {
+                            "type": "string"
+                          },
+                          "linkedNumber": {
+                            "type": "integer"
+                          },
+                          "linkedTitle": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Link this PR to another (local Corral relationship)",
+        "description": "Creates a local link prId \u2192 linkedPrId. relationship is tests|tested_by|related|depends_on (default related); note is free text. linkedPrId is a Corral internal PR id (see the list/suggest output). Mutating: subject to the API-writes gate.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "linkedPrId": {
+                    "type": "integer"
+                  },
+                  "relationship": {
+                    "type": "string",
+                    "enum": [
+                      "tests",
+                      "tested_by",
+                      "related",
+                      "depends_on"
+                    ]
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "link": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "prId": {
+                          "type": "integer"
+                        },
+                        "linkedPrId": {
+                          "type": "integer"
+                        },
+                        "relationship": {
+                          "type": "string"
+                        },
+                        "note": {
+                          "type": "string"
+                        },
+                        "linkedNumber": {
+                          "type": "integer"
+                        },
+                        "linkedTitle": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "linkedPrId required"
+          }
+        }
+      }
+    },
+    "/api/prs/{id}/links/suggest": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Suggest PRs to link (ranked by changed-file overlap)",
+        "responses": {
+          "200": {
+            "description": "Suggestions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "suggestions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "prId": {
+                            "type": "integer"
+                          },
+                          "number": {
+                            "type": "integer"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "overlap": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/prs/{id}/links/{linkId}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        },
+        {
+          "name": "linkId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "delete": {
+        "summary": "Remove a local PR link",
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
     }
   },
   "components": {
