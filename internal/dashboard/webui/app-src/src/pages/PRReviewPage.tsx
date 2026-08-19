@@ -150,7 +150,7 @@ function MergeControl({
   pr: PrItem;
   repoName?: string;
 }) {
-  const [mode, setMode] = useState<MergeMode>("sandbox");
+  const [mode, setMode] = useState<MergeMode>("host");
   const [strat, setStrat] = useState<MergeStrategyState | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -277,7 +277,7 @@ function MergeControl({
         {menuOpen && (
           <div className="split-menu" role="menu">
             <div className="split-menu-head">Mode</div>
-            {(["sandbox", "host", "plain"] as MergeMode[]).map((m) => (
+            {(["host", "sandbox", "plain"] as MergeMode[]).map((m) => (
               <button
                 key={m}
                 type="button"

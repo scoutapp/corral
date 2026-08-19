@@ -46,7 +46,7 @@ export function GlobalPage() {
   const [dindDefault, setDindDefault] = useState(true);
   // PR merge defaults. mergeStrategy "" = ask per repo on first merge.
   const [mergeStrategy, setMergeStrategy] = useState("");
-  const [mergeMode, setMergeMode] = useState("sandbox");
+  const [mergeMode, setMergeMode] = useState("host");
   const [mergeAutoTeardown, setMergeAutoTeardown] = useState(true);
   // Global assistant capability (separate DB-backed setting; null until first run).
   const [assistantCap, setAssistantCap] = useState<"readonly" | "act" | null>(null);
@@ -74,7 +74,7 @@ export function GlobalPage() {
           setApiWrites(!!data.api_writes_enabled);
           setDindDefault(data.dind_default !== false); // default ON
           setMergeStrategy(data.merge_strategy || ""); // "" = ask per repo
-          setMergeMode(data.merge_mode || "sandbox");
+          setMergeMode(data.merge_mode || "host");
           setMergeAutoTeardown(data.merge_auto_teardown !== false); // default ON
           if (okMsg) setMsg({ text: okMsg, err: false });
         })
@@ -482,8 +482,8 @@ export function GlobalPage() {
             <div className="cfg-field">
               <span className="cfg-ssh-name">Default merge mode</span>
               <select className="cfg-select" value={mergeMode} onChange={(e) => setMergeMode(e.target.value)}>
-                <option value="sandbox">Merge with sandbox — rebase &amp; merge in a one-shot container</option>
                 <option value="host">Merge with host — rebase &amp; merge on the host (fast, not sandboxed)</option>
+                <option value="sandbox">Merge with sandbox — rebase &amp; merge in a one-shot container</option>
                 <option value="plain">Merge — plain gh merge, no rebase</option>
               </select>
               <div className="muted cfg-note">

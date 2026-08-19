@@ -74,11 +74,11 @@ type GlobalSettings struct {
 	MergeAutoTeardown *bool `json:"merge_auto_teardown,omitempty"`
 
 	// MergeMode is which merge EXECUTION mode the PR merge split-button makes
-	// primary: "sandbox" (one-shot container, Claude rebases/merges, torn down),
-	// "host" (host Claude with Bash against a throwaway host checkout — fast, not
-	// sandboxed), or "plain" (`gh pr merge`, today's behavior). Empty = the
-	// built-in default ("sandbox"). The ▾ dropdown always lets you pick any mode
-	// per-merge; this only sets the default primary action.
+	// primary: "host" (host Claude with Bash against a throwaway host checkout —
+	// fast, not sandboxed), "sandbox" (one-shot container, Claude rebases/merges,
+	// torn down), or "plain" (`gh pr merge`, today's behavior). Empty = the
+	// built-in default ("host") — lead with speed; the ▾ dropdown always lets you
+	// pick any mode per-merge, and this only sets the default primary action.
 	MergeMode string `json:"merge_mode,omitempty"`
 }
 
@@ -88,12 +88,12 @@ func ValidMergeMode(s string) bool {
 }
 
 // MergeModeOrDefault returns the effective default merge mode, falling back to
-// "sandbox" (the safe, sandboxed path) when unset or invalid.
+// "host" (the fast path) when unset or invalid.
 func (gs *GlobalSettings) MergeModeOrDefault() string {
 	if gs != nil && ValidMergeMode(gs.MergeMode) {
 		return gs.MergeMode
 	}
-	return "sandbox"
+	return "host"
 }
 
 // ValidMergeStrategy reports whether s is one of the three GitHub merge methods.
