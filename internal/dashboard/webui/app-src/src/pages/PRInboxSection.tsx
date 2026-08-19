@@ -15,6 +15,7 @@ export function PRInboxSection() {
   const [items, setItems] = useState<InboxPr[] | null>(null);
   const [currentUser, setCurrentUser] = useState("");
   const [scope, setScope] = useState<"all" | "mine">("all");
+  const [repoFilter, setRepoFilter] = useState<string>(""); // "" = all repos
   const [err, setErr] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const now = Date.now();
@@ -48,20 +49,37 @@ export function PRInboxSection() {
       </p>
     );
 
-  // "Mine" = PRs I authored (currentUser). Applied before the text search.
+  // "Mine" = PRs I authored (currentUser). Applied before the repo/text filters.
   const mineCount = currentUser ? items.filter((it) => it.pr.author === currentUser).length : 0;
   const scoped = scope === "mine" && currentUser ? items.filter((it) => it.pr.author === currentUser) : items;
 
+  // Distinct repos present in the current scope, with a count each, for the badge
+  // row. Sorted by count desc then name so the busiest repos lead.
+  const repoBadges = (() => {
+    const m = new Map<string, { id: string; name: string; color?: string; count: number }>();
+    for (const it of scoped) {
+      const cur = m.get(it.repoId);
+      if (cur) cur.count++;
+      else m.set(it.repoId, { id: it.repoId, name: it.repoName, color: it.repoColor, count: 1 });
+    }
+    return [...m.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  })();
+
+  // If the selected repo disappears from the scope (e.g. switching to Mine),
+  // fall back to all repos so the list isn't mysteriously empty.
+  const activeRepo = repoFilter && repoBadges.some((r) => r.id === repoFilter) ? repoFilter : "";
+  const byRepo = activeRepo ? scoped.filter((it) => it.repoId === activeRepo) : scoped;
+
   const q = query.trim().toLowerCase();
   const filtered = q
-    ? scoped.filter(
+    ? byRepo.filter(
         (it) =>
           String(it.pr.number).includes(q) ||
           it.pr.title.toLowerCase().includes(q) ||
           it.repoName.toLowerCase().includes(q) ||
           it.pr.author.toLowerCase().includes(q),
       )
-    : scoped;
+    : byRepo;
 
   const sorted = [...filtered].sort((a, b) =>
     (b.pr.updatedAt || "").localeCompare(a.pr.updatedAt || ""),
@@ -123,13 +141,45 @@ export function PRInboxSection() {
           onChange={(e) => setQuery(e.target.value)}
         />
         <span className="pr-toolbar-count">
-          {filtered.length} of {scoped.length}
+          {filtered.length} of {byRepo.length}
         </span>
       </div>
 
+      {/* Repo badges: click one to filter to that repo (search still applies on
+          top). Only shown when there's more than one repo to choose between. */}
+      {repoBadges.length > 1 && (
+        <div className="pr-repo-badges">
+          <button
+            type="button"
+            className={`pr-repo-badge${activeRepo === "" ? " active" : ""}`}
+            onClick={() => setRepoFilter("")}
+          >
+            All repos <span className="pr-repo-badge-count">{scoped.length}</span>
+          </button>
+          {repoBadges.map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              className={`pr-repo-badge${activeRepo === r.id ? " active" : ""}`}
+              style={
+                activeRepo === r.id && r.color
+                  ? { borderColor: r.color, color: r.color }
+                  : undefined
+              }
+              onClick={() => setRepoFilter(activeRepo === r.id ? "" : r.id)}
+            >
+              <i className="pr-repo-badge-dot" style={{ background: r.color || "var(--con-muted)" }} />
+              {r.name} <span className="pr-repo-badge-count">{r.count}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {filtered.length === 0 && (
         <p className="tab-note">
-          {scope === "mine" ? `No open PRs authored by @${currentUser}.` : "No PRs match your filter."}
+          {scope === "mine" && byRepo.length === 0
+            ? `No open PRs authored by @${currentUser}.`
+            : "No PRs match your filter."}
         </p>
       )}
       {fresh.length > 0 && (

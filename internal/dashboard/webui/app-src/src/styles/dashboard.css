@@ -1527,6 +1527,23 @@ table.projects th, table.projects td {
 .pr-toolbar-check { font-size: 0.8rem; color: var(--con-muted); display: inline-flex; align-items: center; gap: 0.3rem; }
 .pr-toolbar-count { font-size: 0.78rem; color: var(--con-muted); margin-left: auto; }
 
+/* Repo filter badges under the PR search: click one to scope the list to it. */
+.pr-repo-badges { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.8rem; }
+.pr-repo-badge {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.2rem 0.6rem; border-radius: 999px; cursor: pointer;
+  font: inherit; font-size: 0.78rem;
+  background: var(--con-panel); color: var(--con-muted);
+  border: 1px solid var(--con-line);
+}
+.pr-repo-badge:hover { color: var(--con-text); border-color: var(--con-muted); }
+.pr-repo-badge.active { color: var(--con-text); border-color: var(--con-working); background: rgba(92,230,168,0.08); }
+.pr-repo-badge-dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; flex: 0 0 auto; }
+.pr-repo-badge-count {
+  font-size: 0.7rem; color: var(--con-muted);
+  background: var(--con-line); border-radius: 999px; padding: 0 0.35rem;
+}
+
 .pr-list.rich { display: flex; flex-direction: column; gap: 0.5rem; }
 .pr-card { list-style: none; }
 .pr-card-link {
