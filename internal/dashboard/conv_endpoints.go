@@ -58,15 +58,26 @@ func (d *dashboardServer) handleConversations(w http.ResponseWriter, r *http.Req
 		writeJSON(w, map[string]any{"origins": origins, "projects": projects})
 
 	default:
-		// /<id> or /<id>/messages.
+		// /<id>, /<id>/messages, or /<id>/chain.
 		idStr := rest
-		messages := false
+		messages, chain := false, false
 		if s, ok := strings.CutSuffix(rest, "/messages"); ok {
 			idStr, messages = s, true
+		} else if s, ok := strings.CutSuffix(rest, "/chain"); ok {
+			idStr, chain = s, true
 		}
 		id, perr := strconv.ParseInt(idStr, 10, 64)
 		if perr != nil {
 			http.NotFound(w, r)
+			return
+		}
+		if chain {
+			convs, err := cs.Chain(id)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, map[string]any{"conversations": convs})
 			return
 		}
 		if messages {

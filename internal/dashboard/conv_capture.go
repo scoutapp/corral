@@ -202,6 +202,42 @@ func ptrKey(c *convCapturer) string {
 	return fmt.Sprintf("%p", c)
 }
 
+// ConvID returns this capturer's conversation id (0 until the first frame/prompt
+// has created the row). Call sites use it to stamp the driving conversation id
+// into a spawned subprocess for cross-origin linkage.
+func (c *convCapturer) ConvID() int64 {
+	if c == nil {
+		return 0
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.convID
+}
+
+// convIDKey carries the "conversation currently driving this turn" through the
+// context, so runChatTurn can stamp it into the spawned claude's env without
+// threading it through every signature.
+type convIDKey struct{}
+
+// withConvID returns a context carrying the driving conversation id.
+func withConvID(ctx context.Context, id int64) context.Context {
+	if id == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, convIDKey{}, id)
+}
+
+// convIDFrom extracts the driving conversation id from ctx, or 0.
+func convIDFrom(ctx context.Context) int64 {
+	if ctx == nil {
+		return 0
+	}
+	if v, ok := ctx.Value(convIDKey{}).(int64); ok {
+		return v
+	}
+	return 0
+}
+
 // aiRunner mirrors prreview.aiRunner (Run(ctx, prompt) (string, error)) so the
 // dashboard can wrap it without prreview depending on convstore.
 type aiRunner interface {

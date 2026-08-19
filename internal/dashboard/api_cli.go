@@ -112,6 +112,14 @@ examples:
 	if data != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	// Cross-origin conversation linkage: when this CLI is driven by a captured
+	// Claude turn, the dashboard stamped the driving conversation id into our env.
+	// Forward it so any work this request kicks off (a worker, a created project)
+	// records parent_conversation_id = that conversation, letting the UI follow the
+	// causal chain back up.
+	if pc := os.Getenv("CORRAL_PARENT_CONVERSATION_ID"); pc != "" {
+		req.Header.Set("X-Corral-Parent-Conversation", pc)
+	}
 	// The dashboard accepts the token via the corral_dash_token cookie (the
 	// browser flow uses ?token= once then a cookie; a CLI just sends the cookie).
 	req.AddCookie(&http.Cookie{Name: dashboardCookieName, Value: token})

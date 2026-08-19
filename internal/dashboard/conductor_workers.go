@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/scoutapp/corral/internal/applog"
@@ -39,7 +40,11 @@ func (d *dashboardServer) handleConductorWorkerCreate(w http.ResponseWriter, r *
 		http.Error(w, "prompt is required", http.StatusBadRequest)
 		return
 	}
-	job, err := d.startWorkerJob(body.Prompt, body.Title)
+	// Cross-origin linkage: if a captured Claude drove this request (via corral
+	// api), the parent conversation id rides in on this header — thread it so the
+	// worker's own conversation chains back to it.
+	parentConv, _ := strconv.ParseInt(r.Header.Get("X-Corral-Parent-Conversation"), 10, 64)
+	job, err := d.startWorkerJob(body.Prompt, body.Title, parentConv)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -51,7 +56,7 @@ func (d *dashboardServer) handleConductorWorkerCreate(w http.ResponseWriter, r *
 // returning it. The worker runs headless (`claude -p`) in the neutral global-chat
 // dir with the global chat capability's tools. Errors are plain (the caller maps
 // to HTTP); the run itself streams asynchronously.
-func (d *dashboardServer) startWorkerJob(prompt, title string) (*mergeJob, error) {
+func (d *dashboardServer) startWorkerJob(prompt, title string, parentConvID int64) (*mergeJob, error) {
 	claudeBin, err := resolveClaudeBin()
 	if err != nil {
 		return nil, fmt.Errorf("the `claude` CLI could not be located — install Claude Code and restart the dashboard")
@@ -62,12 +67,13 @@ func (d *dashboardServer) startWorkerJob(prompt, title string) (*mergeJob, error
 	}
 
 	job := &mergeJob{
-		ID:        newWorkerJobID(),
-		Kind:      jobKindWorker,
-		Title:     title,
-		Prompt:    prompt,
-		Status:    mergeJobRunning,
-		CreatedAt: nowRFC3339(),
+		ID:                   newWorkerJobID(),
+		Kind:                 jobKindWorker,
+		Title:                title,
+		Prompt:               prompt,
+		Status:               mergeJobRunning,
+		CreatedAt:            nowRFC3339(),
+		ParentConversationID: parentConvID,
 
 		subscribers: map[chan mergeJobEvent]struct{}{},
 	}
@@ -107,6 +113,7 @@ func (d *dashboardServer) runWorkerJob(claudeBin string, job *mergeJob) {
 	// never blocks job.emit / the Work-tab stream). One conversation per job.
 	capt, send, finalize := d.captureSend(ctx, convOrigin{
 		Kind: jobKindWorker, OriginID: job.ID,
+		ParentConversationID: job.ParentConversationID,
 	}, job.emit)
 	defer finalize(mergeJobDone)
 

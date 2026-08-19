@@ -90,4 +90,60 @@ func TestConversationsAPI(t *testing.T) {
 	}
 }
 
+// TestConversationChain covers cross-origin linkage: a child conversation with
+// parent_conversation_id set, and Chain()/`/chain` returning the whole forest.
+func TestConversationChain(t *testing.T) {
+	t.Setenv("CORRAL_HOME", t.TempDir())
+	d := newDashboardServer("sess")
+	srv := httptest.NewServer(d.routes())
+	defer srv.Close()
+
+	cs, err := d.getConvStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Parent (a global chat) → child (a worker it spawned).
+	parent, err := cs.StartConversation(convstore.ConvMeta{ConvKey: "global-chat:root", OriginKind: "global-chat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := cs.StartConversation(convstore.ConvMeta{
+		ConvKey: "worker:w1", OriginKind: "worker", ParentConversationID: parent,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grandchild, err := cs.StartConversation(convstore.ConvMeta{
+		ConvKey: "project-chat:p1", OriginKind: "project-chat", ParentConversationID: child,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Chain from the grandchild walks up to the root and gathers everyone.
+	chain, err := cs.Chain(grandchild)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chain) != 3 {
+		t.Fatalf("chain len = %d, want 3 (root + child + grandchild)", len(chain))
+	}
+	if chain[0].ID != parent {
+		t.Errorf("chain should start at the root %d, got %d", parent, chain[0].ID)
+	}
+
+	// The endpoint returns the same forest.
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/conversations/"+strconv.FormatInt(child, 10)+"/chain", nil)
+	req.AddCookie(&http.Cookie{Name: dashboardCookieName, Value: "sess"})
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if !contains(body, `"id":`+strconv.FormatInt(parent, 10)) || !contains(body, `"id":`+strconv.FormatInt(grandchild, 10)) {
+		t.Fatalf("/chain missing chain members: %s", body)
+	}
+}
+
 func contains(b []byte, s string) bool { return bytes.Contains(b, []byte(s)) }
