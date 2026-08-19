@@ -457,6 +457,8 @@ func (d *dashboardServer) handlePRItem(w http.ResponseWriter, r *http.Request, r
 		d.handlePRMergePrompt(w, r, prID)
 	case action == "merge-watch" && r.Method == http.MethodPost:
 		d.handlePRMergeWatch(w, r, prID)
+	case action == "merge-host/start" && r.Method == http.MethodPost:
+		d.handlePRMergeHostStart(w, r, prID)
 	case action == "merge-host/ws" && r.Method == http.MethodGet:
 		d.handlePRMergeHostWS(w, r, prID)
 	case action == "line-comment" && r.Method == http.MethodPost:

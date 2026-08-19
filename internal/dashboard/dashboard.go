@@ -322,12 +322,18 @@ type dashboardServer struct {
 	// loginSpawnerOverride, when set (tests only), replaces the tmux spawn for the
 	// MCP OAuth login so tests don't create real sessions.
 	loginSpawnerOverride func(bin, name string) error
+	// mergeJobs is the registry of "merge with host" background jobs. Each runs a
+	// detached host `claude` (its own lifetime, independent of any WebSocket), so
+	// you can navigate away and re-attach. See merge_jobs.go.
+	mergeJobs *mergeJobRegistry
 }
 
 func newDashboardServer(token string) *dashboardServer {
 	boot, _ := randomToken()
 	apiTok, _ := randomToken()
-	return &dashboardServer{terms: make(map[*termSession]struct{}), token: token, apiToken: apiTok, bootID: boot}
+	d := &dashboardServer{terms: make(map[*termSession]struct{}), token: token, apiToken: apiTok, bootID: boot}
+	d.mergeJobs = newMergeJobRegistry(d)
+	return d
 }
 
 // getStore opens the shared Corral database on first use and caches the handle.
@@ -620,6 +626,27 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 	// keyed by repo live under /repos/<id>/…; this handles the PR-scoped ones.
 	if strings.HasPrefix(path, "/prs/") {
 		d.handlePRItem(w, r, strings.TrimPrefix(path, "/prs/"))
+		return
+	}
+	// Merge-job registry (host-merge background jobs — the "Work" tab).
+	//   GET    /merge-jobs            → list
+	//   GET    /merge-jobs/<id>/ws    → attach viewer
+	//   DELETE /merge-jobs/<id>       → cancel + clean up
+	if path == "/merge-jobs" {
+		d.handleMergeJobsList(w, r)
+		return
+	}
+	if strings.HasPrefix(path, "/merge-jobs/") {
+		rest := strings.TrimPrefix(path, "/merge-jobs/")
+		if id, ok := strings.CutSuffix(rest, "/ws"); ok && r.Method == http.MethodGet {
+			d.handleMergeJobWS(w, r, id)
+			return
+		}
+		if r.Method == http.MethodDelete && !strings.Contains(rest, "/") {
+			d.handleMergeJobDelete(w, r, rest)
+			return
+		}
+		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 	if path == "/projects/create" {
@@ -1491,6 +1518,7 @@ func CmdDashboardServe(args []string) error {
 	}
 	server.startLogRetention() // prune app_logs on start + hourly
 	server.startScheduleTick() // fire due flow schedules on start + every minute
+	server.mergeJobs.load()    // restore host-merge jobs (transcripts survive restart)
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", *port),
 		Handler: server.routes(),
