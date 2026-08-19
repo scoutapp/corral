@@ -2481,6 +2481,56 @@
           }
         }
       }
+    },
+    "/api/conductor/workers": {
+      "post": {
+        "summary": "Spawn a worker Claude (conductor delegation)",
+        "description": "Starts a fresh, INDEPENDENT worker Claude (not a subagent) as a detached background job that runs the given prompt on the host in a neutral dir, with the global chat's tool capability. Returns its job id; watch/steer/close it in the dashboard Work tab or via the /merge-jobs endpoints (workers are jobs). Use this to delegate tasks instead of doing everything in one conductor session.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "prompt"
+                ],
+                "properties": {
+                  "prompt": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Worker started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "jobId": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "prompt required"
+          }
+        }
+      }
     }
   },
   "components": {
