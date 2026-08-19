@@ -310,6 +310,7 @@ func (d *dashboardServer) handleMergeJobsList(w http.ResponseWriter, r *http.Req
 			"repoName":  j.RepoName,
 			"strategy":  j.Strategy,
 			"status":    j.Status,
+			"activity":  j.activity(), // "working" | "idle" | "" (terminal)
 			"createdAt": j.CreatedAt,
 		})
 	}
