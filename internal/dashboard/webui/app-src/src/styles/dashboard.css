@@ -2329,6 +2329,15 @@ table.projects th, table.projects td {
 .conv-detail-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
 .conv-detail-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conv-chain-hint { font-size: 0.72rem; color: var(--muted); }
+.conv-detail-actions { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+.conv-analyze-msg { font-size: 0.75rem; color: var(--accent); }
+.conv-chain { border: 1px solid var(--border); border-radius: 6px; padding: 0.4rem 0.5rem; margin-bottom: 0.6rem; }
+.conv-chain-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+.conv-chain-item { display: flex; align-items: center; gap: 0.5rem; font-size: 0.82rem; padding: 0.2rem 0.3rem; border-radius: 4px; }
+.conv-chain-item.current { background: rgba(255,255,255,0.05); }
+.conv-chain-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-chain-you { font-size: 0.7rem; color: var(--accent); }
+.conv-chain-count { font-size: 0.7rem; color: var(--muted); }
 .conv-msgs { list-style: none; margin: 0.6rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
 .conv-msg { border-left: 2px solid var(--border); padding: 0.2rem 0 0.2rem 0.6rem; font-size: 0.85rem; }
 .conv-msg.role-user { border-left-color: #7aa2f7; }

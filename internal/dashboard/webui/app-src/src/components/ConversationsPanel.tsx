@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { getJSON } from "../api/client";
+import { getJSON, postJSON } from "../api/client";
 
 // ConversationsPanel lists captured Claude conversations with filters + deep
 // (full-text) search, and drills into one conversation's messages with an
@@ -160,6 +160,28 @@ function ConversationDetail({ conv, onBack }: { conv: Conversation; onBack: () =
   const [msgs, setMsgs] = useState<Message[] | null>(null);
   const [q, setQ] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [chain, setChain] = useState<Conversation[] | null>(null);
+  const [chainOpen, setChainOpen] = useState(false);
+  const [analyzeMsg, setAnalyzeMsg] = useState<string | null>(null);
+
+  const viewChain = () => {
+    setChainOpen((v) => !v);
+    if (chain === null) {
+      getJSON<{ conversations: Conversation[] }>(`/api/conversations/${conv.id}/chain`)
+        .then((d) => setChain(d.conversations || []))
+        .catch((e) => setErr((e as Error).message));
+    }
+  };
+
+  const analyze = () => {
+    setAnalyzeMsg("Starting analysis…");
+    postJSON<{ jobId: string }>("/api/conversations/analyze", { conversationId: conv.id })
+      .then(() => {
+        setAnalyzeMsg("Analyzing — see the Work tab (⌘K)");
+        window.dispatchEvent(new CustomEvent("corral:open-work"));
+      })
+      .catch((e) => setAnalyzeMsg((e as Error).message));
+  };
 
   useEffect(() => {
     const p = new URLSearchParams();
@@ -189,6 +211,38 @@ function ConversationDetail({ conv, onBack }: { conv: Conversation; onBack: () =
           </span>
         ) : null}
       </div>
+
+      <div className="conv-detail-actions">
+        <button type="button" className="auto-btn" onClick={viewChain}>
+          {chainOpen ? "Hide chain" : "View chain"}
+        </button>
+        <button type="button" className="auto-btn" onClick={analyze} title="Spawn a Claude to analyze this conversation (runs in the Work tab; itself captured)">
+          ✦ Analyze with AI
+        </button>
+        {analyzeMsg && <span className="conv-analyze-msg">{analyzeMsg}</span>}
+      </div>
+
+      {chainOpen && (
+        <div className="conv-chain">
+          {chain === null ? (
+            <p className="tab-note">Loading chain…</p>
+          ) : chain.length <= 1 ? (
+            <p className="tab-note">This conversation isn't linked to any others.</p>
+          ) : (
+            <ul className="conv-chain-list">
+              {chain.map((c) => (
+                <li key={c.id} className={`conv-chain-item${c.id === conv.id ? " current" : ""}`}>
+                  <span className={`conv-origin-chip origin-${c.originKind}`}>{originLabel(c.originKind)}</span>
+                  <span className="conv-chain-title">{c.title || `Conversation #${c.id}`}</span>
+                  {c.id === conv.id && <span className="conv-chain-you">← this one</span>}
+                  <span className="conv-chain-count">{c.messageCount} msg</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       <input
         className="auto-input conv-search"
         placeholder="🔍 search within this conversation…"
