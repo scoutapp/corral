@@ -13,6 +13,7 @@ import (
 
 	"github.com/scoutapp/corral/internal/automations"
 	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/dindcache"
 	"github.com/scoutapp/corral/internal/project"
 	"github.com/scoutapp/corral/internal/prreview"
 	"github.com/scoutapp/corral/internal/repos"
@@ -125,6 +126,12 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 		Ports []string `json:"ports"`
 		// Source records a PR/issue this project was spawned from (back-link).
 		Source *config.ProjectSource `json:"source"`
+		// Repo-scoped DinD auto-cache controls. By default a repo-derived project
+		// auto-attaches its repo cache (repo-<id>) in copy mode when that cache
+		// exists. NoRepoCache opts this project out; DindCacheMode "shared" mounts the
+		// cache live instead of seeding a copy.
+		NoRepoCache   bool   `json:"noRepoCache"`
+		DindCacheMode string `json:"dindCacheMode"` // "" (copy) | "shared"
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -168,6 +175,24 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 	if body.Dind != nil {
 		dind = *body.Dind
 	}
+	// Repo-scoped DinD auto-cache: a project created from a repo inherits that
+	// repo's built-image baseline (cache repo-<repoId>) when it exists, so it
+	// doesn't rebuild/repull from an empty inner-docker volume. Copy mode by
+	// default (isolated); shared on request. Inert if the cache doesn't exist,
+	// DinD is off, the caller opted out, or repo auto-caching is globally disabled.
+	primaryRepo := ""
+	if len(body.Repos) > 0 {
+		primaryRepo = body.Repos[0].RepoID
+	}
+	dindCacheRef := resolveRepoCacheRef(repoCacheDecision{
+		dind:          dind,
+		noRepoCache:   body.NoRepoCache,
+		globalOn:      config.ReadGlobalSettings().DindRepoCacheDefaultOn(),
+		primaryRepoID: primaryRepo,
+		requestedMode: body.DindCacheMode,
+		cacheExists:   dindcache.Exists,
+	})
+
 	if _, statErr := os.Stat(config.ProjectDirFor(workspace)); os.IsNotExist(statErr) {
 		if _, err := project.InitProject(workspace, project.InitOptions{
 			ProxyEnabled: proxy, DindEnabled: dind, LaunchTmux: body.Tmux, DindPorts: body.Ports,
@@ -175,6 +200,7 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 			// proxy is on (passthrough is meaningless without the proxy).
 			PassthroughFirewall: proxy && !body.EnforceAllowlist,
 			Source:              body.Source,
+			DindCache:           dindCacheRef,
 		}); err != nil {
 			http.Error(w, "init project: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -407,6 +433,40 @@ func inferCreateMode(mode, path, name string, hasRepos bool) string {
 	default:
 		return ""
 	}
+}
+
+// repoCacheDecision is the pure input to resolveRepoCacheRef — kept separate from
+// HTTP/docker so the auto-attach rule is unit-testable. cacheExists is injected
+// (dindcache.Exists in production) so tests don't need a docker daemon.
+type repoCacheDecision struct {
+	dind          bool
+	noRepoCache   bool
+	globalOn      bool
+	primaryRepoID string
+	requestedMode string // "" (copy) | "shared"
+	cacheExists   func(name string) bool
+}
+
+// resolveRepoCacheRef decides whether a repo-derived project auto-attaches its
+// repo DinD cache, returning the ref or nil. It attaches ONLY when: DinD is on,
+// the caller didn't opt out, repo auto-caching is globally enabled, there's a
+// primary repo, and that repo's baseline cache already exists. Copy mode by
+// default; shared only when explicitly requested. Nil in every other case means
+// "start with a fresh empty volume" — today's behavior — so this is inert until a
+// baseline is saved.
+func resolveRepoCacheRef(d repoCacheDecision) *config.DindCacheRef {
+	if !d.dind || d.noRepoCache || !d.globalOn || d.primaryRepoID == "" {
+		return nil
+	}
+	name := dindcache.RepoCacheName(d.primaryRepoID)
+	if d.cacheExists == nil || !d.cacheExists(name) {
+		return nil
+	}
+	mode := config.DindCacheModeCopy
+	if d.requestedMode == config.DindCacheModeShared {
+		mode = config.DindCacheModeShared
+	}
+	return &config.DindCacheRef{Name: name, Mode: mode}
 }
 
 // resolveNewWorkspace produces the workspace path for each create mode, doing

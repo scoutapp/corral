@@ -64,6 +64,14 @@ type GlobalSettings struct {
 	// resolves to the true default; false means the user deliberately chose off.
 	DindDefault *bool `json:"dind_default,omitempty"`
 
+	// DindRepoCacheDefault controls whether a new project created FROM a repo
+	// auto-attaches that repo's DinD data cache (repo-<repoId>), so it inherits the
+	// repo's already-built images / pulled layers instead of building from an empty
+	// volume. DEFAULTS TO ON — but it's inert until someone saves a repo baseline
+	// ("Save as repo cache"); with no cache present, projects start empty as before.
+	// nil = on; false = the user disabled repo auto-caching globally.
+	DindRepoCacheDefault *bool `json:"dind_repo_cache_default,omitempty"`
+
 	// MergeStrategy is the default method the PR merge UI pre-selects and the
 	// "rebase & merge in sandbox" flow tells Claude to use: "squash" | "merge" |
 	// "rebase". Empty = the built-in default ("squash"). It's only a default — the
@@ -127,6 +135,12 @@ func (gs *GlobalSettings) MergeAutoTeardownOn() bool {
 // (never set) → ON, so a fresh install gets a working-Docker sandbox by default.
 func (gs *GlobalSettings) DindDefaultOn() bool {
 	return gs == nil || gs.DindDefault == nil || *gs.DindDefault
+}
+
+// DindRepoCacheDefaultOn reports whether a repo-derived project should
+// auto-attach its repo DinD cache. Nil (never set) → ON. Inert with no cache.
+func (gs *GlobalSettings) DindRepoCacheDefaultOn() bool {
+	return gs == nil || gs.DindRepoCacheDefault == nil || *gs.DindRepoCacheDefault
 }
 
 // ApiWritesAllowed reports the effective enforcement value: true only when the

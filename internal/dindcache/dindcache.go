@@ -71,6 +71,21 @@ type Cache struct {
 // ValidName reports whether name is a legal cache slug.
 func ValidName(name string) bool { return validSlug.MatchString(name) }
 
+// repoCachePrefix marks caches that are the auto-managed baseline for a repo (as
+// opposed to a hand-named cache). RepoCacheName derives the name; a UI can detect
+// these to label them "repo baseline".
+const repoCachePrefix = "repo-"
+
+// RepoCacheName is the cache slug for a repo's shared DinD baseline. Keyed by the
+// corral repo id (already a safe hex slug). One cache per repo; a project created
+// from the repo auto-attaches it (when it exists).
+func RepoCacheName(repoID string) string {
+	return repoCachePrefix + repoID
+}
+
+// IsRepoCache reports whether a cache slug is a repo baseline (repo-<id>).
+func IsRepoCache(name string) bool { return strings.HasPrefix(name, repoCachePrefix) }
+
 // VolumeName returns the docker volume name backing a cache slug. It does NOT
 // validate — callers that accept user input should ValidName first.
 func VolumeName(name string) string { return cachePrefix + name }

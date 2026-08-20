@@ -129,6 +129,11 @@ type globalView struct {
 	// a tighter, unprivileged box. Per-project create can still override it.
 	DindDefault bool `json:"dind_default"`
 
+	// DindRepoCacheDefault — whether a project created from a repo auto-attaches
+	// that repo's DinD cache (repo-<id>) so it reuses built images. ON by default,
+	// but inert until a repo baseline is saved. Per-project create can opt out.
+	DindRepoCacheDefault bool `json:"dind_repo_cache_default"`
+
 	// Merge defaults for the PR merge split-button. MergeStrategy is the global
 	// default method (squash|merge|rebase); EMPTY string when the user never set
 	// one, so a repo without its own preference asks on first merge. MergeMode is
@@ -181,6 +186,7 @@ func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Reques
 	view.ApiWritesEnabled = gs.ApiWritesAllowed()
 	view.ApiWritesConfigured = gs.ApiWritesConfigured()
 	view.DindDefault = gs.DindDefaultOn()
+	view.DindRepoCacheDefault = gs.DindRepoCacheDefaultOn()
 	view.MergeStrategy = gs.MergeStrategy // raw ("" = never set → ask per repo)
 	view.MergeMode = gs.MergeModeOrDefault()
 	view.MergeAutoTeardown = gs.MergeAutoTeardownOn()
@@ -198,21 +204,22 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var edit struct {
-		SetCreds          []credSet `json:"set_creds,omitempty"`
-		UnsetCreds        []string  `json:"unset_creds,omitempty"`
-		MonitorHosts      *[]string `json:"monitor_hosts,omitempty"`
-		MitmPorts         *[]string `json:"mitm_ports,omitempty"`
-		SSHKeys           *[]string `json:"ssh_keys,omitempty"`
-		UpdateRepo        *string   `json:"update_repo,omitempty"`
-		LogRetentionDays  *int      `json:"log_retention_days,omitempty"`
-		LogMaxRows        *int      `json:"log_max_rows,omitempty"`
-		ConvRetentionDays *int      `json:"conv_retention_days,omitempty"`
-		ConvMaxRows       *int      `json:"conv_max_rows,omitempty"`
-		ApiWritesEnabled  *bool     `json:"api_writes_enabled,omitempty"`
-		DindDefault       *bool     `json:"dind_default,omitempty"`
-		MergeStrategy     *string   `json:"merge_strategy,omitempty"`
-		MergeMode         *string   `json:"merge_mode,omitempty"`
-		MergeAutoTeardown *bool     `json:"merge_auto_teardown,omitempty"`
+		SetCreds             []credSet `json:"set_creds,omitempty"`
+		UnsetCreds           []string  `json:"unset_creds,omitempty"`
+		MonitorHosts         *[]string `json:"monitor_hosts,omitempty"`
+		MitmPorts            *[]string `json:"mitm_ports,omitempty"`
+		SSHKeys              *[]string `json:"ssh_keys,omitempty"`
+		UpdateRepo           *string   `json:"update_repo,omitempty"`
+		LogRetentionDays     *int      `json:"log_retention_days,omitempty"`
+		LogMaxRows           *int      `json:"log_max_rows,omitempty"`
+		ConvRetentionDays    *int      `json:"conv_retention_days,omitempty"`
+		ConvMaxRows          *int      `json:"conv_max_rows,omitempty"`
+		ApiWritesEnabled     *bool     `json:"api_writes_enabled,omitempty"`
+		DindDefault          *bool     `json:"dind_default,omitempty"`
+		DindRepoCacheDefault *bool     `json:"dind_repo_cache_default,omitempty"`
+		MergeStrategy        *string   `json:"merge_strategy,omitempty"`
+		MergeMode            *string   `json:"merge_mode,omitempty"`
+		MergeAutoTeardown    *bool     `json:"merge_auto_teardown,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&edit); err != nil {
 		http.Error(w, "bad payload: "+err.Error(), http.StatusBadRequest)
@@ -352,6 +359,21 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 			results = append(results, "✓ new projects default to Docker-in-Docker (privileged; Docker works out of the box)")
 		} else {
 			results = append(results, "✓ new projects default to no Docker-in-Docker (tighter, unprivileged sandbox)")
+		}
+	}
+
+	if edit.DindRepoCacheDefault != nil {
+		gs := config.ReadGlobalSettings()
+		v := *edit.DindRepoCacheDefault
+		gs.DindRepoCacheDefault = &v
+		if err := config.WriteGlobalSettings(gs); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if v {
+			results = append(results, "✓ repo-derived projects reuse their repo's built-image cache (when a baseline exists)")
+		} else {
+			results = append(results, "✓ repo DinD cache auto-reuse disabled (projects start with an empty inner Docker)")
 		}
 	}
 
