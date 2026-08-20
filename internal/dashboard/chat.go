@@ -387,11 +387,14 @@ func isExecutable(path string) bool {
 // --allowedTools entirely when no tools are granted: a bare "--allowedTools"
 // with no following value is a malformed flag that makes `claude` fail — the
 // bug that broke the PR-review chat (which grants no tools).
-func buildClaudeArgs(prompt string, tools []string, sessionID string) []string {
+func buildClaudeArgs(prompt string, tools []string, sessionID, permissionMode string) []string {
+	if permissionMode == "" {
+		permissionMode = "default"
+	}
 	args := []string{
 		"-p", prompt,
 		"--output-format", "stream-json", "--verbose",
-		"--permission-mode", "default",
+		"--permission-mode", permissionMode,
 	}
 	// Load the corral-api skill for THIS chat session only, via --plugin-dir. We
 	// deliberately don't install it into ~/.claude/skills: that would make its
@@ -423,7 +426,13 @@ func corralAPISkillDir() string {
 }
 
 func (d *dashboardServer) runChatTurn(ctx context.Context, claudeBin, workspace string, tools []string, prompt, sessionID string, send func(chatServerMsg) error) (string, bool) {
-	args := buildClaudeArgs(prompt, tools, sessionID)
+	// A detached turn (worker/merge job — no human to answer approval prompts) runs
+	// with permissions bypassed; interactive chats keep the default prompting mode.
+	permMode := "default"
+	if bypassPermissionsFrom(ctx) {
+		permMode = "bypassPermissions"
+	}
+	args := buildClaudeArgs(prompt, tools, sessionID, permMode)
 
 	cmd := exec.CommandContext(ctx, claudeBin, args...)
 	// Cross-origin linkage: stamp the conversation driving THIS turn into the

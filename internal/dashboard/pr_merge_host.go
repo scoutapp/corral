@@ -118,8 +118,12 @@ func (d *dashboardServer) startMergeJob(prID int64) (*mergeJob, error) {
 // follow-up steer, which spawns another turn). The job's context is its own —
 // cancelled only when the job is removed.
 func (d *dashboardServer) runMergeJob(claudeBin string, job *mergeJob) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// Detached host-merge job — no human to answer approval prompts, so bypass them
+	// (see runWorkerJob). It already runs act-capable Bash against a throwaway
+	// checkout with host git/gh creds.
+	ctx, cancel := context.WithCancel(withBypassPermissions(context.Background()))
 	job.mu.Lock()
+	job.ctx = ctx
 	job.cancel = cancel
 	job.mu.Unlock()
 	defer cancel()

@@ -77,6 +77,15 @@ break the ask into tasks, kick off a worker per task, and keep going.
   `/merge-jobs/<id>/ws`, and removed with `DELETE /merge-jobs/<id>`.
 - Workers run on the HOST and are **not sandboxed**; they use the operator's
   global-chat tool capability (read-only vs act).
+- **Workers are resumable, but only via corral — not their own harness.** A worker
+  is a detached `claude -p` turn: when its reply ends, the process ends, and its
+  own `ScheduleWakeup` / background-task notifications will NOT bring it back. To
+  pause and continue, a worker calls `corral worker wake <jobId> --in <secs>`
+  before ending its turn — corral re-invokes it after the delay with full context.
+  So a worker handling a long step (build, image transfer) should either block
+  in-turn or schedule a self-wake; it must never end with work in flight and no
+  wake. (Corral injects this contract + the worker's own job id into every worker
+  prompt, so you don't have to — but for long multi-step boots, reinforce it.)
 
 ### When a worker operates on a Corral project (sandbox)
 

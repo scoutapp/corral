@@ -279,6 +279,28 @@ func convIDFrom(ctx context.Context) int64 {
 	return 0
 }
 
+// bypassPermsKey carries "this is a DETACHED turn — bypass permission prompts"
+// through the context. A detached worker/merge job has no human to answer an
+// approval prompt (that's what stranded a worker whose blocking-wait Monitor
+// command was blocked-for-approval), so its claude runs with
+// --permission-mode bypassPermissions. Interactive chats leave it unset (default
+// mode) so risky actions still prompt in the browser.
+type bypassPermsKey struct{}
+
+// withBypassPermissions marks ctx as a detached turn (no human approver).
+func withBypassPermissions(ctx context.Context) context.Context {
+	return context.WithValue(ctx, bypassPermsKey{}, true)
+}
+
+// bypassPermissionsFrom reports whether this turn should skip permission prompts.
+func bypassPermissionsFrom(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	v, _ := ctx.Value(bypassPermsKey{}).(bool)
+	return v
+}
+
 // aiRunner mirrors prreview.aiRunner (Run(ctx, prompt) (string, error)) so the
 // dashboard can wrap it without prreview depending on convstore.
 type aiRunner interface {

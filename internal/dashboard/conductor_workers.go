@@ -18,6 +18,31 @@ import (
 // dir (~/.corral) with the global chat's tool capability; the conductor passes
 // all task context in the prompt.
 
+// workerContractPreamble is prepended to every worker's FIRST-turn prompt (not to
+// later steers). A worker runs as a detached headless `claude -p` turn: when the
+// turn ends the process EXITS, and nothing in the model's own harness
+// (ScheduleWakeup, background-task notifications) can re-invoke a detached
+// process. What CAN resume it is corral: `corral worker wake`. So a worker must
+// either finish in-turn or explicitly schedule its own wake before ending —
+// never end with work "in flight, to be continued" and no wake, which strands it
+// (the bug that left an app un-booted). Its tools run with permissions bypassed
+// (no human approver), so a blocking wait is fine too.
+func workerContractPreamble(jobID string) string {
+	return "IMPORTANT — how you run: you are a DETACHED headless Claude turn (`claude -p`), " +
+		"not interactive. When your reply ends, your process ENDS. Your own ScheduleWakeup / " +
+		"background-task notifications do NOT re-invoke you (they need an interactive harness you " +
+		"don't have). The ONLY thing that resumes you is corral. So NEVER end a turn with work " +
+		"still in flight and no plan to continue. You have two valid ways to handle a long step " +
+		"(image pull/transfer, build, install):\n" +
+		"  (a) BLOCK on it in-turn — run it in the foreground / `wait` for it, then proceed. Your " +
+		"tools run with permissions bypassed (no approval prompts), so a blocking wait works.\n" +
+		"  (b) Start it in the BACKGROUND, then run `corral worker wake " + jobID + " --in <secs>` " +
+		"(e.g. --in 30) and end the turn. Corral re-invokes you after the delay with full context " +
+		"so you can check on it and continue; repeat the wake if it's still going.\n" +
+		"Only end WITHOUT a wake when the task is actually done, or you're truly blocked and must " +
+		"report to the human. This job's id is `" + jobID + "`.\n\n---\n\nTASK:\n\n"
+}
+
 // handleConductorWorkerCreate: POST /api/conductor/workers { prompt, title? }
 // spawns a detached worker Claude and returns its job id. The worker starts
 // immediately on the given prompt; watch/steer it in the Work tab.
@@ -63,11 +88,12 @@ func (d *dashboardServer) startWorkerJob(prompt, title string, parentConvID int6
 		title = "task"
 	}
 
+	jobID := newWorkerJobID()
 	job := &mergeJob{
-		ID:                   newWorkerJobID(),
+		ID:                   jobID,
 		Kind:                 jobKindWorker,
 		Title:                title,
-		Prompt:               prompt,
+		Prompt:               workerContractPreamble(jobID) + prompt,
 		Status:               mergeJobRunning,
 		CreatedAt:            nowRFC3339(),
 		ParentConversationID: parentConvID,
@@ -92,8 +118,13 @@ func (d *dashboardServer) startWorkerJob(prompt, title string, parentConvID int6
 // first claude turn in the neutral dir, then rest idle awaiting optional steer
 // turns (like a merge job). Cancelled only when the job is removed.
 func (d *dashboardServer) runWorkerJob(claudeBin string, job *mergeJob) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// A worker is detached and headless — no human to answer permission prompts —
+	// so its turns bypass them (like the sandbox claude). This is what lets a
+	// worker run a blocking-wait (e.g. wait for an image transfer) without being
+	// stranded by an approval it can't get.
+	ctx, cancel := context.WithCancel(withBypassPermissions(context.Background()))
 	job.mu.Lock()
+	job.ctx = ctx
 	job.cancel = cancel
 	job.mu.Unlock()
 	defer cancel()

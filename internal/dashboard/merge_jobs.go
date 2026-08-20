@@ -95,12 +95,17 @@ type mergeJob struct {
 
 	// Runtime-only (not persisted directly; Status is what persists).
 	mu          sync.Mutex
+	ctx         context.Context // the run goroutine's context (for lifetime-bound wakes)
 	cancel      context.CancelFunc
 	sessionID   string
 	subscribers map[chan mergeJobEvent]struct{}
 	steer       chan string // follow-up prompts from a viewer
 	closed      bool        // true once the job's run goroutine has fully exited
 }
+
+// ctxOrNil returns the job's run context (may be nil before the run goroutine
+// starts). Caller holds j.mu.
+func (j *mergeJob) ctxOrNil() context.Context { return j.ctx }
 
 // mergeJobEvent is one streamed message plus a terminal marker. Type "" with
 // Done=true signals end-of-stream to attached viewers.
