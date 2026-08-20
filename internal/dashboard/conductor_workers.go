@@ -18,6 +18,26 @@ import (
 // dir (~/.corral) with the global chat's tool capability; the conductor passes
 // all task context in the prompt.
 
+// workerContractPreamble is prepended to every worker's FIRST-turn prompt (not to
+// later human steers). A worker runs as a headless `claude -p` turn: when the
+// turn's output ends, the process EXITS — the job then sits idle until a human
+// sends a steer in the Work tab. Nothing auto-resumes it. So a worker that
+// backgrounds long work and ends its message "waiting to be resumed" strands
+// itself (the exact failure that left an app un-booted: the worker parked on a
+// 4GB image transfer, ended its turn, and no notification could restart it).
+// This contract tells the worker to finish the job WITHIN the turn instead.
+const workerContractPreamble = "IMPORTANT — how you run: you are a single headless Claude turn (`claude -p`), " +
+	"not an interactive session. When your reply ends, your process ENDS; nothing will " +
+	"automatically resume you, and background jobs / scheduled wake-ups you start will NOT " +
+	"call you back. Therefore: do the whole task to completion WITHIN this turn. Do NOT " +
+	"background a long step (image pull/transfer, build, install) and end your message " +
+	"expecting to continue later — instead BLOCK in-turn until it finishes (wait on it " +
+	"synchronously, e.g. `wait`/a foreground command), then proceed to the next step. Only " +
+	"end your turn once the task is actually done (e.g. the app is up and serving) or you are " +
+	"truly blocked and need the human. Prefer a plain foreground/blocking wait over tools that " +
+	"may require interactive approval. If a step is genuinely too long to finish now, say so " +
+	"explicitly and state what remains, rather than silently parking.\n\n---\n\nTASK:\n\n"
+
 // handleConductorWorkerCreate: POST /api/conductor/workers { prompt, title? }
 // spawns a detached worker Claude and returns its job id. The worker starts
 // immediately on the given prompt; watch/steer it in the Work tab.
@@ -67,7 +87,7 @@ func (d *dashboardServer) startWorkerJob(prompt, title string, parentConvID int6
 		ID:                   newWorkerJobID(),
 		Kind:                 jobKindWorker,
 		Title:                title,
-		Prompt:               prompt,
+		Prompt:               workerContractPreamble + prompt,
 		Status:               mergeJobRunning,
 		CreatedAt:            nowRFC3339(),
 		ParentConversationID: parentConvID,

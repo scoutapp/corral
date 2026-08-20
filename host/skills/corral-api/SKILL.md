@@ -77,6 +77,14 @@ break the ask into tasks, kick off a worker per task, and keep going.
   `/merge-jobs/<id>/ws`, and removed with `DELETE /merge-jobs/<id>`.
 - Workers run on the HOST and are **not sandboxed**; they use the operator's
   global-chat tool capability (read-only vs act).
+- **A worker is a single headless turn — it must finish the job in that turn.**
+  When a worker's reply ends, its process ends; nothing auto-resumes it (it idles
+  until a human steers it in the Work tab). So write prompts that tell the worker
+  to run the task to completion synchronously — **do not** background a long step
+  (build, image pull/transfer, install) and end the message "to be continued".
+  Have it BLOCK in-turn on long steps and only finish once the work is actually
+  done. (Corral also injects this contract into every worker prompt, but say it in
+  yours too for multi-step boots.)
 
 ### When a worker operates on a Corral project (sandbox)
 

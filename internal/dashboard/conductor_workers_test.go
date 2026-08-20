@@ -45,3 +45,25 @@ func TestNewWorkerJobID(t *testing.T) {
 		t.Fatalf("worker id should be worker-prefixed, got %q", id)
 	}
 }
+
+// TestWorkerContractPreamble guards the fix for the stranded-worker gap: every
+// worker's first-turn prompt is prefixed with the "single headless turn — finish
+// in-turn, don't park on background jobs" contract, and the caller's task text is
+// preserved after it.
+func TestWorkerContractPreamble(t *testing.T) {
+	// The preamble must actually tell the worker the load-bearing facts.
+	for _, want := range []string{"headless", "resume", "background", "BLOCK in-turn"} {
+		if !strings.Contains(workerContractPreamble, want) {
+			t.Errorf("worker contract preamble missing %q", want)
+		}
+	}
+	// Composition (mirrors startWorkerJob): preamble first, then the task, intact.
+	task := "Verify PR #5670 and boot the app."
+	composed := workerContractPreamble + task
+	if !strings.HasPrefix(composed, "IMPORTANT") {
+		t.Fatalf("composed prompt must lead with the contract, got: %.20q", composed)
+	}
+	if !strings.HasSuffix(composed, task) {
+		t.Fatalf("composed prompt must end with the caller's task verbatim")
+	}
+}
