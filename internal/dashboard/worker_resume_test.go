@@ -22,11 +22,12 @@ func TestHostClaudeStaysGated(t *testing.T) {
 
 // TestWorkerContractPreamble locks in the resumable-fork contract: it tells the
 // worker it's detached + NOT sandboxed (permissions still apply), to use only its
-// granted tools (not Monitor), and how to self-wake via corral with its own id.
+// granted tools (Bash/Monitor for waits), and how to self-wake via corral with
+// its own id.
 func TestWorkerContractPreamble(t *testing.T) {
 	p := workerContractPreamble("worker-abc123")
 	for _, want := range []string{
-		"DETACHED", "process ENDS", "NOT sandboxed", "GRANTED tools",
+		"DETACHED", "process ENDS", "NOT sandboxed", "granted tools",
 		"corral worker wake worker-abc123", "worker-abc123",
 	} {
 		if !strings.Contains(p, want) {

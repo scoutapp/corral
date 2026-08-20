@@ -76,12 +76,16 @@ func (d *dashboardServer) SetChatCapability(capability string) error {
 }
 
 // globalChatTools maps the capability to the tool set the global dock's Claude
-// gets. Read-only can look (answer questions, read logs) but not act; act adds
-// Bash so it can run `corral api` — still fenced by the API-writes gate. Unset
-// defaults to read-only (the safe posture before the user has chosen).
+// (and conductor workers, which reuse this) gets. Read-only can look (answer
+// questions, read logs) but not act; act adds Bash so it can run `corral api` —
+// still fenced by the API-writes gate — and Monitor, so a detached worker can run
+// a bounded wait/poll loop (e.g. "wait until the image lands") WITHOUT hitting an
+// approval prompt no human can answer. Both are gated behind the same act
+// capability the operator deliberately chose; nothing is bypassed. Unset defaults
+// to read-only (the safe posture before the user has chosen).
 func globalChatTools(capability string, ok bool) []string {
 	if ok && capability == CapabilityAct {
-		return []string{"Read", "Grep", "Glob", "Bash"}
+		return []string{"Read", "Grep", "Glob", "Bash", "Monitor"}
 	}
 	return []string{"Read", "Grep", "Glob"}
 }

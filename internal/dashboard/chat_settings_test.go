@@ -30,7 +30,8 @@ func TestChatCapabilityNullUntilSet(t *testing.T) {
 		t.Errorf("after set readonly: cap=%q ok=%v", cap, ok)
 	}
 
-	// Upgrade to act → Bash added.
+	// Upgrade to act → Bash + Monitor added (Monitor lets a detached worker run a
+	// bounded wait/poll loop without an approval prompt — same act gate as Bash).
 	if err := d.SetChatCapability(CapabilityAct); err != nil {
 		t.Fatal(err)
 	}
@@ -38,8 +39,8 @@ func TestChatCapabilityNullUntilSet(t *testing.T) {
 	if !ok || cap != CapabilityAct {
 		t.Fatalf("after set act: cap=%q ok=%v", cap, ok)
 	}
-	if got := globalChatTools(cap, ok); strings.Join(got, ",") != "Read,Grep,Glob,Bash" {
-		t.Errorf("act should add Bash, got %v", got)
+	if got := globalChatTools(cap, ok); strings.Join(got, ",") != "Read,Grep,Glob,Bash,Monitor" {
+		t.Errorf("act should add Bash + Monitor, got %v", got)
 	}
 }
 

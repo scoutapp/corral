@@ -65,7 +65,7 @@ var chatDefaultTools = []string{"Read", "Grep", "Glob"}
 // listed here is dropped — a grant is opt-in and can never name an unknown tool.
 var chatToolWhitelist = map[string]bool{
 	"Read": true, "Grep": true, "Glob": true,
-	"Edit": true, "Write": true, "Bash": true,
+	"Edit": true, "Write": true, "Bash": true, "Monitor": true,
 }
 
 // parseChatTools turns the `tools` query param (comma-separated) into a
