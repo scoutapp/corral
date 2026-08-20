@@ -23,8 +23,9 @@ type InitOptions struct {
 	LaunchTmux          bool
 	DindEnabled         bool
 	DindPorts           []string
-	PassthroughFirewall bool // "permissive but observed" mode (proxy on, allow+log, direct TCP ok)
+	PassthroughFirewall bool                  // "permissive but observed" mode (proxy on, allow+log, direct TCP ok)
 	Source              *config.ProjectSource // PR/issue this project was spawned from
+	DindCache           *config.DindCacheRef  // repo-scoped DinD cache to start from (nil = fresh empty volume)
 }
 
 // InitProject creates a project's on-disk state under <workspace>/.corral:
@@ -58,6 +59,7 @@ func InitProject(workspace string, opts InitOptions) (*config.ProjectConfig, err
 		DindPorts:           opts.DindPorts,
 		PassthroughFirewall: opts.PassthroughFirewall,
 		Source:              opts.Source,
+		DindCache:           opts.DindCache,
 		CreatedAt:           time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := config.WriteConfig(projectDir, cfg); err != nil {

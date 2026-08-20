@@ -4189,6 +4189,15 @@
             "type": "boolean",
             "description": "Docker-in-Docker for this project (default: the global setting)."
           },
+          "noRepoCache": {
+            "type": "boolean",
+            "description": "Opt this project OUT of auto-attaching its repo's DinD cache (repo-<repoId>). By default a repo-derived project reuses the repo's built-image baseline when one exists."
+          },
+          "dindCacheMode": {
+            "type": "string",
+            "enum": ["copy", "shared"],
+            "description": "How to use the repo DinD cache: 'copy' (default — seed an isolated per-project copy) or 'shared' (mount the cache live so builds persist back into it)."
+          },
           "proxy": {
             "type": "boolean"
           },
