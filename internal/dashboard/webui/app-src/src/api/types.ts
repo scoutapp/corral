@@ -67,6 +67,7 @@ export interface ConfigView {
   ssh_keys_effective: string[];
   container_up: boolean;
   source?: ProjectSource;
+  repo_id?: string; // primary repo id (for the repo-scoped DinD cache), when known
 }
 
 // A project's pin to a named DinD data cache (config.DindCacheRef).
@@ -151,6 +152,7 @@ export interface GlobalView {
   conv_max_rows_default: number;
   api_writes_enabled: boolean; // corral api CLI / Claude may make mutating calls
   dind_default: boolean; // default Docker-in-Docker state for new projects (ON by default)
+  dind_repo_cache_default: boolean; // repo-derived projects reuse the repo's DinD cache (ON by default)
   merge_strategy: string; // global default merge method ("" = never set → ask per repo)
   merge_mode: string; // default primary merge mode: sandbox|host|plain
   merge_auto_teardown: boolean; // merge sandbox auto-removes itself once the PR is merged
@@ -168,6 +170,7 @@ export interface GlobalEdit {
   conv_max_rows?: number;
   api_writes_enabled?: boolean;
   dind_default?: boolean;
+  dind_repo_cache_default?: boolean;
   merge_strategy?: string; // "" clears the global default (repos ask on first merge)
   merge_mode?: string; // sandbox|host|plain
   merge_auto_teardown?: boolean;

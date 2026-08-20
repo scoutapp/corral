@@ -46,6 +46,7 @@ export function GlobalPage() {
   const [convRows, setConvRows] = useState("");
   const [apiWrites, setApiWrites] = useState(false);
   const [dindDefault, setDindDefault] = useState(true);
+  const [dindRepoCacheDefault, setDindRepoCacheDefault] = useState(true);
   // PR merge defaults. mergeStrategy "" = ask per repo on first merge.
   const [mergeStrategy, setMergeStrategy] = useState("");
   const [mergeMode, setMergeMode] = useState("host");
@@ -77,6 +78,7 @@ export function GlobalPage() {
           setConvRows(data.conv_max_rows ? String(data.conv_max_rows) : "");
           setApiWrites(!!data.api_writes_enabled);
           setDindDefault(data.dind_default !== false); // default ON
+          setDindRepoCacheDefault(data.dind_repo_cache_default !== false); // default ON
           setMergeStrategy(data.merge_strategy || ""); // "" = ask per repo
           setMergeMode(data.merge_mode || "host");
           setMergeAutoTeardown(data.merge_auto_teardown !== false); // default ON
@@ -137,6 +139,7 @@ export function GlobalPage() {
     edit.conv_max_rows = convRows.trim() ? Math.max(0, parseInt(convRows, 10) || 0) : 0;
     edit.api_writes_enabled = apiWrites;
     edit.dind_default = dindDefault;
+    edit.dind_repo_cache_default = dindRepoCacheDefault;
     edit.merge_strategy = mergeStrategy; // "" clears the global default
     edit.merge_mode = mergeMode;
     edit.merge_auto_teardown = mergeAutoTeardown;
@@ -513,6 +516,18 @@ export function GlobalPage() {
                 <code> docker compose</code>). Off gives a tighter, unprivileged box — pick this if you don't need
                 Docker and want stronger isolation. A single project can override this when it's created or in its
                 Config tab.
+              </div>
+            </div>
+            <div className="cfg-field">
+              <label className="cfg-ssh-item">
+                <input type="checkbox" checked={dindRepoCacheDefault} onChange={(e) => setDindRepoCacheDefault(e.target.checked)} />{" "}
+                <span className="cfg-ssh-name">Reuse a repo's DinD cache across projects</span>
+              </label>
+              <div className="muted cfg-note">
+                On (default): a project created <b>from a repo</b> auto-starts from that repo's saved DinD baseline
+                (built images + volumes), so a second project from the same repo doesn't rebuild from scratch. Inert
+                until you save a baseline in a project's Config tab (“Save as repo baseline”). Off makes every project
+                start with an empty inner Docker.
               </div>
             </div>
           </section>

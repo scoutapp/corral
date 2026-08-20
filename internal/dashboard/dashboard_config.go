@@ -71,6 +71,11 @@ type configView struct {
 
 	// Source: the PR/issue this project was spawned from (back-link), or nil.
 	Source *config.ProjectSource `json:"source,omitempty"`
+
+	// RepoID is the project's primary repo id (from Source), when known. The
+	// Config tab uses it to offer a repo-scoped DinD cache ("Save as repo cache",
+	// named repo-<id>). Empty when the project isn't repo-derived.
+	RepoID string `json:"repo_id,omitempty"`
 }
 
 func (d *dashboardServer) handleConfigRead(w http.ResponseWriter, r *http.Request, id string) {
@@ -106,6 +111,9 @@ func (d *dashboardServer) handleConfigRead(w http.ResponseWriter, r *http.Reques
 		SSHKeysGlobal:    config.GlobalSSHKeys(),
 		SSHKeysEffective: cfg.ResolveSSHKeys(),
 		Source:           cfg.Source,
+	}
+	if cfg.Source != nil {
+		view.RepoID = cfg.Source.RepoID
 	}
 
 	view.AllowedHosts = readAllowedHostsForWorkspace(workspace)
