@@ -65,7 +65,7 @@ var chatDefaultTools = []string{"Read", "Grep", "Glob"}
 // listed here is dropped — a grant is opt-in and can never name an unknown tool.
 var chatToolWhitelist = map[string]bool{
 	"Read": true, "Grep": true, "Glob": true,
-	"Edit": true, "Write": true, "Bash": true,
+	"Edit": true, "Write": true, "Bash": true, "Monitor": true,
 }
 
 // parseChatTools turns the `tools` query param (comma-separated) into a
@@ -391,6 +391,11 @@ func buildClaudeArgs(prompt string, tools []string, sessionID string) []string {
 	args := []string{
 		"-p", prompt,
 		"--output-format", "stream-json", "--verbose",
+		// ALWAYS default (prompt on risky actions). Host claude — worker/merge jobs
+		// included — runs with the operator's full host privileges and NO container
+		// or firewall, so the permission gate is a real guardrail, not the redundant
+		// one it is inside the sandbox. It is deliberately NOT bypassable here; a
+		// worker gets capability via its bounded --allowedTools list instead.
 		"--permission-mode", "default",
 	}
 	// Load the corral-api skill for THIS chat session only, via --plugin-dir. We

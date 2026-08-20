@@ -2631,6 +2631,62 @@
         }
       }
     },
+    "/merge-jobs/{id}/wake": {
+      "post": {
+        "summary": "Resume a detached worker/merge job (self-wake)",
+        "description": "Enqueues a continuation turn for a detached job (worker or host-merge) now, or after `inSeconds`. This is how a worker resumes itself: a detached `claude -p` turn ends its process on completion, and the model's own ScheduleWakeup can't re-invoke it — only this can. A worker waiting on slow background work should call this before ending its turn (e.g. `corral worker wake <id> --in 30`). The continuation runs with full prior context (--resume). Capped at 30m; dropped if the job is removed before it fires.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "prompt": {
+                    "type": "string",
+                    "description": "Continuation prompt (defaults to a generic 'resume where you left off')."
+                  },
+                  "inSeconds": {
+                    "type": "integer",
+                    "description": "Delay before waking; 0/omitted = now. Capped at 1800."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Wake scheduled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "type": "boolean" },
+                    "jobId": { "type": "string" },
+                    "wakeInSeconds": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "unknown job"
+          }
+        }
+      }
+    },
     "/api/conversations": {
       "get": {
         "summary": "List captured Claude conversations (keyset, filterable, deep-search)",

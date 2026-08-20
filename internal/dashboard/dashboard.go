@@ -670,6 +670,13 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 			d.handleMergeJobWS(w, r, id)
 			return
 		}
+		// POST /merge-jobs/<id>/wake — a detached job (worker/merge) resumes ITSELF:
+		// enqueue a continuation turn now or after --in delay. This is the wire that
+		// makes workers true resumable forks (nothing else can wake a detached turn).
+		if id, ok := strings.CutSuffix(rest, "/wake"); ok && r.Method == http.MethodPost {
+			d.handleMergeJobWake(w, r, id)
+			return
+		}
 		if r.Method == http.MethodDelete && !strings.Contains(rest, "/") {
 			d.handleMergeJobDelete(w, r, rest)
 			return

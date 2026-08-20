@@ -120,6 +120,7 @@ func (d *dashboardServer) startMergeJob(prID int64) (*mergeJob, error) {
 func (d *dashboardServer) runMergeJob(claudeBin string, job *mergeJob) {
 	ctx, cancel := context.WithCancel(context.Background())
 	job.mu.Lock()
+	job.ctx = ctx // stored so a self-wake can bind to the job's lifetime
 	job.cancel = cancel
 	job.mu.Unlock()
 	defer cancel()
