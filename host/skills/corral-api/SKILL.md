@@ -118,11 +118,13 @@ repo's built images across projects via a **repo baseline cache** (`repo-<repoId
   ```
   (Or the same over the API: `GET /api/dind/caches`, `GET /p/<id>/dind/status`,
   `GET /p/<id>/dind/images`.)
-- A repo baseline is **saved once** (Config tab → "Save as repo baseline", or a
-  snapshot via `POST /api/dind/caches {name:"repo-<id>", project}`). After that,
-  **new projects from that repo auto-start from it** — no action needed. So if a
-  worker just built an app's image and it'll be needed again, suggest the user
-  save it as the repo baseline so the next project skips the rebuild.
+- The repo baseline **auto-saves on clean stop**: when a repo-derived project that
+  built a real app image is stopped and no baseline exists yet, Corral snapshots it
+  into `repo-<id>` automatically (it never overwrites an existing one). After that,
+  **new projects from that repo auto-start from it** — no action needed. You can
+  also save/update it manually (Config tab → "Save as repo baseline", or
+  `POST /api/dind/caches {name:"repo-<id>", project}`). So a worker that just built
+  an expensive image just needs to stop the project to preserve it for next time.
 
 ## Reads vs writes — the permission gate
 

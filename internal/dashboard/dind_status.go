@@ -42,6 +42,14 @@ func (d *dashboardServer) handleDindStatus(w http.ResponseWriter, r *http.Reques
 		dindcache.VolumeExists,
 		dindcache.VolumeExists,
 	)
+	// For a repo-derived project with no baseline yet, set the expectation that one
+	// auto-saves on clean stop (so the next project from this repo reuses it) — the
+	// banner otherwise reads as a dead-end "starting fresh".
+	if !status.Reused && cfg.DindEnabled && cfg.Source != nil && cfg.Source.RepoID != "" {
+		if !dindcache.Exists(dindcache.RepoCacheName(cfg.Source.RepoID)) {
+			status.Reason = "No repo baseline yet — this project's build auto-saves as the baseline when you stop it, so the next project from this repo reuses it."
+		}
+	}
 	writeFilesJSON(w, status)
 }
 
@@ -51,6 +59,102 @@ type dindImage struct {
 	Tag        string `json:"tag"`
 	ID         string `json:"id"`
 	Size       string `json:"size"`
+}
+
+// baseServiceImages are the common dependency images a project pulls (not the
+// app itself). An inner docker holding ONLY these hasn't built anything worth
+// saving as a baseline, so we don't nudge. Matched by repository name.
+var baseServiceImages = map[string]bool{
+	"postgres": true, "mysql": true, "mariadb": true, "redis": true,
+	"influxdb": true, "memcached": true, "rabbitmq": true, "elasticsearch": true,
+	"alpine": true, "busybox": true, "mongo": true, "nats": true, "clickhouse": true,
+}
+
+// appImageBeyondBase returns the first image that isn't a known base service
+// image (and isn't <none>), or "" if the inner docker holds only base/service
+// images. This is the "did the project build/load a real app image?" signal.
+func appImageBeyondBase(images []dindImage) string {
+	for _, img := range images {
+		repo := img.Repository
+		if repo == "" || repo == "<none>" {
+			continue
+		}
+		// Strip any registry/org prefix for the base-name check (e.g. library/redis).
+		base := repo
+		if i := strings.LastIndex(repo, "/"); i >= 0 {
+			base = repo[i+1:]
+		}
+		if baseServiceImages[base] {
+			continue
+		}
+		if img.Tag != "" && img.Tag != "<none>" {
+			return repo + ":" + img.Tag
+		}
+		return repo
+	}
+	return ""
+}
+
+// listInnerImages runs `docker images` in the project's inner docker. Returns
+// (images, containerUp, err). Empty list when the container is down.
+func listInnerImages(ctx context.Context, container string) ([]dindImage, bool, error) {
+	if !session.DockerContainerRunning(container) {
+		return nil, false, nil
+	}
+	out, err := exec.CommandContext(ctx, "docker", "exec", container,
+		"docker", "images", "--format", "{{json .}}").Output()
+	if err != nil {
+		return nil, true, err
+	}
+	var images []dindImage
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var raw struct {
+			Repository, Tag, ID, Size string
+		}
+		if json.Unmarshal([]byte(line), &raw) != nil {
+			continue
+		}
+		images = append(images, dindImage{Repository: raw.Repository, Tag: raw.Tag, ID: raw.ID, Size: raw.Size})
+	}
+	return images, true, nil
+}
+
+// maybeAutoSaveRepoBaseline captures a project's inner-docker state as its repo
+// baseline (repo-<repoId>) automatically — but ONLY on a safe, valuable signal:
+//
+//   - the project is repo-derived (we know which baseline),
+//   - DinD is on,
+//   - NO repo baseline exists yet (we NEVER overwrite an existing one automatically
+//     — updating the shared baseline stays a deliberate Config-tab action),
+//   - the inner docker holds a real app image beyond base service images (so we
+//     don't bake an empty/services-only volume), verified while the container is
+//     still up.
+//
+// It's called from the stop path BEFORE the container is removed (to read the
+// inner images) but snapshots the per-workspace VOLUME, which survives the
+// container — so the actual copy can run after stop. Returns the cache name on a
+// save, "" otherwise. Best-effort: never blocks or fails the stop.
+//
+// Detection runs pre-stop; the snapshot itself is kicked off by the caller after
+// the container is removed (see handleStopProject) so it doesn't delay the stop.
+func (d *dashboardServer) repoBaselineAutoSaveTarget(ctx context.Context, workspace string) (repoCache, srcVol string) {
+	cfg, err := readConfigForWorkspace(workspace)
+	if err != nil || !cfg.DindEnabled || cfg.Source == nil || cfg.Source.RepoID == "" {
+		return "", ""
+	}
+	name := dindcache.RepoCacheName(cfg.Source.RepoID)
+	if dindcache.Exists(name) {
+		return "", "" // never auto-overwrite an existing baseline
+	}
+	images, up, ierr := listInnerImages(ctx, session.ContainerNameForWorkspace(workspace))
+	if !up || ierr != nil || appImageBeyondBase(images) == "" {
+		return "", "" // nothing worth saving (no app image built)
+	}
+	return name, config.DindVolumeName(workspace)
 }
 
 // handleDindImages lists the images present in a project's INNER docker daemon —
@@ -66,34 +170,16 @@ func (d *dashboardServer) handleDindImages(w http.ResponseWriter, r *http.Reques
 		http.NotFound(w, r)
 		return
 	}
-	container := session.ContainerNameForWorkspace(workspace)
-	if !session.DockerContainerRunning(container) {
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	images, up, err := listInnerImages(ctx, session.ContainerNameForWorkspace(workspace))
+	if !up {
 		writeFilesJSON(w, map[string]any{"containerUp": false, "images": []dindImage{}})
 		return
 	}
-	// Ask the INNER daemon (DOCKER_HOST is exported inside the container) for its
-	// images as JSON lines. Bounded so a wedged inner daemon can't hang the request.
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, "docker", "exec", container,
-		"docker", "images", "--format", "{{json .}}").Output()
 	if err != nil {
 		writeFilesJSON(w, map[string]any{"containerUp": true, "images": []dindImage{}, "error": "inner docker images failed: " + err.Error()})
 		return
-	}
-	var images []dindImage
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		var raw struct {
-			Repository, Tag, ID, Size string
-		}
-		if json.Unmarshal([]byte(line), &raw) != nil {
-			continue
-		}
-		images = append(images, dindImage{Repository: raw.Repository, Tag: raw.Tag, ID: raw.ID, Size: raw.Size})
 	}
 	writeFilesJSON(w, map[string]any{"containerUp": true, "images": images})
 }

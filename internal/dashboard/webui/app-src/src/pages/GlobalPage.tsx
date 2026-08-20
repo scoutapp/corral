@@ -524,10 +524,11 @@ export function GlobalPage() {
                 <span className="cfg-ssh-name">Reuse a repo's DinD cache across projects</span>
               </label>
               <div className="muted cfg-note">
-                On (default): a project created <b>from a repo</b> auto-starts from that repo's saved DinD baseline
-                (built images + volumes), so a second project from the same repo doesn't rebuild from scratch. Inert
-                until you save a baseline in a project's Config tab (“Save as repo baseline”). Off makes every project
-                start with an empty inner Docker.
+                On (default): a project created <b>from a repo</b> auto-starts from that repo's DinD baseline
+                (built images + volumes), so a second project from the same repo doesn't rebuild from scratch. The
+                first such project <b>auto-saves its build as the baseline when you stop it</b> (only if none exists —
+                it never overwrites one). You can also save/update it manually in a project's Config tab. Off makes
+                every project start with an empty inner Docker.
               </div>
             </div>
           </section>

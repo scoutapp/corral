@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/scoutapp/corral/internal/applog"
+	"github.com/scoutapp/corral/internal/dindcache"
 	"github.com/scoutapp/corral/internal/session"
 	sshagent "github.com/scoutapp/corral/internal/ssh"
 )
@@ -156,10 +158,54 @@ func (d *dashboardServer) handleStopProject(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Auto-save the repo baseline on clean shutdown, if this repo has none yet and
+	// the project actually built an app image. Detect NOW (container still up so we
+	// can read the inner images); the snapshot copies the per-workspace VOLUME,
+	// which survives the container, so we run the (slow, multi-GB) copy in the
+	// background AFTER stopping — the stop response returns immediately.
+	detectCtx, cancelDetect := context.WithTimeout(r.Context(), 15*time.Second)
+	repoCache, srcVol := d.repoBaselineAutoSaveTarget(detectCtx, workspace)
+	cancelDetect()
+
 	_ = exec.Command("docker", "rm", "-f", container).Run()
 	_ = exec.Command("tmux", "kill-session", "-t", tmuxSession).Run()
 
+	if repoCache != "" && srcVol != "" {
+		go d.autoSaveRepoBaseline(repoCache, srcVol)
+	}
+
 	writeFilesJSON(w, map[string]any{"ok": true, "message": fmt.Sprintf("stopping %s", container)})
+}
+
+// autoSaveRepoBaseline snapshots srcVol into the repo baseline cache in the
+// background (a full volume copy — minutes for a multi-GB data root). Guarded by
+// a re-check of Exists so two concurrent stops can't both create it. Logged to
+// app_logs; failures are non-fatal (the project already stopped fine).
+func (d *dashboardServer) autoSaveRepoBaseline(repoCache, srcVol string) {
+	if dindcache.Exists(repoCache) {
+		return // another stop beat us to it
+	}
+	d.applog().Log(applog.Entry{
+		Category: applog.CatSystem, Event: "dind.baseline.autosave.start",
+		Message: applog.Fmt("Auto-saving repo DinD baseline %q from %s", repoCache, srcVol),
+		Status:  applog.StatusOK,
+		Meta:    map[string]any{"cache": repoCache, "src": srcVol},
+	})
+	if _, err := dindcache.CreateFromVolume(repoCache, srcVol); err != nil {
+		d.applog().Log(applog.Entry{
+			Category: applog.CatSystem, Event: "dind.baseline.autosave.error",
+			Message: applog.Fmt("Auto-save of repo baseline %q failed: %v", repoCache, err),
+			Status:  applog.StatusError,
+			Meta:    map[string]any{"cache": repoCache, "error": err.Error()},
+		})
+		return
+	}
+	d.applog().Log(applog.Entry{
+		Category: applog.CatSystem, Event: "dind.baseline.autosave.done",
+		Message: applog.Fmt("Saved repo DinD baseline %q — new projects from this repo will reuse it", repoCache),
+		Status:  applog.StatusOK,
+		Meta:    map[string]any{"cache": repoCache},
+	})
 }
 
 // claudeReady reports whether a captured tmux pane shows Claude's input prompt
