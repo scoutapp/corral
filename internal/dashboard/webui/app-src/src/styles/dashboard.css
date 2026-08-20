@@ -553,6 +553,18 @@ table.projects th, table.projects td {
 /* DinD data-cache picker + manager (shown only when DinD is on). */
 .cfg-cache { display: flex; flex-direction: column; gap: 0.35rem; }
 .cfg-cache-row { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+/* Repo-scoped baseline block — sits above the generic save, visually grouped. */
+.cfg-repo-cache {
+  display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-start;
+  margin: 0.5rem 0; padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--panel);
+}
+.cfg-repo-cache-head { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.cfg-repo-cache-badge {
+  font-size: 0.68rem; padding: 0.05rem 0.4rem; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--muted); white-space: nowrap;
+}
+.cfg-repo-cache-badge.on { color: #5ce6a8; border-color: color-mix(in srgb, #5ce6a8 45%, var(--border)); }
 .cfg-cache-row .cfg-select { flex: 1 1 12rem; min-width: 10rem; }
 .cfg-cache-save { display: flex; gap: 0.4rem; margin-top: 0.5rem; align-items: center; }
 .cfg-cache-name { flex: 0 1 14rem; }

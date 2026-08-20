@@ -283,6 +283,27 @@ export function ConfigTab({ projectId, refreshKey }: { projectId: string; refres
     }
   }
 
+  // saveAsRepoCache snapshots this project's inner-docker data into the
+  // repo-scoped baseline (repo-<repoId>), the cache new projects from this repo
+  // auto-attach. If it already exists, we delete-then-recreate so "save" always
+  // refreshes the baseline to this project's current state.
+  async function saveAsRepoCache(repoId: string, exists: boolean) {
+    const nm = `repo-${repoId}`;
+    if (exists && !window.confirm(`Update the repo baseline “${nm}” to this project's current inner-docker data? New projects from this repo will start from it.`)) return;
+    setSavingCache(true);
+    setMsg({ text: `saving repo baseline “${nm}” — copying the DinD volume, this can take a while…`, err: false });
+    try {
+      if (exists) await delJSON(`/api/dind/caches/${encodeURIComponent(nm)}`);
+      await postJSON("/api/dind/caches", { name: nm, project: projectId });
+      setMsg({ text: `✓ saved repo baseline “${nm}” — new projects from this repo will reuse it`, err: false });
+      refreshCaches();
+    } catch (e) {
+      setMsg({ text: `save repo cache failed: ${(e as Error).message}`, err: true });
+    } finally {
+      setSavingCache(false);
+    }
+  }
+
   async function deleteCache(nm: string) {
     if (!window.confirm(`Delete DinD cache “${nm}”? Projects still set to use it will fail to start until you re-point them.`)) return;
     try {
@@ -489,6 +510,32 @@ export function ConfigTab({ projectId, refreshKey }: { projectId: string; refres
               <div className="muted cfg-note">
                 A cache is a prebuilt inner-docker data root (images + volumes) so a project doesn't rebuild/re-seed each time. <b>Copy</b> seeds a fresh per-project volume from the cache on first start; <b>Shared</b> mounts the cache directly so a migration writes back. Changing this needs a restart.
               </div>
+
+              {cfg?.repo_id &&
+                (() => {
+                  const repoId = cfg.repo_id!;
+                  const repoCacheName = `repo-${repoId}`;
+                  const exists = caches.some((c) => c.name === repoCacheName);
+                  return (
+                    <div className="cfg-repo-cache">
+                      <div className="cfg-repo-cache-head">
+                        <b>Repo baseline</b>
+                        <code>{repoCacheName}</code>
+                        {exists ? (
+                          <span className="cfg-repo-cache-badge on">saved · reused by new projects from this repo</span>
+                        ) : (
+                          <span className="cfg-repo-cache-badge">not saved yet</span>
+                        )}
+                      </div>
+                      <div className="muted cfg-note">
+                        Save this project's built images + seeded volumes as the shared baseline for this repo. New projects created from the same repo auto-start from it (copy mode) instead of building from an empty inner docker.
+                      </div>
+                      <button className="cfg-btn" disabled={savingCache} onClick={() => saveAsRepoCache(repoId, exists)}>
+                        {savingCache ? "Saving…" : exists ? "Update repo baseline" : "Save as repo baseline"}
+                      </button>
+                    </div>
+                  );
+                })()}
 
               <div className="cfg-cache-save">
                 <input
