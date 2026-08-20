@@ -4,7 +4,7 @@ import { useStatus } from "../hooks/useStatus";
 import { usePersistentState } from "../hooks/usePersistentState";
 import { useDragResize } from "../hooks/useDragResize";
 import { getJSON, postRaw } from "../api/client";
-import type { ConfigView, ProjectSource } from "../api/types";
+import type { ConfigView, DindStatus, ProjectSource } from "../api/types";
 import { SSHLoadModal } from "../components/SSHLoadModal";
 import { XtermPane } from "../components/XtermPane";
 import { ChatPanel } from "../components/ChatPanel";
@@ -53,6 +53,11 @@ export function ProjectPage({ id }: { id: string }) {
       .then((c) => setSource(c.source || null))
       .catch(() => {});
   }, [id]);
+
+  // DinD cache reuse status for the header banner (cheap; no inner-docker exec).
+  // Refetched when the container's up-state flips, since starting it can seed the
+  // copy-mode volume (turning "will seed" into "reusing").
+  const [dindStatus, setDindStatus] = useState<DindStatus | null>(null);
 
   const [tab, setTab] = useState<Tab>("files");
   // Lazily mount a tab's content only after first activation (mirrors the old
@@ -119,6 +124,12 @@ export function ProjectPage({ id }: { id: string }) {
   const [pending, setPending] = useState<"" | "starting" | "stopping">("");
   const [sshOpen, setSshOpen] = useState(false);
   const up = !!me?.container_up;
+
+  useEffect(() => {
+    getJSON<DindStatus>(`/p/${id}/dind/status`)
+      .then(setDindStatus)
+      .catch(() => setDindStatus(null));
+  }, [id, up]);
 
   useEffect(() => {
     if (!pending) return;
@@ -220,6 +231,23 @@ export function ProjectPage({ id }: { id: string }) {
             💬 Ask Claude
           </button>
       </header>
+
+      {dindStatus && (dindStatus.cacheName || dindStatus.reason) && (
+        <div className={`dind-banner${dindStatus.reused ? " reused" : ""}`} title="Docker-in-Docker cache reuse for this project">
+          <span className="dind-banner-tag">DinD</span>
+          {dindStatus.cacheName ? (
+            <span className="dind-banner-cache">
+              {dindStatus.isRepo ? "repo baseline " : "cache "}
+              <code>{dindStatus.cacheName}</code>
+              {dindStatus.mode ? ` · ${dindStatus.mode}` : ""}
+            </span>
+          ) : null}
+          <span className={`dind-banner-verdict${dindStatus.reused ? " on" : ""}`}>
+            {dindStatus.reused ? "✓ reused" : "○ not reused"}
+          </span>
+          <span className="dind-banner-reason">{dindStatus.reason}</span>
+        </div>
+      )}
 
       <div className={`project-layout${dockCollapsed ? " dock-collapsed" : ""}`} id="project-layout">
         <div className="tab-area">

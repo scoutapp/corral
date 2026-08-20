@@ -730,6 +730,10 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleTerminalAction(w, r, id)
 	case sub == "config":
 		d.handleConfigRead(w, r, id)
+	case sub == "dind/status":
+		d.handleDindStatus(w, r, id)
+	case sub == "dind/images":
+		d.handleDindImages(w, r, id)
 	case sub == "config/diff":
 		d.handleConfigDiff(w, r, id)
 	case sub == "config/apply":

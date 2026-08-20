@@ -944,6 +944,9 @@ func Main() {
 	case "pr":
 		err = dashboard.CmdPR(os.Args[2:])
 
+	case "dind":
+		err = dashboard.CmdDind(os.Args[2:])
+
 	case "api":
 		err = dashboard.CmdAPI(os.Args[2:])
 

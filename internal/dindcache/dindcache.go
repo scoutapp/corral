@@ -30,6 +30,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/scoutapp/corral/internal/config"
 )
 
 // cachePrefix is the docker-volume name prefix for every corral DinD cache.
@@ -257,4 +259,62 @@ func Delete(name string) error {
 // Exists reports whether a cache with this name exists.
 func Exists(name string) bool {
 	return ValidName(name) && VolumeExists(VolumeName(name))
+}
+
+// Status is a cheap, no-inner-docker-exec summary of a project's DinD cache
+// situation, for the project-page info banner. It answers "is this project
+// reusing a cache?" from just the config ref + docker volume existence.
+type Status struct {
+	CacheName string `json:"cacheName,omitempty"` // attached cache slug (repo-<id> or hand-named), "" = none
+	Mode      string `json:"mode,omitempty"`      // "copy" | "shared" (when a cache is attached)
+	IsRepo    bool   `json:"isRepo"`              // the attached cache is a repo baseline (repo-<id>)
+	Reused    bool   `json:"reused"`              // the project is actually starting FROM the cache
+	// Reason is a short human verdict for the banner, e.g.
+	// "Reusing repo baseline (seeded copy)" / "Fresh — no baseline saved yet".
+	Reason string `json:"reason"`
+}
+
+// ComputeStatus derives the DinD reuse status for a project. projectVolExists /
+// cacheVolExists are injected (VolumeExists in production) so this is unit-testable
+// without a docker daemon.
+//
+//   - no cache ref            → fresh empty inner docker (not reused).
+//   - shared mode             → reused iff the cache volume exists (mounted directly).
+//   - copy mode               → reused iff the project's per-workspace volume exists
+//     (it was seeded on first start); absent = not seeded yet.
+func ComputeStatus(ref *config.DindCacheRef, projectVol string, cacheVolExists, projectVolExists func(string) bool) Status {
+	if ref == nil || ref.Name == "" {
+		return Status{Reason: "Fresh, empty inner Docker — no cache attached."}
+	}
+	s := Status{CacheName: ref.Name, Mode: config.DindCacheModeCopy, IsRepo: IsRepoCache(ref.Name)}
+	if ref.IsShared() {
+		s.Mode = config.DindCacheModeShared
+	}
+	baseline := "cache " + ref.Name
+	if s.IsRepo {
+		baseline = "repo baseline"
+	}
+	if !cacheVolExists(VolumeName(ref.Name)) {
+		// Ref points at a cache that doesn't exist — it will fail to start (or, for a
+		// repo cache, simply hasn't been saved yet). Not reused.
+		if s.IsRepo {
+			s.Reason = "No repo baseline saved yet — starting fresh."
+		} else {
+			s.Reason = "Cache " + ref.Name + " is missing — will not reuse."
+		}
+		return s
+	}
+	if s.Mode == config.DindCacheModeShared {
+		s.Reused = true
+		s.Reason = "Reusing " + baseline + " (shared — changes persist to it)."
+		return s
+	}
+	// Copy mode: seeded iff the per-workspace volume exists.
+	if projectVolExists(projectVol) {
+		s.Reused = true
+		s.Reason = "Reusing " + baseline + " (seeded copy)."
+	} else {
+		s.Reason = "Will seed from " + baseline + " on next start."
+	}
+	return s
 }

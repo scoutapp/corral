@@ -960,6 +960,84 @@
         }
       }
     },
+    "/p/{id}/dind/status": {
+      "get": {
+        "summary": "DinD cache reuse status for a project (cheap; no inner-docker exec)",
+        "description": "Whether this project's inner Docker is starting FROM a cache: which cache is attached (repo-<id> or hand-named), its mode (copy/shared), and whether it's actually being reused (seeded copy / mounted shared) vs a fresh empty volume. Reads config + docker volume existence only.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The reuse status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cacheName": { "type": "string" },
+                    "mode": { "type": "string", "enum": ["copy", "shared"] },
+                    "isRepo": { "type": "boolean" },
+                    "reused": { "type": "boolean" },
+                    "reason": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/p/{id}/dind/images": {
+      "get": {
+        "summary": "List images in a project's inner Docker daemon (live)",
+        "description": "Runs `docker images` inside the project's sandbox container to show what's actually cached/available (so you can confirm e.g. the app image is present without a rebuild). Requires the container to be up; returns containerUp=false with an empty list otherwise.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The inner-docker image list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "containerUp": { "type": "boolean" },
+                    "images": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "repository": { "type": "string" },
+                          "tag": { "type": "string" },
+                          "id": { "type": "string" },
+                          "size": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/p/{id}/live-port": {
       "get": {
         "summary": "Get the Live View default port (0 = unset)",

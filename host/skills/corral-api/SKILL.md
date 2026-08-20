@@ -105,6 +105,25 @@ such a worker prompt, tell it how to reach and run the app inside the sandbox:
   requirement. Make this fallback explicit in the prompt so the worker doesn't get
   stuck insisting on Docker for an app that doesn't support it.
 
+### Reusing built images across projects (DinD caches)
+
+Building an app's inner-docker image every time is slow. Corral can reuse a
+repo's built images across projects via a **repo baseline cache** (`repo-<repoId>`):
+
+- Inspect what exists and whether a project is reusing it:
+  ```
+  corral dind caches                 # known caches (name + size)
+  corral dind status <projectId>     # is THIS project reusing a cache? (cheap)
+  corral dind images <projectId>     # images in the project's inner docker (live)
+  ```
+  (Or the same over the API: `GET /api/dind/caches`, `GET /p/<id>/dind/status`,
+  `GET /p/<id>/dind/images`.)
+- A repo baseline is **saved once** (Config tab → "Save as repo baseline", or a
+  snapshot via `POST /api/dind/caches {name:"repo-<id>", project}`). After that,
+  **new projects from that repo auto-start from it** — no action needed. So if a
+  worker just built an app's image and it'll be needed again, suggest the user
+  save it as the repo baseline so the next project skips the rebuild.
+
 ## Reads vs writes — the permission gate
 
 **Reads (GET) always work.** You can always inspect: list flows, read logs, look
