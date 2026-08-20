@@ -3,6 +3,8 @@ package dashboard
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -212,6 +214,21 @@ func (c *convCapturer) ConvID() int64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.convID
+}
+
+// parentConvFromRequest reads the X-Corral-Parent-Conversation header — set by
+// `corral api` when a captured Claude drove the request — and returns the parent
+// conversation id, or 0 when absent/unparseable. This is how spawned work
+// (workers, one-shot analyses) chains back to the conversation that triggered it.
+func parentConvFromRequest(r *http.Request) int64 {
+	if r == nil {
+		return 0
+	}
+	id, _ := strconv.ParseInt(r.Header.Get("X-Corral-Parent-Conversation"), 10, 64)
+	if id < 0 {
+		return 0
+	}
+	return id
 }
 
 // convIDKey carries the "conversation currently driving this turn" through the

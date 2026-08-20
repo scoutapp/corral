@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/scoutapp/corral/internal/applog"
@@ -42,8 +41,7 @@ func (d *dashboardServer) handleConductorWorkerCreate(w http.ResponseWriter, r *
 	// Cross-origin linkage: if a captured Claude drove this request (via corral
 	// api), the parent conversation id rides in on this header — thread it so the
 	// worker's own conversation chains back to it.
-	parentConv, _ := strconv.ParseInt(r.Header.Get("X-Corral-Parent-Conversation"), 10, 64)
-	job, err := d.startWorkerJob(body.Prompt, body.Title, parentConv, "")
+	job, err := d.startWorkerJob(body.Prompt, body.Title, parentConvFromRequest(r), "")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return

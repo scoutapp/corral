@@ -81,7 +81,7 @@ func (t *analysisJobTracker) finish(prID int64, kind string, err error) {
 // startEnrich kicks off the per-block AI enrichment in the background. Returns an
 // error only for a synchronous precondition (no claude, already running); the
 // analysis itself completes asynchronously and its result is polled.
-func (d *dashboardServer) startEnrich(prID int64) error {
+func (d *dashboardServer) startEnrich(prID, parentConvID int64) error {
 	claudeBin, err := resolveClaudeBin()
 	if err != nil {
 		return fmt.Errorf("the `claude` CLI could not be located — install Claude Code and restart the dashboard")
@@ -105,6 +105,7 @@ func (d *dashboardServer) startEnrich(prID int64) error {
 		})
 		runner := d.capturingRunner(ctx, convOrigin{
 			Kind: "analysis", OriginID: fmt.Sprintf("enrich-%d", prID), RepoID: repoID, PRNumber: num,
+			ParentConversationID: parentConvID, // chain to the chat that triggered this (if any)
 		}, prreview.NewClaudeRunner(claudeBin))
 		_, aerr := svc.WithPromptResolver(d.promptResolver()).ExtractBlocks(ctx, prID, runner)
 		endSpan(aerr)
@@ -117,7 +118,7 @@ func (d *dashboardServer) startEnrich(prID int64) error {
 }
 
 // startRisk kicks off the PR-level risk verdict in the background.
-func (d *dashboardServer) startRisk(prID int64) error {
+func (d *dashboardServer) startRisk(prID, parentConvID int64) error {
 	claudeBin, err := resolveClaudeBin()
 	if err != nil {
 		return fmt.Errorf("the `claude` CLI could not be located — install Claude Code and restart the dashboard")
@@ -141,6 +142,7 @@ func (d *dashboardServer) startRisk(prID int64) error {
 		})
 		runner := d.capturingRunner(ctx, convOrigin{
 			Kind: "analysis", OriginID: fmt.Sprintf("risk-%d", prID), RepoID: repoID, PRNumber: num,
+			ParentConversationID: parentConvID, // chain to the chat that triggered this (if any)
 		}, prreview.NewClaudeRunner(claudeBin))
 		_, aerr := svc.WithPromptResolver(d.promptResolver()).AnalyzeRisk(ctx, prID, runner)
 		endSpan(aerr)
@@ -153,7 +155,7 @@ func (d *dashboardServer) startRisk(prID int64) error {
 // in the background; returns immediately. Poll GET /api/prs/<id>/analysis for
 // completion, then read GET /api/prs/<id>/blocks.
 func (d *dashboardServer) handleAPIPREnrich(w http.ResponseWriter, r *http.Request, prID int64) {
-	if err := d.startEnrich(prID); err != nil {
+	if err := d.startEnrich(prID, parentConvFromRequest(r)); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -163,7 +165,7 @@ func (d *dashboardServer) handleAPIPREnrich(w http.ResponseWriter, r *http.Reque
 // handleAPIPRRiskStart: POST /api/prs/<id>/analyze — start the risk verdict in
 // the background; poll analysis, then read GET /api/prs/<id>/risk.
 func (d *dashboardServer) handleAPIPRRiskStart(w http.ResponseWriter, r *http.Request, prID int64) {
-	if err := d.startRisk(prID); err != nil {
+	if err := d.startRisk(prID, parentConvFromRequest(r)); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
