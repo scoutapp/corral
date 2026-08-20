@@ -51,7 +51,14 @@ func workerContractPreamble(jobID string) string {
 		"(e.g. --in 30) via Bash and end the turn. Corral re-invokes you after the delay with full " +
 		"context so you can check on it and continue; repeat the wake if it's still going.\n" +
 		"Only end WITHOUT a wake when the task is actually done, or you're truly blocked and must " +
-		"report to the human. This job's id is `" + jobID + "`.\n\n---\n\nTASK:\n\n"
+		"report to the human. This job's id is `" + jobID + "`.\n" +
+		"MAKE EXPENSIVE WORK REUSABLE: Corral snapshots a project's inner-docker on clean stop into " +
+		"a per-repo baseline that future projects reuse — but a snapshot captures IMAGES and NAMED " +
+		"VOLUMES, not a running container's writable layer. So don't `bundle install`/`npm ci`/`pip " +
+		"install` inside a bare base-image container and leave it there — it'll be lost. Install deps " +
+		"into a NAMED VOLUME the app mounts (e.g. `docker run -v <app>-bundle:/usr/local/bundle …`) or " +
+		"`docker commit` the prepared container to an image. That way the slow dep-install is captured " +
+		"and the next project from this repo skips it.\n\n---\n\nTASK:\n\n"
 }
 
 // handleConductorWorkerCreate: POST /api/conductor/workers { prompt, title? }
