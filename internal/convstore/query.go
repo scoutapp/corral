@@ -8,6 +8,7 @@ import (
 // Conversation is one conversation row as read back for the API/UI.
 type Conversation struct {
 	ID                   int64   `json:"id"`
+	UUID                 string  `json:"uuid,omitempty"`
 	ConvKey              string  `json:"convKey,omitempty"`
 	ClaudeSessionID      string  `json:"claudeSessionId,omitempty"`
 	CreatedAt            string  `json:"createdAt"`
@@ -153,6 +154,17 @@ func (s *ConvStore) Get(id int64) (Conversation, error) {
 	return scanConversation(row)
 }
 
+// UUID returns a conversation's stable public UUID, or "" if unknown. Cheap
+// lookup used by the capture seam to surface the id to the chat UI.
+func (s *ConvStore) UUID(id int64) string {
+	if s == nil || s.db == nil || id == 0 {
+		return ""
+	}
+	var u string
+	_ = s.db.QueryRow(`SELECT COALESCE(uuid,'') FROM conversations WHERE id = ?`, id).Scan(&u)
+	return u
+}
+
 // Messages returns a conversation's messages in order. When q is set, only
 // messages matching the FTS query are returned (in-conversation search).
 func (s *ConvStore) Messages(convID int64, q string) ([]MessageRow, error) {
@@ -292,7 +304,7 @@ func (s *ConvStore) distinct(col string) ([]string, error) {
 
 // --- shared column list + scanners ---
 
-const convSelectCols = `SELECT c.id, c.conv_key, COALESCE(c.claude_session_id,''),
+const convSelectCols = `SELECT c.id, COALESCE(c.uuid,''), c.conv_key, COALESCE(c.claude_session_id,''),
 	c.created_at, c.updated_at, c.origin_kind, COALESCE(c.origin_id,''),
 	COALESCE(c.project_id,''), COALESCE(c.project_label,''), COALESCE(c.repo_id,''),
 	COALESCE(c.pr_number,0), COALESCE(c.trace_id,''), COALESCE(c.parent_conversation_id,0),
@@ -304,7 +316,7 @@ type scanner interface{ Scan(...any) error }
 
 func scanConversation(sc scanner) (Conversation, error) {
 	var c Conversation
-	err := sc.Scan(&c.ID, &c.ConvKey, &c.ClaudeSessionID, &c.CreatedAt, &c.UpdatedAt,
+	err := sc.Scan(&c.ID, &c.UUID, &c.ConvKey, &c.ClaudeSessionID, &c.CreatedAt, &c.UpdatedAt,
 		&c.OriginKind, &c.OriginID, &c.ProjectID, &c.ProjectLabel, &c.RepoID,
 		&c.PRNumber, &c.TraceID, &c.ParentConversationID, &c.Title, &c.FirstPrompt,
 		&c.Model, &c.TotalCostUSD, &c.Status, &c.MessageCount)

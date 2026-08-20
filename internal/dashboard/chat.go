@@ -106,7 +106,7 @@ type chatClientMsg struct {
 // chatServerMsg is a typed frame the server forwards to the browser. Only the
 // fields relevant to a given Type are populated.
 type chatServerMsg struct {
-	Type      string `json:"type"`                // "text" | "tool_use" | "tool_result" | "result" | "error" | "turn_end" | "canceled" | "session"
+	Type      string `json:"type"`                // "text" | "tool_use" | "tool_result" | "result" | "error" | "turn_end" | "canceled" | "session" | "conv_meta"
 	Text      string `json:"text,omitempty"`      // assistant text / error message
 	Tool      string `json:"tool,omitempty"`      // tool name for tool_use
 	Input     string `json:"input,omitempty"`     // tool input (JSON) for tool_use
@@ -115,6 +115,8 @@ type chatServerMsg struct {
 	Model     string `json:"model,omitempty"`     // model id on result
 	IsError   bool   `json:"isError,omitempty"`   // result subtype != success
 	SessionID string `json:"sessionId,omitempty"` // Claude session id (type "session"), for reload-resume
+	ConvID    int64  `json:"convId,omitempty"`    // captured conversation id (type "conv_meta")
+	ConvUUID  string `json:"convUuid,omitempty"`  // captured conversation UUID (type "conv_meta"), shown in host chat header
 }
 
 // handleChatWS runs a Claude-Desktop-style chat over a WebSocket. Each client

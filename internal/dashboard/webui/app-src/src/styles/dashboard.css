@@ -2331,9 +2331,19 @@ table.projects th, table.projects td {
 .conv-origin { min-width: 9rem; }
 .conv-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
 .conv-row { border: 1px solid var(--border); border-radius: 6px; padding: 0.45rem 0.6rem; }
+/* An open row reads as a gutter: accent its edge and lift it off the list. */
+.conv-row.open { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--panel); }
 .conv-head {
   display: flex; align-items: center; gap: 0.5rem; width: 100%;
   background: none; border: none; color: var(--fg); cursor: pointer; text-align: left; font: inherit;
+}
+.conv-caret {
+  flex: 0 0 auto; color: var(--muted); font-size: 0.7rem; transition: transform 0.12s ease;
+}
+.conv-caret.open { transform: rotate(90deg); }
+/* Inline detail lives inside the row; separate it from the header with a rule. */
+.conv-row.open .conv-detail {
+  margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border);
 }
 .conv-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conv-byline { font-size: 0.72rem; color: var(--muted); margin-top: 0.2rem; }
@@ -2695,6 +2705,14 @@ table.projects th, table.projects td {
   letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted);
   border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px;
 }
+/* The conversation UUID (short) shown in host chat headers — small, gray,
+   monospace, click-to-copy. Deliberately quiet: it's a reference handle, not a
+   focal point. */
+.chatdock-uuid {
+  margin-left: 0.4rem; font-family: var(--mono, ui-monospace, monospace); font-size: 0.62rem;
+  color: var(--muted); opacity: 0.75; cursor: pointer; user-select: all;
+}
+.chatdock-uuid:hover { opacity: 1; color: var(--fg); }
 
 /* DocsDock — the left-side "how this page works" drawer. Mirrors the chat drawer
    on the right: launcher bottom-LEFT, panel slides in from the LEFT. Deliberately

@@ -29,6 +29,13 @@ function contextLabel(path: string): string {
   return "";
 }
 
+// activeTabUuid picks which host chat's conversation UUID the header shows.
+function activeTabUuid(tab: string, globalUuid: string, projectUuid: string): string {
+  if (tab === "project") return projectUuid;
+  if (tab === "global") return globalUuid;
+  return ""; // work tab (or none) — no single conversation
+}
+
 export function ChatDock() {
   const { path } = useRouter();
   const projectId = matchProject(path);
@@ -39,6 +46,11 @@ export function ChatDock() {
   // global chat otherwise. Re-defaults to project whenever the project changes.
   const [tab, setTab] = useState<Tab>("project");
   const [workCount, setWorkCount] = useState(0);
+  // Captured conversation UUID per host chat tab, shown in the header. These are
+  // HOST conversations (this dock is the host chat); sandbox chats never render
+  // a UUID. The Work tab has no single conversation, so it shows none.
+  const [globalUuid, setGlobalUuid] = useState("");
+  const [projectUuid, setProjectUuid] = useState("");
   useEffect(() => {
     setTab(projectId ? "project" : "global");
   }, [projectId]);
@@ -107,6 +119,7 @@ export function ChatDock() {
         ? "work"
         : "global";
   const showTabs = showProjectTab || showWorkTab;
+  const headerUuid = activeTabUuid(activeTab, globalUuid, projectUuid);
 
   return (
     <>
@@ -127,6 +140,15 @@ export function ChatDock() {
             {activeTab === "global" && contextLabel(path) && (
               <span className="chatdock-ctx" title="Claude knows what page you're on">
                 {contextLabel(path)}
+              </span>
+            )}
+            {(activeTab === "global" || activeTab === "project") && headerUuid && (
+              <span
+                className="chatdock-uuid"
+                title={`Conversation ${headerUuid} — click to copy`}
+                onClick={() => navigator.clipboard?.writeText(headerUuid)}
+              >
+                {headerUuid.slice(0, 8)}
               </span>
             )}
           </span>
@@ -174,13 +196,16 @@ export function ChatDock() {
                   while on a project route. */}
               {showProjectTab && (
                 <div style={{ display: activeTab === "project" ? "flex" : "none", flex: 1, minHeight: 0, flexDirection: "column" }}>
-                  <ChatPanel wsPath={`/p/${projectId}/chat/ws?tools=Read,Grep,Glob`} />
+                  <ChatPanel
+                    wsPath={`/p/${projectId}/chat/ws?tools=Read,Grep,Glob`}
+                    onConvMeta={(m) => setProjectUuid(m.convUuid)}
+                  />
                 </div>
               )}
               <div style={{ display: activeTab === "global" ? "flex" : "none", flex: 1, minHeight: 0, flexDirection: "column" }}>
                 {/* The global chat's capability is a first-run choice; gate the
                     panel behind it so we prompt before spawning the assistant. */}
-                <FirstRunChat />
+                <FirstRunChat onConvMeta={(m) => setGlobalUuid(m.convUuid)} />
               </div>
               {/* Work tab: only mounted when active, so its job viewer WS opens
                   lazily. It reports the live count back to keep the tab in sync. */}

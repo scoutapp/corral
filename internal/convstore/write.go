@@ -1,9 +1,24 @@
 package convstore
 
 import (
+	"crypto/rand"
+	"fmt"
 	"strconv"
 	"strings"
 )
+
+// newUUID returns a random RFC-4122 v4 UUID string. Uses crypto/rand (no
+// external dependency — matches the repo's existing id generation). Panics only
+// if the system RNG fails, which is unrecoverable anyway.
+func newUUID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic("convstore: crypto/rand failed: " + err.Error())
+	}
+	b[6] = (b[6] & 0x0f) | 0x40 // version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // variant 10
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
 
 // ConvMeta is the origin/linkage metadata for a conversation, set at start.
 type ConvMeta struct {
@@ -48,17 +63,20 @@ func (s *ConvStore) StartConversation(m ConvMeta) (int64, error) {
 	if m.ParentConversationID > 0 {
 		parent = m.ParentConversationID
 	}
+	// uuid is assigned once, on genuine insert, and NEVER updated on conflict —
+	// it's the conversation's stable public handle. (It's deliberately absent from
+	// the DO UPDATE SET below.)
 	res, err := s.db.Exec(`
 		INSERT INTO conversations
-		    (conv_key, claude_session_id, origin_kind, origin_id, project_id,
+		    (conv_key, uuid, claude_session_id, origin_kind, origin_id, project_id,
 		     project_label, repo_id, pr_number, trace_id, root_span_id,
 		     parent_conversation_id, title, first_prompt)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(conv_key) DO UPDATE SET
 		    claude_session_id = COALESCE(NULLIF(excluded.claude_session_id,''), conversations.claude_session_id),
 		    title             = COALESCE(NULLIF(excluded.title,''), conversations.title),
 		    updated_at        = strftime('%Y-%m-%dT%H:%M:%fZ','now')
-	`, m.ConvKey, m.ClaudeSessionID, m.OriginKind, m.OriginID, nullif(m.ProjectID),
+	`, m.ConvKey, newUUID(), m.ClaudeSessionID, m.OriginKind, m.OriginID, nullif(m.ProjectID),
 		nullif(m.ProjectLabel), nullif(m.RepoID), nullifInt(m.PRNumber), nullif(m.TraceID),
 		nullif(m.RootSpanID), parent, nullif(m.Title), nullif(m.FirstPrompt))
 	if err != nil {

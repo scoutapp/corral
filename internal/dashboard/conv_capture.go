@@ -35,12 +35,14 @@ type convOrigin struct {
 type convCapturer struct {
 	d      *dashboardServer
 	origin convOrigin
-	trace  string // trace_id from ctx (for linkage)
-	span   string // root span_id from ctx
+	trace  string                    // trace_id from ctx (for linkage)
+	span   string                    // root span_id from ctx
+	send   func(chatServerMsg) error // browser channel, for the one-shot conv_meta frame
 
 	mu        sync.Mutex
 	convID    int64
 	started   bool
+	metaSent  bool
 	sessionID string
 }
 
@@ -61,6 +63,7 @@ func (d *dashboardServer) captureSend(ctx context.Context, origin convOrigin, se
 		origin: origin,
 		trace:  applog.TraceID(ctx),
 		span:   applog.SpanID(ctx),
+		send:   send,
 	}
 	wrapped := func(m chatServerMsg) error {
 		// Deliver to the browser FIRST and return its error — a DB hiccup must
@@ -165,10 +168,22 @@ func (c *convCapturer) recordPrompt(prompt string) {
 // ensureStarted lazily creates the conversation row (idempotent) and returns its
 // id, or 0 if it couldn't be created. Caller must NOT hold c.mu.
 func (c *convCapturer) ensureStarted(cs *convstore.ConvStore) int64 {
+	id, uuid := c.ensureStartedLocked(cs)
+	// Emit the one-shot conv_meta frame OUTSIDE the lock (send may do WS I/O).
+	if uuid != "" && c.send != nil {
+		_ = c.send(chatServerMsg{Type: "conv_meta", ConvID: id, ConvUUID: uuid})
+	}
+	return id
+}
+
+// ensureStartedLocked does the row creation under c.mu and returns (id, uuid).
+// uuid is non-empty ONLY on the first successful creation (so the caller emits
+// the conv_meta frame exactly once); it's "" on every subsequent call.
+func (c *convCapturer) ensureStartedLocked(cs *convstore.ConvStore) (int64, string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.started {
-		return c.convID
+		return c.convID, ""
 	}
 	convKey := c.origin.Kind + ":" + c.origin.OriginID
 	if c.origin.OriginID == "" {
@@ -189,11 +204,20 @@ func (c *convCapturer) ensureStarted(cs *convstore.ConvStore) int64 {
 		ParentConversationID: c.origin.ParentConversationID,
 	})
 	if e != nil {
-		return 0
+		return 0, ""
 	}
 	c.convID = id
 	c.started = true
-	return id
+	// Return the UUID exactly once so the caller emits a single conv_meta frame
+	// to the browser (the host chat header shows it).
+	uuid := ""
+	if !c.metaSent {
+		if u := cs.UUID(id); u != "" {
+			c.metaSent = true
+			uuid = u
+		}
+	}
+	return id, uuid
 }
 
 // ptrKey returns a stable per-instance key from the capturer's pointer, so a WS
