@@ -825,6 +825,24 @@ table.projects th, table.projects td {
   padding: 1.5rem; background: var(--bg);
 }
 .project-page > header { flex: none; }
+/* DinD reuse banner — a compact info strip under the header telling you whether
+   this project's inner Docker is starting from a cache (and which). Quiet by
+   default; a green edge when it's actively reusing. */
+.dind-banner {
+  flex: none; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+  padding: 0.3rem 0.7rem; font-size: 0.75rem; color: var(--muted);
+  background: var(--panel); border-bottom: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+}
+.dind-banner.reused { border-left-color: #5ce6a8; }
+.dind-banner-tag {
+  font-size: 0.62rem; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 0.35rem;
+}
+.dind-banner-cache code { color: var(--fg); }
+.dind-banner-verdict { color: var(--muted); }
+.dind-banner-verdict.on { color: #5ce6a8; }
+.dind-banner-reason { color: var(--muted); opacity: 0.85; }
 .project-layout { display: flex; gap: 0; flex: 1 1 auto; min-height: 0; }
 .tab-area { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
 .term-dock {

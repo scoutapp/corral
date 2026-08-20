@@ -85,6 +85,16 @@ export interface DindCache {
   bytes: number;
 }
 
+// GET /p/<id>/dind/status -> dindcache.Status — the cheap reuse verdict for the
+// project-page banner (no inner-docker exec).
+export interface DindStatus {
+  cacheName?: string; // attached cache slug (repo-<id> or hand-named), absent = none
+  mode?: "copy" | "shared";
+  isRepo: boolean; // the attached cache is a repo baseline
+  reused: boolean; // the project is actually starting FROM the cache
+  reason: string; // short human verdict
+}
+
 // What a project was spawned from (a PR or issue), for the two-way back-link.
 export interface ProjectSource {
   kind: string; // "pr" | "issue"
