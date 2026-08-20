@@ -58,11 +58,15 @@ export function ChatPanel({
   getCtx,
   persistKey,
   canAct = false,
+  onConvMeta,
 }: {
   wsPath: string;
   getCtx?: () => string;
   persistKey?: string;
   canAct?: boolean;
+  // Fires once per conversation with its captured id + stable UUID (from the
+  // server's conv_meta frame). The host chat header shows the UUID.
+  onConvMeta?: (meta: { convId: number; convUuid: string }) => void;
 }) {
   const msgsKey = persistKey ? `corral.chat.msgs.${persistKey}` : "";
   const sidKey = persistKey ? `corral.chat.sid.${persistKey}` : "";
@@ -82,6 +86,10 @@ export function ChatPanel({
   const [reconnect, setReconnect] = useState(0); // bump to force a fresh connection
   const wsRef = useRef<WebSocket | null>(null);
   const logRef = useRef<HTMLDivElement | null>(null);
+  // Keep the latest onConvMeta in a ref so the WS closure sees it without adding
+  // it to the effect deps (which would needlessly reconnect the socket).
+  const onConvMetaRef = useRef(onConvMeta);
+  onConvMetaRef.current = onConvMeta;
   // The Claude session id (persisted), passed as ?resume= on (re)connect.
   const sessionIdRef = useRef<string>(persistKey ? localStorage.getItem(sidKey) || "" : "");
 
@@ -148,6 +156,14 @@ export function ChatPanel({
               }
             }
           }
+          break;
+        }
+        case "conv_meta": {
+          // The conversation's stable public UUID — surface it to the host chat
+          // header (sandbox chats don't render it).
+          const convUuid = (m.convUuid as string) || "";
+          const convId = (m.convId as number) || 0;
+          if (convUuid && onConvMetaRef.current) onConvMetaRef.current({ convId, convUuid });
           break;
         }
         case "text": {

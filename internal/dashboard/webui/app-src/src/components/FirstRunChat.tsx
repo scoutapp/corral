@@ -13,7 +13,11 @@ import { ChatPanel } from "./ChatPanel";
 type CapResp = { capability: "readonly" | "act" | null; configured: boolean };
 type GlobalResp = { api_writes_enabled: boolean; api_writes_configured: boolean };
 
-export function FirstRunChat() {
+export function FirstRunChat({
+  onConvMeta,
+}: {
+  onConvMeta?: (meta: { convId: number; convUuid: string }) => void;
+} = {}) {
   const [cap, setCap] = useState<CapResp | null>(null);
   const [writes, setWrites] = useState<GlobalResp | null>(null);
 
@@ -40,6 +44,7 @@ export function FirstRunChat() {
       getCtx={() => pageContext(window.location.pathname)}
       persistKey="global"
       canAct={cap.capability === "act"}
+      onConvMeta={onConvMeta}
     />
   );
 }

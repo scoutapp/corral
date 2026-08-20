@@ -60,7 +60,17 @@ export function ConversationsPanel({ projectId }: { projectId?: string }) {
   const [query, setQuery] = useState("");
   const [origin, setOrigin] = useState("");
   const [origins, setOrigins] = useState<string[]>([]);
-  const [active, setActive] = useState<Conversation | null>(null);
+  // Which rows are expanded. A Set (not a single "active") so the list stays
+  // put and you can open a conversation inline — like a gutter — and keep
+  // scrolling to the ones below it. No back button, no view swap.
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const toggle = useCallback((id: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
 
   // Load the filter facets once.
   useEffect(() => {
@@ -87,10 +97,6 @@ export function ConversationsPanel({ projectId }: { projectId?: string }) {
     const t = setTimeout(load, 250);
     return () => clearTimeout(t);
   }, [load]);
-
-  if (active) {
-    return <ConversationDetail conv={active} onBack={() => setActive(null)} />;
-  }
 
   return (
     <div className="conv-panel">
@@ -122,22 +128,34 @@ export function ConversationsPanel({ projectId }: { projectId?: string }) {
         </p>
       ) : (
         <ul className="conv-list">
-          {items.map((c) => (
-            <li key={c.id} className="conv-row">
-              <button type="button" className="conv-head" onClick={() => setActive(c)}>
-                <span className={`conv-origin-chip origin-${c.originKind}`}>{originLabel(c.originKind)}</span>
-                <span className="conv-title">{c.title || c.firstPrompt || `Conversation #${c.id}`}</span>
-                <ConvStatusDot status={c.status} />
-              </button>
-              <div className="conv-byline">
-                {c.projectLabel && <span>{c.projectLabel}</span>}
-                {c.prNumber ? <span> · PR #{c.prNumber}</span> : null}
-                <span> · {c.messageCount} msg</span>
-                {c.model && <span> · {c.model}</span>}
-                <span> · {c.createdAt}</span>
-              </div>
-            </li>
-          ))}
+          {items.map((c) => {
+            const open = expanded.has(c.id);
+            return (
+              <li key={c.id} className={`conv-row${open ? " open" : ""}`}>
+                <button
+                  type="button"
+                  className="conv-head"
+                  aria-expanded={open}
+                  onClick={() => toggle(c.id)}
+                >
+                  <span className={`conv-caret${open ? " open" : ""}`} aria-hidden>
+                    ▸
+                  </span>
+                  <span className={`conv-origin-chip origin-${c.originKind}`}>{originLabel(c.originKind)}</span>
+                  <span className="conv-title">{c.title || c.firstPrompt || `Conversation #${c.id}`}</span>
+                  <ConvStatusDot status={c.status} />
+                </button>
+                <div className="conv-byline">
+                  {c.projectLabel && <span>{c.projectLabel}</span>}
+                  {c.prNumber ? <span> · PR #{c.prNumber}</span> : null}
+                  <span> · {c.messageCount} msg</span>
+                  {c.model && <span> · {c.model}</span>}
+                  <span> · {c.createdAt}</span>
+                </div>
+                {open && <ConversationDetail conv={c} />}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
@@ -155,8 +173,10 @@ function ConvStatusDot({ status }: { status: string }) {
 }
 
 // ConversationDetail shows one conversation's messages with in-conversation
-// search. Tool calls are rendered distinctly from text.
-function ConversationDetail({ conv, onBack }: { conv: Conversation; onBack: () => void }) {
+// search. Tool calls are rendered distinctly from text. Rendered inline inside
+// its list row (the gutter) — it has no back button; collapsing is the row's
+// own disclosure toggle.
+function ConversationDetail({ conv }: { conv: Conversation }) {
   const [msgs, setMsgs] = useState<Message[] | null>(null);
   const [q, setQ] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -200,10 +220,6 @@ function ConversationDetail({ conv, onBack }: { conv: Conversation; onBack: () =
   return (
     <div className="conv-detail">
       <div className="conv-detail-head">
-        <button type="button" className="auto-btn link" onClick={onBack}>
-          ← conversations
-        </button>
-        <span className={`conv-origin-chip origin-${conv.originKind}`}>{originLabel(conv.originKind)}</span>
         <span className="conv-detail-title">{conv.title || `Conversation #${conv.id}`}</span>
         {conv.parentConversationId ? (
           <span className="conv-chain-hint" title="This conversation was spawned by another">
