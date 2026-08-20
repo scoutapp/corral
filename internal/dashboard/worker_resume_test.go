@@ -1,48 +1,41 @@
 package dashboard
 
 import (
-	"context"
 	"strings"
 	"testing"
 )
 
-// TestBypassPermissionsArgs verifies a detached turn's ctx flips the claude
-// permission mode to bypassPermissions (so a worker's tools don't hit an approval
-// prompt no human can answer), while a plain ctx stays on default.
-func TestBypassPermissionsArgs(t *testing.T) {
-	if bypassPermissionsFrom(context.Background()) {
-		t.Fatal("plain ctx should NOT bypass permissions")
+// TestHostClaudeStaysGated is a guardrail test: host claude turns must ALWAYS run
+// with --permission-mode default. Host claude (worker/merge jobs included) runs
+// with the operator's privileges and is NOT sandboxed, so the permission prompt
+// is a real safety boundary — it must never be bypassed. Fails loudly if anyone
+// reintroduces a bypass into the argv.
+func TestHostClaudeStaysGated(t *testing.T) {
+	args := strings.Join(buildClaudeArgs("hi", []string{"Bash"}, ""), " ")
+	if !strings.Contains(args, "--permission-mode default") {
+		t.Fatalf("host claude must use --permission-mode default, got: %s", args)
 	}
-	if !bypassPermissionsFrom(withBypassPermissions(context.Background())) {
-		t.Fatal("withBypassPermissions ctx should bypass")
-	}
-
-	def := strings.Join(buildClaudeArgs("hi", nil, "", "default"), " ")
-	if !strings.Contains(def, "--permission-mode default") {
-		t.Fatalf("default mode missing: %s", def)
-	}
-	byp := strings.Join(buildClaudeArgs("hi", nil, "", "bypassPermissions"), " ")
-	if !strings.Contains(byp, "--permission-mode bypassPermissions") {
-		t.Fatalf("bypass mode missing: %s", byp)
-	}
-	// Empty mode falls back to default (so existing callers are unaffected).
-	empty := strings.Join(buildClaudeArgs("hi", nil, "", ""), " ")
-	if !strings.Contains(empty, "--permission-mode default") {
-		t.Fatalf("empty mode should default: %s", empty)
+	if strings.Contains(args, "bypassPermissions") || strings.Contains(args, "dangerously-skip-permissions") {
+		t.Fatalf("host claude must NEVER bypass permissions, got: %s", args)
 	}
 }
 
 // TestWorkerContractPreamble locks in the resumable-fork contract: it tells the
-// worker it's detached, that self-wake is via corral (not its own harness), and
-// embeds THIS worker's job id + the exact wake command.
+// worker it's detached + NOT sandboxed (permissions still apply), to use only its
+// granted tools (not Monitor), and how to self-wake via corral with its own id.
 func TestWorkerContractPreamble(t *testing.T) {
 	p := workerContractPreamble("worker-abc123")
 	for _, want := range []string{
-		"DETACHED", "process ENDS", "corral worker wake worker-abc123", "worker-abc123",
+		"DETACHED", "process ENDS", "NOT sandboxed", "GRANTED tools",
+		"corral worker wake worker-abc123", "worker-abc123",
 	} {
 		if !strings.Contains(p, want) {
 			t.Errorf("preamble missing %q", want)
 		}
+	}
+	// It must NOT claim permissions are bypassed (they aren't, on the host).
+	if strings.Contains(p, "bypass") {
+		t.Errorf("preamble must not tell workers permissions are bypassed")
 	}
 	// The caller's task must survive after the contract.
 	composed := p + "Boot the app."

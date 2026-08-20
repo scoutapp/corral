@@ -15,7 +15,7 @@ func argsContain(args []string, flag string) bool {
 
 func TestBuildClaudeArgs(t *testing.T) {
 	// No tools (PR-review chat): must NOT include a bare --allowedTools.
-	noTools := buildClaudeArgs("hi", nil, "", "")
+	noTools := buildClaudeArgs("hi", nil, "")
 	if argsContain(noTools, "--allowedTools") {
 		t.Errorf("empty tools should omit --allowedTools, got: %v", noTools)
 	}
@@ -26,7 +26,7 @@ func TestBuildClaudeArgs(t *testing.T) {
 	}
 
 	// With tools (project chat): --allowedTools immediately followed by tools.
-	withTools := buildClaudeArgs("hi", []string{"Read", "Grep"}, "", "")
+	withTools := buildClaudeArgs("hi", []string{"Read", "Grep"}, "")
 	i := -1
 	for k, a := range withTools {
 		if a == "--allowedTools" {
@@ -41,7 +41,7 @@ func TestBuildClaudeArgs(t *testing.T) {
 	}
 
 	// Session id appends --resume.
-	resumed := buildClaudeArgs("hi", nil, "sess123", "")
+	resumed := buildClaudeArgs("hi", nil, "sess123")
 	if !argsContain(resumed, "--resume") || !argsContain(resumed, "sess123") {
 		t.Errorf("expected --resume sess123, got: %v", resumed)
 	}

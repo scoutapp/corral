@@ -25,20 +25,30 @@ import (
 // process. What CAN resume it is corral: `corral worker wake`. So a worker must
 // either finish in-turn or explicitly schedule its own wake before ending —
 // never end with work "in flight, to be continued" and no wake, which strands it
-// (the bug that left an app un-booted). Its tools run with permissions bypassed
-// (no human approver), so a blocking wait is fine too.
+// (the bug that left an app un-booted).
+//
+// NOTE on permissions: a worker runs on the HOST with the operator's privileges
+// and is NOT sandboxed, so permission prompts still apply (they are a real
+// guardrail here). A worker has the granted tools Read/Grep/Glob (+ Bash when the
+// global capability is "act"). It should do waits/loops with its granted Bash —
+// NOT reach for an ungranted tool (e.g. Monitor), which would hit an approval
+// prompt no one can answer and strand it. That was the actual failure.
 func workerContractPreamble(jobID string) string {
 	return "IMPORTANT — how you run: you are a DETACHED headless Claude turn (`claude -p`), " +
 		"not interactive. When your reply ends, your process ENDS. Your own ScheduleWakeup / " +
 		"background-task notifications do NOT re-invoke you (they need an interactive harness you " +
 		"don't have). The ONLY thing that resumes you is corral. So NEVER end a turn with work " +
-		"still in flight and no plan to continue. You have two valid ways to handle a long step " +
-		"(image pull/transfer, build, install):\n" +
-		"  (a) BLOCK on it in-turn — run it in the foreground / `wait` for it, then proceed. Your " +
-		"tools run with permissions bypassed (no approval prompts), so a blocking wait works.\n" +
+		"still in flight and no plan to continue.\n" +
+		"You run on the HOST and are NOT sandboxed, so permission prompts still apply — and there's " +
+		"no human at you to answer one. Only use your GRANTED tools (Read/Grep/Glob, plus Bash if " +
+		"you have act capability); do NOT reach for an ungranted tool like Monitor — it will block " +
+		"on approval and strand you. Do waits/polls with plain Bash.\n" +
+		"Two valid ways to handle a long step (image pull/transfer, build, install):\n" +
+		"  (a) BLOCK on it in-turn using Bash — run it in the foreground or `wait`/poll with a " +
+		"`until …; do sleep N; done` loop, then proceed once it's done.\n" +
 		"  (b) Start it in the BACKGROUND, then run `corral worker wake " + jobID + " --in <secs>` " +
-		"(e.g. --in 30) and end the turn. Corral re-invokes you after the delay with full context " +
-		"so you can check on it and continue; repeat the wake if it's still going.\n" +
+		"(e.g. --in 30) via Bash and end the turn. Corral re-invokes you after the delay with full " +
+		"context so you can check on it and continue; repeat the wake if it's still going.\n" +
 		"Only end WITHOUT a wake when the task is actually done, or you're truly blocked and must " +
 		"report to the human. This job's id is `" + jobID + "`.\n\n---\n\nTASK:\n\n"
 }
@@ -118,13 +128,9 @@ func (d *dashboardServer) startWorkerJob(prompt, title string, parentConvID int6
 // first claude turn in the neutral dir, then rest idle awaiting optional steer
 // turns (like a merge job). Cancelled only when the job is removed.
 func (d *dashboardServer) runWorkerJob(claudeBin string, job *mergeJob) {
-	// A worker is detached and headless — no human to answer permission prompts —
-	// so its turns bypass them (like the sandbox claude). This is what lets a
-	// worker run a blocking-wait (e.g. wait for an image transfer) without being
-	// stranded by an approval it can't get.
-	ctx, cancel := context.WithCancel(withBypassPermissions(context.Background()))
+	ctx, cancel := context.WithCancel(context.Background())
 	job.mu.Lock()
-	job.ctx = ctx
+	job.ctx = ctx // stored so a self-wake can bind to the job's lifetime
 	job.cancel = cancel
 	job.mu.Unlock()
 	defer cancel()

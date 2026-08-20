@@ -14,7 +14,7 @@ import (
 func TestChatLoadsCorralApiSkill(t *testing.T) {
 	// Absent bundle → no --plugin-dir, no panic.
 	t.Setenv("CORRAL_HOME", t.TempDir())
-	if got := strings.Join(buildClaudeArgs("hi", nil, "", ""), " "); strings.Contains(got, "--plugin-dir") {
+	if got := strings.Join(buildClaudeArgs("hi", nil, ""), " "); strings.Contains(got, "--plugin-dir") {
 		t.Errorf("expected no --plugin-dir with an empty bundle, got: %s", got)
 	}
 
@@ -37,7 +37,7 @@ func TestChatLoadsCorralApiSkill(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	args := buildClaudeArgs("hi", nil, "", "")
+	args := buildClaudeArgs("hi", nil, "")
 	joined := strings.Join(args, " ")
 	if !strings.Contains(joined, "--plugin-dir") || !strings.Contains(joined, skillDir) {
 		t.Errorf("expected --plugin-dir %s in args, got: %s", skillDir, joined)
