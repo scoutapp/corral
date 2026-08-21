@@ -61,7 +61,7 @@ func (d *dashboardServer) handleConversationsAnalyze(w http.ResponseWriter, r *h
 	prompt := buildLogAnalysisPrompt(conv.OriginKind, conv.Title, msgs, question)
 
 	title := "Analyze: " + firstNonEmpty(conv.Title, conv.OriginKind)
-	job, err := d.startWorkerJob(prompt, truncate(title, 60), body.ConversationID, "log-analysis")
+	job, err := d.startWorkerJob(prompt, truncate(title, 60), body.ConversationID, "log-analysis", "")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return

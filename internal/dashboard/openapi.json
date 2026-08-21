@@ -2600,6 +2600,10 @@
                   },
                   "title": {
                     "type": "string"
+                  },
+                  "repoId": {
+                    "type": "string",
+                    "description": "Optional. When set, the worker's prompt is augmented with this repo's saved agent context (its editable, repo-specific boot/caching guidance) on top of the generic worker contract."
                   }
                 }
               }
