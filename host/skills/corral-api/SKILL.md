@@ -134,6 +134,21 @@ repo's built images across projects via a **repo baseline cache** (`repo-<repoId
   also save/update it manually (Config tab → "Save as repo baseline", or
   `POST /api/dind/caches {name:"repo-<id>", project}`). So a worker that just built
   an expensive image just needs to stop the project to preserve it for next time.
+- **Make the expensive work land where the snapshot can capture it.** A DinD
+  baseline is a snapshot of the inner-docker DATA ROOT — it captures pulled/built
+  **images** and **named volumes**, but NOT a running container's writable layer.
+  So if you `bundle install` / `npm ci` / `pip install` *inside a running base-image
+  container* (e.g. `ruby:3.3.9`), those deps are LOST on snapshot — the next project
+  re-installs them. To make them reusable, do ONE of:
+  - **bundle into a named volume** the app container mounts, e.g.
+    `docker run -v apm-bundle:/usr/local/bundle …` then `bundle install` — the
+    `apm-bundle` volume is captured by the snapshot; or
+  - **commit the prepared container to an image** once deps are installed:
+    `docker commit <container> apm-built:latest` — the image is captured.
+  Pulled base images (`ruby:3.3.9`, postgres, redis) are already captured as-is, so
+  a baseline saves the pull time even without this; the named-volume/commit step is
+  what also saves the (usually larger) dependency-install time. Prefer it for any
+  app whose `bundle`/`npm`/`pip` install is the slow part.
 
 ## Reads vs writes — the permission gate
 
