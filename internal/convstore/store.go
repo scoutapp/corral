@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/scoutapp/corral/internal/config"
 
@@ -27,6 +28,15 @@ import (
 // concurrent use (database/sql pools connections).
 type ConvStore struct {
 	db *sql.DB
+	// writeMu serializes writers IN-PROCESS. WAL lets readers run concurrently
+	// with a writer, but SQLite still allows only ONE writer at a time — so a
+	// burst of concurrent captures/analyses on different pool connections would
+	// collide on the write lock and, past _busy_timeout, throw "database is
+	// locked". Holding this mutex around every write path means our goroutines
+	// queue in Go instead of racing for the DB lock; reads stay unguarded (and so
+	// stay concurrent). _busy_timeout remains as a backstop for any other-process
+	// writer (e.g. the `corral conversations` CLI on the same file).
+	writeMu sync.Mutex
 }
 
 // DBPath returns the on-disk location of the conversations database
@@ -50,8 +60,9 @@ func openAt(path string) (*ConvStore, error) {
 	}
 
 	// Same DSN posture as the main store: wait under contention, enforce FKs,
-	// WAL for read/write concurrency.
-	dsn := path + "?_busy_timeout=5000&_foreign_keys=on&_journal_mode=WAL"
+	// WAL for read/write concurrency. writeMu (below) serializes our own writers,
+	// so this timeout is a backstop only for a cross-process writer (the CLI).
+	dsn := path + "?_busy_timeout=10000&_foreign_keys=on&_journal_mode=WAL"
 	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("convstore: open %s: %w", path, err)

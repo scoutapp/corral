@@ -59,6 +59,8 @@ func (s *ConvStore) StartConversation(m ConvMeta) (int64, error) {
 	if m.ConvKey == "" {
 		m.ConvKey = m.OriginKind + ":" + m.OriginID
 	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	var parent any
 	if m.ParentConversationID > 0 {
 		parent = m.ParentConversationID
@@ -104,6 +106,8 @@ func (s *ConvStore) SetSessionID(convID int64, sessionID string) error {
 	if sessionID == "" {
 		return nil
 	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	_, err := s.db.Exec(
 		`UPDATE conversations SET claude_session_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
 		sessionID, convID)
@@ -116,6 +120,8 @@ func (s *ConvStore) AppendMessage(convID int64, m Message) error {
 	if m.MetaJSON == "" {
 		m.MetaJSON = "{}"
 	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -160,6 +166,8 @@ func (s *ConvStore) AppendMessage(convID int64, m Message) error {
 
 // SetStatus stamps a terminal (or any) status on a conversation.
 func (s *ConvStore) SetStatus(convID int64, status string) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	_, err := s.db.Exec(
 		`UPDATE conversations SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
 		status, convID)
@@ -170,6 +178,8 @@ func (s *ConvStore) SetStatus(convID int64, status string) error {
 // "interrupted" on startup — their process didn't survive a restart. Mirrors the
 // merge-job reconciliation pattern.
 func (s *ConvStore) MarkRunningInterrupted() error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	_, err := s.db.Exec(`UPDATE conversations SET status = 'interrupted' WHERE status = 'running'`)
 	return err
 }
