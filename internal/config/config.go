@@ -28,9 +28,13 @@ type ProjectConfig struct {
 	// auto-selecting the first discovered listening port).
 	LiveViewPort int `json:"live_view_port,omitempty"`
 
-	// LiveViewPath is the path the Live View opens at, for apps served under a
-	// sub-path (e.g. "/docs/node/") where the root "/" 404s → a blank page. Set
-	// alongside LiveViewPort. "" or "/" = the app root (the common case).
+	// LiveViewPath is the URL route (NOT a filesystem path) the Live View opens
+	// at — appended to the port to form http://<sandbox>:<port><path>. Use it for
+	// apps served under a sub-path (e.g. "/docs/node/") where the root "/" 404s →
+	// a blank page. It must be a page a HUMAN wants to look at (the app's UI, a
+	// login/dashboard screen) — never a health/liveness probe like "/health_check"
+	// or an API/JSON endpoint, even though those return 200. Set alongside
+	// LiveViewPort. "" or "/" = the app root (the common case).
 	LiveViewPath string `json:"live_view_path,omitempty"`
 
 	// PassthroughFirewall = "permissive but observed" mode (the saved form of

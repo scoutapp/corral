@@ -54,10 +54,39 @@ func (d *dashboardServer) handleLivePort(w http.ResponseWriter, r *http.Request,
 			http.Error(w, "failed to save: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"ok": true, "port": cfg.LiveViewPort, "path": cfg.LiveViewPath})
+		resp := map[string]any{"ok": true, "port": cfg.LiveViewPort, "path": cfg.LiveViewPath}
+		// The path is meant to be a human-viewable page. A health/liveness probe
+		// returns 200 but shows a person nothing — a common mistake when the caller
+		// just curled "any 200" (see corral-api skill). Accept it (the caller may
+		// know best) but surface a warning so the mistake is visible, not silent.
+		if warn := livePathWarning(cfg.LiveViewPath); warn != "" {
+			resp["warning"] = warn
+		}
+		writeJSON(w, resp)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// livePathWarning returns a non-empty message when the path looks like a
+// health/liveness probe or a bare API endpoint rather than a page a human wants
+// to watch. It never blocks the write — it just flags a likely mistake in the
+// response so the caller (often a worker Claude) notices it picked "any 200"
+// instead of the real app UI.
+func livePathWarning(p string) string {
+	if p == "" {
+		return ""
+	}
+	lower := strings.ToLower(p)
+	// Trim a trailing slash so "/health_check/" matches too.
+	trimmed := strings.TrimSuffix(lower, "/")
+	probes := []string{"/health_check", "/healthcheck", "/healthz", "/health", "/up", "/ping", "/livez", "/readyz", "/status"}
+	for _, probe := range probes {
+		if trimmed == probe {
+			return "path " + p + " looks like a health/liveness probe — Live View should point at a human-viewable page (the app UI, e.g. a login or dashboard route), not a 200-only probe"
+		}
+	}
+	return ""
 }
 
 // normalizeLivePath cleans a stored Live View path: trims spaces, drops a bare
