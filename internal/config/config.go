@@ -79,6 +79,14 @@ type ProjectConfig struct {
 	// UI can show a back-link both ways. Nil for a plain project.
 	Source *ProjectSource `json:"source,omitempty"`
 
+	// RepoID is the project's PRIMARY repo (the first repo it cloned), recorded at
+	// create regardless of origin (PR, issue, or a plain clone). This is what the
+	// repo-scoped DinD baseline (repo-<id>) keys on — so PR-, issue-, and
+	// plain-clone projects of the SAME repo all share one baseline. Empty for a
+	// non-repo project (blank/existing-dir). Prefer this over Source.RepoID, which
+	// is only set for PR-derived projects.
+	RepoID string `json:"repo_id,omitempty"`
+
 	CreatedAt string `json:"created_at"`
 }
 

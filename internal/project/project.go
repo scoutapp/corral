@@ -26,6 +26,7 @@ type InitOptions struct {
 	PassthroughFirewall bool                  // "permissive but observed" mode (proxy on, allow+log, direct TCP ok)
 	Source              *config.ProjectSource // PR/issue this project was spawned from
 	DindCache           *config.DindCacheRef  // repo-scoped DinD cache to start from (nil = fresh empty volume)
+	RepoID              string                // primary repo id (for the repo-scoped DinD baseline), any origin
 }
 
 // InitProject creates a project's on-disk state under <workspace>/.corral:
@@ -60,6 +61,7 @@ func InitProject(workspace string, opts InitOptions) (*config.ProjectConfig, err
 		PassthroughFirewall: opts.PassthroughFirewall,
 		Source:              opts.Source,
 		DindCache:           opts.DindCache,
+		RepoID:              opts.RepoID,
 		CreatedAt:           time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := config.WriteConfig(projectDir, cfg); err != nil {
