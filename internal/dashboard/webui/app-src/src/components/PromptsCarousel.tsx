@@ -96,14 +96,20 @@ export function PromptsCarousel({
       .catch((e) => onMsg({ text: (e as Error).message, err: true }));
   };
 
+  // The worker boot-guidance prompt drafts from EVIDENCE (this repo's captured
+  // boot runs) + the codebase, so it doesn't require a typed description.
+  const isBootGuidance = cur.key === "worker.boot_guidance";
   const draftWithAI = () => {
-    if (!aiIntent.trim()) return;
+    if (!isBootGuidance && !aiIntent.trim()) return;
     wsRef.current?.close();
     setAiBusy(true);
     setAiLog("");
-    const ws = new WebSocket(wsURL("/api/prompts/draft"));
+    // repoId scopes both the research checkout and (for boot-guidance) the
+    // evidence; key selects the specialized drafting path.
+    const q = repoId ? `/api/prompts/draft?repoId=${encodeURIComponent(repoId)}` : "/api/prompts/draft";
+    const ws = new WebSocket(wsURL(q));
     wsRef.current = ws;
-    ws.onopen = () => ws.send(JSON.stringify({ description: aiIntent }));
+    ws.onopen = () => ws.send(JSON.stringify({ description: aiIntent, key: cur.key }));
     ws.onmessage = (ev) => {
       let m: Record<string, unknown>;
       try {
@@ -201,15 +207,22 @@ export function PromptsCarousel({
               host · not sandboxed · read-only
             </span>
           </summary>
+          {isBootGuidance && (
+            <p className="prompt-usedwhen" style={{ marginTop: 0 }}>
+              ↳ Recommends a caching recipe for this repo from what we learned booting it
+              {repoId ? "" : " (select a repo to ground it in that repo's boot history)"} — reads its captured
+              boot runs + the codebase. Notes below are optional.
+            </p>
+          )}
           <textarea
             className="prompt-textarea"
             rows={2}
             value={aiIntent}
             onChange={(e) => setAiIntent(e.target.value)}
-            placeholder="Describe what this prompt should do…"
+            placeholder={isBootGuidance ? "Optional notes to steer the recommendation…" : "Describe what this prompt should do…"}
           />
-          <button type="button" className="auto-btn" disabled={aiBusy || !aiIntent.trim()} onClick={draftWithAI}>
-            {aiBusy ? "Drafting…" : "Draft with AI"}
+          <button type="button" className="auto-btn" disabled={aiBusy || (!isBootGuidance && !aiIntent.trim())} onClick={draftWithAI}>
+            {aiBusy ? "Drafting…" : isBootGuidance ? "Recommend from our boot history" : "Draft with AI"}
           </button>
           {aiLog && <pre className="split-menu-ai-log">{aiLog}</pre>}
         </details>
