@@ -45,12 +45,29 @@ func (d *dashboardServer) handleDindStatus(w http.ResponseWriter, r *http.Reques
 	// For a repo-derived project with no baseline yet, set the expectation that one
 	// auto-saves on clean stop (so the next project from this repo reuses it) — the
 	// banner otherwise reads as a dead-end "starting fresh".
-	if !status.Reused && cfg.DindEnabled && cfg.Source != nil && cfg.Source.RepoID != "" {
-		if !dindcache.Exists(dindcache.RepoCacheName(cfg.Source.RepoID)) {
+	if repoID := projectRepoID(cfg); !status.Reused && cfg.DindEnabled && repoID != "" {
+		if !dindcache.Exists(dindcache.RepoCacheName(repoID)) {
 			status.Reason = "No repo baseline yet — this project's build auto-saves as the baseline when you stop it, so the next project from this repo reuses it."
 		}
 	}
 	writeFilesJSON(w, status)
+}
+
+// projectRepoID resolves a project's primary repo id for the repo-scoped DinD
+// baseline. Prefers the persisted RepoID (set for ALL repo-derived projects —
+// PR, issue, or plain clone) and falls back to Source.RepoID for projects created
+// before RepoID was recorded. Empty for a non-repo (blank/existing-dir) project.
+func projectRepoID(cfg *config.ProjectConfig) string {
+	if cfg == nil {
+		return ""
+	}
+	if cfg.RepoID != "" {
+		return cfg.RepoID
+	}
+	if cfg.Source != nil {
+		return cfg.Source.RepoID
+	}
+	return ""
 }
 
 // dindImage is one image present in a project's inner Docker daemon.
@@ -143,10 +160,14 @@ func listInnerImages(ctx context.Context, container string) ([]dindImage, bool, 
 // the container is removed (see handleStopProject) so it doesn't delay the stop.
 func (d *dashboardServer) repoBaselineAutoSaveTarget(ctx context.Context, workspace string) (repoCache, srcVol string) {
 	cfg, err := readConfigForWorkspace(workspace)
-	if err != nil || !cfg.DindEnabled || cfg.Source == nil || cfg.Source.RepoID == "" {
+	if err != nil {
 		return "", ""
 	}
-	name := dindcache.RepoCacheName(cfg.Source.RepoID)
+	repoID := projectRepoID(cfg) // any origin: PR, issue, or plain clone
+	if !cfg.DindEnabled || repoID == "" {
+		return "", ""
+	}
+	name := dindcache.RepoCacheName(repoID)
 	if dindcache.Exists(name) {
 		return "", "" // never auto-overwrite an existing baseline
 	}

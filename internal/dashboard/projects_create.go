@@ -201,6 +201,7 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 			PassthroughFirewall: proxy && !body.EnforceAllowlist,
 			Source:              body.Source,
 			DindCache:           dindCacheRef,
+			RepoID:              primaryRepo,
 		}); err != nil {
 			http.Error(w, "init project: "+err.Error(), http.StatusInternalServerError)
 			return
