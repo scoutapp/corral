@@ -86,6 +86,12 @@ break the ask into tasks, kick off a worker per task, and keep going.
   in-turn or schedule a self-wake; it must never end with work in flight and no
   wake. (Corral injects this contract + the worker's own job id into every worker
   prompt, so you don't have to — but for long multi-step boots, reinforce it.)
+- **Pass `repoId` when the worker is for a specific repo.** `POST /api/conductor/workers`
+  accepts an optional `repoId`; it selects which repo's **`worker.boot_guidance`**
+  prompt (in the editable Prompts catalog) is appended to the worker — the repo's
+  override if one is saved, else the generic default. This is how a repo carries
+  its OWN boot/caching recipe (exact volume names, DB setup, prepared image) — edit
+  it in the Prompts section (per-repo), don't hardcode it here.
 
 ### When a worker operates on a Corral project (sandbox)
 
@@ -137,25 +143,27 @@ repo's built images across projects via a **repo baseline cache** (`repo-<repoId
 - **Make the expensive work land where the snapshot can capture it.** A DinD
   baseline is a snapshot of the inner-docker DATA ROOT — it captures pulled/built
   **images** and **named volumes**, but NOT a running container's writable layer.
-  So if you `bundle install` / `npm ci` / `pip install` *inside a running base-image
-  container* (e.g. `ruby:3.3.9`), those deps are LOST on snapshot — the next project
-  re-installs them. To make them reusable, do ONE of:
+  So if you install deps (`bundle` / `npm ci` / `pip` / `go mod` / …) *inside a
+  running base-image container*, they're LOST on snapshot — the next project
+  re-installs them. This is generic to ANY stack; to make the work reusable, do the
+  applicable ones (examples use `<app>-…` — substitute your app's name):
   - **deps into a named volume** the app mounts, e.g.
-    `docker run -v apm-bundle:/usr/local/bundle …` then `bundle install` — the
-    `apm-bundle` volume is captured; and/or
-  - **migrated DB into a named volume**: run Postgres with
-    `-v apm-pgdata:/var/lib/postgresql/data` and migrate ONCE — the migrated DB is
-    captured, so reuse skips create+migrate (often the biggest per-boot cost); and/or
-  - **commit a prepared image** once deps + assets + bootsnap are ready:
-    `docker commit <container> apm-prepared:latest` — eager-load/asset/bootsnap work
-    is baked in and doesn't repeat; cache `tmp/cache/bootsnap` + `public/assets` in
-    volumes too.
+    `docker run -v <app>-deps:/usr/local/bundle …` (or `…/node_modules`, the
+    venv, the module cache) — the volume is captured; and/or
+  - **migrated DB into a named volume**: run the datastore with its data dir on a
+    named volume (e.g. `-v <app>-db:/var/lib/postgresql/data`) and migrate ONCE —
+    the migrated DB is captured, so reuse skips create+migrate (often the biggest
+    per-boot cost); and/or
+  - **commit a prepared image** once deps + any build/asset step are ready:
+    `docker commit <container> <app>-prepared:latest` — compile/eager-load/asset
+    work is baked in; cache any per-boot build cache in a volume too (Rails
+    bootsnap+assets, Node `.next`, Go/Rust build caches, etc.).
   Pulled base images are already captured as-is (saving pull time); the
   named-volume/commit steps also save the larger dep-install, DB-migrate, and
   app-warmup costs. A well-prepared baseline means a reused boot only STARTS
-  containers + boots the app — measured 5.6× faster on apm (34 min → 6 min), and
-  the DB/prepared-image steps target the remaining 6 min. Name volumes
-  deterministically (stable per-app) so the next project remounts them.
+  containers + boots the app — measured 5.6× faster on our Rails app (34 min → 6
+  min) as one example. Name volumes deterministically (stable per-app) so the next
+  project remounts them.
 
 ## Reads vs writes — the permission gate
 

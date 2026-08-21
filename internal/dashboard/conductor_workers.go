@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/scoutapp/corral/internal/applog"
+	"github.com/scoutapp/corral/internal/automations"
 )
 
 // Conductor workers turn the global Claude into a conductor: it delegates tasks
@@ -51,25 +52,31 @@ func workerContractPreamble(jobID string) string {
 		"(e.g. --in 30) via Bash and end the turn. Corral re-invokes you after the delay with full " +
 		"context so you can check on it and continue; repeat the wake if it's still going.\n" +
 		"Only end WITHOUT a wake when the task is actually done, or you're truly blocked and must " +
-		"report to the human. This job's id is `" + jobID + "`.\n" +
-		"MAKE EXPENSIVE WORK REUSABLE: Corral snapshots a project's inner-docker on clean stop into " +
-		"a per-repo baseline that future projects reuse — but a snapshot captures IMAGES and NAMED " +
-		"VOLUMES, not a running container's writable layer. Put EVERY slow, reusable step where the " +
-		"snapshot can capture it, so the next project from this repo skips it:\n" +
-		"  • Dependencies (bundle/npm/pip): install into a NAMED VOLUME the app mounts " +
-		"(e.g. `-v <app>-bundle:/usr/local/bundle`), not a bare container layer.\n" +
-		"  • Datastore: run Postgres/MySQL with its data dir on a NAMED VOLUME " +
-		"(`-v <app>-pgdata:/var/lib/postgresql/data`) and run migrations ONCE — the migrated DB is " +
-		"then captured, so reuse skips create+migrate (often the biggest per-boot cost).\n" +
-		"  • App warmup: after deps+assets+bootsnap are ready, `docker commit` the prepared container " +
-		"to an image (e.g. `<app>-prepared:latest`) so eager-load/asset-precompile/bootsnap are baked " +
-		"in and don't repeat each boot. Cache bootsnap (`tmp/cache/bootsnap`) and built assets " +
-		"(`public/assets`) in named volumes too.\n" +
-		"The goal: a reused boot should only START containers + boot the app, not rebuild/reinstall/" +
-		"re-migrate. Name volumes deterministically (per-app, stable) so the next project remounts them.\n\n---\n\nTASK:\n\n"
+		"report to the human. This job's id is `" + jobID + "`.\n\n---\n\nTASK:\n\n"
 }
 
-// handleConductorWorkerCreate: POST /api/conductor/workers { prompt, title? }
+// repoWorkerGuidance returns the boot/caching guidance appended to a worker's
+// prompt, rendered from the EDITABLE `worker.boot_guidance` catalog prompt. It
+// resolves the effective template for repoID — the repo's override if saved in
+// the Prompts section, else the generic built-in default — so the guidance is
+// editable in ONE place, per-repo (our Rails app can carry its exact
+// volume/DB/prepared-image recipe without hardcoding it for everyone). repoID may
+// be empty (→ the global default). Returns "" only if the effective prompt is
+// empty (a user deliberately cleared it).
+func (d *dashboardServer) repoWorkerGuidance(repoID string) string {
+	s, err := d.getStore()
+	if err != nil {
+		// Store down — still give the built-in default rather than dropping guidance.
+		return automations.DefaultWorkerBootGuidance + "\n\n---\n\n"
+	}
+	g := strings.TrimSpace(automations.New(s).RenderPrompt(automations.PromptWorkerBoot, repoID, nil))
+	if g == "" {
+		return ""
+	}
+	return g + "\n\n---\n\n"
+}
+
+// handleConductorWorkerCreate: POST /api/conductor/workers { prompt, title?, repoId? }
 // spawns a detached worker Claude and returns its job id. The worker starts
 // immediately on the given prompt; watch/steer it in the Work tab.
 func (d *dashboardServer) handleConductorWorkerCreate(w http.ResponseWriter, r *http.Request) {
@@ -80,6 +87,10 @@ func (d *dashboardServer) handleConductorWorkerCreate(w http.ResponseWriter, r *
 	var body struct {
 		Prompt string `json:"prompt"`
 		Title  string `json:"title"`
+		// RepoID selects which repo's `worker.boot_guidance` prompt applies — the
+		// repo's editable override if set, else the generic default. Optional; omit
+		// for a repo-agnostic worker (still gets the generic default).
+		RepoID string `json:"repoId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -92,7 +103,7 @@ func (d *dashboardServer) handleConductorWorkerCreate(w http.ResponseWriter, r *
 	// Cross-origin linkage: if a captured Claude drove this request (via corral
 	// api), the parent conversation id rides in on this header — thread it so the
 	// worker's own conversation chains back to it.
-	job, err := d.startWorkerJob(body.Prompt, body.Title, parentConvFromRequest(r), "")
+	job, err := d.startWorkerJob(body.Prompt, body.Title, parentConvFromRequest(r), "", body.RepoID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -104,7 +115,7 @@ func (d *dashboardServer) handleConductorWorkerCreate(w http.ResponseWriter, r *
 // returning it. The worker runs headless (`claude -p`) in the neutral global-chat
 // dir with the global chat capability's tools. Errors are plain (the caller maps
 // to HTTP); the run itself streams asynchronously.
-func (d *dashboardServer) startWorkerJob(prompt, title string, parentConvID int64, captureKind string) (*mergeJob, error) {
+func (d *dashboardServer) startWorkerJob(prompt, title string, parentConvID int64, captureKind, repoID string) (*mergeJob, error) {
 	claudeBin, err := resolveClaudeBin()
 	if err != nil {
 		return nil, fmt.Errorf("the `claude` CLI could not be located — install Claude Code and restart the dashboard")
@@ -119,7 +130,7 @@ func (d *dashboardServer) startWorkerJob(prompt, title string, parentConvID int6
 		ID:                   jobID,
 		Kind:                 jobKindWorker,
 		Title:                title,
-		Prompt:               workerContractPreamble(jobID) + prompt,
+		Prompt:               workerContractPreamble(jobID) + d.repoWorkerGuidance(repoID) + prompt,
 		Status:               mergeJobRunning,
 		CreatedAt:            nowRFC3339(),
 		ParentConversationID: parentConvID,

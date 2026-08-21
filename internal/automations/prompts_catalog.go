@@ -37,7 +37,27 @@ const (
 	PromptDraftIssue     = "draft.issue"
 	PromptDraftPrompt    = "draft.prompt"
 	PromptSSHGuidance    = "ssh.guidance"
+	PromptWorkerBoot     = "worker.boot_guidance"
 )
+
+// DefaultWorkerBootGuidance is the built-in text of the worker.boot_guidance
+// prompt — appended to every worker's prompt so a boot makes the DinD baseline
+// reuse fast. Generic by default (any repo/stack); a repo can OVERRIDE it in the
+// Prompts section with its own exact recipe (our Rails app names its volumes,
+// etc.). Kept as a catalog prompt so it's editable in one place, per-repo.
+const DefaultWorkerBootGuidance = "MAKE EXPENSIVE WORK REUSABLE: Corral snapshots a project's inner-docker on clean " +
+	"stop into a per-repo baseline that future projects reuse — but a snapshot captures IMAGES and NAMED VOLUMES, " +
+	"not a running container's writable layer. Put EVERY slow, reusable step where the snapshot can capture it, so " +
+	"the next project from this repo skips it (examples use <app>-… — substitute this app's name):\n" +
+	"  • Dependencies (bundle/npm/pip/go mod): install into a NAMED VOLUME the app mounts (e.g. " +
+	"`-v <app>-deps:/usr/local/bundle`), not a bare container layer.\n" +
+	"  • Datastore: run it with its data dir on a NAMED VOLUME (`-v <app>-db:/var/lib/postgresql/data`) and migrate " +
+	"ONCE — the migrated DB is then captured, so reuse skips create+migrate (often the biggest per-boot cost).\n" +
+	"  • App warmup: after deps + any build/asset step are ready, `docker commit` the prepared container to an image " +
+	"(e.g. `<app>-prepared:latest`) so compile/eager-load/asset work is baked in; cache any per-boot build cache in a " +
+	"named volume too (Rails bootsnap+assets, Node .next, Go/Rust build caches, etc.).\n" +
+	"The goal: a reused boot should only START containers + boot the app, not rebuild/reinstall/re-migrate. Name " +
+	"volumes deterministically (stable per-app) so the next project remounts them."
 
 // DefaultSSHPushGuidance is the built-in text of the ssh.guidance prompt — the
 // sentence telling Claude to push over the SSH remote (the HTTPS remote won't
@@ -200,6 +220,13 @@ func PromptCatalog() []PromptDef {
 			UsedWhen: "Added to the project-start prompts (plain + from-issue) when an SSH key is configured, so Claude pushes over the SSH remote instead of HTTPS. Omitted when no key is set.",
 			Default:  DefaultSSHPushGuidance,
 			Slots:    []string{"ssh_remote"},
+		},
+		{
+			Key:      PromptWorkerBoot,
+			Name:     "Worker boot & caching guidance",
+			UsedWhen: "Appended to every conductor worker's prompt (per-repo when the worker is created with a repoId) so booting an app makes the DinD baseline reuse fast. Edit the repo override to give this repo its exact recipe (volume names, DB setup, prepared image).",
+			Default:  DefaultWorkerBootGuidance,
+			Slots:    []string{},
 		},
 	}
 }
