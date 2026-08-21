@@ -232,22 +232,32 @@ export function ProjectPage({ id }: { id: string }) {
           </button>
       </header>
 
-      {dindStatus && (dindStatus.cacheName || dindStatus.reason) && (
-        <div className={`dind-banner${dindStatus.reused ? " reused" : ""}`} title="Docker-in-Docker cache reuse for this project">
-          <span className="dind-banner-tag">DinD</span>
-          {dindStatus.cacheName ? (
-            <span className="dind-banner-cache">
-              {dindStatus.isRepo ? "repo baseline " : "cache "}
-              <code>{dindStatus.cacheName}</code>
-              {dindStatus.mode ? ` · ${dindStatus.mode}` : ""}
-            </span>
-          ) : null}
-          <span className={`dind-banner-verdict${dindStatus.reused ? " on" : ""}`}>
-            {dindStatus.reused ? "✓ reused" : "○ not reused"}
-          </span>
-          <span className="dind-banner-reason">{dindStatus.reason}</span>
-        </div>
-      )}
+      {dindStatus &&
+        (dindStatus.cacheName || dindStatus.reason) &&
+        (() => {
+          // Truthful verdict: green only when reuse is verified (or claimed with no
+          // live check yet); a warning when attached but the inner Docker is empty
+          // (a copy seed still running / failed) — verified === "no".
+          const stalled = dindStatus.reused && dindStatus.verified === "no";
+          const good = dindStatus.reused && dindStatus.verified !== "no";
+          const cls = stalled ? " stalled" : good ? " reused" : "";
+          return (
+            <div className={`dind-banner${cls}`} title="Docker-in-Docker cache reuse for this project">
+              <span className="dind-banner-tag">DinD</span>
+              {dindStatus.cacheName ? (
+                <span className="dind-banner-cache">
+                  {dindStatus.isRepo ? "repo baseline " : "cache "}
+                  <code>{dindStatus.cacheName}</code>
+                  {dindStatus.mode ? ` · ${dindStatus.mode}` : ""}
+                </span>
+              ) : null}
+              <span className={`dind-banner-verdict${good ? " on" : stalled ? " warn" : ""}`}>
+                {good ? "✓ reused" : stalled ? "⚠ not landed" : "○ not reused"}
+              </span>
+              <span className="dind-banner-reason">{dindStatus.reason}</span>
+            </div>
+          );
+        })()}
 
       <div className={`project-layout${dockCollapsed ? " dock-collapsed" : ""}`} id="project-layout">
         <div className="tab-area">

@@ -835,6 +835,9 @@ table.projects th, table.projects td {
   border-left: 3px solid var(--border);
 }
 .dind-banner.reused { border-left-color: #5ce6a8; }
+/* Attached to a cache but the inner Docker is empty (copy seed still running or
+   failed) — warn, don't pretend it's reused. */
+.dind-banner.stalled { border-left-color: #e6b85c; }
 .dind-banner-tag {
   font-size: 0.62rem; letter-spacing: 0.06em; text-transform: uppercase;
   color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 0.35rem;
@@ -842,6 +845,7 @@ table.projects th, table.projects td {
 .dind-banner-cache code { color: var(--fg); }
 .dind-banner-verdict { color: var(--muted); }
 .dind-banner-verdict.on { color: #5ce6a8; }
+.dind-banner-verdict.warn { color: #e6b85c; }
 .dind-banner-reason { color: var(--muted); opacity: 0.85; }
 .project-layout { display: flex; gap: 0; flex: 1 1 auto; min-height: 0; }
 .tab-area { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }

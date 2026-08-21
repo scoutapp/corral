@@ -50,6 +50,28 @@ func (d *dashboardServer) handleDindStatus(w http.ResponseWriter, r *http.Reques
 			status.Reason = "No repo baseline yet — this project's build auto-saves as the baseline when you stop it, so the next project from this repo reuses it."
 		}
 	}
+	// LIVE verification: "reused" from ComputeStatus only means a ref/volume exists.
+	// It was misleadingly true when a copy seed was still running or failed and the
+	// inner docker was actually empty. When we claim reuse and the container is up,
+	// confirm the inner docker really holds images from the baseline; downgrade the
+	// verdict if not, so the banner/loop stop trusting a seed that didn't land.
+	if status.Reused {
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		images, up, ierr := listInnerImages(ctx, session.ContainerNameForWorkspace(workspace))
+		cancel()
+		if up && ierr == nil {
+			if appImageBeyondBase(images) != "" || len(images) > 0 {
+				status.Verified = "yes"
+			} else {
+				status.Verified = "no"
+				if status.Mode == config.DindCacheModeCopy {
+					status.Reason = "Attached to " + status.CacheName + " but the inner Docker is still EMPTY — the copy seed is still running or didn't land. (A large baseline copies slowly; consider shared mode.)"
+				} else {
+					status.Reason = "Attached to " + status.CacheName + " (shared) but the inner Docker is empty — the cache volume may not have mounted."
+				}
+			}
+		}
+	}
 	writeFilesJSON(w, status)
 }
 

@@ -91,7 +91,8 @@ export interface DindStatus {
   cacheName?: string; // attached cache slug (repo-<id> or hand-named), absent = none
   mode?: "copy" | "shared";
   isRepo: boolean; // the attached cache is a repo baseline
-  reused: boolean; // the project is actually starting FROM the cache
+  reused: boolean; // attached to a cache (config/volume level)
+  verified?: "yes" | "no" | ""; // live check: inner docker really has baseline images ("no" = empty/seeding/failed)
   reason: string; // short human verdict
 }
 

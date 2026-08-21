@@ -271,6 +271,23 @@ func Exists(name string) bool {
 	return ValidName(name) && VolumeExists(VolumeName(name))
 }
 
+// CacheSize returns a cache's on-disk size in bytes, best-effort (0 if unknown).
+// Used to decide copy vs shared: copy-seeding a large baseline is an O(size) tar
+// per project that can dominate (or exceed) a clean build, so big baselines
+// should be SHARED (mounted directly, no copy).
+func CacheSize(name string) int64 {
+	if !ValidName(name) {
+		return 0
+	}
+	return volumeSize(VolumeName(name))
+}
+
+// SharedModeSizeThreshold is the baseline size above which auto-attach prefers
+// SHARED over COPY: copying more than this per project (on the slow vfs driver)
+// costs more than it saves. ~4 GB. Measured case: a 14.9 GB copy-mode baseline
+// made "reuse" SLOWER than a clean build.
+const SharedModeSizeThreshold = 4 << 30
+
 // Status is a cheap, no-inner-docker-exec summary of a project's DinD cache
 // situation, for the project-page info banner. It answers "is this project
 // reusing a cache?" from just the config ref + docker volume existence.
@@ -278,7 +295,13 @@ type Status struct {
 	CacheName string `json:"cacheName,omitempty"` // attached cache slug (repo-<id> or hand-named), "" = none
 	Mode      string `json:"mode,omitempty"`      // "copy" | "shared" (when a cache is attached)
 	IsRepo    bool   `json:"isRepo"`              // the attached cache is a repo baseline (repo-<id>)
-	Reused    bool   `json:"reused"`              // the project is actually starting FROM the cache
+	Reused    bool   `json:"reused"`              // the project is starting FROM the cache (config/volume level)
+	// Verified reflects a LIVE check that the inner docker actually holds images
+	// from the baseline (not just that a ref/volume exists). "" = not checked
+	// (container down); "yes" = images present; "no" = attached but inner docker is
+	// empty (a copy seed that's still running or failed) — the case where Reused
+	// was misleadingly true before.
+	Verified string `json:"verified,omitempty"`
 	// Reason is a short human verdict for the banner, e.g.
 	// "Reusing repo baseline (seeded copy)" / "Fresh — no baseline saved yet".
 	Reason string `json:"reason"`

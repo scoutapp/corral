@@ -191,6 +191,7 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 		primaryRepoID: primaryRepo,
 		requestedMode: body.DindCacheMode,
 		cacheExists:   dindcache.Exists,
+		cacheSize:     dindcache.CacheSize,
 	})
 
 	if _, statErr := os.Stat(config.ProjectDirFor(workspace)); os.IsNotExist(statErr) {
@@ -444,8 +445,9 @@ type repoCacheDecision struct {
 	noRepoCache   bool
 	globalOn      bool
 	primaryRepoID string
-	requestedMode string // "" (copy) | "shared"
-	cacheExists   func(name string) bool
+	requestedMode string                  // "" (auto) | "copy" | "shared" — explicit wins
+	cacheExists   func(name string) bool  // dindcache.Exists in prod
+	cacheSize     func(name string) int64 // dindcache.CacheSize in prod (0 = unknown)
 }
 
 // resolveRepoCacheRef decides whether a repo-derived project auto-attaches its
@@ -463,9 +465,20 @@ func resolveRepoCacheRef(d repoCacheDecision) *config.DindCacheRef {
 	if d.cacheExists == nil || !d.cacheExists(name) {
 		return nil
 	}
+	// Mode: an explicit request wins. Otherwise auto-pick — a large baseline is
+	// cheaper to SHARE (mount directly, no copy) than to COPY-seed per project (an
+	// O(size) tar that, past a few GB on vfs, costs more than a clean build). Small
+	// baselines default to copy (isolated, safe).
 	mode := config.DindCacheModeCopy
-	if d.requestedMode == config.DindCacheModeShared {
+	switch d.requestedMode {
+	case config.DindCacheModeShared:
 		mode = config.DindCacheModeShared
+	case config.DindCacheModeCopy:
+		mode = config.DindCacheModeCopy
+	default: // auto
+		if d.cacheSize != nil && d.cacheSize(name) > dindcache.SharedModeSizeThreshold {
+			mode = config.DindCacheModeShared
+		}
 	}
 	return &config.DindCacheRef{Name: name, Mode: mode}
 }
