@@ -4334,7 +4334,7 @@
           "dindCacheMode": {
             "type": "string",
             "enum": ["copy", "shared"],
-            "description": "How to use the repo DinD cache: 'copy' (default — seed an isolated per-project copy) or 'shared' (mount the cache live so builds persist back into it)."
+            "description": "How to use the repo DinD cache. DEFAULT is 'shared' (mount the baseline volume directly as the inner-docker data root — zero copy, instant reuse; the fast path). 'copy' seeds a slow, isolated writable copy — use it to FORK the baseline: mutate it (bump deps / new migrations / new image) in isolation, then promote that project's volume back as the repo baseline."
           },
           "proxy": {
             "type": "boolean"

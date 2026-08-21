@@ -140,6 +140,14 @@ repo's built images across projects via a **repo baseline cache** (`repo-<repoId
   also save/update it manually (Config tab → "Save as repo baseline", or
   `POST /api/dind/caches {name:"repo-<id>", project}`). So a worker that just built
   an expensive image just needs to stop the project to preserve it for next time.
+- **Shared vs copy mode.** A repo-derived project attaches the baseline in
+  **shared** mode by default: the baseline volume is mounted directly as the
+  inner-docker data root — **zero copy, instant reuse** (the fast path; a
+  copy-seed of a multi-GB baseline can be slower than a clean build). Pass
+  `dindCacheMode:"copy"` at create ONLY to **fork** a baseline: get an isolated,
+  writable copy, change it (bump deps, run new migrations, warm a new image),
+  verify, then promote that project's volume back as the repo baseline. That's the
+  intended workflow for *updating* a baseline safely; shared is for everyday reuse.
 - **Make the expensive work land where the snapshot can capture it.** A DinD
   baseline is a snapshot of the inner-docker DATA ROOT — it captures pulled/built
   **images** and **named volumes**, but NOT a running container's writable layer.

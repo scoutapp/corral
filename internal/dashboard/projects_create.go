@@ -127,11 +127,12 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 		// Source records a PR/issue this project was spawned from (back-link).
 		Source *config.ProjectSource `json:"source"`
 		// Repo-scoped DinD auto-cache controls. By default a repo-derived project
-		// auto-attaches its repo cache (repo-<id>) in copy mode when that cache
-		// exists. NoRepoCache opts this project out; DindCacheMode "shared" mounts the
-		// cache live instead of seeding a copy.
+		// auto-attaches its repo cache (repo-<id>) in SHARED mode (mount, zero copy —
+		// the fast path) when that cache exists. NoRepoCache opts this project out.
+		// DindCacheMode "copy" opts into a slow, isolated writable COPY — use it to
+		// fork the baseline (mutate + re-save) without other projects seeing it.
 		NoRepoCache   bool   `json:"noRepoCache"`
-		DindCacheMode string `json:"dindCacheMode"` // "" (copy) | "shared"
+		DindCacheMode string `json:"dindCacheMode"` // "" (shared default) | "copy" | "shared"
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -191,7 +192,6 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 		primaryRepoID: primaryRepo,
 		requestedMode: body.DindCacheMode,
 		cacheExists:   dindcache.Exists,
-		cacheSize:     dindcache.CacheSize,
 	})
 
 	if _, statErr := os.Stat(config.ProjectDirFor(workspace)); os.IsNotExist(statErr) {
@@ -445,9 +445,8 @@ type repoCacheDecision struct {
 	noRepoCache   bool
 	globalOn      bool
 	primaryRepoID string
-	requestedMode string                  // "" (auto) | "copy" | "shared" — explicit wins
-	cacheExists   func(name string) bool  // dindcache.Exists in prod
-	cacheSize     func(name string) int64 // dindcache.CacheSize in prod (0 = unknown)
+	requestedMode string                 // "" (→ shared default) | "copy" | "shared"
+	cacheExists   func(name string) bool // dindcache.Exists in prod
 }
 
 // resolveRepoCacheRef decides whether a repo-derived project auto-attaches its
@@ -465,20 +464,22 @@ func resolveRepoCacheRef(d repoCacheDecision) *config.DindCacheRef {
 	if d.cacheExists == nil || !d.cacheExists(name) {
 		return nil
 	}
-	// Mode: an explicit request wins. Otherwise auto-pick — a large baseline is
-	// cheaper to SHARE (mount directly, no copy) than to COPY-seed per project (an
-	// O(size) tar that, past a few GB on vfs, costs more than a clean build). Small
-	// baselines default to copy (isolated, safe).
-	mode := config.DindCacheModeCopy
-	switch d.requestedMode {
-	case config.DindCacheModeShared:
-		mode = config.DindCacheModeShared
-	case config.DindCacheModeCopy:
+	// Mode: SHARED by default. Shared mounts the baseline volume directly as the
+	// inner-docker data root — the same instant, zero-copy reuse that per-project
+	// restarts have always used (commit #23's named-volume trick), just pointed at
+	// the shared repo baseline. This is the fast path and the right default.
+	//
+	// COPY is opt-in (requestedMode=="copy"), NOT dead — it's the deliberate tool
+	// for FORKING a baseline: seed a project with an isolated, writable copy, mutate
+	// it (bump deps, run new migrations, warm a new image), verify, then promote
+	// that project's volume back as the repo baseline ("Save as repo baseline"). Use
+	// copy when you intend to CHANGE the baseline safely without other projects
+	// seeing half-baked state; use shared (default) for everyday fast reuse. Copy is
+	// an O(size) tar, so on a big baseline it's slow — expected for a fork, wrong as
+	// a default (it was measured slower than a clean build).
+	mode := config.DindCacheModeShared
+	if d.requestedMode == config.DindCacheModeCopy {
 		mode = config.DindCacheModeCopy
-	default: // auto
-		if d.cacheSize != nil && d.cacheSize(name) > dindcache.SharedModeSizeThreshold {
-			mode = config.DindCacheModeShared
-		}
 	}
 	return &config.DindCacheRef{Name: name, Mode: mode}
 }
