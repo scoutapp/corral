@@ -14,7 +14,7 @@ func TestResolveRepoCacheRef(t *testing.T) {
 	present := func(string) bool { return true }
 	absent := func(string) bool { return false }
 
-	t.Run("attaches copy by default when the cache exists", func(t *testing.T) {
+	t.Run("attaches SHARED by default (mount, zero copy — the fast path)", func(t *testing.T) {
 		ref := resolveRepoCacheRef(repoCacheDecision{
 			dind: true, globalOn: true, primaryRepoID: "abc123", cacheExists: present,
 		})
@@ -24,49 +24,28 @@ func TestResolveRepoCacheRef(t *testing.T) {
 		if ref.Name != dindcache.RepoCacheName("abc123") {
 			t.Fatalf("ref.Name = %q", ref.Name)
 		}
-		if ref.Mode != config.DindCacheModeCopy {
-			t.Fatalf("default mode = %q, want copy", ref.Mode)
+		if ref.Mode != config.DindCacheModeShared {
+			t.Fatalf("default mode = %q, want shared", ref.Mode)
 		}
 	})
 
-	t.Run("shared when requested", func(t *testing.T) {
+	t.Run("copy only when explicitly requested (the fork-and-promote path)", func(t *testing.T) {
+		ref := resolveRepoCacheRef(repoCacheDecision{
+			dind: true, globalOn: true, primaryRepoID: "abc123",
+			requestedMode: config.DindCacheModeCopy, cacheExists: present,
+		})
+		if ref == nil || ref.Mode != config.DindCacheModeCopy {
+			t.Fatalf("explicit copy must be honored, got %+v", ref)
+		}
+	})
+
+	t.Run("explicit shared also honored", func(t *testing.T) {
 		ref := resolveRepoCacheRef(repoCacheDecision{
 			dind: true, globalOn: true, primaryRepoID: "abc123",
 			requestedMode: config.DindCacheModeShared, cacheExists: present,
 		})
 		if ref == nil || ref.Mode != config.DindCacheModeShared {
 			t.Fatalf("want shared ref, got %+v", ref)
-		}
-	})
-
-	small := func(string) int64 { return 1 << 30 }                             // 1 GB
-	big := func(string) int64 { return dindcache.SharedModeSizeThreshold + 1 } // over threshold
-
-	t.Run("auto: small baseline → copy", func(t *testing.T) {
-		ref := resolveRepoCacheRef(repoCacheDecision{
-			dind: true, globalOn: true, primaryRepoID: "abc123", cacheExists: present, cacheSize: small,
-		})
-		if ref == nil || ref.Mode != config.DindCacheModeCopy {
-			t.Fatalf("small baseline should auto-pick copy, got %+v", ref)
-		}
-	})
-
-	t.Run("auto: LARGE baseline → shared (avoid the huge copy)", func(t *testing.T) {
-		ref := resolveRepoCacheRef(repoCacheDecision{
-			dind: true, globalOn: true, primaryRepoID: "abc123", cacheExists: present, cacheSize: big,
-		})
-		if ref == nil || ref.Mode != config.DindCacheModeShared {
-			t.Fatalf("large baseline should auto-pick shared, got %+v", ref)
-		}
-	})
-
-	t.Run("explicit copy wins even for a large baseline", func(t *testing.T) {
-		ref := resolveRepoCacheRef(repoCacheDecision{
-			dind: true, globalOn: true, primaryRepoID: "abc123",
-			requestedMode: config.DindCacheModeCopy, cacheExists: present, cacheSize: big,
-		})
-		if ref == nil || ref.Mode != config.DindCacheModeCopy {
-			t.Fatalf("explicit copy must win, got %+v", ref)
 		}
 	})
 
