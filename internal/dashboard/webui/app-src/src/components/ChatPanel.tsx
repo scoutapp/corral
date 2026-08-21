@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { wsURL } from "../api/client";
 import { renderMarkdown } from "../lib/markdown";
+import { parseLiveViewReady } from "../lib/liveViewReady";
+import { LiveViewReadyCard } from "./LiveViewReadyCard";
 
 // Ask Claude: a host-claude chat over /p/<id>/chat/ws. The user's turn is sent
 // as {prompt}; the server streams typed frames (text/tool_use/tool_result/
@@ -11,7 +13,7 @@ import { renderMarkdown } from "../lib/markdown";
 interface Msg {
   role: "user" | "assistant" | "meta";
   html?: string; // for user/assistant bubbles
-  text?: string; // for meta
+  text?: string; // meta text, or the raw assistant text (used to detect the Live View block)
   error?: boolean;
   tool?: { name: string; input: string; result?: string };
 }
@@ -174,7 +176,7 @@ export function ChatPanel({
               next.push({ role: "assistant", html: "" });
               curAssistantIdx.current = next.length - 1;
             }
-            next[curAssistantIdx.current] = { role: "assistant", html: renderMarkdown(curText.current) };
+            next[curAssistantIdx.current] = { role: "assistant", html: renderMarkdown(curText.current), text: curText.current };
             return next;
           });
           scroll();
@@ -318,6 +320,20 @@ export function ChatPanel({
                 </details>
               </div>
             );
+          // A worker's "=== LIVE VIEW READY ===" footer renders as a green
+          // verified callout; any prose before/after it still renders as markdown.
+          const lvr = m.role === "assistant" ? parseLiveViewReady(m.text || "") : null;
+          if (lvr) {
+            return (
+              <div key={i} className={`msg ${m.role}`}>
+                <div className="avatar">✳</div>
+                <div className="bubble">
+                  {lvr.rest && <div dangerouslySetInnerHTML={{ __html: renderMarkdown(lvr.rest) }} />}
+                  <LiveViewReadyCard data={lvr} />
+                </div>
+              </div>
+            );
+          }
           return (
             <div key={i} className={`msg ${m.role}`}>
               <div className="avatar">{m.role === "assistant" ? "✳" : "Y"}</div>
