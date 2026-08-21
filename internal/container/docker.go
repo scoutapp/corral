@@ -2,6 +2,7 @@ package container
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -142,9 +143,17 @@ func (sc *Corral) startDocker(cfg *config.ProjectConfig, keepDevfiles bool) erro
 	// no ~/.claude.json — skip the mount and let Claude prompt inside the
 	// container. (We don't mount the whole ~/.claude dir here; that's done below
 	// with granular per-subdir mounts.)
+	//
+	// Validate + heal before mounting: Claude Code rewrites this file with a
+	// non-atomic truncating write, so a container that binds it mid-write latches
+	// onto a TRUNCATED snapshot for its whole lifetime (macOS VirtioFS pins the
+	// bind to that inode → "invalid JSON: Unterminated string" inside the
+	// sandbox, unfixable without a restart). healClaudeJSON returns a path that is
+	// guaranteed to parse as JSON (repaired from a .bak if the live file is
+	// corrupt), or "" to skip the mount so Claude regenerates a clean one.
 	hostClaudeJSON := filepath.Join(home, ".claude.json")
-	if fi, err := os.Stat(hostClaudeJSON); err == nil && !fi.IsDir() {
-		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/.claude.json", hostClaudeJSON))
+	if mountSrc := healClaudeJSON(hostClaudeJSON); mountSrc != "" {
+		args = append(args, "-v", fmt.Sprintf("%s:/home/claude/.claude.json", mountSrc))
 	}
 
 	// Mount host .gitconfig so commits inside the container are attributed to the host user
@@ -664,4 +673,79 @@ func (sc *Corral) startDirect(cfg *config.ProjectConfig) error {
 	fmt.Printf("  corral send '<prompt>'  # send a prompt to inner Claude\n")
 	fmt.Printf("  corral attach           # attach interactively\n\n")
 	return nil
+}
+
+// healClaudeJSON returns a path to a ~/.claude.json that is guaranteed to parse
+// as JSON, ready to bind-mount into the sandbox — or "" to skip the mount (so
+// Claude regenerates a clean file in-container).
+//
+// Why this exists: Claude Code rewrites ~/.claude.json with a non-atomic
+// truncating write. A sandbox that bind-mounts the file mid-write latches onto a
+// TRUNCATED snapshot for its whole lifetime (macOS VirtioFS pins the bind to that
+// inode), surfacing inside the sandbox as "invalid JSON: Unterminated string" —
+// unfixable without a container restart. So before mounting we validate, and:
+//
+//   - live file parses → use it, and refresh our known-good backup (.claude.json.bak);
+//   - live file is corrupt but the backup parses → restore the live file from the
+//     backup (atomic) and mount it;
+//   - neither parses (or no file) → return "" and skip the mount.
+//
+// The backup is CORRAL's artifact — Claude Code keeps none — refreshed here on
+// every start whenever the live file is valid, so a later mid-write corruption
+// has a recent good copy to heal from.
+func healClaudeJSON(path string) string {
+	bak := path + ".bak"
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "" // no file (or unreadable) — skip the mount, Claude will create one
+	}
+	if json.Valid(data) {
+		// Refresh the known-good backup (best-effort; never block a start on it).
+		if err := atomicWrite(bak, data, 0o600); err != nil {
+			log.Printf("corral: refresh %s failed: %v", bak, err)
+		}
+		return path
+	}
+
+	// Live file is corrupt. Try to restore it from our backup.
+	log.Printf("corral: %s is not valid JSON (likely a mid-write snapshot) — attempting to heal", path)
+	if bakData, berr := os.ReadFile(bak); berr == nil && json.Valid(bakData) {
+		if werr := atomicWrite(path, bakData, 0o600); werr != nil {
+			log.Printf("corral: heal %s from backup failed: %v — skipping mount", path, werr)
+			return ""
+		}
+		log.Printf("corral: healed %s from %s", path, bak)
+		return path
+	}
+	log.Printf("corral: no valid backup for %s — skipping mount so Claude regenerates it", path)
+	return ""
+}
+
+// atomicWrite writes data to path via a temp file + rename in the same dir, so a
+// reader (or a bind mount) never observes a half-written file. Mirrors the fix
+// applied to corral's own ~/.claude.json writer.
+func atomicWrite(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // no-op after a successful rename
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpName, perm); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
