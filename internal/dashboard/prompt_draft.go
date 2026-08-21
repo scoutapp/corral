@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/scoutapp/corral/internal/automations"
 	"github.com/scoutapp/corral/internal/config"
 	"github.com/scoutapp/corral/internal/repos"
 )
@@ -63,13 +64,18 @@ func (d *dashboardServer) handlePromptDraftWS(w http.ResponseWriter, r *http.Req
 	}
 	var in struct {
 		Description string `json:"description"`
+		Key         string `json:"key"` // which catalog prompt is being drafted (optional)
 	}
 	_ = json.Unmarshal(data, &in)
-	if strings.TrimSpace(in.Description) == "" {
+	// For the worker boot-guidance prompt the INPUT is evidence (this repo's
+	// captured boot runs), not a free-text description — so a description is
+	// optional there. Every other prompt still needs a description.
+	bootGuidance := in.Key == automations.PromptWorkerBoot
+	if !bootGuidance && strings.TrimSpace(in.Description) == "" {
 		_ = send(chatServerMsg{Type: "error", Text: "a description is required"})
 		return
 	}
-	capt.recordPrompt(in.Description)
+	capt.recordPrompt(firstNonEmpty(in.Description, "draft "+in.Key))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -81,6 +87,12 @@ func (d *dashboardServer) handlePromptDraftWS(w http.ResponseWriter, r *http.Req
 			}
 		}
 	}()
+
+	// Boot-guidance drafting takes a specialized, evidence-grounded path.
+	if bootGuidance {
+		d.draftBootGuidance(ctx, claudeBin, repoID, in.Description, send)
+		return
+	}
 
 	// The placeholder guidance is appended to both turns so the model knows the
 	// template variables it may use.
