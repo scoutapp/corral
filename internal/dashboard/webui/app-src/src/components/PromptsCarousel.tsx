@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getJSON, wsURL } from "../api/client";
 
-// PromptsCarousel is a swipeable editor over the full prompt catalog
-// (/api/prompts). One card is visible at a time (‹ ● ○ › nav); each card shows
-// the prompt's name, a "where it's used" callout, the available {{slots}}, an
-// editable textarea seeded with the effective text, and Save / Reset-to-default
-// / Build-with-AI. Overrides resolve built-in → global → repo (repo wins);
-// editing writes at the current scope (global on the Automations page, repo in a
-// repo's Settings tab).
+// PromptsCarousel is an editor over the full prompt catalog (/api/prompts). One
+// prompt is shown at a time, chosen from a DROPDOWN (with ‹ N/M › pagination) in
+// a called-out panel. Each card shows the prompt's name, a "where it's used"
+// callout, the available {{slots}}, an editable textarea seeded with the
+// effective text, and Save / Reset-to-default / Build-with-AI. Overrides resolve
+// built-in → global → repo (repo wins); editing writes at the current scope
+// (global on the Automations page, repo in a repo's Settings tab).
 
 type PromptItem = {
   key: string;
@@ -132,30 +132,51 @@ export function PromptsCarousel({
     ws.onerror = () => setAiLog((l) => l + "\n⚠ draft connection failed");
   };
 
+  const modifiedCount = prompts.filter((p) => p.overridden).length;
+
   return (
     <section className="prompts-section">
-      <div className="carousel-head">
-        <h3 className="auto-mgr-h" style={{ margin: 0 }}>
-          Prompts
-        </h3>
-        <div className="carousel-nav">
-          <button type="button" className="carousel-arrow" onClick={() => go(-1)} aria-label="Previous prompt">
-            ‹
-          </button>
-          <div className="carousel-dots">
-            {prompts.map((p, i) => (
-              <button
-                key={p.key}
-                type="button"
-                className={`carousel-dot${i === idx ? " active" : ""}${p.overridden ? " modified" : ""}`}
-                title={p.name}
-                onClick={() => setIdx(i)}
-              />
-            ))}
+      <div className="prompts-head">
+        <div className="prompts-title">
+          <span className="prompts-icon" aria-hidden>
+            ✎
+          </span>
+          <div>
+            <h3 className="auto-mgr-h" style={{ margin: 0 }}>
+              Prompts
+            </h3>
+            <p className="prompts-sub">
+              The editable instructions Corral gives Claude — {prompts.length} built-in
+              {modifiedCount > 0 ? `, ${modifiedCount} modified here` : ""}.
+            </p>
           </div>
-          <button type="button" className="carousel-arrow" onClick={() => go(1)} aria-label="Next prompt">
-            ›
-          </button>
+        </div>
+        <div className="prompts-picker">
+          {/* Dropdown to jump straight to any prompt — no more hunting via dots. */}
+          <select
+            className="cfg-select prompts-select"
+            value={idx}
+            onChange={(e) => setIdx(Number(e.target.value))}
+            aria-label="Choose a prompt to edit"
+          >
+            {prompts.map((p, i) => (
+              <option key={p.key} value={i}>
+                {p.name}
+                {p.overridden ? "  • modified" : ""}
+              </option>
+            ))}
+          </select>
+          <div className="prompts-pager">
+            <button type="button" className="carousel-arrow" onClick={() => go(-1)} aria-label="Previous prompt">
+              ‹
+            </button>
+            <span className="prompts-count">
+              {idx + 1} / {prompts.length}
+            </span>
+            <button type="button" className="carousel-arrow" onClick={() => go(1)} aria-label="Next prompt">
+              ›
+            </button>
+          </div>
         </div>
       </div>
 
