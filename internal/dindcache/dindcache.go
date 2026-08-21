@@ -135,9 +135,18 @@ func VolumeExists(vol string) bool {
 }
 
 // CopyVolume copies the full contents of src volume into dst volume, creating
-// dst if needed. It mounts both into a throwaway container and runs `cp -a` so
-// ownership, timestamps, and symlinks (including the /proc entries that defeat
-// bind mounts) are preserved. src is mounted read-only; dst read-write.
+// dst if needed. It mounts both into a throwaway container and streams the copy
+// through `tar` — NOT `cp -a`.
+//
+// Why tar, not cp -a: the volume being copied is a Docker DinD data root, and on
+// the vfs storage driver image layers are full directory trees that share data
+// via HARDLINKS across vfs/dir/<layer> dirs. BusyBox `cp -a` (alpine) does not
+// reliably preserve those hardlinks — it breaks them into independent files, and
+// the image layer store ends up with dangling/mis-referenced layers (symptom:
+// "referenced layers aren't among the vfs dirs" → a corrupt, unusable baseline).
+// `tar -cf - . | tar -xf -` preserves hardlinks, symlinks, ownership, and xattrs
+// (BusyBox tar handles hardlinks correctly), producing a faithful clone. src is
+// mounted read-only; dst read-write.
 //
 // This is the single primitive both snapshot (project→cache) and COPY-mode seed
 // (cache→project) are built on.
@@ -152,14 +161,15 @@ func CopyVolume(src, dst string) error {
 	if _, err := dockerOut(dockerTimeout, "volume", "create", dst); err != nil {
 		return fmt.Errorf("copy volume: create dst: %w", err)
 	}
-	// cp -a preserves everything; the trailing "/." copies contents (not the dir
-	// itself) so we don't nest /from inside /to.
+	// tar-pipe preserves hardlinks (critical for vfs image layers), symlinks,
+	// perms, and xattrs. `--numeric-owner` avoids user/group name lookups that
+	// differ between the copy image and the data. -p preserves permissions.
 	_, err := dockerOut(copyTimeout,
 		"run", "--rm",
 		"-v", src+":/from:ro",
 		"-v", dst+":/to",
 		copyImage,
-		"sh", "-c", "cp -a /from/. /to/",
+		"sh", "-c", "cd /from && tar --numeric-owner -cf - . | tar --numeric-owner -xpf - -C /to",
 	)
 	if err != nil {
 		return fmt.Errorf("copy volume %s -> %s: %w", src, dst, err)
