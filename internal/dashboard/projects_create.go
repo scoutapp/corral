@@ -323,7 +323,37 @@ func trustWorkspaceInClaudeConfig(workspace string) error {
 		return err
 	}
 	// 0600: ~/.claude.json holds the user's Claude config; keep it user-private.
-	return os.WriteFile(path, out, 0600)
+	// Atomic (temp + rename) so a sandbox bind-mounting this file can never latch
+	// onto a half-written, truncated snapshot — the "Unterminated string" failure
+	// mode. Claude Code's own writer is non-atomic, but at least corral's isn't.
+	return atomicWriteClaudeJSON(path, out)
+}
+
+// atomicWriteClaudeJSON writes ~/.claude.json via a temp file + rename in the
+// same dir, so no reader (or bind mount) ever observes a partial write.
+func atomicWriteClaudeJSON(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // no-op once renamed
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpName, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 // issueBranchSlug builds a git-branch-safe "issue-<n>-<title-slug>" name.
