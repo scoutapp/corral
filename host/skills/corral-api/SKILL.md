@@ -140,15 +140,22 @@ repo's built images across projects via a **repo baseline cache** (`repo-<repoId
   So if you `bundle install` / `npm ci` / `pip install` *inside a running base-image
   container* (e.g. `ruby:3.3.9`), those deps are LOST on snapshot — the next project
   re-installs them. To make them reusable, do ONE of:
-  - **bundle into a named volume** the app container mounts, e.g.
+  - **deps into a named volume** the app mounts, e.g.
     `docker run -v apm-bundle:/usr/local/bundle …` then `bundle install` — the
-    `apm-bundle` volume is captured by the snapshot; or
-  - **commit the prepared container to an image** once deps are installed:
-    `docker commit <container> apm-built:latest` — the image is captured.
-  Pulled base images (`ruby:3.3.9`, postgres, redis) are already captured as-is, so
-  a baseline saves the pull time even without this; the named-volume/commit step is
-  what also saves the (usually larger) dependency-install time. Prefer it for any
-  app whose `bundle`/`npm`/`pip` install is the slow part.
+    `apm-bundle` volume is captured; and/or
+  - **migrated DB into a named volume**: run Postgres with
+    `-v apm-pgdata:/var/lib/postgresql/data` and migrate ONCE — the migrated DB is
+    captured, so reuse skips create+migrate (often the biggest per-boot cost); and/or
+  - **commit a prepared image** once deps + assets + bootsnap are ready:
+    `docker commit <container> apm-prepared:latest` — eager-load/asset/bootsnap work
+    is baked in and doesn't repeat; cache `tmp/cache/bootsnap` + `public/assets` in
+    volumes too.
+  Pulled base images are already captured as-is (saving pull time); the
+  named-volume/commit steps also save the larger dep-install, DB-migrate, and
+  app-warmup costs. A well-prepared baseline means a reused boot only STARTS
+  containers + boots the app — measured 5.6× faster on apm (34 min → 6 min), and
+  the DB/prepared-image steps target the remaining 6 min. Name volumes
+  deterministically (stable per-app) so the next project remounts them.
 
 ## Reads vs writes — the permission gate
 

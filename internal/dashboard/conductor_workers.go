@@ -54,11 +54,19 @@ func workerContractPreamble(jobID string) string {
 		"report to the human. This job's id is `" + jobID + "`.\n" +
 		"MAKE EXPENSIVE WORK REUSABLE: Corral snapshots a project's inner-docker on clean stop into " +
 		"a per-repo baseline that future projects reuse — but a snapshot captures IMAGES and NAMED " +
-		"VOLUMES, not a running container's writable layer. So don't `bundle install`/`npm ci`/`pip " +
-		"install` inside a bare base-image container and leave it there — it'll be lost. Install deps " +
-		"into a NAMED VOLUME the app mounts (e.g. `docker run -v <app>-bundle:/usr/local/bundle …`) or " +
-		"`docker commit` the prepared container to an image. That way the slow dep-install is captured " +
-		"and the next project from this repo skips it.\n\n---\n\nTASK:\n\n"
+		"VOLUMES, not a running container's writable layer. Put EVERY slow, reusable step where the " +
+		"snapshot can capture it, so the next project from this repo skips it:\n" +
+		"  • Dependencies (bundle/npm/pip): install into a NAMED VOLUME the app mounts " +
+		"(e.g. `-v <app>-bundle:/usr/local/bundle`), not a bare container layer.\n" +
+		"  • Datastore: run Postgres/MySQL with its data dir on a NAMED VOLUME " +
+		"(`-v <app>-pgdata:/var/lib/postgresql/data`) and run migrations ONCE — the migrated DB is " +
+		"then captured, so reuse skips create+migrate (often the biggest per-boot cost).\n" +
+		"  • App warmup: after deps+assets+bootsnap are ready, `docker commit` the prepared container " +
+		"to an image (e.g. `<app>-prepared:latest`) so eager-load/asset-precompile/bootsnap are baked " +
+		"in and don't repeat each boot. Cache bootsnap (`tmp/cache/bootsnap`) and built assets " +
+		"(`public/assets`) in named volumes too.\n" +
+		"The goal: a reused boot should only START containers + boot the app, not rebuild/reinstall/" +
+		"re-migrate. Name volumes deterministically (per-app, stable) so the next project remounts them.\n\n---\n\nTASK:\n\n"
 }
 
 // handleConductorWorkerCreate: POST /api/conductor/workers { prompt, title? }
