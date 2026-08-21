@@ -2323,6 +2323,30 @@ table.projects th, table.projects td {
 .cli-pill.authed { color: #9ece6a; border-color: rgba(158, 206, 106, 0.5); }
 /* Installed but not signed in — amber, with the note. */
 .cli-pill.unauthed { color: var(--con-warn, #e0af68); border-color: rgba(224, 175, 104, 0.5); }
+
+/* Live View ready: a worker's verified success footer, rendered as a green-
+   bordered callout inside its chat bubble. The green edge + wash is the signal
+   the app booted AND its login was verified through the Live View proxy. */
+.lvr-card {
+  margin-top: 0.55rem; border: 1px solid var(--con-line); border-left-width: 3px;
+  border-radius: 8px; padding: 0.55rem 0.7rem; background: var(--con-panel);
+}
+.lvr-card.verified {
+  border-color: rgba(92, 230, 168, 0.45); border-left-color: var(--con-working, #5CE6A8);
+  background: rgba(92, 230, 168, 0.08);
+}
+.lvr-head { display: flex; align-items: baseline; gap: 0.5rem; }
+.lvr-badge { font-weight: 700; font-size: 0.82rem; color: var(--con-text); }
+.lvr-card.verified .lvr-badge { color: var(--con-working, #5CE6A8); }
+.lvr-port { font-family: ui-monospace, monospace; font-size: 0.7rem; color: var(--muted); }
+.lvr-note { font-size: 0.76rem; color: var(--con-text); margin: 0.3rem 0 0.1rem; line-height: 1.5; }
+.lvr-fields { display: flex; flex-wrap: wrap; gap: 0.35rem 1rem; margin-top: 0.4rem; }
+.lvr-field { display: flex; align-items: baseline; gap: 0.4rem; }
+.lvr-key { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.lvr-val {
+  font-family: ui-monospace, monospace; font-size: 0.72rem; color: var(--con-text);
+  background: rgba(255, 255, 255, 0.04); padding: 0.05rem 0.35rem; border-radius: 4px;
+}
 /* No auth concept (curl/jq/git) — neutral. */
 .cli-pill.no_auth { color: var(--muted); }
 
