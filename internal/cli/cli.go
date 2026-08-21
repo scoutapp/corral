@@ -950,6 +950,9 @@ func Main() {
 	case "worker":
 		err = dashboard.CmdWorker(os.Args[2:])
 
+	case "bench":
+		err = dashboard.CmdBench(os.Args[2:])
+
 	case "api":
 		err = dashboard.CmdAPI(os.Args[2:])
 
