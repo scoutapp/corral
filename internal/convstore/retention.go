@@ -25,6 +25,8 @@ func (s *ConvStore) Prune(r Retention) (int64, error) {
 	if s == nil || s.db == nil {
 		return 0, nil
 	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	var total int64
 
 	if r.MaxAgeDays > 0 {
