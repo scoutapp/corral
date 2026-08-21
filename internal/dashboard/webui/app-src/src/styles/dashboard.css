@@ -2159,7 +2159,23 @@ table.projects th, table.projects td {
 }
 
 /* Redesigned Automations: Prompts section + trigger cards. */
-.prompts-section { margin-bottom: 1.75rem; }
+/* Prompts section — a distinct, called-out panel (it was easy to miss as a bare
+   carousel). Its own recessed background + accent edge so it reads as "the place
+   to edit what Claude is told". */
+.prompts-section {
+  margin-bottom: 1.75rem; padding: 0.9rem 1rem 1.1rem;
+  background: color-mix(in srgb, var(--con-working, #5ce6a8) 6%, var(--con-panel, var(--panel)));
+  border: 1px solid var(--con-line, var(--border)); border-left: 3px solid var(--con-working, #5ce6a8);
+  border-radius: 10px;
+}
+.prompts-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.prompts-title { display: flex; align-items: flex-start; gap: 0.55rem; }
+.prompts-icon { font-size: 1.1rem; line-height: 1.2; color: var(--con-working, #5ce6a8); }
+.prompts-sub { margin: 0.15rem 0 0; font-size: 0.75rem; color: var(--con-muted, var(--muted)); }
+.prompts-picker { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.prompts-select { min-width: 14rem; max-width: 20rem; }
+.prompts-pager { display: flex; align-items: center; gap: 0.4rem; }
+.prompts-count { font-size: 0.72rem; color: var(--con-muted, var(--muted)); min-width: 3rem; text-align: center; }
 .prompt-card { background: var(--con-panel-hi); border: 1px solid var(--con-line); border-radius: 10px; padding: 0.9rem 1rem; }
 .prompt-card-head { font-size: 0.88rem; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.4rem; }
 .prompt-textarea {

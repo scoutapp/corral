@@ -155,8 +155,9 @@ export function AutomationsManager({ repoId }: { repoId?: string }) {
     <div className="auto-manager">
       {msg && <div className={`auto-msg${msg.err ? " err" : ""}`}>{msg.text}</div>}
 
-      {/* 1. Prompts — the editable prompt catalog (carousel). Global on the
-          Automations page; repo-scoped overrides in a repo's Settings tab. */}
+      {/* 1. Prompts — the editable prompt catalog, in its own called-out panel
+          (dropdown picker). Global on the Automations page; repo-scoped overrides
+          in a repo's Settings tab. */}
       <PromptsCarousel repoId={repoId} onMsg={setMsg} />
 
       {/* 1b. Saved prompts — the user's named library, picked at project/issue
