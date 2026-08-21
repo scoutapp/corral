@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -51,6 +52,11 @@ const dockerTimeout = 20 * time.Second
 // so this is generous — but still bounded, so a stuck copy fails loudly instead
 // of hanging a dashboard request forever.
 const copyTimeout = 30 * time.Minute
+
+// sizeTimeout bounds the `du -sb` volume measurement. Generous enough for a big
+// vfs data root (du walks the tree) but bounded so an enormous volume degrades to
+// "unknown size" (→ copy default) rather than hanging a project-create.
+const sizeTimeout = 3 * time.Minute
 
 // copyImage is the tiny image used as the vehicle for the volume copy. It only
 // needs a shell and cp; alpine is already commonly cached. It is pulled through
@@ -197,19 +203,29 @@ func List() ([]Cache, error) {
 // volumeSize returns a volume's on-disk size in bytes, best-effort (0 if it
 // can't be determined). `docker system df -v` reports per-volume size; we parse
 // the row for this volume. This is advisory (shown in the UI), never load-bearing.
+// volumeSize returns a volume's on-disk size in bytes, best-effort (0 if it
+// can't be determined). It mounts JUST this volume read-only into a throwaway
+// container and runs `du -sb` — an O(this volume) measurement. We deliberately do
+// NOT use `docker system df -v`: on a big multi-volume vfs data root that call
+// scans everything and takes MINUTES (it timed out at 20s and returned 0, which
+// silently defeated the size-based copy/shared decision). du on one mount is
+// fast. sizeTimeout bounds it so a huge volume still fails to a 0 (→ copy)
+// rather than hanging a create.
 func volumeSize(vol string) int64 {
-	out, err := dockerOut(dockerTimeout, "system", "df", "-v",
-		"--format", "{{range .Volumes}}{{.Name}}\t{{.Size}}\n{{end}}")
+	if vol == "" || !VolumeExists(vol) {
+		return 0
+	}
+	out, err := dockerOut(sizeTimeout,
+		"run", "--rm", "-v", vol+":/v:ro", copyImage,
+		"sh", "-c", "du -sb /v 2>/dev/null | cut -f1")
 	if err != nil {
 		return 0
 	}
-	for _, line := range strings.Split(out, "\n") {
-		fields := strings.SplitN(strings.TrimSpace(line), "\t", 2)
-		if len(fields) == 2 && fields[0] == vol {
-			return parseHumanSize(fields[1])
-		}
+	n, perr := strconv.ParseInt(strings.TrimSpace(out), 10, 64)
+	if perr != nil {
+		return 0
 	}
-	return 0
+	return n
 }
 
 // CreateFromVolume snapshots a source volume (a project's corral-dind-<ws>
