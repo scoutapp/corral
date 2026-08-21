@@ -277,18 +277,22 @@ UI), tell the dashboard which port to show so the user doesn't have to hunt for 
 corral api PUT /p/<projectId>/live-port -d '{"port":1313}'
 ```
 
-If the app serves its content under a **sub-path** (its root `/` 404s or is
-blank — e.g. a docs site at `/docs/node/`), include the path so Live View opens
-the right page:
+`path` is the **URL route** — appended to the port as `http://<sandbox>:<port><path>`
+— **not** a filesystem path to code. If the app serves its content under a
+**sub-path** (its root `/` 404s or is blank — e.g. a docs site at `/docs/node/`),
+include the path so Live View opens the right page:
 
 ```
 corral api PUT /p/<projectId>/live-port -d '{"port":1313,"path":"/docs/node/"}'
 ```
 
-Pick the **user-facing** app — the docs site, the UI, the thing they asked to see
-— not a database, cache, or internal service (5432, 6379, …). Verify the path
-actually returns 200 before setting it (curl it inside the sandbox). The Live
-View tab then opens that port + path by default. Send `{"port":0}` to clear it.
+Pick a page a **human** actually wants to look at — the app's UI, its login or
+dashboard screen, the docs site, the thing they asked to see. **Do NOT** point it
+at a health/liveness probe (`/health_check`, `/healthz`, `/up`), an API/JSON
+endpoint, or a database/cache/internal service (5432, 6379, …) — those return 200
+but show a human nothing. A 200 means "the route works," not "this is worth
+watching." Verify the page renders (curl it inside the sandbox) before setting it.
+The Live View tab then opens that port + path by default. Send `{"port":0}` to clear it.
 For an inner (Docker-in-Docker) service to be viewable, run its container with
 `-p <port>:<port>` so it's reachable.
 

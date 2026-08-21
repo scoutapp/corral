@@ -94,6 +94,23 @@ func TestLivePortEndpoint(t *testing.T) {
 	}
 }
 
+// TestLivePathWarning covers the health-probe heuristic: probe-like routes warn,
+// real app pages don't.
+func TestLivePathWarning(t *testing.T) {
+	warns := []string{"/health_check", "/health_check/", "/HEALTHZ", "/up", "/ping", "/status", "/readyz"}
+	for _, p := range warns {
+		if livePathWarning(p) == "" {
+			t.Errorf("livePathWarning(%q) = \"\", want a warning", p)
+		}
+	}
+	ok := []string{"", "/", "/users/sign_in", "/dashboard", "/docs/node/", "/status_page/overview"}
+	for _, p := range ok {
+		if w := livePathWarning(p); w != "" {
+			t.Errorf("livePathWarning(%q) = %q, want no warning", p, w)
+		}
+	}
+}
+
 // decodePort reads { "port": N } from a response body.
 func decodePort(t *testing.T, resp *http.Response) int {
 	t.Helper()
