@@ -50,7 +50,7 @@ corral api POST /p/<projectId>/start                    # start a project's cont
 - The response body (JSON) prints to stdout. Parse it and use it.
 - A non-2xx response prints the error to stderr and exits non-zero — check for
   that and tell the user what failed.
-- Bodies: `-d '<json>'` inline, or `-d @file.json` to read from a file.
+- Bodies: `-d '<json>'` inline, `-d @file.json` to read from a file, or `-d @-` to read from stdin (e.g. `echo '{...}' | corral api POST /path -d @-` — avoids a temp file for large payloads).
 
 ## You are a CONDUCTOR — delegate tasks to worker Claudes
 

@@ -1,8 +1,11 @@
 package dashboard
 
 import (
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -79,6 +82,41 @@ func TestCmdAPIRoundTrip(t *testing.T) {
 	}
 }
 
+// TestCmdAPIBodyFromStdin covers `-d @-`: the body is read from stdin (so a large
+// payload needs no temp file). Guards the regression where @- was treated as a
+// file literally named "-" and failed — which made the conductor waste turns
+// writing payloads to disk.
+func TestCmdAPIBodyFromStdin(t *testing.T) {
+	t.Setenv("CORRAL_HOME", t.TempDir())
+
+	var gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	// Swap os.Stdin for a pipe carrying the payload.
+	want := `{"port":3000,"path":"/users/sign_in"}`
+	rd, wr, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _, _ = wr.WriteString(want); wr.Close() }()
+	orig := os.Stdin
+	os.Stdin = rd
+	defer func() { os.Stdin = orig }()
+
+	if err := CmdAPI([]string{"--url", srv.URL, "--token", "tok", "POST", "/anything", "-d", "@-"}); err != nil {
+		t.Fatalf("CmdAPI with -d @-: %v", err)
+	}
+	if gotBody != want {
+		t.Fatalf("server got body %q, want %q", gotBody, want)
+	}
+}
+
 // TestCmdAPIAutoDiscovers confirms the CLI reads base URL + token from the
 // persisted dashboard state when no --url/--token/env are given.
 func TestCmdAPIAutoDiscovers(t *testing.T) {
@@ -120,4 +158,3 @@ func TestCmdAPINoDashboard(t *testing.T) {
 		t.Error("expected an error when no dashboard is running")
 	}
 }
-

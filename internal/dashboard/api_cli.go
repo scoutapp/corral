@@ -91,16 +91,24 @@ examples:
 		return err
 	}
 
-	// Body: literal string, or @file to read from disk (handy for large payloads).
+	// Body: literal string, @file to read from disk, or @- to read from stdin
+	// (both handy for large payloads — @- avoids a temp file, matching curl).
 	var body io.Reader
 	if data != "" {
-		if strings.HasPrefix(data, "@") {
+		switch {
+		case data == "@-":
+			b, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				return fmt.Errorf("read body from stdin: %w", err)
+			}
+			body = strings.NewReader(string(b))
+		case strings.HasPrefix(data, "@"):
 			b, err := os.ReadFile(data[1:])
 			if err != nil {
 				return fmt.Errorf("read body file: %w", err)
 			}
 			body = strings.NewReader(string(b))
-		} else {
+		default:
 			body = strings.NewReader(data)
 		}
 	}
