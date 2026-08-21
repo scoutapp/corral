@@ -335,6 +335,14 @@ func (r *capturingRunner) Run(ctx context.Context, prompt string) (string, error
 		} else {
 			_ = cs.AppendMessage(id, convstore.Message{Role: "assistant", Type: "text", Text: out})
 		}
+		// Finalize the row's status like the streaming path's finalize() does —
+		// otherwise a completed one-shot analysis stays "running" forever, so it
+		// looks live/hung in the Conversations UI and never gets reconciled.
+		status := "done"
+		if err != nil {
+			status = "failed"
+		}
+		_ = cs.SetStatus(id, status)
 	}
 	return out, err
 }

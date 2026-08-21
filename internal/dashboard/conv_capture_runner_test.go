@@ -52,6 +52,13 @@ func TestCapturingRunnerRecordsPairs(t *testing.T) {
 	if msgCount != 4 { // 2 runs × (user prompt + assistant reply)
 		t.Fatalf("expected 4 messages (2 prompt/response pairs), got %d", msgCount)
 	}
+	// A completed one-shot run must finalize its status — else it stays "running"
+	// forever and looks live/hung in the Conversations UI.
+	var status string
+	cs.DB().QueryRow(`SELECT status FROM conversations LIMIT 1`).Scan(&status)
+	if status != "done" {
+		t.Fatalf("expected status 'done' after a successful run, got %q", status)
+	}
 }
 
 // TestCapturingRunnerRecordsError verifies a failed Run records an error message
@@ -72,6 +79,12 @@ func TestCapturingRunnerRecordsError(t *testing.T) {
 	cs.DB().QueryRow(`SELECT COUNT(*) FROM conv_messages WHERE is_error = 1`).Scan(&errCount)
 	if errCount != 1 {
 		t.Fatalf("expected 1 error message recorded, got %d", errCount)
+	}
+	// A failed run finalizes as "failed", not left "running".
+	var status string
+	cs.DB().QueryRow(`SELECT status FROM conversations LIMIT 1`).Scan(&status)
+	if status != "failed" {
+		t.Fatalf("expected status 'failed' after an errored run, got %q", status)
 	}
 }
 
