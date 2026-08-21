@@ -52,46 +52,28 @@ func workerContractPreamble(jobID string) string {
 		"(e.g. --in 30) via Bash and end the turn. Corral re-invokes you after the delay with full " +
 		"context so you can check on it and continue; repeat the wake if it's still going.\n" +
 		"Only end WITHOUT a wake when the task is actually done, or you're truly blocked and must " +
-		"report to the human. This job's id is `" + jobID + "`.\n" +
-		"MAKE EXPENSIVE WORK REUSABLE: Corral snapshots a project's inner-docker on clean stop into " +
-		"a per-repo baseline that future projects reuse — but a snapshot captures IMAGES and NAMED " +
-		"VOLUMES, not a running container's writable layer. Put EVERY slow, reusable step where the " +
-		"snapshot can capture it, so the next project from this repo skips it:\n" +
-		"  • Dependencies (bundle/npm/pip): install into a NAMED VOLUME the app mounts " +
-		"(e.g. `-v <app>-bundle:/usr/local/bundle`), not a bare container layer.\n" +
-		"  • Datastore: run Postgres/MySQL with its data dir on a NAMED VOLUME " +
-		"(`-v <app>-pgdata:/var/lib/postgresql/data`) and run migrations ONCE — the migrated DB is " +
-		"then captured, so reuse skips create+migrate (often the biggest per-boot cost).\n" +
-		"  • App warmup: after deps + any build/asset step are ready, `docker commit` the prepared " +
-		"container to an image (e.g. `<app>-prepared:latest`) so compile/eager-load/asset work is baked " +
-		"in and doesn't repeat each boot. Cache any per-boot build cache in a named volume too (whatever " +
-		"your stack uses — e.g. Rails bootsnap `tmp/cache/bootsnap` + `public/assets`, Node `.next`/" +
-		"`node_modules/.cache`, Go/Rust build caches).\n" +
-		"This applies to ANY repo/stack, not one app — the mechanism is generic. The goal: a reused " +
-		"boot should only START containers + boot the app, not rebuild/reinstall/re-migrate. Name " +
-		"volumes deterministically (per-app, stable) so the next project remounts them.\n\n---\n\nTASK:\n\n"
+		"report to the human. This job's id is `" + jobID + "`.\n\n---\n\nTASK:\n\n"
 }
 
-// repoWorkerGuidance returns the repo's saved agent context wrapped as a
-// worker-prompt section, or "" when there's no repo / no context / no store.
-// This is what makes the boot+caching guidance PER-REPO editable: the preamble
-// above is the generic default; a repo's own agent context (edited in the repo's
-// settings, same field used for sandbox CLAUDE.md) layers its stack-specific
-// recipe (e.g. our Rails app's exact bundle/pgdata/prepared-image steps) on top.
+// repoWorkerGuidance returns the boot/caching guidance appended to a worker's
+// prompt, rendered from the EDITABLE `worker.boot_guidance` catalog prompt. It
+// resolves the effective template for repoID — the repo's override if saved in
+// the Prompts section, else the generic built-in default — so the guidance is
+// editable in ONE place, per-repo (our Rails app can carry its exact
+// volume/DB/prepared-image recipe without hardcoding it for everyone). repoID may
+// be empty (→ the global default). Returns "" only if the effective prompt is
+// empty (a user deliberately cleared it).
 func (d *dashboardServer) repoWorkerGuidance(repoID string) string {
-	if strings.TrimSpace(repoID) == "" {
-		return ""
-	}
 	s, err := d.getStore()
 	if err != nil {
+		// Store down — still give the built-in default rather than dropping guidance.
+		return automations.DefaultWorkerBootGuidance + "\n\n---\n\n"
+	}
+	g := strings.TrimSpace(automations.New(s).RenderPrompt(automations.PromptWorkerBoot, repoID, nil))
+	if g == "" {
 		return ""
 	}
-	ctx, err := automations.New(s).RepoAgentContext(repoID)
-	if err != nil || strings.TrimSpace(ctx) == "" {
-		return ""
-	}
-	return "REPO-SPECIFIC GUIDANCE (from this repo's saved context — follow it where it's more specific than the above):\n\n" +
-		strings.TrimSpace(ctx) + "\n\n---\n\n"
+	return g + "\n\n---\n\n"
 }
 
 // handleConductorWorkerCreate: POST /api/conductor/workers { prompt, title?, repoId? }
@@ -105,10 +87,9 @@ func (d *dashboardServer) handleConductorWorkerCreate(w http.ResponseWriter, r *
 	var body struct {
 		Prompt string `json:"prompt"`
 		Title  string `json:"title"`
-		// RepoID, when set, appends that repo's saved agent context (the same
-		// per-repo, editable CLAUDE.md-style guidance used for sandboxes) to the
-		// worker's prompt — so a repo can carry its OWN boot/caching recipe on top
-		// of the generic contract. Optional; omit for a repo-agnostic worker.
+		// RepoID selects which repo's `worker.boot_guidance` prompt applies — the
+		// repo's editable override if set, else the generic default. Optional; omit
+		// for a repo-agnostic worker (still gets the generic default).
 		RepoID string `json:"repoId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {

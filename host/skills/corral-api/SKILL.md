@@ -87,12 +87,11 @@ break the ask into tasks, kick off a worker per task, and keep going.
   wake. (Corral injects this contract + the worker's own job id into every worker
   prompt, so you don't have to — but for long multi-step boots, reinforce it.)
 - **Pass `repoId` when the worker is for a specific repo.** `POST /api/conductor/workers`
-  accepts an optional `repoId`; when set, that repo's **saved agent context** (the
-  same per-repo, editable guidance used for its sandboxes) is appended to the
-  worker's prompt. This is how a repo carries its OWN boot/caching recipe (exact
-  volume names, DB setup, build steps) on top of the generic contract — edit it in
-  the repo's settings, don't hardcode it here. Generic default applies to repos
-  with no saved context.
+  accepts an optional `repoId`; it selects which repo's **`worker.boot_guidance`**
+  prompt (in the editable Prompts catalog) is appended to the worker — the repo's
+  override if one is saved, else the generic default. This is how a repo carries
+  its OWN boot/caching recipe (exact volume names, DB setup, prepared image) — edit
+  it in the Prompts section (per-repo), don't hardcode it here.
 
 ### When a worker operates on a Corral project (sandbox)
 
