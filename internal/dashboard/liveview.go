@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -219,7 +220,9 @@ func liveProxyTo(w http.ResponseWriter, r *http.Request, container, id string, p
 			DisableKeepAlives:     true,
 			ResponseHeaderTimeout: 30 * time.Second,
 		},
-		ModifyResponse: hardenLiveResponse,
+		ModifyResponse: func(resp *http.Response) error {
+			return hardenLiveResponse(resp, fmt.Sprintf("/p/%s/live/%d", id, port), port)
+		},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, e error) {
 			http.Error(w, fmt.Sprintf("live view: could not reach the app on port %d (%v)", port, e), http.StatusBadGateway)
 		},
@@ -241,7 +244,7 @@ func liveProxyTo(w http.ResponseWriter, r *http.Request, container, id string, p
 //   - Never let the framed app set cookies in the dashboard's origin. Its
 //     Set-Cookie headers are dropped so it can't plant a cookie the browser
 //     would then send on dashboard requests.
-func hardenLiveResponse(resp *http.Response) error {
+func hardenLiveResponse(resp *http.Response, prefix string, port int) error {
 	h := resp.Header
 	// The app's own anti-framing headers would block our legitimate embed; drop
 	// them and assert our own frame-ancestors policy.
@@ -251,7 +254,90 @@ func hardenLiveResponse(resp *http.Response) error {
 	h.Set("Content-Security-Policy", "frame-ancestors 'self'")
 	// The framed app must not set cookies scoped to the dashboard origin.
 	h.Del("Set-Cookie")
+
+	// The app is mounted at <prefix>/… but it emits ROOT-ABSOLUTE URLs (a Rails
+	// app links `/assets/app.css`, forms POST to `/users/sign_in`, redirects to
+	// `http://localhost:<port>/home`). The browser resolves those against the
+	// dashboard ORIGIN, not the mount — so `/assets/*` 404s at the dashboard root
+	// (→ an unstyled page) and redirects point at an unreachable localhost:<port>.
+	// Rewrite them to carry the mount prefix so the framed app actually works.
+	rewriteLocationHeader(h, prefix, port)
+	rewriteLiveHTMLBody(resp, prefix)
 	return nil
+}
+
+// rewriteLocationHeader fixes a redirect the app emits so it stays inside the
+// Live View mount: an absolute localhost:<port> URL or a root-absolute path
+// becomes <prefix>/<path>. External redirects (other hosts) are left alone.
+func rewriteLocationHeader(h http.Header, prefix string, port int) {
+	loc := h.Get("Location")
+	if loc == "" {
+		return
+	}
+	for _, host := range []string{fmt.Sprintf("http://localhost:%d", port), fmt.Sprintf("http://127.0.0.1:%d", port)} {
+		if strings.HasPrefix(loc, host) {
+			h.Set("Location", prefix+strings.TrimPrefix(loc, host))
+			return
+		}
+	}
+	// Root-absolute (but not protocol-relative "//host") → prefix it.
+	if strings.HasPrefix(loc, "/") && !strings.HasPrefix(loc, "//") && !strings.HasPrefix(loc, prefix+"/") {
+		h.Set("Location", prefix+loc)
+	}
+}
+
+// liveHTMLAttrRe matches root-absolute URLs in href/src/action attributes of an
+// HTML document: e.g. href="/assets/app.css", src='/packs/x.js', action="/login".
+// It deliberately does NOT touch "//host" (protocol-relative), "http(s)://…",
+// or already-prefixed paths — only same-origin root-absolute references.
+var liveHTMLAttrRe = regexp.MustCompile(`(\b(?:href|src|action)\s*=\s*["'])(/(?:[^/"'][^"']*)?)(["'])`)
+
+// rewriteLiveHTMLBody rewrites an HTML response so the app's root-absolute
+// references resolve under the Live View mount. It injects a <base> tag (so
+// RELATIVE URLs resolve under the mount) and rewrites root-absolute href/src/
+// action attributes to carry the prefix (since <base> does NOT affect "/abs"
+// URLs). Only text/html is touched; other content types (JS/CSS/JSON/images)
+// stream through unchanged.
+func rewriteLiveHTMLBody(resp *http.Response, prefix string) {
+	ct := resp.Header.Get("Content-Type")
+	if !strings.HasPrefix(strings.ToLower(ct), "text/html") {
+		return
+	}
+	// Compressed bodies would need decoding first; the app serves HTML
+	// uncompressed here, so skip rewriting (don't corrupt) if it's encoded.
+	if resp.Header.Get("Content-Encoding") != "" {
+		return
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		resp.Body = io.NopCloser(strings.NewReader(""))
+		return
+	}
+	html := string(body)
+
+	// Rewrite root-absolute href/src/action → prefixed. Skip paths that already
+	// start with the prefix (idempotent) and leave //host + http(s):// alone.
+	html = liveHTMLAttrRe.ReplaceAllStringFunc(html, func(m string) string {
+		g := liveHTMLAttrRe.FindStringSubmatch(m)
+		pre, url, post := g[1], g[2], g[3]
+		if strings.HasPrefix(url, "//") || strings.HasPrefix(url, prefix+"/") || url == prefix {
+			return m
+		}
+		return pre + prefix + url + post
+	})
+
+	// Inject <base> right after <head> so relative URLs also resolve under the
+	// mount (belt-and-suspenders alongside the attribute rewrite).
+	baseTag := fmt.Sprintf(`<base href="%s/">`, prefix)
+	if i := strings.Index(strings.ToLower(html), "<head>"); i != -1 && !strings.Contains(html, baseTag) {
+		insertAt := i + len("<head>")
+		html = html[:insertAt] + baseTag + html[insertAt:]
+	}
+
+	resp.Body = io.NopCloser(strings.NewReader(html))
+	resp.ContentLength = int64(len(html))
+	resp.Header.Set("Content-Length", strconv.Itoa(len(html)))
 }
 
 // stripCookie removes a single named cookie from the request's Cookie header,
