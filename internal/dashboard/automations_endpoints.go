@@ -41,6 +41,8 @@ func (d *dashboardServer) automationsService(w http.ResponseWriter) *automations
 // handleAPI dispatches everything under /api/. rest is the path after "/api/".
 func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest string) {
 	switch {
+	case rest == "live-origin":
+		d.handleLiveOrigin(w, r)
 	case rest == "actions:test":
 		d.handleActionTest(w, r)
 	case rest == "actions":

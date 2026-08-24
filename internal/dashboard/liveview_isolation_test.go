@@ -3,6 +3,7 @@ package dashboard
 import (
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -37,9 +38,15 @@ func TestHardenLiveResponse(t *testing.T) {
 	if got := h.Get("Content-Security-Policy-Report-Only"); got != "" {
 		t.Errorf("report-only CSP should be removed, got %q", got)
 	}
-	// The framed app must not set cookies in the dashboard origin.
-	if got := h.Values("Set-Cookie"); len(got) != 0 {
-		t.Errorf("Set-Cookie should be stripped, got %v", got)
+	// The app's cookie is now KEPT but Path-scoped to this project's mount (so
+	// sessions don't bleed across projects sharing the localhost live origin) —
+	// not deleted (deleting it is why login never persisted).
+	sc := h.Values("Set-Cookie")
+	if len(sc) != 1 {
+		t.Fatalf("expected 1 Set-Cookie, got %v", sc)
+	}
+	if !strings.Contains(sc[0], "session=abc") || !strings.Contains(sc[0], "Path=/p/abc/live/3000/") {
+		t.Errorf("cookie should keep name=value and be Path-scoped, got %q", sc[0])
 	}
 }
 
@@ -136,6 +143,105 @@ func TestRewriteLocationHeader(t *testing.T) {
 		rewriteLocationHeader(h, prefix, 3000)
 		if got := h.Get("Location"); got != c.want {
 			t.Errorf("rewriteLocationHeader(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestRewriteLiveSetCookies covers the two-container fix: each app cookie is
+// Path-scoped to the project mount and any Domain stripped, so projects sharing
+// the one localhost live origin don't clobber each other's sessions.
+func TestRewriteLiveSetCookies(t *testing.T) {
+	scope := "/p/proj-a/live/3000"
+	cases := []struct {
+		name     string
+		in       string
+		wantHas  []string
+		wantMiss []string
+	}{
+		{"replaces existing Path=/", "s=1; Path=/; HttpOnly",
+			[]string{"s=1", "Path=/p/proj-a/live/3000/", "HttpOnly"}, []string{"Path=/;"}},
+		{"adds Path when missing", "s=1; HttpOnly; SameSite=Lax",
+			[]string{"s=1", "Path=/p/proj-a/live/3000/", "HttpOnly", "SameSite=Lax"}, nil},
+		{"drops Domain", "s=1; Domain=evil.example.com; Path=/",
+			[]string{"s=1", "Path=/p/proj-a/live/3000/"}, []string{"Domain="}},
+		{"case-insensitive attrs", "s=1; PATH=/; DOMAIN=x.com",
+			[]string{"Path=/p/proj-a/live/3000/"}, []string{"DOMAIN=", "x.com"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := forcePathAndDropDomain(c.in, scope)
+			for _, w := range c.wantHas {
+				if !strings.Contains(got, w) {
+					t.Errorf("%q missing %q", got, w)
+				}
+			}
+			for _, w := range c.wantMiss {
+				if strings.Contains(got, w) {
+					t.Errorf("%q should not contain %q", got, w)
+				}
+			}
+		})
+	}
+
+	// Multiple Set-Cookie headers → each rewritten.
+	h := http.Header{}
+	h.Add("Set-Cookie", "a=1; Path=/")
+	h.Add("Set-Cookie", "b=2")
+	rewriteLiveSetCookies(h, scope)
+	sc := h.Values("Set-Cookie")
+	if len(sc) != 2 {
+		t.Fatalf("expected 2 cookies, got %v", sc)
+	}
+	for _, c := range sc {
+		if !strings.Contains(c, "Path=/p/proj-a/live/3000/") {
+			t.Errorf("cookie not path-scoped: %q", c)
+		}
+	}
+}
+
+// TestRequireLiveAuth: the live listener accepts ONLY liveToken (via ?__live_token
+// bootstrap or the corral_live_token cookie), never the dashboard token.
+func TestRequireLiveAuth(t *testing.T) {
+	d := &dashboardServer{liveToken: "LIVE", token: "DASH", apiToken: "API"}
+	ok := func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) }
+	h := d.requireLiveAuth(ok)
+
+	// Valid ?__live_token → 302 redirect that sets the cookie and strips the param.
+	rec := httptest.NewRecorder()
+	h(rec, httptest.NewRequest("GET", "/p/x/live/3000/?__live_token=LIVE", nil))
+	if rec.Code != http.StatusFound {
+		t.Fatalf("bootstrap: status = %d, want 302", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); strings.Contains(loc, "__live_token") {
+		t.Errorf("redirect should strip the token param, got %q", loc)
+	}
+	if sc := rec.Header().Get("Set-Cookie"); !strings.Contains(sc, liveCookieName+"=LIVE") || !strings.Contains(sc, "HttpOnly") {
+		t.Errorf("should set the HttpOnly live cookie, got %q", sc)
+	}
+
+	// Valid cookie → passes through.
+	rec = httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/p/x/live/3000/", nil)
+	req.AddCookie(&http.Cookie{Name: liveCookieName, Value: "LIVE"})
+	h(rec, req)
+	if rec.Code != 200 || rec.Body.String() != "ok" {
+		t.Errorf("valid cookie: status=%d body=%q", rec.Code, rec.Body.String())
+	}
+
+	// The DASHBOARD token must NOT authenticate here (neither as cookie nor param).
+	for _, bad := range []*http.Request{
+		func() *http.Request {
+			r := httptest.NewRequest("GET", "/p/x/live/3000/", nil)
+			r.AddCookie(&http.Cookie{Name: liveCookieName, Value: "DASH"})
+			return r
+		}(),
+		httptest.NewRequest("GET", "/p/x/live/3000/?__live_token=DASH", nil),
+		httptest.NewRequest("GET", "/p/x/live/3000/", nil), // no creds at all
+	} {
+		rec = httptest.NewRecorder()
+		h(rec, bad)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("expected 403 for %q, got %d", bad.URL, rec.Code)
 		}
 	}
 }

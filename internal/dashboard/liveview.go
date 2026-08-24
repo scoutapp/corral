@@ -37,10 +37,32 @@ import (
 // Trust model: this stays one-directional — the dashboard DIALS IN (host →
 // container), exactly like `docker exec` for the Terminal tab. The sandbox never
 // reaches the dashboard, and this path never touches the egress allowlist-proxy
-// (it's not outbound traffic). The route lives under /p/<id>/ so it inherits the
-// dashboard's session-cookie auth. Rendering the (untrusted) app in the browser
-// is isolated separately — see the iframe sandboxing on the client + the headers
+// (it's not outbound traffic). Rendering the (untrusted) app in the browser is
+// isolated separately — see the iframe sandboxing on the client + the headers
 // stripped below.
+//
+// BROWSER-ORIGIN ISOLATION: the app is served to the browser from a SECOND
+// listener on the `localhost` hostname (http://localhost:<livePort>), NOT the
+// dashboard's http://127.0.0.1:<dashPort>. See liveview_server.go for why (the
+// iframe needs allow-same-origin for the app's cookies/login/CSS, and serving the
+// app off the dashboard origin would then let its JS call dashboard APIs as the
+// user). All projects share the one localhost live origin; per-project session
+// cookies are kept apart by Path-scoping (rewriteLiveSetCookies).
+//
+// Why the `localhost` HOSTNAME rather than a per-project subdomain like
+// <id>.live.localhost: browsers/OS do NOT resolve `*.localhost` wildcard
+// subdomains without an explicit /etc/hosts entry or resolver stub (verified: on
+// stock macOS `gethostbyname("x.localhost")` fails, and Safari won't shortcut it —
+// only Chrome/Firefox do), and we refuse an external-DNS dependency (e.g. lvh.me)
+// for a loopback-only tool. A single shared `localhost` origin on a second
+// loopback port is a distinct browser origin AND a distinct host-only cookie jar
+// from the dashboard's 127.0.0.1 — which is all we need to keep the framed app off
+// the dashboard. Note: `localhost` often resolves to ::1 BEFORE 127.0.0.1, so the
+// live listener binds via the `localhost` name (covering both) — see
+// CmdDashboardServe. Residual tradeoff: because all projects share this one
+// origin, cross-project BROWSER isolation is weaker than true per-origin (two
+// simultaneously-open frames are same-origin); the primary goal (app can't reach
+// the dashboard/host) is fully met.
 
 // liveDialTargets is the ordered list of in-container addresses the tunnel tries
 // for a given port: first the DinD bridge (where an inner container published
@@ -204,9 +226,16 @@ func liveProxyTo(w http.ResponseWriter, r *http.Request, container, id string, p
 			req.URL.Host = fmt.Sprintf("localhost:%d", port)
 			req.Host = req.URL.Host
 			req.URL.Path = upstreamPath
-			// Strip the dashboard's own auth cookie so the untrusted app can never
-			// see or replay it. It has no business receiving the dashboard session.
+			// Strip BOTH the dashboard's and the live listener's auth cookies so the
+			// untrusted app never sees or replays either. And drop the one-time
+			// live-token query param (it's normally consumed by the redirect, but
+			// strip defensively in case an app self-navigates carrying it).
 			stripCookie(req, dashboardCookieName)
+			stripCookie(req, liveCookieName)
+			if q := req.URL.Query(); q.Get(liveTokenParam) != "" {
+				q.Del(liveTokenParam)
+				req.URL.RawQuery = q.Encode()
+			}
 			// X-Forwarded-Prefix lets a well-behaved app build correct absolute
 			// URLs under the /p/<id>/live/<port> mount, if it honors the header.
 			req.Header.Set("X-Forwarded-Prefix", fmt.Sprintf("/p/%s/live/%d", id, port))
@@ -230,20 +259,22 @@ func liveProxyTo(w http.ResponseWriter, r *http.Request, container, id string, p
 	proxy.ServeHTTP(w, r)
 }
 
-// hardenLiveResponse rewrites the framed app's response headers so embedding the
-// UNTRUSTED sandbox app in the dashboard can't become a sandbox→dashboard path.
-// This is the server half of the isolation; the client half is the iframe's
-// sandbox= attribute (which runs the app in an opaque origin with no
-// same-origin access to the dashboard).
+// hardenLiveResponse rewrites the framed app's response so embedding the UNTRUSTED
+// sandbox app can't become a sandbox→dashboard path. This is the server half of the
+// isolation; the client half is the iframe's sandbox= attribute plus serving the
+// app on a distinct localhost origin (see liveview_server.go).
 //
 //   - Replace whatever framing policy the app sent with our own: only the
 //     dashboard itself may frame this content (frame-ancestors 'self'). We
 //     REMOVE the app's X-Frame-Options entirely — a DENY/SAMEORIGIN there would
 //     otherwise make the browser refuse to render our iframe at all — and pin
 //     the CSP frame-ancestors ourselves so it can be framed by us and no one else.
-//   - Never let the framed app set cookies in the dashboard's origin. Its
-//     Set-Cookie headers are dropped so it can't plant a cookie the browser
-//     would then send on dashboard requests.
+//   - Path-SCOPE the app's cookies to this project's mount. All projects share the
+//     one localhost:<livePort> origin, so a cookie with Path=/ from project A would
+//     be sent on project B's requests too (session bleed). We rewrite each
+//     Set-Cookie's Path to <prefix>/ and strip any Domain, so project A's session
+//     rides only project A's path. (We used to DELETE Set-Cookie — that's why login
+//     never persisted.)
 func hardenLiveResponse(resp *http.Response, prefix string, port int) error {
 	h := resp.Header
 	// The app's own anti-framing headers would block our legitimate embed; drop
@@ -252,8 +283,8 @@ func hardenLiveResponse(resp *http.Response, prefix string, port int) error {
 	h.Del("Content-Security-Policy")
 	h.Del("Content-Security-Policy-Report-Only")
 	h.Set("Content-Security-Policy", "frame-ancestors 'self'")
-	// The framed app must not set cookies scoped to the dashboard origin.
-	h.Del("Set-Cookie")
+	// Path-scope the app's cookies to this project's mount (see doc above).
+	rewriteLiveSetCookies(h, prefix)
 
 	// The app is mounted at <prefix>/… but it emits ROOT-ABSOLUTE URLs (a Rails
 	// app links `/assets/app.css`, forms POST to `/users/sign_in`, redirects to
@@ -264,6 +295,50 @@ func hardenLiveResponse(resp *http.Response, prefix string, port int) error {
 	rewriteLocationHeader(h, prefix, port)
 	rewriteLiveHTMLBody(resp, prefix)
 	return nil
+}
+
+// rewriteLiveSetCookies path-scopes every Set-Cookie the framed app emits to the
+// project's mount (scopePath, e.g. "/p/<id>/live/<port>") and strips any Domain, so
+// projects sharing the one localhost live origin don't clobber each other's
+// sessions. Covers the multiple-Set-Cookie case (each header line is one cookie).
+func rewriteLiveSetCookies(h http.Header, scopePath string) {
+	cookies := h.Values("Set-Cookie")
+	if len(cookies) == 0 {
+		return
+	}
+	h.Del("Set-Cookie")
+	for _, sc := range cookies {
+		h.Add("Set-Cookie", forcePathAndDropDomain(sc, scopePath))
+	}
+}
+
+// forcePathAndDropDomain rewrites one Set-Cookie value: force Path=<scopePath>/
+// (replace an existing Path, add if missing) and drop any Domain attribute
+// (host-only on localhost). The name=value pair and all other attributes
+// (HttpOnly, Secure, SameSite, Max-Age, Expires, …) are preserved verbatim.
+// Attribute names are matched case-insensitively per RFC 6265.
+func forcePathAndDropDomain(setCookie, scopePath string) string {
+	parts := strings.Split(setCookie, ";")
+	out := make([]string, 0, len(parts)+1)
+	havePath := false
+	for i, p := range parts {
+		low := strings.ToLower(strings.TrimSpace(p))
+		switch {
+		case i == 0: // the name=value pair — always keep first, verbatim
+			out = append(out, p)
+		case strings.HasPrefix(low, "domain="):
+			// drop entirely → cookie stays host-only on localhost
+		case strings.HasPrefix(low, "path="):
+			out = append(out, " Path="+scopePath+"/")
+			havePath = true
+		default:
+			out = append(out, p)
+		}
+	}
+	if !havePath {
+		out = append(out, " Path="+scopePath+"/")
+	}
+	return strings.Join(out, ";")
 }
 
 // rewriteLocationHeader fixes a redirect the app emits so it stays inside the
