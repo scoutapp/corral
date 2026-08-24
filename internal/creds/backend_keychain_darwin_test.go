@@ -105,3 +105,40 @@ func TestKeychainMigratesInlineValue(t *testing.T) {
 		t.Errorf("value should be in the keychain post-migration, got %q ok=%v", v, ok)
 	}
 }
+
+// TestResolveCredentialsFileMaterializesValues: with the keychain backend, even
+// the single-file case must produce a temp file containing REAL values (the
+// on-disk JSON has none), else mitmweb would inject nothing.
+func TestResolveCredentialsFileMaterializesValues(t *testing.T) {
+	withKeychainBackend(t)
+	home := t.TempDir()
+	t.Setenv("CORRAL_HOME", home)
+	host := "test-" + t.Name() + ".example.invalid"
+	scope := scopeForPath(GlobalCredentialsPath())
+	t.Cleanup(func() { _ = selectedBackend.deleteValue(scope, host) })
+
+	// Write a global cred (value → Keychain, metadata-only on disk).
+	if err := WriteCredsMap(GlobalCredentialsPath(), map[string]map[string]string{
+		host: {"header": "Authorization", "value": "token RESOLVED_SECRET"},
+	}); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	credsFile, tempFile := ResolveCredentialsFileTracked()
+	if tempFile == "" {
+		t.Fatal("keychain backend must materialize a temp file (got a direct path with no values)")
+	}
+	t.Cleanup(func() { os.Remove(tempFile) })
+
+	data, err := os.ReadFile(credsFile)
+	if err != nil {
+		t.Fatalf("read temp: %v", err)
+	}
+	resolved := map[string]map[string]string{}
+	if err := json.Unmarshal(data, &resolved); err != nil {
+		t.Fatalf("parse temp: %v", err)
+	}
+	if resolved[host]["value"] != "token RESOLVED_SECRET" {
+		t.Errorf("temp file must carry the real value for mitmweb, got %q", resolved[host]["value"])
+	}
+}
