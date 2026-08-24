@@ -2,33 +2,29 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getJSON } from "../api/client";
 
 // Live View tab (#6): watch a web app the sandbox is running, embedded via an
-// iframe served by the dashboard's reverse-proxy at /p/<id>/live/<port>/.
+// iframe. The app usually runs inside DinD; the dashboard tunnels into the
+// container to reach it (see internal/dashboard/liveview.go). Discovery
+// (/live-ports) lists the container's listening ports as quick-picks; a free-text
+// box covers anything discovery misses.
 //
-// The app usually runs inside DinD; the dashboard tunnels into the container to
-// reach it (see internal/dashboard/liveview.go). Discovery (/live-ports) lists
-// the container's listening ports as quick-picks; a free-text box covers
-// anything discovery misses.
+// ISOLATION: the app is UNTRUSTED. The iframe is served from a SEPARATE origin —
+// http://localhost:<livePort> (a second loopback listener), NOT the dashboard's
+// http://127.0.0.1:<dashPort>. We fetch that origin + a one-time token from
+// /api/live-origin and point the iframe there.
 //
-// ISOLATION: the app is UNTRUSTED, so the iframe is sandboxed. We allow
-// scripts/forms/popups/modals so real apps work, PLUS allow-same-origin.
-//
-// Why allow-same-origin: WITHOUT it the framed document runs in an OPAQUE origin,
-// which cannot persist cookies or use storage — so you can never stay logged in
-// (every request is unauthenticated → the app bounces you to its sign-in page)
-// and subresource/styling behaves erratically. A real app is unusable that way.
-// With it, the app keeps a normal origin: cookies work → login sticks → CSS/JS
-// render.
-//
-// The tradeoff (accepted deliberately): the proxied app is served on the
-// DASHBOARD's own origin (via /p/<id>/live/<port>/), so allow-same-origin lets
-// the framed app reach the dashboard origin's cookies/DOM/same-origin APIs from
-// the browser. The remaining guardrails: the dashboard's auth cookie is HttpOnly
-// (not readable from JS), hardenLiveResponse strips the app's Set-Cookie and
-// pins frame-ancestors, and the one-directional-trust rule keeps the sandbox off
-// the host control plane. If stricter browser isolation is wanted later, serve
-// the app from a DISTINCT origin (per-project subdomain/port) so same-origin no
-// longer means "the dashboard's origin."
+// We use allow-same-origin so the app keeps a real origin (cookies persist →
+// login sticks → CSS/JS render). This is SAFE here precisely because that origin
+// is localhost:<livePort>, not the dashboard: the app's JS can reach ITS OWN
+// origin only, and the dashboard's HttpOnly corral_dash_token (host-only to
+// 127.0.0.1) is never sent to localhost. So the framed app cannot call dashboard
+// APIs or read dashboard cookies/DOM. Per-project sessions are isolated by
+// server-side cookie Path-scoping (hardenLiveResponse). See liveview_server.go.
 const LIVE_IFRAME_SANDBOX = "allow-scripts allow-forms allow-popups allow-modals allow-same-origin";
+
+interface LiveOrigin {
+  base_url: string;
+  token: string;
+}
 
 interface PortsResp {
   ports: number[];
@@ -45,6 +41,14 @@ export function LiveViewTab({ projectId, containerUp }: { projectId: string; con
   const [pathInput, setPathInput] = useState("");
   // Bumped to force the iframe to reload the current port.
   const [reloadKey, setReloadKey] = useState(0);
+  // The distinct origin (localhost:<livePort>) + token the iframe loads from,
+  // fetched once from the dashboard (same-origin, cookie-authed).
+  const [liveOrigin, setLiveOrigin] = useState<LiveOrigin | null>(null);
+  useEffect(() => {
+    getJSON<LiveOrigin>("/api/live-origin")
+      .then(setLiveOrigin)
+      .catch(() => setLiveOrigin(null));
+  }, []);
 
   // Whether the user has manually chosen a port this session. Once they have, we
   // stop overriding their choice with the stored/discovered default.
@@ -95,9 +99,14 @@ export function LiveViewTab({ projectId, containerUp }: { projectId: string; con
     if (p >= 1 && p <= 65535) go(p);
   };
 
-  // The iframe src: /p/<id>/live/<port><path>. path already has a leading slash
-  // (or is ""); default to "/" so the app gets a rooted request.
-  const src = port != null ? `/p/${projectId}/live/${port}${path || "/"}` : "";
+  // The iframe src: an ABSOLUTE URL on the separate live origin
+  // (http://localhost:<livePort>/p/<id>/live/<port><path>), carrying the one-time
+  // ?__live_token= that the live listener swaps for a localhost cookie and strips
+  // via a redirect. Empty until we have both a port and the live origin.
+  const src =
+    port != null && liveOrigin
+      ? `${liveOrigin.base_url}/p/${projectId}/live/${port}${path || "/"}?__live_token=${encodeURIComponent(liveOrigin.token)}`
+      : "";
 
   const applyPath = () => {
     setPath(pathInput.trim());

@@ -18,6 +18,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -309,6 +310,14 @@ type dashboardServer struct {
 	// need ApiWritesEnabled); the browser's own token never is. This is what lets
 	// us gate Claude/CLI writes without disabling the human's dashboard buttons.
 	apiToken string
+	// livePort + liveToken back the SECOND loopback listener that serves Live View
+	// on the `localhost` hostname (a distinct browser origin from the dashboard's
+	// 127.0.0.1). Serving the untrusted framed app off the dashboard origin is what
+	// lets the iframe use allow-same-origin (cookies/login/CSS) WITHOUT handing the
+	// app the dashboard's origin. liveToken gates that listener, separate from
+	// token/apiToken (which are never accepted there). See liveview_server.go.
+	livePort  int
+	liveToken string
 	// bootID is a fresh random value each time the dashboard daemon starts. It is
 	// surfaced in /status so the browser can tell when the server has restarted
 	// and drop stale per-project UI state (e.g. mute prefs keyed by project id).
@@ -1365,7 +1374,12 @@ type DashboardState struct {
 	// Token (the browser session token) so mutating API calls can be gated behind
 	// ApiWritesEnabled without affecting the human's dashboard. Empty in state
 	// written by an older dashboard; the CLI then falls back to Token.
-	APIToken  string `json:"api_token,omitempty"`
+	APIToken string `json:"api_token,omitempty"`
+	// LivePort + LiveToken back the second loopback listener that serves Live View
+	// on the localhost origin (see dashboardServer.livePort). Empty in state from an
+	// older dashboard (omitempty) → Live View falls back gracefully / re-derives.
+	LivePort  int    `json:"live_port,omitempty"`
+	LiveToken string `json:"live_token,omitempty"`
 	StartedAt string `json:"started_at"`
 }
 
@@ -1464,10 +1478,20 @@ func EnsureDashboardRunning() (*DashboardState, bool, error) {
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to generate dashboard API token: %w", err)
 	}
+	liveToken, err := randomToken()
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to generate live-view token: %w", err)
+	}
 
 	port, err := config.FindFreePort(7777)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to find free port for dashboard: %w", err)
+	}
+	// A distinct base (8777) so the two scans don't hand back the same number; the
+	// live listener is a second loopback origin (localhost) for the sandbox app.
+	livePort, err := config.FindFreePort(8777)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to find free port for live view: %w", err)
 	}
 
 	exePath, err := os.Executable()
@@ -1485,7 +1509,9 @@ func EnsureDashboardRunning() (*DashboardState, bool, error) {
 	}
 	defer logFile.Close()
 
-	cmd := exec.Command(exePath, "dashboard-serve", "--port", fmt.Sprintf("%d", port), "--token", token, "--api-token", apiToken)
+	cmd := exec.Command(exePath, "dashboard-serve",
+		"--port", fmt.Sprintf("%d", port), "--token", token, "--api-token", apiToken,
+		"--live-port", fmt.Sprintf("%d", livePort), "--live-token", liveToken)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -1507,6 +1533,8 @@ func EnsureDashboardRunning() (*DashboardState, bool, error) {
 		Port:      port,
 		Token:     token,
 		APIToken:  apiToken,
+		LivePort:  livePort,
+		LiveToken: liveToken,
 		StartedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := writeDashboardState(state); err != nil {
@@ -1544,17 +1572,24 @@ func CmdDashboardServe(args []string) error {
 	port := fset.Int("port", 0, "port to listen on")
 	token := fset.String("token", "", "auth token")
 	apiToken := fset.String("api-token", "", "separate token for the corral api CLI / skill")
+	livePort := fset.Int("live-port", 0, "port for the live-view (localhost) origin listener")
+	liveToken := fset.String("live-token", "", "token gating the live-view listener")
 	if err := fset.Parse(args); err != nil {
 		return err
 	}
 	if *port == 0 || *token == "" {
 		return fmt.Errorf("dashboard-serve requires --port and --token")
 	}
+	if *livePort == 0 || *liveToken == "" {
+		return fmt.Errorf("dashboard-serve requires --live-port and --live-token")
+	}
 
 	server := newDashboardServer(*token)
 	if *apiToken != "" {
 		server.apiToken = *apiToken
 	}
+	server.livePort = *livePort
+	server.liveToken = *liveToken
 	server.startLogRetention()    // prune app_logs on start + hourly
 	server.startConvRetention()   // prune conversations.db on start + hourly
 	server.startSandboxConvTail() // mirror running sandboxes' own Claude transcripts
@@ -1569,6 +1604,18 @@ func CmdDashboardServe(args []string) error {
 		Addr:    fmt.Sprintf("127.0.0.1:%d", *port),
 		Handler: server.routes(),
 	}
+	// Live View runs on a SECOND listener reached via the `localhost` hostname — a
+	// distinct browser origin from the dashboard's 127.0.0.1, so the untrusted
+	// framed app (with allow-same-origin) can't reach the dashboard. Bind via the
+	// "localhost" name (not a bare 127.0.0.1) so it covers BOTH ::1 and 127.0.0.1 —
+	// on many machines `localhost` resolves to ::1 first, and a 127.0.0.1-only bind
+	// would then be unreachable from the browser. Still loopback-only. See
+	// liveview_server.go.
+	liveServer := &http.Server{Handler: server.liveRoutes()}
+	liveLn, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", *livePort))
+	if err != nil {
+		return fmt.Errorf("live-view listener on localhost:%d: %w", *livePort, err)
+	}
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
@@ -1579,6 +1626,14 @@ func CmdDashboardServe(args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		httpServer.Shutdown(ctx)
+		liveServer.Shutdown(ctx)
+	}()
+
+	go func() {
+		log.Printf("corral live-view listening on http://localhost:%d", *livePort)
+		if err := liveServer.Serve(liveLn); err != nil && err != http.ErrServerClosed {
+			log.Printf("live-view server error: %v", err)
+		}
 	}()
 
 	log.Printf("corral dashboard listening on http://127.0.0.1:%d", *port)
