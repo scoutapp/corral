@@ -171,6 +171,18 @@ func (d *dashboardServer) handleConfigApply(w http.ResponseWriter, r *http.Reque
 		}
 		return nil
 	}
+	// runStdin is like run but feeds `stdin` to the child — used for set-cred so
+	// the secret VALUE is piped in, never placed in argv (visible in `ps`).
+	runStdin := func(stdin string, args ...string) error {
+		cmd := exec.Command(exe, args...)
+		cmd.Dir = workspace
+		cmd.Stdin = strings.NewReader(stdin)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+		}
+		return nil
+	}
 
 	// Allowlist: write the plaintext file, then firewall-reload re-encrypts + SIGHUPs.
 	if edit.AllowedHosts != nil {
@@ -257,8 +269,9 @@ func (d *dashboardServer) handleConfigApply(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Credentials: set/unset via CLI (writes project creds file; mitmweb auto-reloads).
+	// The value is piped over STDIN (not argv) so the secret isn't exposed in `ps`.
 	for _, c := range edit.SetCreds {
-		if err := run("set-cred", c.Host, c.Kind, c.Name, c.Value); err != nil {
+		if err := runStdin(c.Value, "set-cred", c.Host, c.Kind, c.Name); err != nil {
 			fail("set-cred "+c.Host, err)
 		} else {
 			okMsg("credential set: " + c.Host)

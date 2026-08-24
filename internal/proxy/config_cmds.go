@@ -2,6 +2,8 @@ package proxy
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -154,19 +156,39 @@ func CmdMitmPorts(args []string) error {
 	}
 }
 
-// CmdSetCred: corral set-cred <host> <header|url_param> <name> <value>
+// CmdSetCred: corral set-cred <host> <header|url_param> <name> [value]
 // Adds/updates an injected credential. Writes the project-scoped credentials file
 // and (since the addon watches it) the running mitmweb picks it up live.
+//
+// The VALUE is read from STDIN when omitted (or given as "-"), so the secret
+// never appears in argv / `ps` / shell history: `echo -n <secret> | corral
+// set-cred <host> header <name>`. The 4-arg form (value on the command line) is
+// still accepted for back-compat/scripts, but stdin is preferred.
 func CmdSetCred(args []string) error {
-	if len(args) < 4 {
-		return fmt.Errorf("usage: corral set-cred <host> <header|url_param> <name> <value>")
+	if len(args) < 3 {
+		return fmt.Errorf("usage: corral set-cred <host> <header|url_param> <name> [value]\n" +
+			"       (value is read from stdin when omitted — e.g. printf %%s \"$SECRET\" | corral set-cred host header Name)")
 	}
 	host := strings.ToLower(strings.TrimSpace(args[0]))
 	kind := args[1]
 	name := args[2]
-	value := args[3]
 	if kind != "header" && kind != "url_param" {
 		return fmt.Errorf("second arg must be 'header' or 'url_param', got %q", kind)
+	}
+
+	var value string
+	if len(args) >= 4 && args[3] != "-" {
+		value = args[3]
+	} else {
+		// Read the secret from stdin (all of it, trailing newline trimmed).
+		raw, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return fmt.Errorf("read credential value from stdin: %w", err)
+		}
+		value = strings.TrimRight(string(raw), "\r\n")
+		if value == "" {
+			return fmt.Errorf("no credential value provided (pass it on stdin or as the 4th arg)")
+		}
 	}
 
 	path := creds.ProjectCredentialsPath()
