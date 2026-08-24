@@ -9,14 +9,26 @@ import { getJSON } from "../api/client";
 // the container's listening ports as quick-picks; a free-text box covers
 // anything discovery misses.
 //
-// ISOLATION: the app is UNTRUSTED, so the iframe is sandboxed. We deliberately
-// OMIT allow-same-origin: without it the framed content runs in an opaque origin
-// and cannot read the dashboard's cookies, DOM, localStorage, or make
-// same-origin requests to dashboard APIs — so embedding it can't become a
-// sandbox→dashboard escalation through the browser. We DO allow scripts/forms/
-// popups so real apps still work. The server half (frame-ancestors CSP, stripped
-// Set-Cookie/X-Frame-Options) lives in liveview.go's hardenLiveResponse.
-const LIVE_IFRAME_SANDBOX = "allow-scripts allow-forms allow-popups allow-modals";
+// ISOLATION: the app is UNTRUSTED, so the iframe is sandboxed. We allow
+// scripts/forms/popups/modals so real apps work, PLUS allow-same-origin.
+//
+// Why allow-same-origin: WITHOUT it the framed document runs in an OPAQUE origin,
+// which cannot persist cookies or use storage — so you can never stay logged in
+// (every request is unauthenticated → the app bounces you to its sign-in page)
+// and subresource/styling behaves erratically. A real app is unusable that way.
+// With it, the app keeps a normal origin: cookies work → login sticks → CSS/JS
+// render.
+//
+// The tradeoff (accepted deliberately): the proxied app is served on the
+// DASHBOARD's own origin (via /p/<id>/live/<port>/), so allow-same-origin lets
+// the framed app reach the dashboard origin's cookies/DOM/same-origin APIs from
+// the browser. The remaining guardrails: the dashboard's auth cookie is HttpOnly
+// (not readable from JS), hardenLiveResponse strips the app's Set-Cookie and
+// pins frame-ancestors, and the one-directional-trust rule keeps the sandbox off
+// the host control plane. If stricter browser isolation is wanted later, serve
+// the app from a DISTINCT origin (per-project subdomain/port) so same-origin no
+// longer means "the dashboard's origin."
+const LIVE_IFRAME_SANDBOX = "allow-scripts allow-forms allow-popups allow-modals allow-same-origin";
 
 interface PortsResp {
   ports: number[];
