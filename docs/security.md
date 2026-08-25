@@ -147,6 +147,19 @@ risks. The chat panel is read-only by default.)
      need justifies it, it must solve the prompt-on-rebuild problem first.
    - `corral set-cred` reads the value from **stdin** (not argv), so the secret
      doesn't leak into shell history or `ps`.
+   - **Opaque Keychain metadata.** A plain `security dump-keychain` (no `-d`) lists
+     item service + account names in the clear *without* a prompt. So corral does
+     NOT name items after the host — the service is a generic `com.corral.creds`
+     and the account is `sha256("<scope>:<host>")`. A dump then shows only opaque
+     items, so a generic keychain scraper can't read off a labeled "corral →
+     Anthropic token" map to know what to grab. This is metadata **obfuscation**,
+     not encryption: corral is open-source, so a corral-aware attacker can
+     recompute the hash and find the item — it raises the bar from "zero effort,
+     it's labeled" to "you must know corral's scheme," nothing more. (Note: reading
+     a *single* item's value via `security find-generic-password -w` is silent on
+     an unlocked login keychain; only the *bulk* `dump-keychain -d` of all secret
+     data prompts. So targeted same-user access during your session is not blocked
+     — consistent with the "same-user can read" boundary above.)
 
 ## Guidance
 
