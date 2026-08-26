@@ -77,11 +77,15 @@ func resolveBackend() credBackend {
 }
 
 // scopeForPath derives a stable Keychain scope from a credentials-file path:
-// "global" for the global file, else a per-project key from the project dir.
-// (The value store must not collide across projects that credential the same host.)
+// "global" for the global file, "script:<id>" for a per-script secrets file, else
+// a per-project key from the project dir. (The value store must not collide across
+// projects/scripts that use the same key name.)
 func scopeForPath(path string) string {
 	if path == GlobalCredentialsPath() {
 		return "global"
+	}
+	if id, ok := scriptIDFromPath(path); ok {
+		return "script:" + id
 	}
 	// Per-project: key on the parent project dir so it's stable for that project.
 	dir := filepath.Dir(path)
