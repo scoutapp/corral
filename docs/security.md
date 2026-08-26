@@ -160,6 +160,25 @@ risks. The chat panel is read-only by default.)
      an unlocked login keychain; only the *bulk* `dump-keychain -d` of all secret
      data prompts. So targeted same-user access during your session is not blocked
      — consistent with the "same-user can read" boundary above.)
+10. **Script secrets — injected to RUN, redacted from TRANSCRIPTS.** Bash scripts
+    (Automations → Scripts) can declare env-var secrets (e.g. `FRESHDESK_API_KEY`).
+    Corral stores the value in the Keychain (same backend as credentials above,
+    under a `script:<id>` scope) and **injects it into the script's process env**
+    when the script runs — so the script authenticates, and the value is in the
+    process env, never in argv/`ps` or a plaintext file.
+    - **Host-Claude redaction.** Host claude may legitimately *run/test* a script
+      (it gets the real value via the injected env), but its conversations stream
+      to the browser and are captured. So corral **redacts the literal secret
+      value** from every host-claude frame before it reaches the browser or the DB
+      — if claude `cat`s the script, dumps its env, greps a creds file, or an API
+      echoes the key, the value shows as `‹redacted›`. The redacted set is all
+      script secrets + all proxy-credential values.
+    - **Honest limits.** Redaction is **value-based**: a script that transforms the
+      secret before printing (base64, splits it, prints a derived token) can evade
+      it, and values shorter than 6 chars aren't redacted (they'd nuke common
+      substrings). It's a strong guard against the common leak paths (file read,
+      env dump, API echo), not full information-flow control. The at-rest / same-
+      user boundary is the same as the credential store above.
 
 ## Guidance
 
