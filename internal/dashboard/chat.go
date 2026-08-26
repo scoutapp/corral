@@ -428,6 +428,13 @@ func corralAPISkillDir() string {
 }
 
 func (d *dashboardServer) runChatTurn(ctx context.Context, claudeBin, workspace string, tools []string, prompt, sessionID string, send func(chatServerMsg) error) (string, bool) {
+	// SECURITY: redact known secret values from every streamed frame at the source
+	// — this is the single choke point ALL host-claude turns pass through (chat,
+	// workers, drafts), so a secret can't leak via a file read, env dump, or API
+	// echo even for callers that don't go through captureSend. Idempotent with the
+	// captureSend wrap (redacting already-stripped text is a no-op).
+	send = redactedSend(send)
+
 	args := buildClaudeArgs(prompt, tools, sessionID)
 
 	cmd := exec.CommandContext(ctx, claudeBin, args...)

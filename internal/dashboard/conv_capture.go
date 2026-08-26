@@ -57,8 +57,14 @@ type convCapturer struct {
 // The returned capturer's recordPrompt should be called with the user's prompt
 // right before each turn (the stream doesn't echo prompts back).
 func (d *dashboardServer) captureSend(ctx context.Context, origin convOrigin, send func(chatServerMsg) error) (*convCapturer, func(chatServerMsg) error, func(status string)) {
+	// SECURITY: redact known secret values from every frame BEFORE it reaches the
+	// browser or the DB. Applied here (the single seam all host-claude streams pass
+	// through) and BEFORE the capture-availability check, so it holds even when
+	// capture is off — redaction is a security filter, not a capture side-effect.
+	send = redactedSend(send)
+
 	if _, err := d.getConvStore(); err != nil {
-		return nil, send, func(string) {} // capture unavailable → pass through
+		return nil, send, func(string) {} // capture unavailable → pass through (still redacted)
 	}
 	c := &convCapturer{
 		d:      d,

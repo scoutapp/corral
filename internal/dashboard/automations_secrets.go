@@ -36,16 +36,32 @@ func (credsSecretResolver) Secret(name string) (string, bool) {
 	return "", false
 }
 
+// scriptEnvResolver injects a bash action's per-script secrets (Keychain-backed,
+// keyed by action id) into its process env as VAR=value at run time — so a script
+// like Freshdesk authenticates from the Keychain instead of a plaintext file, and
+// the secret never enters argv. Implements automations.ScriptEnvResolver, keeping
+// the automations package free of a creds dependency.
+type scriptEnvResolver struct{}
+
+func (scriptEnvResolver) ScriptEnv(actionID int64) []string {
+	env, err := creds.ScriptSecretEnv(actionID)
+	if err != nil {
+		return nil
+	}
+	return env
+}
+
 // automationsRegistry returns the executor registry with the credential-backed
-// secret resolver AND the operator's login shell wired in, so {{secret.*}}
-// placeholders resolve and bash steps run with the operator's full PATH (aws,
-// brew/nvm tools, …) — matching their terminal.
+// secret resolver, per-script secret env, AND the operator's login shell wired
+// in, so {{secret.*}} placeholders resolve, bash scripts get their injected
+// secrets, and steps run with the operator's full PATH (aws, brew/nvm tools, …).
 func automationsRegistry() *automations.Registry {
 	// Resolve the host claude for mcp steps; empty is fine (KindMCP then reports a
 	// clear error instead of running).
 	claudeBin, _ := resolveClaudeBin()
 	return automations.RegistryWith(automations.RegistryOptions{
 		Secrets:    credsSecretResolver{},
+		ScriptEnv:  scriptEnvResolver{},
 		LoginShell: loginShell(),
 		ClaudeBin:  claudeBin,
 	})

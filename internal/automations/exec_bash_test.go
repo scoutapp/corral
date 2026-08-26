@@ -52,6 +52,46 @@ func TestBashExecutorEmptyScript(t *testing.T) {
 	}
 }
 
+// fakeScriptEnv injects a fixed env for a specific action id.
+type fakeScriptEnv struct {
+	id  int64
+	env []string
+}
+
+func (f fakeScriptEnv) ScriptEnv(id int64) []string {
+	if id == f.id {
+		return f.env
+	}
+	return nil
+}
+
+// TestBashExecutorInjectsScriptSecrets: the resolver's VAR=value entries reach
+// the script's process env (so e.g. FRESHDESK_API_KEY is available), and win over
+// ambient env.
+func TestBashExecutorInjectsScriptSecrets(t *testing.T) {
+	e := BashExecutor{ScriptEnv: fakeScriptEnv{id: 3, env: []string{"FRESHDESK_API_KEY=sk-fd-xyz", "FRESHDESK_DOMAIN=scoutapm"}}}
+	res := e.Execute(context.Background(),
+		Action{ID: 3, Kind: KindBash, Spec: `{"script":"echo key=$FRESHDESK_API_KEY dom=$FRESHDESK_DOMAIN"}`},
+		RunContext{})
+	if res.Status != StatusOK {
+		t.Fatalf("expected ok, got %q (%s)", res.Status, res.Err)
+	}
+	if res.Output != "key=sk-fd-xyz dom=scoutapm" {
+		t.Errorf("script secrets not injected: %q", res.Output)
+	}
+}
+
+// A different action id gets no injected secrets (namespacing).
+func TestBashExecutorScriptSecretsScopedToAction(t *testing.T) {
+	e := BashExecutor{ScriptEnv: fakeScriptEnv{id: 3, env: []string{"FRESHDESK_API_KEY=sk-fd-xyz"}}}
+	res := e.Execute(context.Background(),
+		Action{ID: 99, Kind: KindBash, Spec: `{"script":"echo key=${FRESHDESK_API_KEY:-none}"}`},
+		RunContext{})
+	if res.Output != "key=none" {
+		t.Errorf("action 99 should not get action 3's secret, got %q", res.Output)
+	}
+}
+
 func TestEnvKeyMapping(t *testing.T) {
 	cases := map[string]string{
 		"pr_number":  "PR_NUMBER",

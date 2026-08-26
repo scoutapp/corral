@@ -39,7 +39,12 @@ type BashSpec struct {
 // a LOGIN shell (`-lc`) so it sources the operator's profile and gets the same
 // PATH as their terminal — tools like aws/brew/nvm resolve as expected. Empty
 // falls back to `bash -c` with the daemon's (narrower) PATH.
-type BashExecutor struct{ LoginShell string }
+type BashExecutor struct {
+	LoginShell string
+	// ScriptEnv, when set, supplies this action's injected secret env
+	// ("VAR=value") — Keychain-backed per-script secrets. nil = none.
+	ScriptEnv ScriptEnvResolver
+}
 
 func (e BashExecutor) Execute(ctx context.Context, a Action, rc RunContext) StepResult {
 	var spec BashSpec
@@ -63,6 +68,11 @@ func (e BashExecutor) Execute(ctx context.Context, a Action, rc RunContext) Step
 		cmd.Dir = spec.WorkDir
 	}
 	cmd.Env = append(os.Environ(), contextEnv(rc)...)
+	// Inject this script's own secrets (VAR=value) so it authenticates without a
+	// plaintext creds file. These come LAST so they win over any ambient env.
+	if e.ScriptEnv != nil {
+		cmd.Env = append(cmd.Env, e.ScriptEnv.ScriptEnv(a.ID)...)
+	}
 
 	out, err := cmd.CombinedOutput()
 	output := strings.TrimSpace(string(out))
