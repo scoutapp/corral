@@ -96,3 +96,31 @@ func ScriptSecretValues(actionID int64) ([]string, error) {
 	}
 	return out, nil
 }
+
+// AllScriptSecretValues returns every script's secret values, keyed by action id
+// (as a string) — for the host-claude redactor to strip the whole set from
+// transcripts. Best-effort: unreadable files are skipped.
+func AllScriptSecretValues() map[string][]string {
+	out := map[string][]string{}
+	entries, err := os.ReadDir(scriptSecretsDir())
+	if err != nil {
+		return out // no dir yet → no script secrets
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		id, ok := scriptIDFromPath(filepath.Join(scriptSecretsDir(), e.Name()))
+		if !ok {
+			continue
+		}
+		aid, perr := strconv.ParseInt(id, 10, 64)
+		if perr != nil {
+			continue
+		}
+		if vals, verr := ScriptSecretValues(aid); verr == nil && len(vals) > 0 {
+			out[id] = vals
+		}
+	}
+	return out
+}
