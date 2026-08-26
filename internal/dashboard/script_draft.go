@@ -64,7 +64,12 @@ func (d *dashboardServer) handleScriptDraftWS(w http.ResponseWriter, r *http.Req
 		"variables are available: CORRAL_EVENT, CORRAL_REPO_ID, CORRAL_PR_NUMBER, CORRAL_PR_URL, " +
 		"CORRAL_PR_TITLE, CORRAL_OWNER_NAME, CORRAL_HEAD_SHA (present depending on the event). " +
 		"`gh` and `git` are on PATH (gh is authenticated via the proxy). Outbound hosts must be on the " +
-		"firewall allowlist. Keep it POSIX-bash, robust, and quiet on success."
+		"firewall allowlist. " +
+		"For SECRETS (API keys, tokens): read them from a plain UPPER_CASE env var (e.g. " +
+		"$MYSERVICE_API_KEY) that the script does NOT assign itself — Corral detects such vars, lets the " +
+		"user store the value in their Keychain, and injects it into the script's environment at run time. " +
+		"Do not hardcode secrets or read them from a plaintext file. " +
+		"Keep it POSIX-bash, robust, and quiet on success."
 
 	plan := "You are writing a bash script for a Corral automation step. " + envNote + "\n\n" +
 		"The user wants a script that: " + in.Description + "\n\n" +

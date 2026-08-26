@@ -324,6 +324,11 @@ func (d *dashboardServer) handleActionItem(w http.ResponseWriter, r *http.Reques
 		d.handleActionRun(w, r, svc, idStr)
 		return
 	}
+	// "<id>/secrets" → view (masked) / set this script's injected secrets.
+	if idStr, ok := strings.CutSuffix(rest, "/secrets"); ok {
+		d.handleActionSecrets(w, r, svc, idStr)
+		return
+	}
 
 	id, err := strconv.ParseInt(rest, 10, 64)
 	if err != nil {
