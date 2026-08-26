@@ -60,8 +60,15 @@ func ProjectCredentialsPath() string {
 	return filepath.Join(config.GetProjectDir(), "proxy-credentials.json")
 }
 
-// LoadCredsMap reads a proxy-credentials.json file into a domain->entry map.
-// Returns an empty map (not an error) when the file is absent.
+// LoadCredsMap reads a proxy-credentials.json file into a domain->entry map,
+// returning fully-populated entries (value included). Returns an empty map (not
+// an error) when the file is absent.
+//
+// With the keychain backend (macOS), the on-disk JSON holds only metadata (no
+// "value"); this function injects each secret from the Keychain. With the file
+// backend (Linux/default), the value is already inline and is returned as-is.
+// It also performs a one-time HARD MIGRATION on macOS: any value still inline in
+// the JSON is moved into the Keychain and the file rewritten without it.
 func LoadCredsMap(path string) (map[string]map[string]string, error) {
 	creds := map[string]map[string]string{}
 	data, err := os.ReadFile(path)
@@ -77,17 +84,104 @@ func LoadCredsMap(path string) (map[string]map[string]string, error) {
 	if err := json.Unmarshal(data, &creds); err != nil {
 		return nil, fmt.Errorf("invalid JSON in %s: %w", path, err)
 	}
+
+	if selectedBackend.storesInline() {
+		return creds, nil // value already present in the map
+	}
+
+	// Out-of-band (keychain) backend: inject values, migrating any that are still
+	// inline (a pre-Keychain file, or one written by the file backend).
+	scope := scopeForPath(path)
+	migrated := false
+	for host, entry := range creds {
+		if inline, ok := entry["value"]; ok && inline != "" {
+			// Legacy inline value → move it into the backend, then strip it.
+			if err := selectedBackend.setValue(scope, host, inline); err != nil {
+				return nil, fmt.Errorf("migrate credential for %s into %s: %w", host, selectedBackend.name(), err)
+			}
+			delete(entry, "value")
+			migrated = true
+		}
+		if v, ok, err := selectedBackend.getValue(scope, host); err != nil {
+			return nil, err
+		} else if ok {
+			entry["value"] = v
+		}
+	}
+	if migrated {
+		// Persist the value-stripped file so the plaintext leaves disk for good.
+		if err := writeCredsJSON(path, stripValues(creds)); err != nil {
+			log.Printf("Warning: failed to rewrite %s after credential migration: %v", path, err)
+		} else {
+			log.Printf("Migrated inline credential value(s) in %s into the %s backend", path, selectedBackend.name())
+		}
+	}
 	return creds, nil
 }
 
-// WriteCredsMap writes a domain->entry credentials map as pretty JSON (0600 —
-// it holds secrets).
+// WriteCredsMap persists a domain->entry credentials map. With the file backend
+// the value is written inline (0600). With the keychain backend the value is
+// stored in the Keychain and the JSON is written WITHOUT it (metadata only), so
+// no plaintext secret lands on disk.
 func WriteCredsMap(path string, creds map[string]map[string]string) error {
+	if selectedBackend.storesInline() {
+		return writeCredsJSON(path, creds)
+	}
+	scope := scopeForPath(path)
+	// Reconcile the backend against the incoming map: set present values, and
+	// delete secrets for hosts no longer in the map (so unset actually removes).
+	existing, _ := loadRawJSON(path)
+	for host := range existing {
+		if _, still := creds[host]; !still {
+			_ = selectedBackend.deleteValue(scope, host)
+		}
+	}
+	for host, entry := range creds {
+		if v, ok := entry["value"]; ok && v != "" {
+			if err := selectedBackend.setValue(scope, host, v); err != nil {
+				return err
+			}
+		}
+	}
+	return writeCredsJSON(path, stripValues(creds))
+}
+
+// writeCredsJSON marshals + writes the map as pretty JSON (0600 — it may hold
+// secrets under the file backend).
+func writeCredsJSON(path string, creds map[string]map[string]string) error {
 	data, err := json.MarshalIndent(creds, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(path, data, 0600)
+}
+
+// loadRawJSON reads the on-disk metadata map without backend value injection.
+func loadRawJSON(path string) (map[string]map[string]string, error) {
+	creds := map[string]map[string]string{}
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) == 0 {
+		return creds, nil
+	}
+	_ = json.Unmarshal(data, &creds)
+	return creds, nil
+}
+
+// stripValues returns a deep-ish copy of creds with the "value" field removed
+// from every entry (for the keychain backend's metadata-only JSON).
+func stripValues(creds map[string]map[string]string) map[string]map[string]string {
+	out := make(map[string]map[string]string, len(creds))
+	for host, entry := range creds {
+		e := make(map[string]string, len(entry))
+		for k, v := range entry {
+			if k == "value" {
+				continue
+			}
+			e[k] = v
+		}
+		out[host] = e
+	}
+	return out
 }
 
 // ResolveCredentialsFile returns a best-effort credentials path WITHOUT creating a
@@ -181,17 +275,12 @@ var DummyCredValues = map[string]bool{
 }
 
 // HasOnlyDummyCredentials returns true when the file doesn't exist, can't be
-// parsed, is empty, or every credential value matches a known placeholder.
+// parsed, is empty, or every credential value matches a known placeholder. Goes
+// through LoadCredsMap so values are resolved from the active backend (Keychain
+// values aren't inline in the JSON).
 func HasOnlyDummyCredentials(credsPath string) bool {
-	data, err := os.ReadFile(credsPath)
-	if err != nil {
-		return true
-	}
-	creds := map[string]map[string]string{}
-	if err := json.Unmarshal(data, &creds); err != nil {
-		return true
-	}
-	if len(creds) == 0 {
+	creds, err := LoadCredsMap(credsPath)
+	if err != nil || len(creds) == 0 {
 		return true
 	}
 	for _, entry := range creds {
