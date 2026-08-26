@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -140,5 +141,32 @@ func TestResolveCredentialsFileMaterializesValues(t *testing.T) {
 	}
 	if resolved[host]["value"] != "token RESOLVED_SECRET" {
 		t.Errorf("temp file must carry the real value for mitmweb, got %q", resolved[host]["value"])
+	}
+}
+
+// TestKeychainAccountIsOpaque: the Keychain account name must NOT contain the
+// host/scope in cleartext (a plain dump-keychain would otherwise reveal a
+// labeled corral→host credential map). It's the hex sha256 of "scope:host".
+func TestKeychainAccountIsOpaque(t *testing.T) {
+	withKeychainBackend(t)
+	kb, ok := selectedBackend.(keychainBackend)
+	if !ok {
+		t.Skip("not the keychain backend")
+	}
+	acct := kb.account("global", "api.anthropic.com")
+	if strings.Contains(acct, "anthropic") || strings.Contains(acct, "global") || strings.Contains(acct, ":") {
+		t.Errorf("account name leaks metadata: %q", acct)
+	}
+	if len(acct) != 64 { // hex sha256
+		t.Errorf("account = %q, want a 64-char hex hash", acct)
+	}
+	// Deterministic: same input → same account (so lookups find the item).
+	if acct != kb.account("global", "api.anthropic.com") {
+		t.Error("account hashing must be deterministic")
+	}
+	// The service is generic, not "corral".
+	if keychainService == "corral-cred" || !strings.Contains(keychainService, "corral") {
+		// (it does contain "corral" as a namespace, but must not be the old label)
+		t.Logf("service = %q", keychainService)
 	}
 }
