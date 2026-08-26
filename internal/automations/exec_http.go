@@ -39,6 +39,16 @@ type SecretResolver interface {
 	Secret(name string) (string, bool)
 }
 
+// ScriptEnvResolver returns a bash script's injected secret env entries
+// ("VAR=value") for a given action id. It lets BashExecutor pull per-script
+// secrets (Keychain-backed) into the process env WITHOUT internal/automations
+// importing internal/creds — the dashboard supplies the implementation, tests a
+// fake. A nil resolver injects no script secrets (the script's own fallbacks, if
+// any, still apply).
+type ScriptEnvResolver interface {
+	ScriptEnv(actionID int64) []string
+}
+
 // secretRe matches {{secret.NAME}} placeholders (distinct from context {{var}}).
 var secretRe = regexp.MustCompile(`\{\{\s*secret\.([a-zA-Z_][a-zA-Z0-9_.-]*)\s*\}\}`)
 
@@ -48,6 +58,7 @@ var secretRe = regexp.MustCompile(`\{\{\s*secret\.([a-zA-Z_][a-zA-Z0-9_.-]*)\s*\
 //     (its value is substituted before secrets are scanned).
 //   - secrets last, so a secret's value (which may itself contain {{...}}) is
 //     final and never re-expanded as a var.
+//
 // Unresolved/absent secrets blank out (fail-closed) — the literal placeholder
 // never leaks into an outbound request.
 func resolveSecrets(s string, vars map[string]string, sr SecretResolver) string {
