@@ -13,6 +13,15 @@ Here's what that boundary does and doesn't cover.
   in-container `gh` wrapper blocks the token-revealing subcommands
   (`gh auth token`, `gh auth status --show-token`). `gh`/`git` still work; neither
   Claude nor a shell command can extract the real token.
+- **Where the real secrets live (host only)** — the values the proxy injects are
+  stored on the **host**, never in the container. On **macOS** they live in the
+  login **Keychain** (encrypted at rest); the on-disk `proxy-credentials.json`
+  holds only metadata (host, which header/param) with **no secret value**. On
+  **Linux** (or macOS without the Keychain) they stay in `proxy-credentials.json`
+  at `0600` — the original behavior. Either way the container has no access to
+  that file, and `corral set-cred` reads the value from **stdin**, so the secret
+  never lands in shell history or `ps`. See "Credential storage: honest limits"
+  below for exactly how strong this is.
 - **Outbound network** — all egress (outer container *and* inner DinD containers)
   is forced through the allowlist proxy; non-allowlisted domains get `403`. This
   containment is unchanged by the capture preset below — *which* allowed traffic
@@ -117,6 +126,40 @@ risks. The chat panel is read-only by default.)
      real agent/keys are across the VM boundary, untouched). Bounded by
      container-lifetime teardown (an idle project has no live agent) and closed by
      `--disable-dind`. Linux (escape hits the real host) is out of scope for now.
+9. **Credential storage: honest limits.** The real isolation for injected
+   credentials is that they **never enter the sandbox** — they live on the host and
+   the host-side mitmproxy swaps them in on the way out. That's the load-bearing
+   protection and it is unchanged.
+   - On **macOS** the values sit in the login **Keychain** (encrypted at rest); on
+     **Linux** they sit in `~/.corral/proxy-credentials.json` at `0600`. In **both**
+     cases the trust boundary against *other processes on your machine* is the
+     **same**: any process running **as the same user** could read the value (from
+     the Keychain while it's unlocked, or from the `0600` file). Keychain storage
+     buys **encryption-at-rest** and keeps plaintext off disk — it does **not** make
+     the secret unreadable to your own other processes.
+   - **We deliberately did NOT ACL-pin the Keychain items to a code-signed `corral`
+     binary.** We prototyped it (self-signed cert + item ACL). A Keychain ACL only
+     **prompts** an unauthorized reader — click "Allow" and you get the secret; it's
+     not a hard deny. And even a clean prototype produced a **storm of GUI prompts**
+     (grant → read → re-sign → re-read ≈ 9), which in real use means prompts on
+     boot, on every rebuild/update, and from the detached dashboard daemon. The
+     benefit was prompt-gated, not a wall, so the cost wasn't worth it. If a future
+     need justifies it, it must solve the prompt-on-rebuild problem first.
+   - `corral set-cred` reads the value from **stdin** (not argv), so the secret
+     doesn't leak into shell history or `ps`.
+   - **Opaque Keychain metadata.** A plain `security dump-keychain` (no `-d`) lists
+     item service + account names in the clear *without* a prompt. So corral does
+     NOT name items after the host — the service is a generic `com.corral.creds`
+     and the account is `sha256("<scope>:<host>")`. A dump then shows only opaque
+     items, so a generic keychain scraper can't read off a labeled "corral →
+     Anthropic token" map to know what to grab. This is metadata **obfuscation**,
+     not encryption: corral is open-source, so a corral-aware attacker can
+     recompute the hash and find the item — it raises the bar from "zero effort,
+     it's labeled" to "you must know corral's scheme," nothing more. (Note: reading
+     a *single* item's value via `security find-generic-password -w` is silent on
+     an unlocked login keychain; only the *bulk* `dump-keychain -d` of all secret
+     data prompts. So targeted same-user access during your session is not blocked
+     — consistent with the "same-user can read" boundary above.)
 
 ## Guidance
 

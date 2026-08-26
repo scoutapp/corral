@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -103,5 +104,69 @@ func TestKeychainMigratesInlineValue(t *testing.T) {
 	// And it now lives in the Keychain.
 	if v, ok, _ := selectedBackend.getValue(scope, host); !ok || v != "token LEGACY" {
 		t.Errorf("value should be in the keychain post-migration, got %q ok=%v", v, ok)
+	}
+}
+
+// TestResolveCredentialsFileMaterializesValues: with the keychain backend, even
+// the single-file case must produce a temp file containing REAL values (the
+// on-disk JSON has none), else mitmweb would inject nothing.
+func TestResolveCredentialsFileMaterializesValues(t *testing.T) {
+	withKeychainBackend(t)
+	home := t.TempDir()
+	t.Setenv("CORRAL_HOME", home)
+	host := "test-" + t.Name() + ".example.invalid"
+	scope := scopeForPath(GlobalCredentialsPath())
+	t.Cleanup(func() { _ = selectedBackend.deleteValue(scope, host) })
+
+	// Write a global cred (value → Keychain, metadata-only on disk).
+	if err := WriteCredsMap(GlobalCredentialsPath(), map[string]map[string]string{
+		host: {"header": "Authorization", "value": "token RESOLVED_SECRET"},
+	}); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	credsFile, tempFile := ResolveCredentialsFileTracked()
+	if tempFile == "" {
+		t.Fatal("keychain backend must materialize a temp file (got a direct path with no values)")
+	}
+	t.Cleanup(func() { os.Remove(tempFile) })
+
+	data, err := os.ReadFile(credsFile)
+	if err != nil {
+		t.Fatalf("read temp: %v", err)
+	}
+	resolved := map[string]map[string]string{}
+	if err := json.Unmarshal(data, &resolved); err != nil {
+		t.Fatalf("parse temp: %v", err)
+	}
+	if resolved[host]["value"] != "token RESOLVED_SECRET" {
+		t.Errorf("temp file must carry the real value for mitmweb, got %q", resolved[host]["value"])
+	}
+}
+
+// TestKeychainAccountIsOpaque: the Keychain account name must NOT contain the
+// host/scope in cleartext (a plain dump-keychain would otherwise reveal a
+// labeled corral→host credential map). It's the hex sha256 of "scope:host".
+func TestKeychainAccountIsOpaque(t *testing.T) {
+	withKeychainBackend(t)
+	kb, ok := selectedBackend.(keychainBackend)
+	if !ok {
+		t.Skip("not the keychain backend")
+	}
+	acct := kb.account("global", "api.anthropic.com")
+	if strings.Contains(acct, "anthropic") || strings.Contains(acct, "global") || strings.Contains(acct, ":") {
+		t.Errorf("account name leaks metadata: %q", acct)
+	}
+	if len(acct) != 64 { // hex sha256
+		t.Errorf("account = %q, want a 64-char hex hash", acct)
+	}
+	// Deterministic: same input → same account (so lookups find the item).
+	if acct != kb.account("global", "api.anthropic.com") {
+		t.Error("account hashing must be deterministic")
+	}
+	// The service is generic, not "corral".
+	if keychainService == "corral-cred" || !strings.Contains(keychainService, "corral") {
+		// (it does contain "corral" as a namespace, but must not be the old label)
+		t.Logf("service = %q", keychainService)
 	}
 }

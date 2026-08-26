@@ -199,9 +199,19 @@ func ResolveCredentialsFile() string {
 	return GlobalCredentialsPath()
 }
 
-// ResolveCredentialsFileTracked is like ResolveCredentialsFile but also returns the
-// path of any temp file it created (empty string if it returned a real file directly),
-// so the caller can delete it on shutdown.
+// ResolveCredentialsFileTracked returns the credentials file to hand to mitmweb,
+// plus the path of any TEMP file it created (empty if it returned a real file
+// directly) so the caller can delete it on stopProxy.
+//
+// mitmweb's addon reads secret VALUES from this file. With the keychain backend
+// the on-disk proxy-credentials.json holds only metadata (no values), so we must
+// ALWAYS materialize a resolved temp file — even for the single-file case —
+// otherwise mitmweb would see no secrets and injection would silently break. With
+// the file backend, a single existing file already has inline values and is
+// returned directly (only the merge case needs a temp file). The temp file is
+// 0600 and exists only while the proxy runs; the durable secret store is the
+// Keychain. This is deliberate (macOS has no easy user tmpfs, and the proxy holds
+// the plaintext in memory to inject it regardless) — see docs/security.md.
 func ResolveCredentialsFileTracked() (credsFile string, tempFile string) {
 	globalPath := GlobalCredentialsPath()
 	projectPath := ProjectCredentialsPath()
@@ -211,46 +221,52 @@ func ResolveCredentialsFileTracked() (credsFile string, tempFile string) {
 	globalExists := globalErr == nil
 	projectExists := projectErr == nil
 
-	switch {
-	case globalExists && !projectExists:
-		return globalPath, ""
-	case !globalExists && projectExists:
-		return projectPath, ""
-	case !globalExists && !projectExists:
-		// Neither exists — return the global path so downstream "file not found"
-		// messaging points at the canonical location.
-		return globalPath, ""
-	}
-
-	// Both exist: merge, project wins per-domain.
-	global, err := LoadCredsMap(globalPath)
-	if err != nil {
-		log.Printf("Warning: %v — falling back to project credentials only", err)
-		return projectPath, ""
-	}
-	project, err := LoadCredsMap(projectPath)
-	if err != nil {
-		log.Printf("Warning: %v — falling back to global credentials only", err)
+	// With an inline (file) backend, a single file already carries values → hand
+	// it over directly; only a real merge needs a temp file.
+	if selectedBackend.storesInline() {
+		switch {
+		case globalExists && !projectExists:
+			return globalPath, ""
+		case !globalExists && projectExists:
+			return projectPath, ""
+		case !globalExists && !projectExists:
+			return globalPath, "" // canonical location for the not-found message
+		}
+	} else if !globalExists && !projectExists {
 		return globalPath, ""
 	}
 
-	merged := make(map[string]map[string]string, len(global)+len(project))
-	for k, v := range global {
-		merged[k] = v
+	// Build the resolved (values-injected) map. LoadCredsMap pulls values from the
+	// active backend (Keychain), so `merged` contains real secrets. Project wins
+	// per-domain.
+	merged := map[string]map[string]string{}
+	if globalExists {
+		if m, err := LoadCredsMap(globalPath); err != nil {
+			log.Printf("Warning: %v", err)
+		} else {
+			for k, v := range m {
+				merged[k] = v
+			}
+		}
 	}
-	for k, v := range project {
-		merged[k] = v // project overrides/extends
+	if projectExists {
+		if m, err := LoadCredsMap(projectPath); err != nil {
+			log.Printf("Warning: %v", err)
+		} else {
+			for k, v := range m {
+				merged[k] = v // project overrides/extends
+			}
+		}
 	}
 
 	data, err := json.MarshalIndent(merged, "", "  ")
 	if err != nil {
-		log.Printf("Warning: failed to marshal merged credentials: %v — using global only", err)
+		log.Printf("Warning: failed to marshal resolved credentials: %v", err)
 		return globalPath, ""
 	}
-
 	tmp, err := os.CreateTemp("", "corral-merged-creds-*.json")
 	if err != nil {
-		log.Printf("Warning: failed to create temp credentials file: %v — using global only", err)
+		log.Printf("Warning: failed to create temp credentials file: %v", err)
 		return globalPath, ""
 	}
 	if err := os.Chmod(tmp.Name(), 0600); err != nil {
@@ -259,12 +275,12 @@ func ResolveCredentialsFileTracked() (credsFile string, tempFile string) {
 	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
 		os.Remove(tmp.Name())
-		log.Printf("Warning: failed to write merged credentials: %v — using global only", err)
+		log.Printf("Warning: failed to write resolved credentials: %v", err)
 		return globalPath, ""
 	}
 	tmp.Close()
 
-	config.Debugf("Merged %d global + %d project credential entries -> %s", len(global), len(project), tmp.Name())
+	config.Debugf("Resolved %d credential entries (%s backend) -> %s", len(merged), selectedBackend.name(), tmp.Name())
 	return tmp.Name(), tmp.Name()
 }
 
