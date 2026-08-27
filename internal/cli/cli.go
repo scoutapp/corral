@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"github.com/scoutapp/corral/internal/config"
 	"github.com/scoutapp/corral/internal/container"
@@ -511,31 +510,30 @@ func cmdPopulateProxyCredentials(projectScope bool) error {
 			return fmt.Errorf("no project found — run: corral init")
 		}
 		credsPath = creds.ProjectCredentialsPath()
-		fmt.Printf("Writing project-specific credentials to: %s\n\n", credsPath)
+		fmt.Printf("Storing project-specific credentials%s\n", credsDest(credsPath))
 	} else {
 		if err := os.MkdirAll(config.CorralHome(), 0700); err != nil {
 			return fmt.Errorf("failed to create %s: %w", config.CorralHome(), err)
 		}
 		credsPath = creds.GlobalCredentialsPath()
-		fmt.Printf("Writing global credentials to: %s\n\n", credsPath)
+		fmt.Printf("Storing global credentials%s\n", credsDest(credsPath))
 	}
 
 	// If real credentials already exist, confirm before overwriting
 	if !creds.HasOnlyDummyCredentials(credsPath) {
-		fmt.Println("⚠️  proxy-credentials.json already contains real credentials.")
+		fmt.Println("⚠️  Real credentials are already configured.")
 		if !config.AskYesNo("Are you sure you want to replace them?") {
 			fmt.Println("Aborted.")
 			return nil
 		}
 	}
 
-	// Read existing credentials file if present, otherwise start fresh
-	creds := map[string]map[string]string{}
-	if data, err := os.ReadFile(credsPath); err == nil {
-		if err := json.Unmarshal(data, &creds); err != nil {
-			log.Printf("Warning: could not parse existing proxy-credentials.json, starting fresh: %v", err)
-			creds = map[string]map[string]string{}
-		}
+	// Read existing credentials (metadata + values resolved from the backend) so we
+	// merge rather than clobber. LoadCredsMap injects Keychain values on macOS.
+	credsMap, lerr := creds.LoadCredsMap(credsPath)
+	if lerr != nil {
+		log.Printf("Warning: could not read existing credentials, starting fresh: %v", lerr)
+		credsMap = map[string]map[string]string{}
 	}
 
 	anyWritten := false
@@ -565,7 +563,7 @@ func cmdPopulateProxyCredentials(projectScope bool) error {
 			} else {
 				bearerValue := "Bearer " + claudeToken
 				for _, domain := range []string{"api.anthropic.com", "platform.claude.com", "mcp-proxy.anthropic.com"} {
-					creds[domain] = map[string]string{
+					credsMap[domain] = map[string]string{
 						"header": "Authorization",
 						"value":  bearerValue,
 					}
@@ -592,7 +590,7 @@ func cmdPopulateProxyCredentials(projectScope bool) error {
 			if ghToken == "" {
 				fmt.Println("Warning: 'gh auth token' returned empty output")
 			} else {
-				creds["api.github.com"] = map[string]string{
+				credsMap["api.github.com"] = map[string]string{
 					"header": "Authorization",
 					"value":  "token " + ghToken,
 				}
@@ -609,16 +607,25 @@ func cmdPopulateProxyCredentials(projectScope bool) error {
 		return nil
 	}
 
-	data, err := json.MarshalIndent(creds, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal credentials: %w", err)
-	}
-	if err := os.WriteFile(credsPath, data, 0600); err != nil {
-		return fmt.Errorf("failed to write %s: %w", credsPath, err)
+	// Write through WriteCredsMap so the backend applies: on macOS the VALUES go
+	// to the Keychain and the file holds metadata only; on Linux they stay inline.
+	// (Writing the raw JSON directly here would leak secrets to disk on macOS.)
+	if err := creds.WriteCredsMap(credsPath, credsMap); err != nil {
+		return fmt.Errorf("failed to store credentials: %w", err)
 	}
 
-	fmt.Printf("Credentials written to %s\n", credsPath)
+	fmt.Printf("Credentials stored%s\n", credsDest(credsPath))
 	return nil
+}
+
+// credsDest describes where the secret VALUES land, for user messaging — the
+// Keychain (macOS) or the file itself (Linux). It avoids implying the secret is
+// written to the JSON when, under the Keychain backend, only metadata is.
+func credsDest(path string) string {
+	if creds.StoresValuesInFile() {
+		return " to: " + path
+	}
+	return " in your macOS Keychain (metadata index at " + path + ")."
 }
 
 // cmdRemove removes the <cwd>/.corral/ directory (config, allowlist, logs).
