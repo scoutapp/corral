@@ -56,6 +56,15 @@ type credBackend interface {
 // (file forces the legacy behavior — also used to keep tests hermetic).
 var selectedBackend = resolveBackend()
 
+// BackendName reports the active secret-storage backend ("keychain" | "file"),
+// for user-facing messaging.
+func BackendName() string { return selectedBackend.name() }
+
+// StoresValuesInFile reports whether secret VALUES are written to the JSON file
+// (file backend) rather than an out-of-band store like the Keychain. Lets the CLI
+// avoid implying "your secret is written to <file>" when it isn't.
+func StoresValuesInFile() bool { return selectedBackend.storesInline() }
+
 func resolveBackend() credBackend {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("CORRAL_CREDS_BACKEND"))) {
 	case "file":
