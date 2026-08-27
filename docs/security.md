@@ -179,6 +179,41 @@ risks. The chat panel is read-only by default.)
       substrings). It's a strong guard against the common leak paths (file read,
       env dump, API echo), not full information-flow control. The at-rest / same-
       user boundary is the same as the credential store above.
+11. **The egress firewall is not tamper-proof from inside — but bypassing it is
+    self-defeating.** The container has the caps to rewrite its own firewall:
+    `NET_ADMIN` (always, for the firewall) and `--privileged` under DinD. So in
+    principle Claude could flush the iptables `OUTPUT` chain / the `--uid-owner`
+    egress rules and try to talk to the internet directly, off the allowlist.
+    - **Why it's largely self-limiting:** Claude reaches `api.anthropic.com`
+      **through the same proxy** (`HTTP_PROXY=http://127.0.0.1:3128` → the
+      allowlist-proxy → the host mitmproxy). Tearing down the proxy path to escape
+      the allowlist also severs Claude's own connection to Anthropic — i.e. it ends
+      the session it would need to act. It can't both leave the allowlisted path
+      and keep talking to the model over it. This is a practical deterrent, not a
+      cryptographic guarantee: a script could still make a one-shot direct
+      connection (e.g. exfiltrate to an off-allowlist host) in the window before it
+      needs the model again. The firewall raises the bar and makes casual
+      exfiltration fail closed; it does not make a determined, in-container attacker
+      impossible.
+12. **Container/VM escape via exploits (not by design).** The isolation rests on
+    the container boundary (and, on macOS, the Docker VM boundary — see "host
+    privileges" above). Those boundaries are software and have a history of escape
+    CVEs (kernel/runc/`--privileged` cgroup and, on macOS, hypervisor/VM escapes).
+    A sufficiently capable exploit chain running in the container could in theory
+    break out — to host root on Linux, or (harder) out of the Docker VM on macOS.
+    Two aggravating factors to keep in mind:
+    - **DinD widens the surface.** `--privileged` + `docker`-group membership is
+      close to host root already; `--disable-dind` drops `--privileged` (only
+      `NET_ADMIN`/`NET_RAW` remain), a materially smaller escape surface. Prefer it
+      when you don't need inner containers.
+    - **Prompt injection is the trigger.** Claude runs in dangerous mode (no
+      per-action approval), so untrusted content it reads (a malicious repo file, a
+      web page, a tool result) can steer it into *running* an escape/exfiltration
+      attempt. Without DinD the blast radius of a successful escape is smaller, but
+      prompt injection driving the agent toward an exploit is the realistic path in
+      either mode — the container/VM is the guardrail, and it is bypassable, not
+      absolute. Don't point corral at untrusted repos/content you wouldn't run
+      locally, and keep DinD off unless a project needs it.
 
 ## Guidance
 
@@ -188,3 +223,8 @@ risks. The chat panel is read-only by default.)
 - Don't mount a workspace holding secrets you don't want Claude to read.
 - Give each project only the SSH keys it needs (Config → SSH keys); avoid running
   multiple key-bearing projects under DinD at the same time.
+- Treat the container/VM as a **guardrail, not an absolute boundary** (risks 11–12):
+  the firewall is bypassable from inside (though doing so severs Claude's own link
+  to Anthropic), and the container/VM can be escaped by exploits. Keep `--disable-dind`
+  on unless a project needs inner containers, and don't run corral against untrusted
+  repos or content — prompt injection can steer the agent toward an escape attempt.
