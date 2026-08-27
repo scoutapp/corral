@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"syscall"
 )
 
 // keychainBackend stores credential VALUES in the macOS login Keychain via
@@ -82,12 +83,22 @@ func (k keychainBackend) getValue(scope, host string) (string, bool, error) {
 func (k keychainBackend) setValue(scope, host, value string) error {
 	// -U updates if present. `security` has no stdin flag for the password: `-w
 	// <value>` puts it in argv (insecure — visible in `ps`), and a bare trailing
-	// `-w` PROMPTS interactively (twice, "retype"). We take the safe path — bare
-	// `-w` and answer the prompt via stdin, sending the value TWICE — so the
-	// secret never appears in argv / `ps` / shell history and no GUI dialog fires.
+	// `-w` PROMPTS (twice, "retype"). We answer that prompt via stdin, value sent
+	// TWICE — so the secret never hits argv / `ps` / shell history and no GUI
+	// dialog fires.
+	//
+	// CRITICAL: `security`'s -w prompt reads from the CONTROLLING TERMINAL, not
+	// stdin, when a tty is present — so under an interactive command (e.g.
+	// `corral populate-proxy-credentials`) it would print "password data for new
+	// item:" to the user's terminal and block on their keystrokes instead of
+	// taking our piped value. Setsid detaches `security` from the controlling
+	// terminal, so it has no tty to read from and falls back to the piped stdin —
+	// silent, non-interactive, correct. (Verified: without this it hangs on the
+	// tty under a real shell.)
 	cmd := exec.Command(k.securityBin, "add-generic-password",
 		"-s", keychainService, "-a", k.account(scope, host), "-U", "-w")
 	cmd.Stdin = strings.NewReader(value + "\n" + value + "\n")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	var errb bytes.Buffer
 	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {
