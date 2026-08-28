@@ -14,6 +14,8 @@ export interface DocBlock {
   code?: string;
   // A small heading within the page.
   h?: string;
+  // A screenshot of the page (src is served from the app, e.g. "/docs-img/…png").
+  img?: { src: string; alt: string };
 }
 
 export interface DocPage {
@@ -24,22 +26,18 @@ export interface DocPage {
   more?: string;
 }
 
-// docsFor returns the doc page for a route path, falling back to the landing doc.
-export function docsFor(path: string): DocPage {
-  if (/^\/p\//.test(path)) return PROJECT;
-  if (/^\/repos\/[^/]+\/prs\/\d+/.test(path)) return PR_REVIEW;
-  if (/^\/repos\//.test(path)) return REPO;
-  if (path === "/global") return GLOBAL;
-  if (path === "/logs" || path === "/automations/logs") return LOGS;
-  if (path === "/integrations") return INTEGRATIONS;
-  if (path === "/automations/runs") return RUN_LOG;
-  if (path === "/automations") return AUTOMATIONS;
-  return PROJECTS;
+// DocEntry: one entry in the DOC_PAGES sidebar registry (stable key + content).
+export interface DocEntry {
+  key: string;
+  page: DocPage;
 }
+// DOC_PAGES + docsFor/docEntryFor are defined at the END of this file, after the
+// page consts they reference.
 
 const PROJECTS: DocPage = {
   title: "Projects",
   blocks: [
+    { img: { src: "/static/app/docs-img/projects.png", alt: "The Projects home screen — one pane per sandboxed project." } },
     { p: "Every project is a repo checkout running Claude Code in an isolated, network-firewalled Docker sandbox. This is the home screen — one pane per project." },
     { h: "Start a project" },
     { p: "Hit **New project** and pick how to seed it:" },
@@ -90,6 +88,7 @@ const PROJECT: DocPage = {
 const REPO: DocPage = {
   title: "Repo",
   blocks: [
+    { img: { src: "/static/app/docs-img/repo.png", alt: "A repo's page — PR review, projects, forensics, and settings." } },
     { p: "A repo corral tracks. Spawn sandboxes from it, review its PRs, and attach context that follows every checkout." },
     { h: "Tabs" },
     {
@@ -112,6 +111,7 @@ const REPO: DocPage = {
 const PR_REVIEW: DocPage = {
   title: "PR Review",
   blocks: [
+    { img: { src: "/static/app/docs-img/pr-review.png", alt: "A PR review — corral's AI analysis, risk verdict, and merge options." } },
     { p: "Corral's analysis of one PR — a fast read before you dive in." },
     { p: "Spin up a sandbox on the PR branch to verify a change hands-on, or comment/approve straight from here. Actions run as host operations against GitHub (never from inside the sandbox)." },
     { p: "Ask the Claude dock about the PR — it knows which PR you're looking at." },
@@ -134,6 +134,7 @@ const PR_REVIEW: DocPage = {
 const GLOBAL: DocPage = {
   title: "Global settings",
   blocks: [
+    { img: { src: "/static/app/docs-img/global.png", alt: "Global settings — host-wide defaults, SSH keys, PR merging." } },
     { p: "Host-wide settings and defaults that apply across all projects." },
     {
       list: [
@@ -151,6 +152,7 @@ const GLOBAL: DocPage = {
 const AUTOMATIONS: DocPage = {
   title: "Automations",
   blocks: [
+    { img: { src: "/static/app/docs-img/automations.png", alt: "Automations — prompts, event hooks, flows, and scripts." } },
     { p: "Make corral do things on its own — react to events, run multi-step flows, reuse scripts." },
     { h: "Sub-tabs" },
     {
@@ -169,6 +171,7 @@ const AUTOMATIONS: DocPage = {
 const RUN_LOG: DocPage = {
   title: "Run Log",
   blocks: [
+    { img: { src: "/static/app/docs-img/run-log.png", alt: "The Run Log — a history of automation runs." } },
     { p: "History of automation + flow runs. Click a run to see its steps, timing, and output." },
     { p: "Use it to confirm a scheduled flow fired and to debug a step that failed." },
   ],
@@ -178,6 +181,7 @@ const RUN_LOG: DocPage = {
 const LOGS: DocPage = {
   title: "Logs",
   blocks: [
+    { img: { src: "/static/app/docs-img/logs.png", alt: "Logs — the app-wide searchable activity log and traces." } },
     { p: "A searchable, host-wide activity log across every project and the dashboard itself." },
     { p: "Filter by project or category, or search the text. Handy for “what happened around the time X broke?” — spans link related events together." },
   ],
@@ -187,6 +191,7 @@ const LOGS: DocPage = {
 const INTEGRATIONS: DocPage = {
   title: "Integrations",
   blocks: [
+    { img: { src: "/static/app/docs-img/integrations.png", alt: "Integrations — connect MCP servers, host-only." } },
     { p: "Connect MCP servers on the **host**. Once connected, the dashboard chat can use them." },
     { p: "These live in your host `claude mcp` registry — corral just drives it. Host-only by design: the sandbox never reaches these, keeping the trust one-directional." },
     { h: "Connect one" },
@@ -194,3 +199,38 @@ const INTEGRATIONS: DocPage = {
   ],
   more: "docs/integrations.md",
 };
+
+// DOC_PAGES is the ordered registry of every doc page — powers the sidebar (every
+// page browsable regardless of route). Order = sidebar order. Defined here, after
+// the page consts above.
+export const DOC_PAGES: DocEntry[] = [
+  { key: "projects", page: PROJECTS },
+  { key: "project", page: PROJECT },
+  { key: "repo", page: REPO },
+  { key: "pr-review", page: PR_REVIEW },
+  { key: "global", page: GLOBAL },
+  { key: "automations", page: AUTOMATIONS },
+  { key: "run-log", page: RUN_LOG },
+  { key: "logs", page: LOGS },
+  { key: "integrations", page: INTEGRATIONS },
+];
+
+// docsFor returns the doc page for a route path (the current-route default).
+export function docsFor(path: string): DocPage {
+  return docEntryFor(path).page;
+}
+
+// docEntryFor maps a route to its registry entry (for the default + highlighting
+// the active sidebar item). Precedence mirrors the original docsFor.
+export function docEntryFor(path: string): DocEntry {
+  const byKey = (k: string) => DOC_PAGES.find((e) => e.key === k)!;
+  if (/^\/p\//.test(path)) return byKey("project");
+  if (/^\/repos\/[^/]+\/prs\/\d+/.test(path)) return byKey("pr-review");
+  if (/^\/repos\//.test(path)) return byKey("repo");
+  if (path === "/global") return byKey("global");
+  if (path === "/logs" || path === "/automations/logs") return byKey("logs");
+  if (path === "/integrations") return byKey("integrations");
+  if (path === "/automations/runs") return byKey("run-log");
+  if (path === "/automations") return byKey("automations");
+  return byKey("projects");
+}
