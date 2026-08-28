@@ -7,6 +7,7 @@ to open the docs drawer on any page.
 
 ## Guides
 
+- [Screenshots](screenshots.md) — a visual tour of every dashboard page.
 - [Flows](flows.md) — chain steps into a job and schedule it.
 - [Prompts](prompts.md) — the project-start prompt, saved prompts, repo overrides.
 - [DinD volumes & caches](dind-volumes.md) — how inner-Docker data persists, and
