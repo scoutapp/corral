@@ -29,7 +29,7 @@ function renderInline(text: string): React.ReactNode {
   });
 }
 
-function Block({ b }: { b: DocBlock }) {
+function Block({ b, onZoom }: { b: DocBlock; onZoom?: (img: { src: string; alt: string }) => void }) {
   if (b.h) return <h4 className="docs-h">{b.h}</h4>;
   if (b.p) return <p className="docs-p">{renderInline(b.p)}</p>;
   if (b.list)
@@ -41,8 +41,42 @@ function Block({ b }: { b: DocBlock }) {
       </ul>
     );
   if (b.code) return <pre className="docs-code">{b.code}</pre>;
-  if (b.img) return <img className="docs-shot" src={b.img.src} alt={b.img.alt} loading="lazy" />;
+  if (b.img) {
+    const img = b.img;
+    return (
+      <button type="button" className="docs-shot-wrap" onClick={() => onZoom?.(img)} title="Click to enlarge">
+        <img className="docs-shot" src={img.src} alt={img.alt} loading="lazy" />
+        <span className="docs-shot-zoom" aria-hidden="true">⤢ Zoom</span>
+      </button>
+    );
+  }
   return null;
+}
+
+// Lightbox — a full-screen overlay showing one screenshot at full size. Click the
+// backdrop / ✕ or press Esc to close.
+function Lightbox({ img, onClose }: { img: { src: string; alt: string }; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    // Capture phase so Esc closes the lightbox before the drawer sees it.
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+
+  return (
+    <div className="docs-lightbox" onClick={onClose} role="dialog" aria-modal="true" aria-label={img.alt}>
+      <button type="button" className="docs-lightbox-close" title="Close (Esc)" onClick={onClose}>
+        ×
+      </button>
+      <img className="docs-lightbox-img" src={img.src} alt={img.alt} onClick={(e) => e.stopPropagation()} />
+      <p className="docs-lightbox-cap">{img.alt}</p>
+    </div>
+  );
 }
 
 export function DocsDock() {
@@ -52,6 +86,8 @@ export function DocsDock() {
   // clicking a sidebar item pins an explicit key that overrides the route until
   // the drawer is reopened (⌘/ / launcher reset it back to the route default).
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  // The screenshot currently enlarged in the lightbox (null = none).
+  const [zoomed, setZoomed] = useState<{ src: string; alt: string } | null>(null);
 
   // The page the current ROUTE documents (for the default + highlighting).
   const routeKey = docEntryFor(path).key;
@@ -121,7 +157,7 @@ export function DocsDock() {
           <div className="docsdock-body">
             <h3 className="docsdock-pagetitle">{doc.title}</h3>
             {doc.blocks.map((b, i) => (
-              <Block key={i} b={b} />
+              <Block key={i} b={b} onZoom={setZoomed} />
             ))}
             {doc.more && (
               <p className="docs-more">
@@ -136,6 +172,7 @@ export function DocsDock() {
       </aside>
 
       {open && <div className="docsdock-scrim" onClick={() => setOpen(false)} />}
+      {zoomed && <Lightbox img={zoomed} onClose={() => setZoomed(null)} />}
     </>
   );
 }
