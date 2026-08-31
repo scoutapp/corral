@@ -791,6 +791,7 @@ func usage() {
 	fmt.Println("  logs [--category --level --grep --json --limit N]   Dump the activity log (greppable)")
 	fmt.Println("  api <METHOD> <path> [-d json]   Call the dashboard API (see GET /api/openapi.json)")
 	fmt.Println("  flow list | run <name>          List or run automation flows")
+	fmt.Println("  repo set-agent-context <id> --stdin | get-agent-context <id>   Read/write a repo's injected CLAUDE.md context")
 	fmt.Println("  uninstall [--yes] [--keep-images]   Remove everything corral created, then the binary itself")
 	fmt.Println("    --yes / -y       Skip the confirmation prompt")
 	fmt.Println("    --keep-images    Preserve the corral-stable image and DinD volumes")
@@ -950,6 +951,9 @@ func Main() {
 
 	case "pr":
 		err = dashboard.CmdPR(os.Args[2:])
+
+	case "repo":
+		err = dashboard.CmdRepo(os.Args[2:])
 
 	case "dind":
 		err = dashboard.CmdDind(os.Args[2:])
