@@ -51,6 +51,23 @@ func TestPromptCatalogComplete(t *testing.T) {
 	if _, ok := PromptDefFor(PromptSSHGuidance); !ok {
 		t.Error("ssh.guidance should be in the catalog")
 	}
+	// The project-start defaults must also leave the shared engineering-principles
+	// slot, and engineering.principles must be its own editable catalog prompt.
+	if !strings.Contains(ps.Default, "{{engineering_principles}}") {
+		t.Error("project.start default should leave an {{engineering_principles}} slot")
+	}
+	iss, _ := PromptDefFor(PromptProjectIssue)
+	if !strings.Contains(iss.Default, "{{engineering_principles}}") {
+		t.Error("project.issue default should leave an {{engineering_principles}} slot")
+	}
+	if _, ok := PromptDefFor(PromptEngPrinciples); !ok {
+		t.Error("engineering.principles should be in the catalog")
+	}
+	for _, want := range []string{"Root cause", "Chesterton", "linter", "stacked"} {
+		if !strings.Contains(DefaultEngineeringPrinciples, want) {
+			t.Errorf("DefaultEngineeringPrinciples should mention %q", want)
+		}
+	}
 }
 
 func TestResolvePromptThreeLevels(t *testing.T) {
