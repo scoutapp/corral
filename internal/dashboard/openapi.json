@@ -982,11 +982,25 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "cacheName": { "type": "string" },
-                    "mode": { "type": "string", "enum": ["copy", "shared"] },
-                    "isRepo": { "type": "boolean" },
-                    "reused": { "type": "boolean" },
-                    "reason": { "type": "string" }
+                    "cacheName": {
+                      "type": "string"
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "copy",
+                        "shared"
+                      ]
+                    },
+                    "isRepo": {
+                      "type": "boolean"
+                    },
+                    "reused": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
                   }
                 }
               }
@@ -1017,16 +1031,26 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "containerUp": { "type": "boolean" },
+                    "containerUp": {
+                      "type": "boolean"
+                    },
                     "images": {
                       "type": "array",
                       "items": {
                         "type": "object",
                         "properties": {
-                          "repository": { "type": "string" },
-                          "tag": { "type": "string" },
-                          "id": { "type": "string" },
-                          "size": { "type": "string" }
+                          "repository": {
+                            "type": "string"
+                          },
+                          "tag": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "size": {
+                            "type": "string"
+                          }
                         }
                       }
                     }
@@ -2638,7 +2662,7 @@
     "/merge-jobs/{id}/wake": {
       "post": {
         "summary": "Resume a detached worker/merge job (self-wake)",
-        "description": "Enqueues a continuation turn for a detached job (worker or host-merge) now, or after `inSeconds`. This is how a worker resumes itself: a detached `claude -p` turn ends its process on completion, and the model's own ScheduleWakeup can't re-invoke it — only this can. A worker waiting on slow background work should call this before ending its turn (e.g. `corral worker wake <id> --in 30`). The continuation runs with full prior context (--resume). Capped at 30m; dropped if the job is removed before it fires.",
+        "description": "Enqueues a continuation turn for a detached job (worker or host-merge) now, or after `inSeconds`. This is how a worker resumes itself: a detached `claude -p` turn ends its process on completion, and the model's own ScheduleWakeup can't re-invoke it \u2014 only this can. A worker waiting on slow background work should call this before ending its turn (e.g. `corral worker wake <id> --in 30`). The continuation runs with full prior context (--resume). Capped at 30m; dropped if the job is removed before it fires.",
         "parameters": [
           {
             "name": "id",
@@ -2677,9 +2701,15 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "ok": { "type": "boolean" },
-                    "jobId": { "type": "string" },
-                    "wakeInSeconds": { "type": "integer" }
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "jobId": {
+                      "type": "string"
+                    },
+                    "wakeInSeconds": {
+                      "type": "integer"
+                    }
                   }
                 }
               }
@@ -3766,6 +3796,130 @@
           }
         }
       }
+    },
+    "/api/skills/{id}/promote": {
+      "post": {
+        "summary": "Promote a repo skill to the global catalog",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "autoAll": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Promoted global skill"
+          }
+        }
+      }
+    },
+    "/api/repos/{id}/skills/effective": {
+      "get": {
+        "summary": "Resolved skill set injected for a repo",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Effective skills"
+          }
+        }
+      }
+    },
+    "/api/repos/{id}/skills/{name}/enabled": {
+      "put": {
+        "summary": "Force a global skill on/off for a repo",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Set"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Clear a repo's global-skill override (inherit)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cleared"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4333,8 +4487,11 @@
           },
           "dindCacheMode": {
             "type": "string",
-            "enum": ["copy", "shared"],
-            "description": "How to use the repo DinD cache. DEFAULT is 'shared' (mount the baseline volume directly as the inner-docker data root — zero copy, instant reuse; the fast path). 'copy' seeds a slow, isolated writable copy — use it to FORK the baseline: mutate it (bump deps / new migrations / new image) in isolation, then promote that project's volume back as the repo baseline."
+            "enum": [
+              "copy",
+              "shared"
+            ],
+            "description": "How to use the repo DinD cache. DEFAULT is 'shared' (mount the baseline volume directly as the inner-docker data root \u2014 zero copy, instant reuse; the fast path). 'copy' seeds a slow, isolated writable copy \u2014 use it to FORK the baseline: mutate it (bump deps / new migrations / new image) in isolation, then promote that project's volume back as the repo baseline."
           },
           "proxy": {
             "type": "boolean"
@@ -4709,6 +4866,16 @@
           },
           "content": {
             "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "repo",
+              "global"
+            ]
+          },
+          "autoAll": {
+            "type": "boolean"
           }
         }
       },
