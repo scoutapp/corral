@@ -70,6 +70,36 @@ func TestPromptCatalogComplete(t *testing.T) {
 	}
 }
 
+func TestRepoAgentsMdPrompt(t *testing.T) {
+	def, ok := PromptDefFor(PromptRepoAgentsMd)
+	if !ok {
+		t.Fatal("repo.agents_md should be in the catalog")
+	}
+	// Slots the code fills must appear in the template.
+	for _, slot := range []string{"{{repo}}", "{{repoId}}", "{{cache_path}}", "{{default_branch}}"} {
+		if !strings.Contains(def.Default, slot) {
+			t.Errorf("repo.agents_md default missing slot %q", slot)
+		}
+	}
+	// The empirical quality bar + the user's asks must be present.
+	for _, want := range []string{
+		"150",                           // length bar (≤150 lines)
+		"ROOT CAUSE",                    // root-cause fixes
+		"Chesterton",                    // Chesterton's fence
+		"linter",                        // run the linter
+		"changed code",                  // scope tests to the changed code when large
+		"stacked",                       // small stacked commits
+		"Do NOT invent",                 // only real commands
+		"corral repo set-agent-context", // save path
+		"Definition of Done",
+		"run the app", // figure out how to run the app
+	} {
+		if !strings.Contains(def.Default, want) {
+			t.Errorf("repo.agents_md default should mention %q", want)
+		}
+	}
+}
+
 func TestResolvePromptThreeLevels(t *testing.T) {
 	svc := newService(t)
 	key := PromptPRVerify
