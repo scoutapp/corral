@@ -39,6 +39,7 @@ const (
 	PromptSSHGuidance    = "ssh.guidance"
 	PromptWorkerBoot     = "worker.boot_guidance"
 	PromptEngPrinciples  = "engineering.principles"
+	PromptRepoAgentsMd   = "repo.agents_md"
 )
 
 // DefaultEngineeringPrinciples is the built-in text of the engineering.principles
@@ -63,6 +64,54 @@ const DefaultEngineeringPrinciples = "Work to a high bar:\n" +
 // engineering-principles block (a leading blank line keeps spacing when present,
 // nothing when the slot renders empty).
 const engPrinciplesSlot = "{{engineering_principles}}"
+
+// DefaultRepoAgentsMd is the built-in text of the repo.agents_md prompt — run as
+// a headless host worker right after a repo is added (and on demand via
+// "Regenerate"). It explores a throwaway checkout and writes the repo's agent
+// context (AGENTS.md / CLAUDE.md), saved via `corral repo set-agent-context`.
+//
+// The template enforces the empirical quality bar for agent-onboarding docs (a
+// BAD one is worse than none): tight (≤150 lines), command-first, only commands
+// with evidence in the repo, no architecture essays, no wall of "don'ts". It also
+// bakes in the same working principles as engineering.principles into the
+// Definition of Done (root cause, Chesterton's fence, run the linter, scope tests
+// when the suite is large, small stacked commits).
+const DefaultRepoAgentsMd = "You are generating the agent-onboarding doc (an AGENTS.md / CLAUDE.md) for the repository {{repo}}. " +
+	"This is what a coding agent reads FIRST before touching the code, so it must be concrete, verified against the " +
+	"actual repo, and free of guesses. A BAD onboarding doc is worse than none — keep it tight and operational.\n\n" +
+	"SETUP — get a working checkout you can explore and run:\n" +
+	"1. Clone the repo's local mirror cache into a throwaway dir (the cache is a bare mirror, so a plain clone gives a working tree):\n" +
+	"   git clone \"{{cache_path}}\" /tmp/agents-{{repoId}} && cd /tmp/agents-{{repoId}}\n" +
+	"   The default branch is {{default_branch}}.\n" +
+	"2. Explore the tree: README, package/build manifests, CI config, Makefile/Taskfile/scripts, and the top-level source layout. Read real files — don't assume conventions.\n\n" +
+	"INVESTIGATE — DERIVE these from the repo, never invent them:\n" +
+	"- The EXACT build, test, and run commands. Check package.json scripts, Makefile/Justfile/Taskfile targets, tox/nox, Cargo, go.mod, Gemfile/Rakefile, docker-compose, Procfile, etc. Prefer the repo's real script over a generic guess.\n" +
+	"- How to actually RUN the app locally (dev server, CLI entrypoint, main binary) — the command a human uses to see it working, plus required services (DB, cache) and how to start them.\n" +
+	"- CI: open the CI workflows (.github/workflows, .gitlab-ci.yml, …). Record what CI runs and the EXACT linter/formatter + type-check invocation, so an agent can run them locally BEFORE pushing.\n" +
+	"- Test-suite size: roughly how many tests / how long a full run takes. If it's LARGE (minutes+), the Definition of Done must say to scope tests to the changed code rather than running everything each loop.\n" +
+	"- Code style: point at the formatter/linter config and say \"run <tool>\" — do NOT restate style rules in prose.\n" +
+	"- Files/paths an agent must NOT modify (generated code, vendored deps, lockfiles unless intentionally bumping, already-shipped migrations, snapshots).\n\n" +
+	"WRITE the AGENTS.md with these sections, filled from what you found:\n" +
+	"1. Project overview — what it is and does, in 3–5 sentences.\n" +
+	"2. Repository layout — the directories that matter and what lives in each.\n" +
+	"3. Build / Test / Run — the EXACT copy-pasteable commands, with prerequisites (runtime version via mise/asdf, services to start) and how to run the app to see it working.\n" +
+	"4. Code style — point at the formatter/linter config; the rule is \"run the tooling\", not a hand-maintained list.\n" +
+	"5. CI & linting — what CI enforces and the exact local commands to satisfy it before pushing.\n" +
+	"6. Files not to modify — the do-not-touch list.\n" +
+	"7. Definition of Done — a checklist an agent must satisfy before a task is complete:\n" +
+	"   - The change builds and the relevant tests pass. If the suite is large, run the tests that cover the changed code each loop, not the whole suite; do a full run once at the end if feasible.\n" +
+	"   - The linter/formatter and type checker pass (run the same ones CI runs).\n" +
+	"   - Fixes address the ROOT CAUSE, not the symptom: diagnose WHY the failure happens and fix that, rather than patching over it or silencing the check.\n" +
+	"   - Chesterton's fence: before removing or changing existing code/config/tests, understand WHY it's there; if you can't, investigate first — don't delete guardrails to make an error go away.\n" +
+	"   - Keep changes small and reviewable; prefer stacked, focused commits over one large diff.\n\n" +
+	"CONSTRAINTS (this is the quality bar — follow it):\n" +
+	"- Target UNDER 150 lines. Command-first and skimmable — an agent reads this every time, so favor exact commands over prose.\n" +
+	"- Every command must be one you found EVIDENCE for in the repo (a script, a CI step, documented usage). Do NOT invent commands. If you can't determine something, say so explicitly rather than guessing.\n" +
+	"- Do NOT write architecture essays or service-topology dumps, do NOT pile up 30+ \"don't\" rules, and do NOT duplicate the README. Prefer paired Don't → Do and real 3–10 line snippets over abstract rules.\n\n" +
+	"SAVE — write the finished document as this repo's agent context so it's editable in Corral and injected into future sandboxes:\n" +
+	"   corral repo set-agent-context {{repoId}} --stdin   # pipe the full markdown on stdin\n" +
+	"Then remove the throwaway checkout: rm -rf /tmp/agents-{{repoId}}\n" +
+	"Report a one-line summary of what you wrote (and anything you couldn't determine)."
 
 // DefaultWorkerBootGuidance is the built-in text of the worker.boot_guidance
 // prompt — appended to every worker's prompt so a boot makes the DinD baseline
@@ -259,6 +308,13 @@ func PromptCatalog() []PromptDef {
 			UsedWhen: "Slotted into the project-start prompts (plain + from an issue). Edit once to change the working principles Claude gets on every sandbox task — root-cause fixes, Chesterton's fence, run the linter, scope tests, small stacked commits.",
 			Default:  DefaultEngineeringPrinciples,
 			Slots:    []string{},
+		},
+		{
+			Key:      PromptRepoAgentsMd,
+			Name:     "Generate AGENTS.md (on repo add)",
+			UsedWhen: "Run as a headless host worker right after a repo is added (and on demand via \"Regenerate AGENTS.md\" in repo Settings). It explores a throwaway checkout and writes the repo's agent context (CLAUDE.md), which becomes editable in Settings and is injected into future sandboxes.",
+			Default:  DefaultRepoAgentsMd,
+			Slots:    []string{"repo", "repoId", "cache_path", "default_branch"},
 		},
 	}
 }
