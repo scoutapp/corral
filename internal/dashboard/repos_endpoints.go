@@ -57,9 +57,64 @@ func (d *dashboardServer) handleRepos(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}
+		// Auto-generate a first-draft AGENTS.md for the repo (async host worker,
+		// visible in the Work tab). Only when the repo has no context yet, so a
+		// re-add never clobbers an edited one. Never blocks the response.
+		d.kickAgentsMdGeneration(repo, false)
 		writeFilesJSON(w, map[string]any{"repo": repo})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleRepoGenerateAgentsMd: POST /api/repos/<id>/generate-agents-md — the
+// Regenerate button. Force-runs the AGENTS.md worker (overwrites the current
+// context when it finishes).
+func (d *dashboardServer) handleRepoGenerateAgentsMd(w http.ResponseWriter, r *http.Request, id string) {
+	repo, err := repos.Get(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	d.kickAgentsMdGeneration(repo, true)
+	writeFilesJSON(w, map[string]any{"ok": true})
+}
+
+// kickAgentsMdGeneration spawns a detached host worker that explores the repo and
+// writes its agent context (AGENTS.md/CLAUDE.md), via the editable repo.agents_md
+// prompt. force=true always runs (the Regenerate button); force=false runs only
+// when the repo has no context yet (the on-add auto path), so it never clobbers an
+// edited context. Best-effort: it logs and returns on any setup failure.
+func (d *dashboardServer) kickAgentsMdGeneration(repo *repos.Repo, force bool) {
+	if repo == nil || repo.ID == "" {
+		return
+	}
+	s, err := d.getStore()
+	if err != nil {
+		return
+	}
+	svc := automations.New(s)
+	if !force {
+		if existing, _ := svc.RepoAgentContext(repo.ID); strings.TrimSpace(existing) != "" {
+			return // don't clobber an existing/edited context on re-add
+		}
+	}
+	prompt := svc.RenderPrompt(automations.PromptRepoAgentsMd, repo.ID, map[string]string{
+		"repo":           repo.Name,
+		"repoId":         repo.ID,
+		"cache_path":     repo.CachePath,
+		"default_branch": repo.DefaultBranch,
+	})
+	if strings.TrimSpace(prompt) == "" {
+		return
+	}
+	if _, err := d.startWorkerJob(prompt, "Generate AGENTS.md for "+repo.Name, 0, "agents_md", repo.ID); err != nil {
+		d.applog().Log(applog.Entry{
+			Category: applog.CatAI, Event: "repo.agents_md.start",
+			Message: applog.Fmt("Couldn't start AGENTS.md generation for %s: %v", repo.Name, err),
+			Status:  applog.StatusError,
+			Meta:    map[string]any{"repo": repo.ID},
+		})
 	}
 }
 
