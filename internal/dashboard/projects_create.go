@@ -435,6 +435,17 @@ func (d *dashboardServer) renderProjectPrompt(key, repoID, ownerName string, has
 	}
 	slots["ssh_guidance"] = sshGuidance
 
+	// Fill the shared engineering-principles slot (editable ONE place, slotted
+	// into project.start/issue). Prefer the store's override-aware render; fall
+	// back to the built-in default so the principles always appear.
+	principles := automations.DefaultEngineeringPrinciples
+	if s, err := d.getStore(); err == nil {
+		if p := strings.TrimSpace(automations.New(s).RenderEngineeringPrinciples(repoID)); p != "" {
+			principles = p
+		}
+	}
+	slots["engineering_principles"] = principles
+
 	// Prefer the resolved (override-aware) prompt; fall back to the built-in
 	// default rendered directly.
 	def, _ := automations.PromptDefFor(key)

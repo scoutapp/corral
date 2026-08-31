@@ -75,6 +75,13 @@ func (s *Service) RenderSSHGuidance(repoID, repoOwnerName string) string {
 	return s.RenderPrompt(PromptSSHGuidance, repoID, map[string]string{"ssh_remote": remote})
 }
 
+// RenderEngineeringPrinciples renders the (editable) shared engineering-principles
+// snippet for a repo. The project prompts fill their {{engineering_principles}}
+// slot with this. Repo override wins, then global, then the built-in default.
+func (s *Service) RenderEngineeringPrinciples(repoID string) string {
+	return s.RenderPrompt(PromptEngPrinciples, repoID, nil)
+}
+
 // SetPromptOverride creates or updates the override action for a key at the
 // given scope (repoID empty = global). Returns the stored action.
 func (s *Service) SetPromptOverride(key, repoID, template string) (Action, error) {

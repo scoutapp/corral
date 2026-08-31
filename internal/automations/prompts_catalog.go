@@ -38,7 +38,31 @@ const (
 	PromptDraftPrompt    = "draft.prompt"
 	PromptSSHGuidance    = "ssh.guidance"
 	PromptWorkerBoot     = "worker.boot_guidance"
+	PromptEngPrinciples  = "engineering.principles"
 )
+
+// DefaultEngineeringPrinciples is the built-in text of the engineering.principles
+// prompt — a shared, editable snippet of working principles slotted into the
+// project-start prompts (plain + from-issue) so Claude gets the same high bar on
+// every sandbox task. Edited in ONE place; a repo can override it. Kept short and
+// operational (the AGENTS.md generator restates these in its Definition of Done).
+const DefaultEngineeringPrinciples = "Work to a high bar:\n" +
+	"- Root cause, not symptoms: when something fails, diagnose WHY and fix the cause. Don't patch over the " +
+	"symptom, silence the check, or special-case the failing input.\n" +
+	"- Chesterton's fence: before removing or changing existing code, config, or a test, understand why it's " +
+	"there. If you can't explain its purpose, investigate first — don't delete a guardrail just to make an error go away.\n" +
+	"- Run the tooling before you finish: run the repo's linter/formatter and type checker (the same ones CI " +
+	"runs) and get them green.\n" +
+	"- Scope your tests: if the suite is large or slow, run the tests that cover the code you changed each " +
+	"iteration; do a full run once at the end when feasible. Say so if you couldn't run the whole suite.\n" +
+	"- Small, stacked commits: keep each change focused and reviewable. Prefer a stack of small commits/branches " +
+	"over one large diff.\n" +
+	"- Verify, don't assume: confirm the change works (a test, a build, running it) before calling it done."
+
+// engPrinciplesSlot is the trailing slot the project prompts leave for the shared
+// engineering-principles block (a leading blank line keeps spacing when present,
+// nothing when the slot renders empty).
+const engPrinciplesSlot = "{{engineering_principles}}"
 
 // DefaultWorkerBootGuidance is the built-in text of the worker.boot_guidance
 // prompt — appended to every worker's prompt so a boot makes the DinD baseline
@@ -83,15 +107,15 @@ func PromptCatalog() []PromptDef {
 			Name:     "Project start",
 			UsedWhen: "Typed into Claude when a plain sandbox project launches (New project, or Verify-in-sandbox without a preset).",
 			Default: "You're working in a sandboxed checkout of {{repo}} on branch {{branch}}. " +
-				"Explore the codebase, then help with the task at hand. " + sshGuidanceSlot,
-			Slots: []string{"repo", "branch", "ssh_guidance"},
+				"Explore the codebase, then help with the task at hand. " + sshGuidanceSlot + "\n\n" + engPrinciplesSlot,
+			Slots: []string{"repo", "branch", "ssh_guidance", "engineering_principles"},
 		},
 		{
 			Key:      PromptProjectIssue,
 			Name:     "Project start (from an issue)",
 			UsedWhen: "Typed into Claude when a project is created from a GitHub issue.",
-			Default:  "Work on {{repo}} issue #{{number}}: {{title}}. The full description is in ISSUE.md at the workspace root. You're on branch {{branch}}. " + sshGuidanceSlot,
-			Slots:    []string{"repo", "number", "title", "branch", "ssh_guidance"},
+			Default:  "Work on {{repo}} issue #{{number}}: {{title}}. The full description is in ISSUE.md at the workspace root. You're on branch {{branch}}. " + sshGuidanceSlot + "\n\n" + engPrinciplesSlot,
+			Slots:    []string{"repo", "number", "title", "branch", "ssh_guidance", "engineering_principles"},
 		},
 		{
 			Key:      PromptPRVerify,
@@ -99,7 +123,8 @@ func PromptCatalog() []PromptDef {
 			UsedWhen: "Auto-submitted to Claude when you click ▶ Verify in sandbox on a PR (using the built-in prompt).",
 			Default: `Verify PR #{{pr_number}} ("{{pr_title}}") works. You're on its branch. ` +
 				"Explore the change, run the relevant tests or the app, and report whether it behaves correctly " +
-				"and any issues you find. The PR is {{pr_url}}.",
+				"and any issues you find. Run the repo's linter/type-check as part of verifying. If it fails, find " +
+				"the ROOT CAUSE before proposing a fix — don't patch the symptom. The PR is {{pr_url}}.",
 			Slots: []string{"pr_number", "pr_title", "pr_url"},
 		},
 		{
@@ -112,11 +137,11 @@ func PromptCatalog() []PromptDef {
 				"Procedure:\n" +
 				"1. Fetch and update your local view of the base: `git fetch origin` and note `origin/{{default_branch}}`.\n" +
 				"2. Rebase this branch onto the latest base: `git rebase origin/{{default_branch}}`.\n" +
-				"3. Resolve any conflicts carefully — understand both sides before you pick, don't blindly take one. Re-run the build/tests after resolving so you know the result still works.\n" +
+				"3. Resolve any conflicts carefully — understand WHY each side made its change before you pick (Chesterton's fence), don't blindly take one. Re-run the build/tests after resolving so you know the result still works.\n" +
 				"4. Push the rebased branch (force-with-lease, since a rebase rewrites history): `git push --force-with-lease`.\n" +
 				"5. Check whether the PR has CI. Run `gh pr checks {{pr_number}}`: if it reports checks, WAIT for them to finish and pass — `gh pr checks {{pr_number}} --watch` blocks until they complete and exits non-zero if any fail. If checks fail, STOP and report which ones — do NOT merge. (No checks configured → nothing to wait for; continue.)\n" +
 				"6. Once checks are green, complete the merge on GitHub with **{{strategy}}**: `gh pr merge {{pr_number}} --{{strategy}}`. Do NOT use `--admin` or any force/override flag — merge as a normal user so branch protection and required checks are respected. If GitHub refuses the merge (not mergeable, checks required, review required), STOP and report why rather than trying to bypass it.\n" +
-				"7. If this PR sits in a STACK of dependent branches, work from the bottom up: after merging the base of the stack, go back to step 1 for the next branch, rebasing it onto the freshly-updated {{default_branch}} and re-targeting its base if needed (each still waits for its own CI).\n" +
+				"7. If this PR sits in a STACK of dependent branches, work from the bottom up: after merging the base of the stack, go back to step 1 for the next branch, rebasing it onto the freshly-updated {{default_branch}} and re-targeting its base if needed (each still waits for its own CI). Keep the stack as small, focused branches — don't collapse unrelated work into one.\n" +
 				"8. When resolving conflicts across a stack, before dropping any branch as redundant, get the diff stats between the branches (`git diff --stat A...B`) to confirm they really are equivalent — keeping in mind that a rebase changes commit shas, so compare TREES/diffs, not commit identity. Only drop a branch when its changes are genuinely already present.\n\n" +
 				"Be conservative: if a conflict is ambiguous, CI fails, or the tests don't pass after a rebase, STOP and report what you found rather than forcing a merge. Never use admin/override flags to merge past failing checks. Report the final state (merged / blocked and why) when you're done.",
 			Slots: []string{"repo", "branch", "strategy", "pr_number", "pr_title", "pr_url", "default_branch"},
@@ -226,6 +251,13 @@ func PromptCatalog() []PromptDef {
 			Name:     "Worker boot & caching guidance",
 			UsedWhen: "Appended to every conductor worker's prompt (per-repo when the worker is created with a repoId) so booting an app makes the DinD baseline reuse fast. Edit the repo override to give this repo its exact recipe (volume names, DB setup, prepared image).",
 			Default:  DefaultWorkerBootGuidance,
+			Slots:    []string{},
+		},
+		{
+			Key:      PromptEngPrinciples,
+			Name:     "Engineering principles",
+			UsedWhen: "Slotted into the project-start prompts (plain + from an issue). Edit once to change the working principles Claude gets on every sandbox task — root-cause fixes, Chesterton's fence, run the linter, scope tests, small stacked commits.",
+			Default:  DefaultEngineeringPrinciples,
 			Slots:    []string{},
 		},
 	}
