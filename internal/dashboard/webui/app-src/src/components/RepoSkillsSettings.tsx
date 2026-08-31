@@ -123,6 +123,20 @@ export function RepoSkillsSettings({ repoId }: { repoId: string }) {
     }
   }
 
+  async function regenerateContext() {
+    if (
+      context.trim() &&
+      !confirm("Regenerate this repo's AGENTS.md with AI? The worker's result will replace the current context.")
+    )
+      return;
+    try {
+      await postJSON(`/api/repos/${encodeURIComponent(repoId)}/generate-agents-md`, {});
+      setMsg({ text: "Generating AGENTS.md — watch the Work tab; it'll appear here when done.", err: false });
+    } catch (e) {
+      setMsg({ text: `Couldn't start generation: ${(e as Error).message}`, err: true });
+    }
+  }
+
   return (
     <div className="reposkills">
       <hr className="repo-settings-sep" />
@@ -237,13 +251,16 @@ export function RepoSkillsSettings({ repoId }: { repoId: string }) {
       )}
 
       {/* Agent context (CLAUDE.md) */}
-      <h4 className="reposkills-h4" style={{ marginTop: "1.1rem" }}>
-        AGENTS.md context
-      </h4>
+      <div className="reposkills-head" style={{ marginTop: "1.1rem" }}>
+        <h4 className="reposkills-h4">AGENTS.md context</h4>
+        <button type="button" className="auto-btn link" onClick={regenerateContext} title="Explore the repo and draft it with AI">
+          Regenerate with AI
+        </button>
+      </div>
       <p className="tab-note" style={{ marginTop: 0 }}>
         Added to the sandbox's <code>CLAUDE.md</code> (below the repo's own, if any). Use it for standing
-        instructions — conventions, gotchas, where things live. Corral can generate a first draft when you add
-        the repo.
+        instructions — conventions, gotchas, where things live. Corral drafts this for you when you add the repo;
+        Regenerate re-runs it.
       </p>
       <textarea
         className="auto-input reposkills-md"

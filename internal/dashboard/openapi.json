@@ -3920,6 +3920,26 @@
           }
         }
       }
+    },
+    "/api/repos/{id}/generate-agents-md": {
+      "post": {
+        "summary": "Generate the repo's AGENTS.md via an async host worker",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Generation started"
+          }
+        }
+      }
     }
   },
   "components": {

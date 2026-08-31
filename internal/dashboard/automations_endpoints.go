@@ -146,6 +146,8 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handleRepoAnalyze(w, r, strings.TrimSuffix(strings.TrimPrefix(rest, "repos/"), "/analyze"))
 	case strings.HasPrefix(rest, "repos/") && strings.HasSuffix(rest, "/analysis-status") && r.Method == http.MethodGet:
 		d.handleRepoAnalysisStatus(w, r, strings.TrimSuffix(strings.TrimPrefix(rest, "repos/"), "/analysis-status"))
+	case strings.HasPrefix(rest, "repos/") && strings.HasSuffix(rest, "/generate-agents-md") && r.Method == http.MethodPost:
+		d.handleRepoGenerateAgentsMd(w, r, strings.TrimSuffix(strings.TrimPrefix(rest, "repos/"), "/generate-agents-md"))
 	default:
 		routeNotFound(w, r)
 	}
