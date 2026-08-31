@@ -37,8 +37,9 @@ const (
 	KindWebhook      = "webhook"       // HTTP POST
 	KindSlack        = "slack"         // Slack message
 	KindMCP          = "mcp"           // agentic: headless claude with an MCP server available
-	KindSkill        = "skill"         // a per-repo skill (SKILL.md content), injected into the sandbox
+	KindSkill        = "skill"         // a skill (SKILL.md content), global or per-repo, injected into the sandbox
 	KindAgentContext = "agent_context" // per-repo CLAUDE.md context, one per repo
+	KindSkillPref    = "skill_pref"    // per-repo enable/disable of a GLOBAL skill, keyed by skill name
 )
 
 // Hookable events. Kept as constants so the UI, the resolver, and the emit
@@ -167,6 +168,26 @@ func (s *Service) UpdateAction(id int64, name, spec string) (Action, error) {
 	`, name, spec, id)
 	if err != nil {
 		return Action{}, fmt.Errorf("automations: update action: %w", err)
+	}
+	return s.Action(id)
+}
+
+// promoteActionToGlobal flips a repo-scoped action to global (scope='global',
+// repo_id=NULL) and updates its spec in one statement, preserving the id. It is
+// the one mutation UpdateAction can't express (that only touches name+spec). Used
+// by PromoteSkillToGlobal; kept generic and unexported so only guarded callers
+// reach it.
+func (s *Service) promoteActionToGlobal(id int64, spec string) (Action, error) {
+	if spec == "" {
+		spec = "{}"
+	}
+	_, err := s.db.Exec(`
+		UPDATE auto_actions
+		   SET scope = 'global', repo_id = NULL, spec_json = ?, updated_at = datetime('now')
+		 WHERE id = ?
+	`, spec, id)
+	if err != nil {
+		return Action{}, fmt.Errorf("automations: promote action: %w", err)
 	}
 	return s.Action(id)
 }
