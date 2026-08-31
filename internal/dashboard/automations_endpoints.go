@@ -101,10 +101,20 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handleChatCapability(w, r)
 	case rest == "skills":
 		d.handleRepoSkills(w, r, "")
+	case strings.HasPrefix(rest, "skills/") && strings.HasSuffix(rest, "/promote"):
+		d.handleSkillPromote(w, r, strings.TrimSuffix(strings.TrimPrefix(rest, "skills/"), "/promote"))
 	case strings.HasPrefix(rest, "skills/"):
 		d.handleRepoSkills(w, r, strings.TrimPrefix(rest, "skills/"))
 	case strings.HasPrefix(rest, "repos/") && strings.HasSuffix(rest, "/agent-context"):
 		d.handleRepoAgentContext(w, r, strings.TrimSuffix(strings.TrimPrefix(rest, "repos/"), "/agent-context"))
+	case strings.HasPrefix(rest, "repos/") && strings.HasSuffix(rest, "/skills/effective"):
+		d.handleRepoEffectiveSkills(w, r, strings.TrimSuffix(strings.TrimPrefix(rest, "repos/"), "/skills/effective"))
+	case strings.HasPrefix(rest, "repos/") && strings.Contains(rest, "/skills/") && strings.HasSuffix(rest, "/enabled"):
+		// /api/repos/<repoID>/skills/<name>/enabled — per-repo enable/disable of a global skill.
+		inner := strings.TrimPrefix(rest, "repos/")
+		repoID, after, _ := strings.Cut(inner, "/skills/")
+		name := strings.TrimSuffix(after, "/enabled")
+		d.handleRepoSkillEnabled(w, r, repoID, name)
 	case rest == "dind/caches":
 		d.handleDindCaches(w, r, "")
 	case strings.HasPrefix(rest, "dind/caches/"):
