@@ -18,6 +18,24 @@ per-repo skills/context + automations.
 
 ![Repo](img/repo.png)
 
+## Skills & context (a repo's Settings)
+
+Attach skills and an `AGENTS.md` to a repo — its own skills, the global skills it
+inherits (each with an inherit / on / off override), and an AI-drafted agent
+context — so every sandbox cloned from it lands with the right capabilities and
+knowledge. Corral drafts the `AGENTS.md` when you add the repo; **Regenerate with
+AI** re-runs it.
+
+![Skills & context](img/repo-skills-context.png)
+
+## Global skills
+
+A shared skill catalog (under **Automations**) reusable across every repo. Turn on
+**Add to all repos** to inject one into every sandbox by default; each repo can
+still override it on or off.
+
+![Global skills](img/global-skills.png)
+
 ## PR Review + AI analysis
 
 Corral's read on one PR: the risk verdict, per-block AI analysis, churn/forensics,

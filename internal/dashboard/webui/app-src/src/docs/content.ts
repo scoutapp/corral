@@ -101,7 +101,15 @@ const REPO: DocPage = {
       ],
     },
     { h: "Skills & context (Settings)" },
-    { p: "Attach **skills** (reusable SKILL.md capabilities) and an **agent context** (a CLAUDE.md) to this repo. Every sandbox cloned from it carries them in automatically — so the right guidance and tools are always present." },
+    { img: { src: "/static/app/docs-img/repo-skills-context.png", alt: "A repo's Skills & context — own skills, inherited global skills, and an AGENTS.md." } },
+    { p: "Attach **skills** (reusable SKILL.md capabilities) and an **AGENTS.md context** (a CLAUDE.md) to this repo. Every sandbox cloned from it carries them in automatically — so the right guidance and tools are always present." },
+    {
+      list: [
+        "**This repo's skills** — skills for this repo only. **promote to global** shares one across all repos.",
+        "**Global skills** — the shared catalog, each with an inherit / on / off override just for this repo.",
+        "**AGENTS.md context** — Corral drafts it with AI when you add the repo; **Regenerate with AI** re-runs it, or edit it inline.",
+      ],
+    },
     { h: "Automations (Settings)" },
     { p: "Repo-scoped prompts, event hooks, and flows. Global ones apply everywhere; repo ones add on top." },
   ],
@@ -164,8 +172,11 @@ const AUTOMATIONS: DocPage = {
     },
     { h: "A quick flow" },
     { p: "Add a flow, drop in steps (a prompt, a script, an MCP call), and give it a schedule or run it by hand. See runs in the **Run Log**." },
+    { h: "Global skills" },
+    { img: { src: "/static/app/docs-img/global-skills.png", alt: "The global skills catalog on the Automations tab." } },
+    { p: "A shared catalog of `SKILL.md` capabilities, reusable across every repo. Turn on **Add to all repos** to inject one into every sandbox by default; a repo can still override it on or off in its own **Settings → Skills & context**." },
   ],
-  more: "docs/automations.md",
+  more: "docs/skills-and-context.md",
 };
 
 const RUN_LOG: DocPage = {
