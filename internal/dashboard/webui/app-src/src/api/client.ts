@@ -47,6 +47,15 @@ export function postRaw(path: string, body?: unknown): Promise<Response> {
   });
 }
 
+export function putJSON<T>(path: string, body?: unknown): Promise<T> {
+  return fetch(path, {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  }).then((r) => parse<T>(r));
+}
+
 export function delJSON<T>(path: string): Promise<T> {
   return fetch(path, { method: "DELETE", credentials: "same-origin" }).then((r) => parse<T>(r));
 }
