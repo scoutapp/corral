@@ -1,15 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
-import { getJSON, postJSON, delJSON } from "../api/client";
+import { getJSON, postJSON, putJSON, delJSON } from "../api/client";
 
-// RepoSkillsSettings — a repo's Skills & context: skills and a CLAUDE.md-style
-// agent context that get injected into a sandbox checkout of this repo at
-// project-create. Backed by /api/skills (repo-scoped) and
-// /api/repos/<id>/agent-context.
+// RepoSkillsSettings — a repo's Skills & context: the repo's own skills, the
+// global skills it inherits (each with an inherit/on/off toggle), and a
+// CLAUDE.md-style agent context — all injected into a sandbox checkout of this
+// repo at project-create. Backed by /api/skills, /api/skills?scope=global,
+// /api/repos/<id>/skills/<name>/enabled, and /api/repos/<id>/agent-context.
 
-type RepoSkill = { id: number; name: string; content: string };
+type RepoSkill = { id: number; name: string; content: string; scope?: string; autoAll?: boolean };
+type GlobalSkill = { id: number; name: string; content: string; autoAll: boolean };
+
+// A repo's effective decision for a global skill: inherit the global default, or
+// an explicit on/off. We derive "effective" from the /skills/effective set.
+type Tri = "inherit" | "on" | "off";
 
 export function RepoSkillsSettings({ repoId }: { repoId: string }) {
   const [skills, setSkills] = useState<RepoSkill[]>([]);
+  const [globals, setGlobals] = useState<GlobalSkill[]>([]);
+  const [effectiveNames, setEffectiveNames] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<number | "new" | null>(null);
   const [draftName, setDraftName] = useState("");
   const [draftContent, setDraftContent] = useState("");
@@ -22,6 +30,12 @@ export function RepoSkillsSettings({ repoId }: { repoId: string }) {
     getJSON<{ skills: RepoSkill[] }>(`/api/skills?repo=${encodeURIComponent(repoId)}`)
       .then((d) => setSkills(d.skills || []))
       .catch((e) => setMsg({ text: (e as Error).message, err: true }));
+    getJSON<{ skills: GlobalSkill[] }>("/api/skills?scope=global")
+      .then((d) => setGlobals(d.skills || []))
+      .catch(() => {});
+    getJSON<{ skills: RepoSkill[] }>(`/api/repos/${encodeURIComponent(repoId)}/skills/effective`)
+      .then((d) => setEffectiveNames(new Set((d.skills || []).map((s) => s.name))))
+      .catch(() => {});
     getJSON<{ content: string }>(`/api/repos/${encodeURIComponent(repoId)}/agent-context`)
       .then((d) => {
         setContext(d.content || "");
@@ -71,6 +85,34 @@ export function RepoSkillsSettings({ repoId }: { repoId: string }) {
     }
   }
 
+  async function promoteSkill(sk: RepoSkill) {
+    if (!confirm(`Promote "${sk.name}" to a global skill, reusable across all repos?`)) return;
+    try {
+      await postJSON(`/api/skills/${sk.id}/promote`, { autoAll: false });
+      setMsg({ text: `Promoted "${sk.name}" to global.`, err: false });
+      load();
+    } catch (e) {
+      setMsg({ text: `Couldn't promote: ${(e as Error).message}`, err: true });
+    }
+  }
+
+  // Tri-state for a global skill in this repo: "on"/"off" force it; clearing
+  // (DELETE) reverts to the global's auto-add default ("inherit").
+  async function setGlobalTri(sk: GlobalSkill, tri: Tri) {
+    try {
+      if (tri === "inherit") {
+        await delJSON(`/api/repos/${encodeURIComponent(repoId)}/skills/${encodeURIComponent(sk.name)}/enabled`);
+      } else {
+        await putJSON(`/api/repos/${encodeURIComponent(repoId)}/skills/${encodeURIComponent(sk.name)}/enabled`, {
+          enabled: tri === "on",
+        });
+      }
+      load();
+    } catch (e) {
+      setMsg({ text: `Couldn't update: ${(e as Error).message}`, err: true });
+    }
+  }
+
   async function saveContext() {
     try {
       await putJSON(`/api/repos/${encodeURIComponent(repoId)}/agent-context`, { content: context });
@@ -86,15 +128,15 @@ export function RepoSkillsSettings({ repoId }: { repoId: string }) {
       <hr className="repo-settings-sep" />
       <h3 className="repo-settings-h">Skills &amp; context</h3>
       <p className="tab-note">
-        Skills and an <code>AGENT.md</code> that Corral drops into a sandbox started from this repo — so
+        Skills and an <code>AGENTS.md</code> that Corral drops into a sandbox started from this repo — so
         Claude lands with the right capabilities and knowledge for this codebase.
       </p>
 
       {msg && <div className={`auto-msg${msg.err ? " err" : ""}`}>{msg.text}</div>}
 
-      {/* Skills */}
+      {/* Repo's own skills */}
       <div className="reposkills-head">
-        <h4 className="reposkills-h4">Skills</h4>
+        <h4 className="reposkills-h4">This repo's skills</h4>
         {editing === null && (
           <button type="button" className="auto-btn" onClick={startNew}>
             + New skill
@@ -137,6 +179,9 @@ export function RepoSkillsSettings({ repoId }: { repoId: string }) {
                 <button type="button" className="auto-btn link" onClick={() => startEdit(sk)}>
                   edit
                 </button>
+                <button type="button" className="auto-btn link" onClick={() => promoteSkill(sk)} title="Reuse across all repos">
+                  promote to global
+                </button>
                 <button type="button" className="reposkills-x" title="Delete" onClick={() => removeSkill(sk)}>
                   ×
                 </button>
@@ -146,13 +191,59 @@ export function RepoSkillsSettings({ repoId }: { repoId: string }) {
         </ul>
       )}
 
+      {/* Global skills inherited by this repo */}
+      {globals.length > 0 && (
+        <>
+          <h4 className="reposkills-h4" style={{ marginTop: "1.1rem" }}>
+            Global skills
+          </h4>
+          <p className="tab-note" style={{ marginTop: 0 }}>
+            Shared skills from Automations. <b>Inherit</b> follows the skill's default; override it on or off
+            just for this repo.
+          </p>
+          <ul className="reposkills-list">
+            {globals.map((g) => {
+              const active = effectiveNames.has(g.name);
+              const shadowed = skills.some((s) => s.name === g.name);
+              return (
+                <li key={g.id} className="reposkills-item">
+                  <span className="reposkills-name">
+                    {g.name}
+                    <span className={`reposkills-badge${active ? " on" : ""}`}>
+                      {shadowed ? "overridden by repo skill" : active ? "injected" : "not injected"}
+                    </span>
+                  </span>
+                  <select
+                    className="auto-input reposkills-tri"
+                    aria-label={`${g.name} for this repo`}
+                    value=""
+                    onChange={(e) => {
+                      const v = e.target.value as Tri | "";
+                      if (v) void setGlobalTri(g, v);
+                    }}
+                  >
+                    <option value="" disabled>
+                      set…
+                    </option>
+                    <option value="inherit">Inherit (default: {g.autoAll ? "on" : "off"})</option>
+                    <option value="on">On for this repo</option>
+                    <option value="off">Off for this repo</option>
+                  </select>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+
       {/* Agent context (CLAUDE.md) */}
       <h4 className="reposkills-h4" style={{ marginTop: "1.1rem" }}>
-        AGENT.md context
+        AGENTS.md context
       </h4>
       <p className="tab-note" style={{ marginTop: 0 }}>
         Added to the sandbox's <code>CLAUDE.md</code> (below the repo's own, if any). Use it for standing
-        instructions — conventions, gotchas, where things live.
+        instructions — conventions, gotchas, where things live. Corral can generate a first draft when you add
+        the repo.
       </p>
       <textarea
         className="auto-input reposkills-md"
@@ -171,16 +262,4 @@ export function RepoSkillsSettings({ repoId }: { repoId: string }) {
       </div>
     </div>
   );
-}
-
-// Local PUT helper (the api client has no PUT).
-function putJSON(path: string, body: unknown): Promise<void> {
-  return fetch(path, {
-    method: "PUT",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  }).then((r) => {
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  });
 }

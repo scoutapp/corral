@@ -4,6 +4,7 @@ import { useBodyClass } from "../hooks/useBodyClass";
 import { AutomationsManager } from "../components/AutomationsManager";
 import { ScriptsLibrary } from "../components/ScriptsLibrary";
 import { FlowsManager } from "../components/FlowsManager";
+import { GlobalSkillsManager } from "../components/GlobalSkillsManager";
 
 // Top-level Automations page. Three tabs:
 //   Automations — prompts, trigger cards (built-in + your steps), advanced.
@@ -65,6 +66,7 @@ export function AutomationsPage() {
               live in a repo's Settings tab.
             </p>
             <AutomationsManager />
+            <GlobalSkillsManager />
             <section className="auto-section">
               <Link to="/automations/runs" className="auto-runs-link">
                 View run history →

@@ -2938,6 +2938,10 @@ table.projects th, table.projects td {
 .reposkills-item-actions { display: flex; align-items: center; gap: 0.5rem; }
 .reposkills-x { background: none; border: none; color: var(--muted); font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0 0.2rem; }
 .reposkills-x:hover { color: #E8734B; }
+.reposkills-badge { margin-left: 0.5rem; font-family: var(--sans, system-ui); font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0.05rem 0.45rem; }
+.reposkills-badge.on { color: #2FA36B; border-color: color-mix(in srgb, #2FA36B 45%, var(--border)); }
+.reposkills-autoall { display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; color: var(--muted); margin: 0.2rem 0; }
+.reposkills-tri { width: auto; min-width: 12rem; }
 .live-path-input { width: 9rem; cursor: text; }
 .live-path-label { margin-left: 0.3rem; }
 
