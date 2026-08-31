@@ -13,10 +13,12 @@ import (
 // workspace CLAUDE.md, so it's re-writable without clobbering the repo's own.
 const corralContextMarker = "<!-- corral:agent-context -->"
 
-// injectRepoAssets writes a project's repos' saved skills and agent context into
+// injectRepoAssets writes a project's effective skills and agent context into
 // the workspace at create time, so a sandbox checkout carries them:
 //   - each skill  → <workspace>/.corral/skills/<name>/SKILL.md  (the container
-//     already mounts .corral/skills/* into ~/.claude/skills)
+//     already mounts .corral/skills/* into ~/.claude/skills). The set is the
+//     repo's EffectiveSkills — global auto-add skills plus the repo's own, minus
+//     any the repo opted out of.
 //   - the context → <workspace>/CLAUDE.md, appended under a corral marker (or
 //     created if absent), so Claude discovers it via cwd without clobbering a
 //     repo's own committed CLAUDE.md.
@@ -36,8 +38,11 @@ func (d *dashboardServer) injectRepoAssets(workspace string, repoIDs []string) {
 		if repoID == "" {
 			continue
 		}
-		// Skills → .corral/skills/<name>/SKILL.md
-		if skills, err := svc.ListRepoSkills(repoID); err == nil {
+		// Skills → .corral/skills/<name>/SKILL.md. EffectiveSkills resolves the
+		// full set for this repo: global auto-adds (minus this repo's opt-outs,
+		// plus its opt-ins) with the repo's own skills overriding a global of the
+		// same name.
+		if skills, err := svc.EffectiveSkills(repoID); err == nil {
 			for _, sk := range skills {
 				writeSkillFile(workspace, sk.Name, sk.Content)
 			}
