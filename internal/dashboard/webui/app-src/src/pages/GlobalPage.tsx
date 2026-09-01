@@ -51,6 +51,8 @@ export function GlobalPage() {
   const [mergeStrategy, setMergeStrategy] = useState("");
   const [mergeMode, setMergeMode] = useState("host");
   const [mergeAutoTeardown, setMergeAutoTeardown] = useState(true);
+  // AGENTS.md staleness window (days). "" = built-in default; "-1"/negative = off.
+  const [agentStaleDays, setAgentStaleDays] = useState("");
   // Global assistant capability (separate DB-backed setting; null until first run).
   const [assistantCap, setAssistantCap] = useState<"readonly" | "act" | null>(null);
 
@@ -82,6 +84,9 @@ export function GlobalPage() {
           setMergeStrategy(data.merge_strategy || ""); // "" = ask per repo
           setMergeMode(data.merge_mode || "host");
           setMergeAutoTeardown(data.merge_auto_teardown !== false); // default ON
+          // 0 = use default (blank placeholder); a stored value (incl. negative
+          // = off) is shown as-is.
+          setAgentStaleDays(data.agent_context_stale_days ? String(data.agent_context_stale_days) : "");
           if (okMsg) setMsg({ text: okMsg, err: false });
         })
         .catch((e) => setMsg({ text: `failed to load: ${(e as Error).message}`, err: true }));
@@ -143,6 +148,9 @@ export function GlobalPage() {
     edit.merge_strategy = mergeStrategy; // "" clears the global default
     edit.merge_mode = mergeMode;
     edit.merge_auto_teardown = mergeAutoTeardown;
+    // Blank → 0 (default). A negative value is allowed and disables the check, so
+    // this one isn't clamped to 0 like the retention fields.
+    edit.agent_context_stale_days = agentStaleDays.trim() ? parseInt(agentStaleDays, 10) || 0 : 0;
     setApplying(true);
     try {
       const r = await postJSON<{ results?: string[] }>("/global/apply", edit);
@@ -573,6 +581,29 @@ export function GlobalPage() {
               <div className="muted cfg-note">
                 On (default): after a "merge with sandbox" job lands the PR, its one-shot container is torn down
                 automatically. Turn off if you want to inspect how conflicts were resolved before removing it.
+              </div>
+            </div>
+          </section>
+
+          <section className="cfg-zone">
+            <h3>
+              AGENTS.md context <span className="muted">— when to nag that a repo's agent context is stale</span>
+            </h3>
+            <div className="cfg-field">
+              <div className="cfg-label">Flag stale after (days)</div>
+              <div className="cfg-value">
+                <input
+                  className="cfg-edit dnd-hour-select"
+                  type="number"
+                  placeholder={String(g.agent_context_stale_days_default)}
+                  value={agentStaleDays}
+                  onChange={(e) => setAgentStaleDays(e.target.value)}
+                />
+                <div className="muted cfg-note">
+                  Blank = default ({g.agent_context_stale_days_default} days ≈ 3 months). A banner then nudges you to
+                  regenerate a repo's <code>AGENTS.md</code> — on the repo and on any sandbox or PR review derived from
+                  it. Set a negative value to turn the check off.
+                </div>
               </div>
             </div>
           </section>
