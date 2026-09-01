@@ -95,6 +95,43 @@ function BodySlot({ projectId, flowId, side, msg }: { projectId: string; flowId:
   return <pre className="mitm-body">{html}</pre>;
 }
 
+// MitmSkeleton: placeholder rows shown while the first poll is in flight, shaped
+// like the flow table so the layout doesn't jump when real rows replace it (and
+// the "No traffic captured yet." empty state doesn't flash first).
+function MitmSkeleton() {
+  const rows = [0, 1, 2, 3, 4, 5];
+  return (
+    <table className="mitm-table mitm-skeleton" aria-hidden="true">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th></th>
+          <th>Method</th>
+          <th>Host</th>
+          <th>Path</th>
+          <th>Status</th>
+          <th>Size</th>
+          <th>Dur</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((i) => (
+          <tr key={i} className="m-row">
+            <td className="m-when"><span className="sk sk-cell" /></td>
+            <td className="m-caret" />
+            <td className="m-method"><span className="sk sk-cell" /></td>
+            <td className="m-host"><span className="sk sk-cell" style={{ width: "80%" }} /></td>
+            <td className="m-path"><span className="sk sk-cell" style={{ width: `${55 + ((i * 13) % 40)}%` }} /></td>
+            <td className="m-status"><span className="sk sk-cell" /></td>
+            <td className="m-size"><span className="sk sk-cell" /></td>
+            <td className="m-dur"><span className="sk sk-cell" /></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function HeaderTable({ headers }: { headers?: [string, string][] }) {
   if (!headers || !headers.length) return <div className="mitm-empty">(none)</div>;
   return (
@@ -144,6 +181,10 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState("loading flows…");
   const [statusErr, setStatusErr] = useState(false);
+  // First-load gate: until the first poll resolves, show a skeleton instead of
+  // the "No traffic captured yet." empty state, so that empty state doesn't
+  // flash (FOUC) before real rows arrive.
+  const [loaded, setLoaded] = useState(false);
   const [monitoring, setMonitoring] = useState<Record<string, "busy" | "done">>({});
   // Hosts currently in the monitor list (from /config) — a direct row for one of
   // these is HISTORICAL (it was direct-dialed then; new traffic is decrypted), so
@@ -199,6 +240,9 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
     } catch {
       /* direct is best-effort */
     }
+    // First poll done (either outcome) — real rows or the true empty state can
+    // now show without flashing.
+    setLoaded(true);
   }, [projectId, query]);
 
   useEffect(() => {
@@ -305,9 +349,10 @@ export function MitmTab({ projectId, mitmUp }: { projectId: string; mitmUp: bool
         history for direct requests; decrypted flows filter over mitmweb’s current set.
       </p>
       <div id="mitm-flows">
-        {rows.length === 0 && <p className="empty">No traffic captured yet.</p>}
-        {rows.length > 0 && shown.length === 0 && <p className="empty">No flows match “{filter}”.</p>}
-        {shown.length > 0 && (
+        {!loaded && <MitmSkeleton />}
+        {loaded && rows.length === 0 && <p className="empty">No traffic captured yet.</p>}
+        {loaded && rows.length > 0 && shown.length === 0 && <p className="empty">No flows match “{filter}”.</p>}
+        {loaded && shown.length > 0 && (
           <table className="mitm-table">
             <thead>
               <tr>
