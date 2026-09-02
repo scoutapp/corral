@@ -411,6 +411,22 @@ table.projects th, table.projects td {
   font-size: 12px;
 }
 .mitm-empty { color: var(--muted); font-size: 12px; font-style: italic; }
+/* Body loading/error affordances. The loading row keeps the same frame as
+   .mitm-body so the gutter doesn't jump when the body arrives; a small spinner
+   replaces the old plain "loading…" text (a body can take a beat while mitmweb
+   finalizes a streaming/SSE response). */
+.mitm-body-loading {
+  display: flex; align-items: center; gap: 0.5rem;
+  color: var(--muted); font-style: italic;
+}
+.mitm-body-error { color: var(--con-waiting, #d1242f); }
+.mitm-spinner {
+  width: 12px; height: 12px; flex: none;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: ta-spin 0.7s linear infinite;
+}
 
 /* Config tab */
 #config-root { max-width: 60rem; font-size: 13px; }
