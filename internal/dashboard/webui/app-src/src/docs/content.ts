@@ -82,7 +82,7 @@ const PROJECT: DocPage = {
     { h: "Change how it runs" },
     { p: "**Config** holds the restart-required bits: network protection, Docker-in-Docker + published ports, a DinD **data cache** to start from, SSH keys, and per-host credentials. Edits there prompt you to restart the project." },
   ],
-  more: "docs/live-view.md",
+  more: "docs/internal/live-view.md",
 };
 
 const REPO: DocPage = {
@@ -114,7 +114,7 @@ const REPO: DocPage = {
     { h: "Automations (Settings)" },
     { p: "Repo-scoped prompts, event hooks, and flows. Global ones apply everywhere; repo ones add on top." },
   ],
-  more: "docs/skills-and-context.md",
+  more: "docs/internal/skills-and-context.md",
 };
 
 const PR_REVIEW: DocPage = {
@@ -178,7 +178,7 @@ const AUTOMATIONS: DocPage = {
     { img: { src: "/static/app/docs-img/global-skills.png", alt: "The global skills catalog on the Automations tab." } },
     { p: "A shared catalog of `SKILL.md` capabilities, reusable across every repo. Turn on **Add to all repos** to inject one into every sandbox by default; a repo can still override it on or off in its own **Settings → Skills & context**." },
   ],
-  more: "docs/skills-and-context.md",
+  more: "docs/internal/skills-and-context.md",
 };
 
 const RUN_LOG: DocPage = {
@@ -188,7 +188,7 @@ const RUN_LOG: DocPage = {
     { p: "History of automation + flow runs. Click a run to see its steps, timing, and output." },
     { p: "Use it to confirm a scheduled flow fired and to debug a step that failed." },
   ],
-  more: "docs/logs.md",
+  more: "docs/internal/logs.md",
 };
 
 const LOGS: DocPage = {
@@ -198,7 +198,7 @@ const LOGS: DocPage = {
     { p: "A searchable, host-wide activity log across every project and the dashboard itself." },
     { p: "Filter by project or category, or search the text. Handy for “what happened around the time X broke?” — spans link related events together." },
   ],
-  more: "docs/logs.md",
+  more: "docs/internal/logs.md",
 };
 
 const INTEGRATIONS: DocPage = {
@@ -210,7 +210,7 @@ const INTEGRATIONS: DocPage = {
     { h: "Connect one" },
     { p: "Add the server, complete any auth it needs, and it shows as **connected**. Remove it to stop the host Claude from using it." },
   ],
-  more: "docs/integrations.md",
+  more: "docs/internal/integrations.md",
 };
 
 // DOC_PAGES is the ordered registry of every doc page — powers the sidebar (every
