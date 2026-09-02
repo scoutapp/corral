@@ -43,7 +43,7 @@ const HOST_H_DEFAULT = 320;
 const CHAT_W_DEFAULT = 420;
 
 export function ProjectPage({ id }: { id: string }) {
-  const { projects } = useStatus(4000);
+  const { projects, loaded: statusLoaded } = useStatus(4000);
   const me = useMemo(() => projects.find((p) => p.id === id), [projects, id]);
   const name = me?.name || id;
 
@@ -212,15 +212,19 @@ export function ProjectPage({ id }: { id: string }) {
             </a>
           )}
           <button
-            className={`dock-toggle power-toggle${up ? " is-up" : ""}${pending ? " busy" : ""}`}
+            className={`dock-toggle power-toggle${up ? " is-up" : ""}${pending || !statusLoaded ? " busy" : ""}`}
             type="button"
-            disabled={!!pending}
+            disabled={!!pending || !statusLoaded}
             title="Start or stop this project's container"
             onClick={() => doPower(false)}
           >
             {pending ? (
               <>
                 <span className="power-spin">↻</span> {pending === "starting" ? "starting…" : "stopping…"}
+              </>
+            ) : !statusLoaded ? (
+              <>
+                <span className="power-spin">↻</span> …
               </>
             ) : up ? (
               "■ Stop"
@@ -306,6 +310,8 @@ export function ProjectPage({ id }: { id: string }) {
               </div>
               {seen.container && up ? (
                 <XtermPane projectId={id} wsPath="/container/ws" kind="container" />
+              ) : !statusLoaded ? (
+                <p className="empty screen-loading">checking status…</p>
               ) : (
                 <p className="empty">{up ? "open to connect" : "container not running"}</p>
               )}
@@ -337,6 +343,8 @@ export function ProjectPage({ id }: { id: string }) {
             </div>
             {dockSeen && me?.tmux_up ? (
               <XtermPane projectId={id} wsPath="/terminal/ws" kind="claude" />
+            ) : !statusLoaded ? (
+              <p className="empty screen-loading">checking status…</p>
             ) : (
               <p className="empty">
                 {me?.tmux_up ? "open to connect" : "this project isn't running — press ▶ Start above"}
