@@ -6,7 +6,7 @@ a safe bubble: it can only reach the sites you allow, it never sees your real
 credentials, and everything happens in a throwaway container that leaves your
 machine untouched. You watch it work in a live dashboard in your browser.
 
-![The Corral dashboard — file browser and a live Claude terminal](docs/internal/img/project-files.png)
+![Corral in action — Claude working in a sandbox, watched live from the dashboard](docs/internal/img/corral-demo.gif)
 
 ## Try it
 
@@ -80,8 +80,7 @@ run `corral help`.
 
 Curious how it works under the hood, or want to hack on Corral itself? Start with
 [`docs/developers.md`](docs/developers.md) — building from source, running the
-tests, the release process, and how to actually iterate on Corral (spoiler: use a
-local Claude, not Corral-on-Corral). The design is in
+tests, the release process, and how to actually iterate on Corral. The design is in
 [`docs/architecture.md`](docs/architecture.md).
 
 ```bash
