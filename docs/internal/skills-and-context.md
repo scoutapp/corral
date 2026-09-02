@@ -63,6 +63,21 @@ codebase and writes a first-pass `AGENTS.md` automatically. Edit it inline and
 If the repo already commits its own `CLAUDE.md`, corral's context is appended below
 a marker rather than clobbering it.
 
+### Staleness
+
+An `AGENTS.md` drifts as the codebase moves on. Once a repo's context is older than
+the staleness window (default **90 days ≈ 3 months**), corral shows a banner nudging
+you to refresh it — with a one-click **Regenerate** that kicks the same AI draft as
+the button above.
+
+The banner follows the context everywhere it's used: the repo's **Settings**, any
+**sandbox** started from the repo, and its **PR reviews** — so a stale context gets
+noticed wherever you're working, not just on the repo page. Dismiss it and it stays
+gone until the context changes (or goes stale) again.
+
+Tune the window under **Global settings → AGENTS.md context → Flag stale after
+(days)**: blank uses the default, and a negative value turns the check off.
+
 ## From the CLI
 
 ```

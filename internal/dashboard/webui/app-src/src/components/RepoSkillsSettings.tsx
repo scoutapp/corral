@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { getJSON, postJSON, putJSON, delJSON } from "../api/client";
+import { AgentContextStaleBanner } from "./AgentContextStaleBanner";
 
 // RepoSkillsSettings — a repo's Skills & context: the repo's own skills, the
 // global skills it inherits (each with an inherit/on/off toggle), and a
@@ -48,7 +49,20 @@ export function RepoSkillsSettings({ repoId }: { repoId: string }) {
   function startNew() {
     setEditing("new");
     setDraftName("");
-    setDraftContent("---\nname: my-skill\ndescription: When to use this skill.\n---\n\n");
+    // The description IS an exemplar: what it does + the situation to reach for
+    // it ("Use this when…"). That one line is what makes the skill fire. See
+    // GlobalSkillsManager's SKILL_TEMPLATE for the same shape.
+    setDraftContent(
+      "---\n" +
+        "name: my-skill\n" +
+        "description: >-\n" +
+        "  One line on what this does. Use this when <the exact situation that should\n" +
+        "  trigger it — the task, file type, or error that means this knowledge applies>.\n" +
+        "---\n\n" +
+        "# Instructions\n\n" +
+        "Keep the body a short runbook: the exact commands, the failure to watch for,\n" +
+        "the fix. Only what the model wouldn't already know.\n",
+    );
   }
   function startEdit(sk: RepoSkill) {
     setEditing(sk.id);
@@ -171,8 +185,13 @@ export function RepoSkillsSettings({ repoId }: { repoId: string }) {
             placeholder="SKILL.md — YAML frontmatter (name, description) then the instructions."
             value={draftContent}
             onChange={(e) => setDraftContent(e.target.value)}
-            rows={10}
+            rows={12}
           />
+          <p className="auto-hint">
+            The <code>description</code> is the one line the model matches to decide whether to load this skill. Say
+            what it does <b>and</b> name the situation — “Use this when…”. If it overlaps another skill, say which owns
+            which case.
+          </p>
           <div className="reposkills-editor-actions">
             <button type="button" className="auto-btn" onClick={saveSkill}>
               Save skill
@@ -251,6 +270,7 @@ export function RepoSkillsSettings({ repoId }: { repoId: string }) {
       )}
 
       {/* Agent context (CLAUDE.md) */}
+      <AgentContextStaleBanner repoId={repoId} />
       <div className="reposkills-head" style={{ marginTop: "1.1rem" }}>
         <h4 className="reposkills-h4">AGENTS.md context</h4>
         <button type="button" className="auto-btn link" onClick={regenerateContext} title="Explore the repo and draft it with AI">

@@ -6,7 +6,7 @@ a safe bubble: it can only reach the sites you allow, it never sees your real
 credentials, and everything happens in a throwaway container that leaves your
 machine untouched. You watch it work in a live dashboard in your browser.
 
-![The Corral dashboard — file browser and a live Claude terminal](docs/images/project-files.png)
+![The Corral dashboard — file browser and a live Claude terminal](docs/internal/img/project-files.png)
 
 ## Try it
 
@@ -14,16 +14,19 @@ machine untouched. You watch it work in a live dashboard in your browser.
 # 1. install (Docker required; the installer adds its other host deps for you)
 curl -fsSL https://raw.githubusercontent.com/scoutapp/corral/main/scripts/install.sh | bash
 
-# 2. set up a project and start working
-cd ~/my-project
-corral init                         # answer a few prompts, once per project
-corral populate-proxy-credentials   # set your credentials once
-corral start                        # start working — opens the dashboard
+# 2. two commands get you going
+corral populate-proxy-credentials   # set your credentials (once)
+corral start                        # start Claude + open the dashboard
 ```
 
-`start` prints a private link to the browser dashboard, where you watch Claude
-live, see what it's reaching out to, and drop into a terminal — one page covers
-**all** your projects at once.
+`start` prints a private link to the browser dashboard. From there, hit **New
+project** to spin up a sandbox on a repo (or a blank/existing directory) and start
+working — you watch Claude live, see what it's reaching out to, and drop into a
+terminal, with one page covering **all** your projects at once.
+
+Prefer the terminal? You can also drive a single project from the CLI: `cd` into
+it, run `corral init` once to set up `./.corral/`, then `corral start` runs Claude
+right there in that directory.
 
 **→ New here? Read the [usage guide](docs/usage.md)** — a screenshot tour of the
 dashboard and everything you can drive from your browser. It's the best place to
@@ -51,10 +54,10 @@ The ones you'll use most:
 
 | Command | What it does |
 |---|---|
-| `init` | set up a project (once) |
 | `populate-proxy-credentials` | set your credentials (once) |
 | `start` | start Claude + open the dashboard |
 | `dashboard` | open the dashboard on its own |
+| `init` | set up `./.corral/` in a directory (optional — only for the per-project CLI flow) |
 | `update` | update Corral itself |
 | `uninstall` | remove Corral from your machine |
 | `help` | full command list and options |
@@ -75,8 +78,11 @@ run `corral help`.
 
 ## For developers
 
-Curious how it works under the hood, or want to hack on Corral itself? See
-[`docs/architecture.md`](docs/architecture.md) for the design, and:
+Curious how it works under the hood, or want to hack on Corral itself? Start with
+[`docs/developers.md`](docs/developers.md) — building from source, running the
+tests, the release process, and how to actually iterate on Corral (spoiler: use a
+local Claude, not Corral-on-Corral). The design is in
+[`docs/architecture.md`](docs/architecture.md).
 
 ```bash
 git clone https://github.com/scoutapp/corral.git && cd corral
@@ -84,9 +90,6 @@ git clone https://github.com/scoutapp/corral.git && cd corral
 go build -o corral ./cmd/corral && ./corral list   # or run from the checkout
 go test ./... && (cd tests/e2e && npm test)                    # tests (e2e also runs in CI)
 ```
-
-Releases are cut by tagging a version (`git tag v0.1.0 && git push origin v0.1.0`);
-GitHub Actions builds the binaries and the installer downloads them.
 
 ## License
 
