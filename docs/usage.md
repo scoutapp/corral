@@ -19,7 +19,7 @@ corral dashboard        # opens the dashboard, prints a private link
 It runs on your machine only (loopback) and the link carries a token — **treat the
 link like a password**. One dashboard covers *all* your projects at once.
 
-![Projects overview](img/projects.png)
+![Projects overview](internal/img/projects.png)
 
 Each card is a project. The colored dots tell you at a glance where to look:
 
@@ -46,13 +46,13 @@ stored). New projects start automatically.
 Under **Repos**, each cloned repo has an **Issues** button that lists its open
 GitHub issues:
 
-![A repo's GitHub issues](img/repos-issues.png)
+![A repo's GitHub issues](internal/img/repos-issues.png)
 
 Hit **Spawn** on any issue and Corral offers to create a project for it —
 cloning the repo on a fresh branch, writing an `ISSUE.md`, and pre-typing a prompt
 into Claude so it can get straight to work. Nothing starts until you confirm:
 
-![Spawn-project modal for an issue](img/spawn-issue-modal.png)
+![Spawn-project modal for an issue](internal/img/spawn-issue-modal.png)
 
 ---
 
@@ -60,7 +60,7 @@ into Claude so it can get straight to work. Nothing starts until you confirm:
 
 Click a card to open it. This is where you watch and drive Claude.
 
-![Project — Files tab and live Claude terminal](img/project-files.png)
+![Project — Files tab and live Claude terminal](internal/img/project-files.png)
 
 **Top bar:**
 
@@ -88,14 +88,14 @@ type to it directly.
 The **Mitm Proxy** tab is the heart of "know what it's doing." Every outbound
 request is listed — method, host, path, status.
 
-![Mitm Proxy tab — every request Claude made](img/project-mitm.png)
+![Mitm Proxy tab — every request Claude made](internal/img/project-mitm.png)
 
 Click a monitored request to open its gutter and read the full exchange — headers
 and the request/response body. Below, an expanded call to Anthropic showing the
 exact payload that was sent (your real credential is injected by the proxy and
 never exposed to Claude):
 
-![Expanded request to Anthropic, showing the payload](img/project-mitm-payload.png)
+![Expanded request to Anthropic, showing the payload](internal/img/project-mitm-payload.png)
 
 Anything not being monitored is still logged, but its contents stay private. Want
 to start capturing a host you aren't yet? Hit **Monitor** on its row to decrypt it
@@ -106,7 +106,7 @@ from then on.
 The **Config** tab shows the live allowed-sites list and this project's settings.
 Changes apply to the running container immediately — no restart.
 
-![Config tab](img/project-config.png)
+![Config tab](internal/img/project-config.png)
 
 > CLI: `corral config` edits a project's config from the terminal.
 
@@ -116,7 +116,7 @@ Need a quick answer *about* the project without touching the main session? Open
 **Ask Claude** (`⌘K`). Heads up: this runs Claude on your **host** and is **not
 sandboxed** — it's read-only (Read/Grep/Glob) by default, and the panel says so.
 
-![Ask Claude panel](img/global-chat.png)
+![Ask Claude panel](internal/img/global-chat.png)
 
 ---
 
@@ -124,7 +124,7 @@ sandboxed** — it's read-only (Read/Grep/Glob) by default, and the panel says s
 
 The gear at the bottom-left holds settings shared across **every** project.
 
-![Global settings](img/global.png)
+![Global settings](internal/img/global.png)
 
 - **Shared credentials** — the real API keys/tokens Corral injects on your
   behalf. Claude never sees them; it runs with dummy values. Add them by hand, or
@@ -150,7 +150,7 @@ You can point updates at a different source (e.g. a fork or a self-hosted mirror
 under **Global settings → Update source** — a GitHub `owner/name` or a full
 release URL.
 
-![Update source setting](img/global-update-source.png)
+![Update source setting](internal/img/global-update-source.png)
 
 > CLI equivalents:
 > ```bash
