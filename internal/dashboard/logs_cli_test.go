@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -55,7 +56,11 @@ func TestCmdLogs(t *testing.T) {
 }
 
 // captureStdout runs fn with os.Stdout redirected to a pipe and returns what it
-// wrote.
+// wrote. The read end is drained CONCURRENTLY (a goroutine reading to EOF) — an
+// OS pipe has a small fixed kernel buffer (tens of KB), so a synchronous
+// read-after-fn deadlocks the moment fn writes more than fits: the write blocks
+// waiting for a reader that can't run until fn returns. A payload like
+// /api/openapi.json (~130KB) tripped exactly that.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 	old := os.Stdout
@@ -64,11 +69,17 @@ func captureStdout(t *testing.T, fn func()) string {
 		t.Fatal(err)
 	}
 	os.Stdout = wp
+
+	done := make(chan string, 1)
+	go func() {
+		b, _ := io.ReadAll(rp)
+		done <- string(b)
+	}()
+
 	fn()
-	wp.Close()
-	os.Stdout = old
-	buf := make([]byte, 64*1024)
-	n, _ := rp.Read(buf)
+	wp.Close()      // unblock the reader (io.ReadAll returns at EOF)
+	os.Stdout = old // restore before returning so later output isn't captured
+	out := <-done
 	rp.Close()
-	return string(buf[:n])
+	return out
 }
