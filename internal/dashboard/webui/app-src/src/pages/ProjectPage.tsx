@@ -8,6 +8,7 @@ import type { ConfigView, DindStatus, ProjectSource } from "../api/types";
 import { SSHLoadModal } from "../components/SSHLoadModal";
 import { XtermPane } from "../components/XtermPane";
 import { ChatPanel } from "../components/ChatPanel";
+import { AgentContextStaleBanner } from "../components/AgentContextStaleBanner";
 import { FilesTab } from "../tabs/FilesTab";
 import { DiffTab } from "../tabs/DiffTab";
 import { ConfigTab } from "../tabs/ConfigTab";
@@ -46,11 +47,17 @@ export function ProjectPage({ id }: { id: string }) {
   const me = useMemo(() => projects.find((p) => p.id === id), [projects, id]);
   const name = me?.name || id;
 
-  // The PR/issue this project was spawned from (for a back-link in the header).
+  // The PR/issue this project was spawned from (for a back-link in the header),
+  // and the primary repo id (any origin) so a stale-AGENTS.md banner can show on
+  // a sandbox derived from that repo.
   const [source, setSource] = useState<ProjectSource | null>(null);
+  const [repoId, setRepoId] = useState<string | undefined>(undefined);
   useEffect(() => {
     getJSON<ConfigView>(`/p/${id}/config`)
-      .then((c) => setSource(c.source || null))
+      .then((c) => {
+        setSource(c.source || null);
+        setRepoId(c.repo_id || undefined);
+      })
       .catch(() => {});
   }, [id]);
 
@@ -231,6 +238,8 @@ export function ProjectPage({ id }: { id: string }) {
             💬 Ask Claude
           </button>
       </header>
+
+      <AgentContextStaleBanner repoId={repoId} />
 
       {dindStatus &&
         (dindStatus.cacheName || dindStatus.reason) &&

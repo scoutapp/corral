@@ -12,6 +12,11 @@ import (
 // here instead (see GlobalSettings.UpdateRepo).
 const DefaultUpdateRepo = "scoutapp/corral"
 
+// DefaultAgentContextStaleDays is the built-in staleness window for a repo's
+// AGENTS.md agent context: ~3 months. Past this age the dashboard nudges you to
+// regenerate it (the codebase has likely drifted from what the context says).
+const DefaultAgentContextStaleDays = 90
+
 // GlobalSettings holds cross-project, host-level preferences stored in
 // ~/.corral/global-settings.json. It is intentionally small — individual
 // concerns (ssh keys, credentials) keep their own files; this is the catch-all
@@ -88,6 +93,13 @@ type GlobalSettings struct {
 	// deliberate off.
 	MergeAutoTeardown *bool `json:"merge_auto_teardown,omitempty"`
 
+	// AgentContextStaleDays is the age (in days) past which a repo's AGENTS.md
+	// agent context is considered stale, surfacing a "regenerate" banner on the
+	// repo and on any sandbox/PR-review derived from it. Zero means "use the
+	// built-in default" (DefaultAgentContextStaleDays, ~3 months). A negative
+	// value disables the check entirely.
+	AgentContextStaleDays int `json:"agent_context_stale_days,omitempty"`
+
 	// MergeMode is which merge EXECUTION mode the PR merge split-button makes
 	// primary: "host" (host Claude with Bash against a throwaway host checkout —
 	// fast, not sandboxed), "sandbox" (one-shot container, Claude rebases/merges,
@@ -153,6 +165,17 @@ func (gs *GlobalSettings) ApiWritesAllowed() bool {
 // nil means "never chosen" → the dashboard should prompt.
 func (gs *GlobalSettings) ApiWritesConfigured() bool {
 	return gs != nil && gs.ApiWritesEnabled != nil
+}
+
+// AgentContextStaleDaysEffective returns the effective staleness window in days.
+// Zero (never set) → DefaultAgentContextStaleDays. A negative stored value is a
+// deliberate "disable the check" and is returned as-is (callers treat <= 0 as
+// off).
+func (gs *GlobalSettings) AgentContextStaleDaysEffective() int {
+	if gs == nil || gs.AgentContextStaleDays == 0 {
+		return DefaultAgentContextStaleDays
+	}
+	return gs.AgentContextStaleDays
 }
 
 // GlobalSettingsPath is ~/.corral/global-settings.json.
