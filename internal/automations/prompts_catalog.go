@@ -156,7 +156,9 @@ func PromptCatalog() []PromptDef {
 			Name:     "Project start",
 			UsedWhen: "Typed into Claude when a plain sandbox project launches (New project, or Verify-in-sandbox without a preset).",
 			Default: "You're working in a sandboxed checkout of {{repo}} on branch {{branch}}. " +
-				"Explore the codebase, then help with the task at hand. " + sshGuidanceSlot + "\n\n" + engPrinciplesSlot,
+				"Explore the codebase, then help with the task at hand. For anything non-trivial, outline your " +
+				"approach in a few bullets and confirm it fits before you start editing — a wrong plan is cheap to " +
+				"correct, a wrong 400-line diff is not. " + sshGuidanceSlot + "\n\n" + engPrinciplesSlot,
 			Slots: []string{"repo", "branch", "ssh_guidance", "engineering_principles"},
 		},
 		{

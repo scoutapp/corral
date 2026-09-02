@@ -8,7 +8,21 @@ import { getJSON, postJSON, putJSON, delJSON } from "../api/client";
 
 type GlobalSkill = { id: number; name: string; content: string; autoAll: boolean };
 
-const SKILL_TEMPLATE = "---\nname: my-skill\ndescription: When to use this skill.\n---\n\n";
+// The template's description IS an exemplar, not a fill-in-the-blank: it models
+// the pattern that actually makes a skill fire — say what it does AND name the
+// situation to reach for it ("Use this when…"). The description is the one line
+// the model matches your request against to decide whether to load the skill, so
+// a vague topic label ("commit conventions") loses; a named situation wins.
+const SKILL_TEMPLATE =
+  "---\n" +
+  "name: my-skill\n" +
+  "description: >-\n" +
+  "  One line on what this does. Use this when <the exact situation that should\n" +
+  "  trigger it — the task, file type, or error that means this knowledge applies>.\n" +
+  "---\n\n" +
+  "# Instructions\n\n" +
+  "Keep the body a short runbook: the exact commands, the failure to watch for,\n" +
+  "the fix. Only what the model wouldn't already know.\n";
 
 export function GlobalSkillsManager() {
   const [skills, setSkills] = useState<GlobalSkill[]>([]);
@@ -108,8 +122,12 @@ export function GlobalSkillsManager() {
             placeholder="SKILL.md — YAML frontmatter (name, description) then the instructions."
             value={draftContent}
             onChange={(e) => setDraftContent(e.target.value)}
-            rows={10}
+            rows={12}
           />
+          <p className="auto-hint">
+            The <code>description</code> is the one line the model matches to decide whether to load this skill. Say
+            what it does <b>and</b> name the situation — “Use this when…”. A topic label loses; a named situation fires.
+          </p>
           <label className="reposkills-autoall">
             <input type="checkbox" checked={draftAutoAll} onChange={(e) => setDraftAutoAll(e.target.checked)} />{" "}
             Add to all repos by default
