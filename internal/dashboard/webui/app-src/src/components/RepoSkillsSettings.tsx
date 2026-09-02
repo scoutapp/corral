@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { getJSON, postJSON, putJSON, delJSON } from "../api/client";
+import { AgentContextStaleBanner } from "./AgentContextStaleBanner";
 
 // RepoSkillsSettings — a repo's Skills & context: the repo's own skills, the
 // global skills it inherits (each with an inherit/on/off toggle), and a
@@ -269,6 +270,7 @@ export function RepoSkillsSettings({ repoId }: { repoId: string }) {
       )}
 
       {/* Agent context (CLAUDE.md) */}
+      <AgentContextStaleBanner repoId={repoId} />
       <div className="reposkills-head" style={{ marginTop: "1.1rem" }}>
         <h4 className="reposkills-h4">AGENTS.md context</h4>
         <button type="button" className="auto-btn link" onClick={regenerateContext} title="Explore the repo and draft it with AI">

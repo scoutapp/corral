@@ -110,6 +110,7 @@ const REPO: DocPage = {
         "**AGENTS.md context** — Corral drafts it with AI when you add the repo; **Regenerate with AI** re-runs it, or edit it inline.",
       ],
     },
+    { p: "When a context goes stale (older than ~3 months by default), a banner nudges you to **Regenerate** it — here, on any sandbox from this repo, and on its PR reviews. Tune the window in **Global settings**." },
     { h: "Automations (Settings)" },
     { p: "Repo-scoped prompts, event hooks, and flows. Global ones apply everywhere; repo ones add on top." },
   ],
@@ -149,12 +150,13 @@ const GLOBAL: DocPage = {
         "Default SSH keys loaded into every sandbox's scoped agent.",
         "Global automations (prompts, hooks, flows) that apply everywhere.",
         "**PR merging** — the default merge mode (sandbox / host / plain), the default strategy, and whether a merge sandbox auto-tears-down.",
+        "**AGENTS.md context** — how old a repo's agent context may get before a *regenerate* banner appears (default ~3 months; blank = default, negative = off).",
         "The dashboard's own preferences.",
       ],
     },
     { p: "Anything set per-repo or per-project layers on top of these." },
   ],
-  more: "docs/README.md",
+  more: "docs/skills-and-context.md",
 };
 
 const AUTOMATIONS: DocPage = {

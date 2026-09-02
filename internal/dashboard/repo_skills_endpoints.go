@@ -250,7 +250,16 @@ func (d *dashboardServer) handleRepoAgentContext(w http.ResponseWriter, r *http.
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"content": content})
+		// Include the staleness read so the editor and the shared banner (repo,
+		// project, PR review) all render the same "regenerate" nudge.
+		st := agentContextStatus(svc, repoID)
+		writeJSON(w, map[string]any{
+			"content":       content,
+			"updatedAt":     st.UpdatedAt,
+			"ageDays":       st.AgeDays,
+			"thresholdDays": st.ThresholdDays,
+			"stale":         st.Stale,
+		})
 	case http.MethodPut:
 		var body struct {
 			Content string `json:"content"`

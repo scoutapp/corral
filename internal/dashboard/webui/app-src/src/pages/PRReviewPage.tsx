@@ -4,6 +4,7 @@ import { getJSON, postJSON, postRaw, delJSON, wsURL } from "../api/client";
 import type { CachedRepo, LinkedIssue, PrItem } from "../api/types";
 import { useBodyClass } from "../hooks/useBodyClass";
 import { ChatPanel } from "../components/ChatPanel";
+import { AgentContextStaleBanner } from "../components/AgentContextStaleBanner";
 import { NewProjectModal } from "./ReposModals";
 import { renderMarkdown } from "../lib/markdown";
 import {
@@ -943,6 +944,8 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
           </>
         )}
       </header>
+
+      <AgentContextStaleBanner repoId={repoId} />
 
       <div className="pr-review-page">
         <div className="pr-experimental-note">

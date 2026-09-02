@@ -167,6 +167,8 @@ export interface GlobalView {
   merge_strategy: string; // global default merge method ("" = never set → ask per repo)
   merge_mode: string; // default primary merge mode: sandbox|host|plain
   merge_auto_teardown: boolean; // merge sandbox auto-removes itself once the PR is merged
+  agent_context_stale_days: number; // AGENTS.md stale window; 0 = default, <0 = off
+  agent_context_stale_days_default: number;
 }
 export interface GlobalEdit {
   set_creds?: CredSet[];
@@ -185,6 +187,7 @@ export interface GlobalEdit {
   merge_strategy?: string; // "" clears the global default (repos ask on first merge)
   merge_mode?: string; // sandbox|host|plain
   merge_auto_teardown?: boolean;
+  agent_context_stale_days?: number; // 0 = back to default, negative = disable
 }
 
 // GET /update-status -> update availability for the global banner.

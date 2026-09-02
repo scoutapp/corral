@@ -142,6 +142,13 @@ type globalView struct {
 	MergeStrategy     string `json:"merge_strategy"`
 	MergeMode         string `json:"merge_mode"`
 	MergeAutoTeardown bool   `json:"merge_auto_teardown"`
+
+	// AgentContextStaleDays — age (days) past which a repo's AGENTS.md context is
+	// flagged stale (banner nudges to regenerate). Zero = built-in default,
+	// surfaced separately so the UI can show it as a placeholder; a negative value
+	// disables the check.
+	AgentContextStaleDays        int `json:"agent_context_stale_days"`
+	AgentContextStaleDaysDefault int `json:"agent_context_stale_days_default"`
 }
 
 func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Request) {
@@ -190,6 +197,8 @@ func (d *dashboardServer) handleGlobalRead(w http.ResponseWriter, r *http.Reques
 	view.MergeStrategy = gs.MergeStrategy // raw ("" = never set → ask per repo)
 	view.MergeMode = gs.MergeModeOrDefault()
 	view.MergeAutoTeardown = gs.MergeAutoTeardownOn()
+	view.AgentContextStaleDays = gs.AgentContextStaleDays // raw (0 = default)
+	view.AgentContextStaleDaysDefault = config.DefaultAgentContextStaleDays
 
 	writeJSON(w, view)
 }
@@ -217,9 +226,10 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 		ApiWritesEnabled     *bool     `json:"api_writes_enabled,omitempty"`
 		DindDefault          *bool     `json:"dind_default,omitempty"`
 		DindRepoCacheDefault *bool     `json:"dind_repo_cache_default,omitempty"`
-		MergeStrategy        *string   `json:"merge_strategy,omitempty"`
-		MergeMode            *string   `json:"merge_mode,omitempty"`
-		MergeAutoTeardown    *bool     `json:"merge_auto_teardown,omitempty"`
+		MergeStrategy         *string   `json:"merge_strategy,omitempty"`
+		MergeMode             *string   `json:"merge_mode,omitempty"`
+		MergeAutoTeardown     *bool     `json:"merge_auto_teardown,omitempty"`
+		AgentContextStaleDays *int      `json:"agent_context_stale_days,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&edit); err != nil {
 		http.Error(w, "bad payload: "+err.Error(), http.StatusBadRequest)
@@ -425,6 +435,23 @@ func (d *dashboardServer) handleGlobalApply(w http.ResponseWriter, r *http.Reque
 			results = append(results, "✓ merge sandboxes auto-remove themselves once the PR is merged")
 		} else {
 			results = append(results, "✓ merge sandboxes are left running after merge (remove them manually)")
+		}
+	}
+
+	if edit.AgentContextStaleDays != nil {
+		gs := config.ReadGlobalSettings()
+		gs.AgentContextStaleDays = *edit.AgentContextStaleDays // 0 = default, <0 = off
+		if err := config.WriteGlobalSettings(gs); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		switch {
+		case *edit.AgentContextStaleDays < 0:
+			results = append(results, "✓ AGENTS.md staleness check disabled")
+		case *edit.AgentContextStaleDays == 0:
+			results = append(results, fmt.Sprintf("✓ AGENTS.md staleness window reset to default (%d days)", config.DefaultAgentContextStaleDays))
+		default:
+			results = append(results, fmt.Sprintf("✓ AGENTS.md flagged stale after %d days", *edit.AgentContextStaleDays))
 		}
 	}
 

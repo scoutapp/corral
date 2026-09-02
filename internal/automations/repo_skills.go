@@ -341,6 +341,23 @@ func (s *Service) RepoAgentContext(repoID string) (string, error) {
 	return spec.Content, nil
 }
 
+// RepoAgentContextMeta returns a repo's context along with the RFC3339-ish
+// updatedAt stamp of when it was last saved/regenerated (SQLite's
+// "YYYY-MM-DD HH:MM:SS" UTC). ok is false when the repo has no saved context.
+// Callers use updatedAt to compute staleness.
+func (s *Service) RepoAgentContextMeta(repoID string) (content, updatedAt string, ok bool) {
+	if repoID == "" {
+		return "", "", false
+	}
+	a, found := s.agentContextAction(repoID)
+	if !found {
+		return "", "", false
+	}
+	var spec skillSpec
+	_ = json.Unmarshal([]byte(a.Spec), &spec)
+	return spec.Content, a.UpdatedAt, true
+}
+
 // SetRepoAgentContext upserts a repo's CLAUDE.md context. Empty content clears it.
 func (s *Service) SetRepoAgentContext(repoID, content string) error {
 	if repoID == "" {

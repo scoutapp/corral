@@ -655,6 +655,17 @@ table.projects th, table.projects td {
 .mitm-table .s-4xx { color: #d1242f; }
 .mitm-table .s-5xx { color: #cf222e; font-weight: 600; }
 .mitm-table .s-pending { color: var(--muted); }
+/* First-load skeleton: shimmer placeholders shaped like flow rows, shown until
+   the first poll resolves so the "No traffic captured yet." empty state doesn't
+   flash before real rows arrive. Reuses the .sk shimmer shape (defined below)
+   but with a lighter gradient so the bars are visible on the dark table. */
+.mitm-skeleton .m-row { cursor: default; }
+.mitm-skeleton .m-row:hover { background: none; }
+.mitm-skeleton .sk-cell {
+  width: 100%; height: 0.8rem; vertical-align: middle;
+  background: linear-gradient(90deg, var(--border) 25%, #333c4e 50%, var(--border) 75%);
+  background-size: 200% 100%;
+}
 
 /* Titled screen frame — wraps embedded live surfaces (terminal, firewall log)
    so a near-black screen doesn't blend into the near-black page. A header strip
