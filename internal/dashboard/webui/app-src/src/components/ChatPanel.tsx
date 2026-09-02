@@ -85,6 +85,16 @@ export function ChatPanel({
   const [input, setInput] = useState("");
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
+  // A follow-up typed while a turn is streaming. Instead of dropping it (the old
+  // behavior — Enter did nothing while busy), we queue ONE message and fire it as
+  // the next turn when the current one ends. queuedRef mirrors it so the WS
+  // onmessage closure (turn_end) can read + dispatch without a reconnect.
+  const [queued, setQueued] = useState<string | null>(null);
+  const queuedRef = useRef<string | null>(null);
+  queuedRef.current = queued;
+  // sendPromptRef lets the turn_end handler dispatch the queued message through the
+  // same code path submit() uses, without capturing a stale closure.
+  const sendPromptRef = useRef<(text: string) => void>(() => {});
   const [reconnect, setReconnect] = useState(0); // bump to force a fresh connection
   const wsRef = useRef<WebSocket | null>(null);
   const logRef = useRef<HTMLDivElement | null>(null);
@@ -223,6 +233,14 @@ export function ChatPanel({
           curAssistantIdx.current = null;
           curText.current = "";
           lastToolIdx.current = null;
+          // A message queued during this turn now fires as the next turn.
+          if (queuedRef.current != null) {
+            const next = queuedRef.current;
+            setQueued(null);
+            queuedRef.current = null;
+            // Defer so setBusy(false) has committed before we start the next turn.
+            setTimeout(() => sendPromptRef.current(next), 0);
+          }
           break;
       }
     };
@@ -237,14 +255,32 @@ export function ChatPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wsPath, scroll, reconnect]);
 
+  // sendPrompt does the actual send: append the user bubble, ship the frame, and
+  // mark busy. Used for a direct send AND for firing a queued message on turn_end.
+  const sendPrompt = useCallback(
+    (text: string) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      setMsgs((m) => [...m, { role: "user", html: renderMarkdown(text) }]);
+      wsRef.current.send(JSON.stringify({ prompt: text, ctx: getCtx?.() || "" }));
+      setBusy(true);
+      scroll();
+    },
+    [getCtx, scroll],
+  );
+  sendPromptRef.current = sendPrompt;
+
   const submit = () => {
     const text = input.trim();
-    if (!ready || busy || !text) return;
-    setMsgs((m) => [...m, { role: "user", html: renderMarkdown(text) }]);
-    wsRef.current?.send(JSON.stringify({ prompt: text, ctx: getCtx?.() || "" }));
+    if (!ready || !text) return;
+    // While a turn is streaming, queue the message (fired on turn_end) instead of
+    // dropping it. One queued message; a second send replaces it.
+    if (busy) {
+      setQueued(text);
+      setInput("");
+      return;
+    }
+    sendPrompt(text);
     setInput("");
-    setBusy(true);
-    scroll();
   };
   const cancel = () => {
     if (ready && busy) wsRef.current?.send(JSON.stringify({ action: "cancel" }));
@@ -263,6 +299,8 @@ export function ChatPanel({
       }
     }
     setMsgs([]);
+    setQueued(null);
+    queuedRef.current = null;
     curText.current = "";
     curAssistantIdx.current = null;
     lastToolIdx.current = null;
@@ -349,6 +387,18 @@ export function ChatPanel({
             </div>
           </div>
         )}
+        {queued != null && (
+          <div className="msg user chat-queued" title="Sends when the current turn finishes">
+            <div className="avatar">Y</div>
+            <div className="bubble">
+              <span className="chat-queued-tag">queued</span>
+              {queued}
+              <button type="button" className="chat-queued-x" title="Cancel this queued message" onClick={() => setQueued(null)}>
+                ×
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       <div className="chat-composer">
         <textarea
@@ -365,13 +415,14 @@ export function ChatPanel({
           rows={1}
           style={{ maxHeight: 160 }}
         />
-        {busy ? (
+        {/* While busy, Send stays available and queues the message (fired when the
+            current turn ends); Stop cancels the in-flight turn. */}
+        <button id="send" disabled={!ready || input.trim() === ""} onClick={submit} title={busy ? "Queue this message — sends when the current turn finishes" : "Send"}>
+          {busy ? "Queue" : "Send"}
+        </button>
+        {busy && (
           <button id="stop" onClick={cancel}>
             Stop
-          </button>
-        ) : (
-          <button id="send" disabled={!ready || input.trim() === ""} onClick={submit}>
-            Send
           </button>
         )}
       </div>

@@ -1206,6 +1206,19 @@ table.projects th, table.projects td {
 .chat-root .meta { max-width: 760px; margin: -8px auto 18px; color: var(--c-muted); font-size: 11.5px; padding-left: 36px; }
 .chat-root .meta.error { color: #B23; }
 .chat-root .typing { color: var(--c-muted); font-style: italic; }
+/* A message queued while a turn is streaming — a dimmed user bubble with a
+   "queued" tag and a cancel ×; it fires as the next turn on turn_end. */
+.chat-root .msg.chat-queued .bubble { opacity: 0.72; border: 1px dashed var(--line); position: relative; }
+.chat-queued-tag {
+  display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 8px;
+  font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em;
+  background: var(--clay-soft); color: var(--clay); vertical-align: 1px;
+}
+.chat-queued-x {
+  margin-left: 8px; border: none; background: none; cursor: pointer;
+  color: var(--c-muted); font-size: 1rem; line-height: 1; padding: 0;
+}
+.chat-queued-x:hover { color: var(--clay); }
 .chat-composer { flex: 0 0 auto; border-top: 1px solid var(--line); background: var(--cream-hi); padding: 10px 16px 14px; display: flex; gap: 8px; align-items: flex-end; }
 .chat-composer textarea {
   flex: 1 1 auto; border: 1px solid var(--line); outline: none; resize: none; background: #fff;
