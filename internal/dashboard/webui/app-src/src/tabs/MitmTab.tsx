@@ -60,39 +60,86 @@ type Row =
 
 const BODY_CAP = 512 * 1024;
 
+// How many times to re-try fetching a body before giving up, and the gap between
+// tries. mitmweb serves content.data only once it has finalized the message, so a
+// body fetched the instant a flow is expanded can 404/error while the response is
+// still arriving (streaming/SSE responses especially). That's "not ready yet", not
+// a real failure — so we retry a few times before showing an error.
+const BODY_RETRY_MAX = 6;
+const BODY_RETRY_MS = 700;
+
 function BodySlot({ projectId, flowId, side, msg }: { projectId: string; flowId: string; side: "request" | "response"; msg?: MitmMessage }) {
-  const [html, setHtml] = useState<string>("loading…");
+  // status drives the affordance: a spinner while loading/retrying, the body when
+  // ready, an honest message when it truly can't be shown.
+  const [state, setState] = useState<{ status: "loading" | "ready" | "error"; text: string }>({ status: "loading", text: "" });
+
   useEffect(() => {
     let alive = true;
     if (msg?.contentLength === 0) {
-      setHtml("(empty)");
+      setState({ status: "ready", text: "(empty)" });
       return;
     }
-    // Don't flash back to "loading…" on a tab switch — keep the current text until
-    // the new body arrives, so switching Request/Response doesn't flicker.
-    getText(api(projectId, `/mitm/flows/${flowId}/${side}/content`))
-      .then((text) => {
-        if (!alive) return;
-        if (text.length > BODY_CAP) {
-          setHtml(`body too large to display (${fmtBytes(text.length)})`);
-          return;
-        }
-        let out = text;
-        if (contentTypeOf(msg).toLowerCase().includes("json")) {
-          try {
-            out = JSON.stringify(JSON.parse(text), null, 2);
-          } catch {
-            /* leave raw */
+    // Keep whatever's shown until the new body arrives (no flash back to a spinner
+    // on a Request/Response tab switch); the spinner only shows on first load.
+    setState((s) => (s.status === "ready" ? s : { status: "loading", text: "" }));
+
+    let timer: number | undefined;
+    // The response side is still in flight until it has a timestamp_end — while it
+    // is, a missing/short body is expected, so keep retrying rather than erroring.
+    const stillStreaming = () => side === "response" && !msg?.timestamp_end;
+
+    const attempt = (tries: number) => {
+      getText(api(projectId, `/mitm/flows/${flowId}/${side}/content`))
+        .then((text) => {
+          if (!alive) return;
+          if (text.length > BODY_CAP) {
+            setState({ status: "ready", text: `body too large to display (${fmtBytes(text.length)})` });
+            return;
           }
-        }
-        setHtml(out || "(empty)");
-      })
-      .catch((e) => alive && setHtml(`failed to load body: ${(e as Error).message}`));
+          // An empty body on a response that's still streaming isn't final — wait
+          // for more rather than showing "(empty)".
+          if (text === "" && stillStreaming() && tries < BODY_RETRY_MAX) {
+            timer = window.setTimeout(() => alive && attempt(tries + 1), BODY_RETRY_MS);
+            return;
+          }
+          let out = text;
+          if (contentTypeOf(msg).toLowerCase().includes("json")) {
+            try {
+              out = JSON.stringify(JSON.parse(text), null, 2);
+            } catch {
+              /* leave raw */
+            }
+          }
+          setState({ status: "ready", text: out || "(empty)" });
+        })
+        .catch((e) => {
+          if (!alive) return;
+          // Not ready yet (mitmweb hasn't finalized the body) or a transient blip —
+          // retry while the flow could still be completing.
+          if (tries < BODY_RETRY_MAX && (stillStreaming() || tries < 2)) {
+            timer = window.setTimeout(() => alive && attempt(tries + 1), BODY_RETRY_MS);
+            return;
+          }
+          setState({ status: "error", text: `couldn't load body: ${(e as Error).message}` });
+        });
+    };
+    attempt(0);
+
     return () => {
       alive = false;
+      if (timer) window.clearTimeout(timer);
     };
   }, [projectId, flowId, side, msg]);
-  return <pre className="mitm-body">{html}</pre>;
+
+  if (state.status === "loading") {
+    return (
+      <div className="mitm-body mitm-body-loading">
+        <span className="mitm-spinner" aria-hidden="true" />
+        loading body…
+      </div>
+    );
+  }
+  return <pre className={`mitm-body${state.status === "error" ? " mitm-body-error" : ""}`}>{state.text}</pre>;
 }
 
 // MitmSkeleton: placeholder rows shown while the first poll is in flight, shaped
