@@ -17,14 +17,34 @@ import (
 	"github.com/scoutapp/corral/internal/config"
 )
 
-// withContextHint prepends a page-context note to a prompt on the first turn of a
-// global chat, so the assistant knows where the user is ("this repo" resolves).
-// firstTurn gates it — later turns already carry the context via --resume.
+// chatQuestionGuidance teaches the host chat a tiny convention for asking the
+// user a quick multiple-choice question, which the browser renders as clickable
+// chips (clicking one sends that label as the next turn). We use a convention —
+// not the AskUserQuestion tool — because AskUserQuestion is auto-dismissed in
+// headless (`claude -p`) mode: it can't be answered over the stream, so the model
+// would just get an empty result. A fenced block IS answerable: it's plain text
+// the model already produces, and the UI makes the options one-click.
+//
+// Injected on the first turn only (like the context hint); later turns inherit it
+// via --resume. Kept short and optional so it never forces a question.
+const chatQuestionGuidance = "When a choice is genuinely ambiguous and a quick decision from the user would " +
+	"unblock you, you MAY ask with a fenced `corral-question` block instead of prose — the UI renders the " +
+	"options as one-click buttons. Use it sparingly (skip it when you can reasonably proceed). Format:\n" +
+	"```corral-question\nquestion: <the question>\n- <option one>\n- <option two>\n```\n" +
+	"One question per block, 2–4 short options. After the block, stop and wait for the answer."
+
+// withContextHint prepends a page-context note (and, on the first turn, the
+// question-asking convention) to a prompt. firstTurn gates both — later turns
+// already carry them via --resume.
 func withContextHint(prompt, hint string, firstTurn bool) string {
-	if hint == "" || !firstTurn {
+	if !firstTurn {
 		return prompt
 	}
-	return "[Context: " + hint + "]\n\n" + prompt
+	prefix := chatQuestionGuidance + "\n\n"
+	if hint != "" {
+		prefix = "[Context: " + hint + "]\n\n" + prefix
+	}
+	return prefix + prompt
 }
 
 // truncate shortens s to at most n runes, appending an ellipsis when clipped.

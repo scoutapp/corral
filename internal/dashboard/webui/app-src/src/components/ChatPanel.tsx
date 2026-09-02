@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { wsURL } from "../api/client";
 import { renderMarkdown } from "../lib/markdown";
 import { parseLiveViewReady } from "../lib/liveViewReady";
+import { parseChatQuestion } from "../lib/chatQuestion";
 import { LiveViewReadyCard } from "./LiveViewReadyCard";
 
 // Ask Claude: a host-claude chat over /p/<id>/chat/ws. The user's turn is sent
@@ -285,6 +286,12 @@ export function ChatPanel({
   const cancel = () => {
     if (ready && busy) wsRef.current?.send(JSON.stringify({ action: "cancel" }));
   };
+  // answer sends a picked corral-question option as the next turn. The chips only
+  // render when idle (see the render gate), so a direct send is safe.
+  const answer = (opt: string) => {
+    if (!ready || busy) return;
+    sendPrompt(opt);
+  };
 
   // newChat clears the persisted transcript + session id, then bumps the reconnect
   // nonce so the connect effect tears down and reopens WITHOUT a resume id — a
@@ -368,6 +375,32 @@ export function ChatPanel({
                 <div className="bubble">
                   {lvr.rest && <div dangerouslySetInnerHTML={{ __html: renderMarkdown(lvr.rest) }} />}
                   <LiveViewReadyCard data={lvr} />
+                </div>
+              </div>
+            );
+          }
+          // A `corral-question` block (only on the LAST assistant message, once the
+          // turn has finished streaming) renders as clickable option chips; a click
+          // sends that option as the answer. Only the newest one is interactive so
+          // stale questions from earlier in the transcript don't re-arm.
+          const isLast = i === msgs.length - 1;
+          const cq = m.role === "assistant" && isLast && !busy ? parseChatQuestion(m.text || "") : null;
+          if (cq) {
+            return (
+              <div key={i} className={`msg ${m.role}`}>
+                <div className="avatar">✳</div>
+                <div className="bubble">
+                  {cq.rest && <div dangerouslySetInnerHTML={{ __html: renderMarkdown(cq.rest) }} />}
+                  <div className="chat-question">
+                    <div className="chat-question-q">{cq.question}</div>
+                    <div className="chat-question-opts">
+                      {cq.options.map((opt, oi) => (
+                        <button key={oi} type="button" className="chat-question-opt" onClick={() => answer(opt)}>
+                          {opt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             );

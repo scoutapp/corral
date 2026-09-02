@@ -1219,6 +1219,18 @@ table.projects th, table.projects td {
   color: var(--c-muted); font-size: 1rem; line-height: 1; padding: 0;
 }
 .chat-queued-x:hover { color: var(--clay); }
+/* A `corral-question` block rendered as clickable option chips (see
+   chatQuestion.ts). Shown on the latest assistant message when the turn is idle;
+   clicking a chip sends that option as the next turn. */
+.chat-question { margin-top: 8px; }
+.chat-question-q { font-weight: 600; margin-bottom: 6px; }
+.chat-question-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.chat-question-opt {
+  border: 1px solid var(--clay); color: var(--clay); background: transparent;
+  border-radius: 14px; padding: 5px 12px; font-size: 0.85rem; cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.chat-question-opt:hover { background: var(--clay); color: var(--cream-hi, #fff); }
 .chat-composer { flex: 0 0 auto; border-top: 1px solid var(--line); background: var(--cream-hi); padding: 10px 16px 14px; display: flex; gap: 8px; align-items: flex-end; }
 .chat-composer textarea {
   flex: 1 1 auto; border: 1px solid var(--line); outline: none; resize: none; background: #fff;
