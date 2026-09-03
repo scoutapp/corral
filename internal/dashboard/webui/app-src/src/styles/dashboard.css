@@ -2710,6 +2710,7 @@ table.projects th, table.projects td {
 
 .chatdock {
   position: fixed; top: 0; right: 0; height: 100vh; width: min(440px, 92vw);
+  /* width is overridden inline (draggable, persisted); this is the fallback. */
   z-index: 70;
   /* Raised-surface shade, one step off the page --bg, so the dock reads as a
      panel floating over the page instead of blending into it. The chat tabs
@@ -2723,6 +2724,12 @@ table.projects th, table.projects td {
   transform: translateX(100%); transition: transform 0.18s ease;
 }
 .chatdock.open { transform: translateX(0); }
+/* Left-edge drag handle to resize the whole dock. Sits above the content. */
+.chatdock-resize {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 6px;
+  cursor: ew-resize; background: transparent; z-index: 3;
+}
+.chatdock-resize:hover { background: var(--accent); opacity: 0.5; }
 .chatdock-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 0.7rem 0.9rem; border-bottom: 1px solid var(--border);
@@ -2755,12 +2762,25 @@ table.projects th, table.projects td {
 /* Work tab: left rail of host-merge jobs + a viewer for the selected one. */
 .work-tab { display: flex; flex: 1; min-height: 0; }
 .work-rail {
-  width: 11rem; flex: 0 0 11rem; overflow-y: auto;
+  /* flex-basis is set inline (draggable, persisted); default via the fallback. */
+  flex: 0 0 150px; overflow-y: auto; overflow-x: hidden;
   border-right: 1px solid var(--border);
   /* Recess the rail a touch below the dock panel so the list vs. viewer split
      reads as two layers, not one flat grey sheet. */
   background: color-mix(in srgb, var(--bg) 55%, var(--panel));
 }
+/* Drag handle between the jobs rail and the viewer. */
+.work-rail-resize {
+  flex: 0 0 5px; align-self: stretch; cursor: ew-resize;
+  background: transparent; margin-left: -3px; z-index: 2;
+}
+.work-rail-resize:hover { background: var(--accent); opacity: 0.5; }
+/* Global conductors: reuse the work-tab rail/view layout. When there's only one
+   conductor, a slim header holds the "+ New conductor" affordance above the chat. */
+.conductors { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.conductors.work-tab { flex-direction: row; } /* multi-conductor: rail + view */
+.conductors-solo-head { display: flex; justify-content: flex-end; padding: 0.3rem 0.5rem 0; }
+.conductors-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .work-rail-item { display: flex; align-items: stretch; border-bottom: 1px solid var(--border); }
 .work-rail-btn {
   flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem;

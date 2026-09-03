@@ -15,8 +15,12 @@ type GlobalResp = { api_writes_enabled: boolean; api_writes_configured: boolean 
 
 export function FirstRunChat({
   onConvMeta,
+  persistKey = "global",
 }: {
   onConvMeta?: (meta: { convId: number; convUuid: string }) => void;
+  // localStorage key for this conductor's transcript + session, so multiple
+  // global conductors each keep their own conversation. Defaults to "global".
+  persistKey?: string;
 } = {}) {
   const [cap, setCap] = useState<CapResp | null>(null);
   const [writes, setWrites] = useState<GlobalResp | null>(null);
@@ -42,7 +46,7 @@ export function FirstRunChat({
     <ChatPanel
       wsPath="/chat/ws"
       getCtx={() => pageContext(window.location.pathname)}
-      persistKey="global"
+      persistKey={persistKey}
       canAct={cap.capability === "act"}
       onConvMeta={onConvMeta}
     />

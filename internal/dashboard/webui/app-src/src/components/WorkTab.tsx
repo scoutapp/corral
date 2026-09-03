@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getJSON, delJSON, postJSON } from "../api/client";
 import { ChatPanel } from "./ChatPanel";
+import { useDragResize } from "../hooks/useDragResize";
+import { usePersistentState } from "../hooks/usePersistentState";
+
+// The jobs rail is user-draggable (handle on its RIGHT edge) and persisted, so
+// worker/merge labels aren't crammed into a thin column.
+const RAIL_W_KEY = "corral.workRailWidth";
+const RAIL_W_DEFAULT = 150;
 
 // WorkTab is the ChatDock's "Work" surface: the list of host-merge background
 // jobs (which run detached on the server), with a left rail to switch between
@@ -51,6 +58,15 @@ export function WorkTab({ onCount }: { onCount?: (n: number) => void }) {
   const [taskTitle, setTaskTitle] = useState("");
   const [taskPrompt, setTaskPrompt] = useState("");
   const [spawning, setSpawning] = useState(false);
+  const [railWidth, setRailWidth] = usePersistentState<number>(RAIL_W_KEY, RAIL_W_DEFAULT);
+  const railResizeRef = useDragResize({
+    axis: "x",
+    edge: "end", // handle on the right edge; dragging right grows the rail
+    get: () => railWidth,
+    min: 110,
+    max: () => Math.round(window.innerWidth * 0.5),
+    onResize: setRailWidth,
+  });
 
   const refresh = useCallback(() => {
     getJSON<{ jobs: MergeJob[] }>("/merge-jobs")
@@ -166,7 +182,7 @@ export function WorkTab({ onCount }: { onCount?: (n: number) => void }) {
 
   return (
     <div className="work-tab">
-      <div className="work-rail">
+      <div className="work-rail" style={{ flex: `0 0 ${railWidth}px` }}>
         <div className="work-rail-head">
           <span>Jobs</span>
           <button type="button" className="work-rail-new" title="Delegate a task to a new worker Claude" onClick={() => setComposing((v) => !v)}>
@@ -195,6 +211,8 @@ export function WorkTab({ onCount }: { onCount?: (n: number) => void }) {
           </div>
         ))}
       </div>
+
+      <div className="work-rail-resize" ref={railResizeRef} title="Drag to resize the list" />
 
       <div className="work-view">
         {activeJob ? (

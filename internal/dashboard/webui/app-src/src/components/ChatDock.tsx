@@ -1,8 +1,15 @@
 import { useEffect, useState } from "react";
 import { ChatPanel } from "./ChatPanel";
-import { FirstRunChat } from "./FirstRunChat";
+import { GlobalConductors } from "./GlobalConductors";
 import { WorkTab } from "./WorkTab";
 import { useRouter, matchProject } from "../router";
+import { useDragResize } from "../hooks/useDragResize";
+import { usePersistentState } from "../hooks/usePersistentState";
+
+// The dock's width is user-draggable (handle on its LEFT edge) and persisted, so
+// a session with several workers/conductors isn't crammed into a narrow strip.
+const DOCK_W_KEY = "corral.chatdockWidth";
+const DOCK_W_DEFAULT = 440;
 
 // ChatDock — the app-wide "Claude everywhere" pane. Mounted once at the App root
 // (like the toast host), so it persists across navigation and is reachable from
@@ -42,6 +49,15 @@ export function ChatDock() {
 
   const [open, setOpen] = useState(false);
   const [everOpened, setEverOpened] = useState(false);
+  const [dockWidth, setDockWidth] = usePersistentState<number>(DOCK_W_KEY, DOCK_W_DEFAULT);
+  const dockResizeRef = useDragResize({
+    axis: "x",
+    edge: "start", // handle on the left edge; dragging left grows the dock
+    get: () => dockWidth,
+    min: 340,
+    max: () => Math.round(window.innerWidth * 0.9),
+    onResize: setDockWidth,
+  });
   // Default to the project chat when on a project (you're looking at it); the
   // global chat otherwise. Re-defaults to project whenever the project changes.
   const [tab, setTab] = useState<Tab>("project");
@@ -133,7 +149,12 @@ export function ChatDock() {
         <span className="chatdock-launcher-label">Ask Claude</span>
       </button>
 
-      <aside className={`chatdock${open ? " open" : ""}`} aria-hidden={!open}>
+      <aside
+        className={`chatdock${open ? " open" : ""}`}
+        aria-hidden={!open}
+        style={{ width: `min(${dockWidth}px, 96vw)` }}
+      >
+        <div className="chatdock-resize" ref={dockResizeRef} title="Drag to resize" />
         <header className="chatdock-head">
           <span className="chatdock-title">
             <span className="chatdock-spark">✦</span> Claude
@@ -203,9 +224,9 @@ export function ChatDock() {
                 </div>
               )}
               <div style={{ display: activeTab === "global" ? "flex" : "none", flex: 1, minHeight: 0, flexDirection: "column" }}>
-                {/* The global chat's capability is a first-run choice; gate the
-                    panel behind it so we prompt before spawning the assistant. */}
-                <FirstRunChat onConvMeta={(m) => setGlobalUuid(m.convUuid)} />
+                {/* Multiple independent global conductors, each gated by the
+                    first-run capability choice before it spawns. */}
+                <GlobalConductors onConvMeta={(m) => setGlobalUuid(m.convUuid)} />
               </div>
               {/* Work tab: only mounted when active, so its job viewer WS opens
                   lazily. It reports the live count back to keep the tab in sync. */}
