@@ -73,6 +73,43 @@ break the ask into tasks, kick off a worker per task, and keep going.
   running it inline.
 - Put ALL context the worker needs in `prompt` (it starts fresh in a neutral dir).
 - Give a short, human `title` — it's the worker's tab label.
+
+### CODE TASKS RUN IN A SANDBOX — the worker creates a project, it does NOT edit code on the host
+
+The architecture is **Conductor → Worker → Sandbox project** (which has its own
+Claude). A worker runs **on the host and is NOT sandboxed** — so a worker must
+**never write, run, or test a repo's code directly**. That would touch the
+operator's real checkout with no isolation. Instead, a worker whose task is code
+work is an *orchestrator*: it **creates a sandbox project and hands the actual
+work to that project's own Claude** via the auto-submitted `prompt`.
+
+**If the task is a code task** — implement a feature, fix a bug, work a GitHub
+issue, write/run/debug tests, get an app running, anything that edits or executes
+a repo's code — the worker's job is to spin up the sandbox, not to do the coding:
+
+```
+# The worker (or you, when kicking one off) creates the sandbox and passes the
+# real task as the sandbox's first prompt — that sandbox's Claude does the work.
+corral api POST /projects/create -d '{
+  "repoId": "<repoId>",           # from GET /repos (or "repos":[…] for multi-repo)
+  "branch": "<branch>",           # optional; defaults to the repo default branch
+  "prompt": "<the full coding task, with all context the sandbox Claude needs>"
+}'
+# → { "id": "<projectId>", ... }  — a sandbox is now running Claude on the task
+```
+
+So the usual shape for a code request is: **conductor** spawns a **worker** whose
+prompt says "create a sandbox project for repo X on this task and drive it to
+done"; the **worker** calls `POST /projects/create` (with the coding task as the
+project `prompt`); the **sandbox project's Claude** does the isolated code work.
+The worker then supervises — polls `GET /status` for that project, reads its
+conversation (`GET /api/conversations?origin=sandbox&project=<id>`), steers or
+restarts it if needed — but the edits/builds/tests happen **inside the sandbox**.
+
+**Only skip the sandbox for NON-code work** — inspecting Corral state, reading
+logs/PRs, running flows, triage/analysis, orchestration. Those are fine to do on
+the host (in the worker or inline). When in doubt about whether a task will touch
+a repo's code: route it through a sandbox project.
 - Workers, like merge jobs, are listed by `GET /merge-jobs`, streamed at
   `/merge-jobs/<id>/ws`, and removed with `DELETE /merge-jobs/<id>`.
 - Workers run on the HOST and are **not sandboxed**; they use the operator's
