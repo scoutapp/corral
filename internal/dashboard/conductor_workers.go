@@ -45,6 +45,17 @@ func workerContractPreamble(jobID string) string {
 		"no human at you to answer one. Use ONLY your granted tools: Read/Grep/Glob, plus Bash and " +
 		"Monitor when you have act capability. Those cover waiting/polling; do not reach for an " +
 		"ungranted tool, which would block on approval and strand you.\n" +
+		"CODE WORK GOES IN A SANDBOX, NOT ON THE HOST: if your task involves writing, running, " +
+		"building, or testing a repo's code (implementing a feature, fixing a bug, working an issue, " +
+		"getting an app running, or exploring code to plan such a change), do NOT edit or run that code " +
+		"here on the host. Instead CREATE A SANDBOX PROJECT and hand the actual work to its own Claude: " +
+		"`corral api POST /projects/create -d '{\"repoId\":\"<id>\",\"prompt\":\"<the full coding task>\"}'` " +
+		"(the project `prompt` is auto-submitted to the sandbox's Claude). Then supervise it — poll " +
+		"`corral api GET /status` and read its conversation " +
+		"(`corral api GET \"/api/conversations?origin=sandbox&project=<id>\"`), steering or restarting if " +
+		"needed. You are the orchestrator; the edits/builds/tests happen inside the sandbox. Only pure " +
+		"host/orchestration work (inspecting Corral state, reading logs/PRs, running flows, analysis) " +
+		"stays on the host.\n" +
 		"Two valid ways to handle a long step (image pull/transfer, build, install):\n" +
 		"  (a) BLOCK on it in-turn — run it in the foreground, or poll with Bash " +
 		"(`until …; do sleep N; done`) / Monitor, then proceed once it's done.\n" +
