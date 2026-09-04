@@ -35,6 +35,11 @@ export function GlobalConductors({ onConvMeta }: { onConvMeta?: (meta: { convId:
   // existing single-conductor transcript from before this multi-conductor UI.
   const [list, setList] = usePersistentState<Conductor[]>(LIST_KEY, [{ id: "c1", label: "Conductor 1" }]);
   const [active, setActive] = useState<string>(() => list[0]?.id || "c1");
+  // Live per-conductor turn state (working ↔ waiting), reported by each mounted
+  // ChatPanel. All conductors stay mounted, so a background one that's mid-turn
+  // still shows a working dot.
+  const [busyById, setBusyById] = useState<Record<string, boolean>>({});
+  const setBusy = (id: string, busy: boolean) => setBusyById((m) => (m[id] === busy ? m : { ...m, [id]: busy }));
 
   const [railWidth, setRailWidth] = usePersistentState<number>(RAIL_W_KEY, RAIL_W_DEFAULT);
   const railResizeRef = useDragResize({
@@ -89,7 +94,7 @@ export function GlobalConductors({ onConvMeta }: { onConvMeta?: (meta: { convId:
           </button>
         </div>
         <div className="conductors-view">
-          <FirstRunChat persistKey={persistKeyFor(only.id)} onConvMeta={onConvMeta} />
+          <FirstRunChat persistKey={persistKeyFor(only.id)} onConvMeta={onConvMeta} onBusyChange={(b) => setBusy(only.id, b)} />
         </div>
       </div>
     );
@@ -104,11 +109,16 @@ export function GlobalConductors({ onConvMeta }: { onConvMeta?: (meta: { convId:
             + New
           </button>
         </div>
-        {list.map((c, i) => (
+        {list.map((c, i) => {
+          const working = !!busyById[c.id];
+          return (
           <div key={c.id} className={`work-rail-item${active === c.id ? " active" : ""}`}>
             <button type="button" className="work-rail-btn" onClick={() => setActive(c.id)}>
-              <span className="work-rail-label">{c.label || `Conductor ${i + 1}`}</span>
-              <span className="work-rail-status">global · host</span>
+              <span className="work-rail-label">
+                <i className={`work-dot ${working ? "running" : "idle"}`} />
+                {c.label || `Conductor ${i + 1}`}
+              </span>
+              <span className="work-rail-status">{working ? "working" : "waiting"}</span>
             </button>
             <button
               type="button"
@@ -119,7 +129,8 @@ export function GlobalConductors({ onConvMeta }: { onConvMeta?: (meta: { convId:
               ✕
             </button>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="work-rail-resize" ref={railResizeRef} title="Drag to resize the list" />
@@ -132,7 +143,11 @@ export function GlobalConductors({ onConvMeta }: { onConvMeta?: (meta: { convId:
             key={c.id}
             style={{ display: active === c.id ? "flex" : "none", flex: 1, minHeight: 0, flexDirection: "column" }}
           >
-            <FirstRunChat persistKey={persistKeyFor(c.id)} onConvMeta={active === c.id ? onConvMeta : undefined} />
+            <FirstRunChat
+              persistKey={persistKeyFor(c.id)}
+              onConvMeta={active === c.id ? onConvMeta : undefined}
+              onBusyChange={(b) => setBusy(c.id, b)}
+            />
           </div>
         ))}
       </div>
