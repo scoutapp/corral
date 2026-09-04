@@ -33,14 +33,38 @@ const chatQuestionGuidance = "When a choice is genuinely ambiguous and a quick d
 	"```corral-question\nquestion: <the question>\n- <option one>\n- <option two>\n```\n" +
 	"One question per block, 2–4 short options. After the block, stop and wait for the answer."
 
+// chatConductorGuidance is prepended to the GLOBAL chat's first turn so the
+// most important operating rule is in front of the model from the start, NOT
+// buried in the corral-api skill (which is loaded via --plugin-dir but only READ
+// when the model chooses to invoke it — for a "run the tests on repo X" request
+// it often never does, then does the code work inline on the host). This makes
+// the sandbox-routing rule always-on.
+//
+// Only for the global chat (workspace==""): a project chat already runs INSIDE a
+// sandbox, so this rule doesn't apply there.
+const chatConductorGuidance = "YOU ARE A CONDUCTOR ON THE HOST — you are NOT sandboxed, and you must not do a " +
+	"repo's code work directly on this machine. If the request involves writing, running, building, testing, " +
+	"or exploring a repo's code (a feature, a bug, an issue, tests, getting an app running), do NOT `cd` into a " +
+	"local checkout and edit/run/commit/push it here. Instead create a sandbox project and hand it the task: " +
+	"first `corral api GET /repos` to find the repo id, then `corral api POST /projects/create -d " +
+	"'{\"repoId\":\"<id>\",\"prompt\":\"<the full task>\"}'` — the sandbox's own Claude does the work. Then " +
+	"supervise it (`corral api GET /status`, read its conversation). ONLY pure host/orchestration work " +
+	"(inspecting Corral state, reading logs/PRs, running flows, analysis, answering questions) stays here. When " +
+	"in doubt, route it to a sandbox. (See the corral-api skill for the exact API shapes.)"
+
 // withContextHint prepends a page-context note (and, on the first turn, the
-// question-asking convention) to a prompt. firstTurn gates both — later turns
-// already carry them via --resume.
-func withContextHint(prompt, hint string, firstTurn bool) string {
+// question-asking convention plus — for the global chat — the conductor rule) to
+// a prompt. firstTurn gates them — later turns already carry them via --resume.
+// isGlobal is true only for the app-wide global chat (workspace==""); a project
+// chat already runs inside a sandbox, so the conductor rule is skipped there.
+func withContextHint(prompt, hint string, firstTurn, isGlobal bool) string {
 	if !firstTurn {
 		return prompt
 	}
 	prefix := chatQuestionGuidance + "\n\n"
+	if isGlobal {
+		prefix = chatConductorGuidance + "\n\n" + prefix
+	}
 	if hint != "" {
 		prefix = "[Context: " + hint + "]\n\n" + prefix
 	}
@@ -257,7 +281,7 @@ func (d *dashboardServer) runChatSession(w http.ResponseWriter, r *http.Request,
 		if hint == "" {
 			hint = contextHint
 		}
-		prompt := withContextHint(msg.Prompt, hint, sessionID == "")
+		prompt := withContextHint(msg.Prompt, hint, sessionID == "", workspace == "")
 
 		// Capture the user's prompt (the raw text, not the context-hinted wrapper)
 		// before the turn — the stream doesn't echo it back. Best-effort. This also
