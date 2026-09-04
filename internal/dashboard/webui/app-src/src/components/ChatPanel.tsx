@@ -122,9 +122,36 @@ export function ChatPanel({
   const curAssistantIdx = useRef<number | null>(null);
   const lastToolIdx = useRef<number | null>(null);
 
+  // Stick-to-bottom autoscroll: only auto-scroll when the user is already at (or
+  // near) the bottom. If they've scrolled UP to read earlier output, a streaming
+  // frame must NOT yank them back down.
+  //
+  // stickRef is the intent, updated ONLY by real user scrolling (onLogScroll): at
+  // the bottom → stick=true; scrolled up → stick=false. scroll() re-affirms it
+  // synchronously (a programmatic jump we make ourselves shouldn't clear it) and
+  // bails when the user is reading above. Measured against the LIVE DOM each call
+  // so a growing transcript can't strand a stale value.
+  const stickRef = useRef(true);
+  const nearBottom = (el: HTMLDivElement) => el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+  const programmaticScroll = useRef(false);
+  const onLogScroll = useCallback(() => {
+    // Ignore the scroll events our own autoscroll causes; only USER scrolls should
+    // change the stick intent.
+    if (programmaticScroll.current) return;
+    const el = logRef.current;
+    if (el) stickRef.current = nearBottom(el);
+  }, []);
   const scroll = useCallback(() => {
+    const el = logRef.current;
+    if (!el || !stickRef.current) return; // reading above → leave them alone
     requestAnimationFrame(() => {
-      if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+      if (!logRef.current) return;
+      programmaticScroll.current = true;
+      logRef.current.scrollTop = logRef.current.scrollHeight;
+      // Clear the guard after the resulting scroll event has fired.
+      requestAnimationFrame(() => {
+        programmaticScroll.current = false;
+      });
     });
   }, []);
 
@@ -275,6 +302,9 @@ export function ChatPanel({
       setMsgs((m) => [...m, { role: "user", html: renderMarkdown(text) }]);
       wsRef.current.send(JSON.stringify({ prompt: text, ctx: getCtx?.() || "" }));
       setBusy(true);
+      // Sending your own message always follows it to the bottom, even if you'd
+      // scrolled up before.
+      stickRef.current = true;
       scroll();
     },
     [getCtx, scroll],
@@ -344,7 +374,7 @@ export function ChatPanel({
           </button>
         )}
       </div>
-      <div className="chat-log" id="log" ref={logRef}>
+      <div className="chat-log" id="log" ref={logRef} onScroll={onLogScroll}>
         {msgs.map((m, i) => {
           if (m.role === "meta")
             return (
