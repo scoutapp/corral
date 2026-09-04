@@ -62,6 +62,7 @@ export function ChatPanel({
   persistKey,
   canAct = false,
   onConvMeta,
+  onBusyChange,
 }: {
   wsPath: string;
   getCtx?: () => string;
@@ -70,6 +71,10 @@ export function ChatPanel({
   // Fires once per conversation with its captured id + stable UUID (from the
   // server's conv_meta frame). The host chat header shows the UUID.
   onConvMeta?: (meta: { convId: number; convUuid: string }) => void;
+  // Fires whenever the turn state flips: true while a turn is streaming
+  // ("working"), false when idle ("waiting"). Lets a parent (e.g. the conductor
+  // rail) show a live working/waiting dot per chat, like the Work tab does.
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const msgsKey = persistKey ? `corral.chat.msgs.${persistKey}` : "";
   const sidKey = persistKey ? `corral.chat.sid.${persistKey}` : "";
@@ -103,6 +108,12 @@ export function ChatPanel({
   // it to the effect deps (which would needlessly reconnect the socket).
   const onConvMetaRef = useRef(onConvMeta);
   onConvMetaRef.current = onConvMeta;
+  // Report busy transitions (working ↔ waiting) to the parent for a live dot.
+  const onBusyChangeRef = useRef(onBusyChange);
+  onBusyChangeRef.current = onBusyChange;
+  useEffect(() => {
+    onBusyChangeRef.current?.(busy);
+  }, [busy]);
   // The Claude session id (persisted), passed as ?resume= on (re)connect.
   const sessionIdRef = useRef<string>(persistKey ? localStorage.getItem(sidKey) || "" : "");
 
