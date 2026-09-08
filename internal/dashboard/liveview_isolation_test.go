@@ -22,18 +22,20 @@ func TestHardenLiveResponse(t *testing.T) {
 	resp.Header.Set("Content-Security-Policy-Report-Only", "frame-ancestors 'none'")
 	resp.Header.Add("Set-Cookie", "session=abc; Path=/")
 
-	if err := hardenLiveResponse(resp, "/p/abc/live/3000", 3000); err != nil {
+	if err := hardenLiveResponse(resp, "/p/abc/live/3000", 3000, 7777); err != nil {
 		t.Fatalf("hardenLiveResponse: %v", err)
 	}
 
 	h := resp.Header
 	// The app's anti-framing headers must be gone (else the browser refuses our
-	// legitimate embed), replaced by our own frame-ancestors 'self'.
+	// legitimate embed), replaced by a frame-ancestors naming the DASHBOARD's
+	// origins — the parent (127.0.0.1/localhost:<dashPort>) is a different origin
+	// from the live iframe, so `'self'` would block the embed → white screen.
 	if got := h.Get("X-Frame-Options"); got != "" {
 		t.Errorf("X-Frame-Options should be removed, got %q", got)
 	}
-	if got := h.Get("Content-Security-Policy"); got != "frame-ancestors 'self'" {
-		t.Errorf("CSP = %q, want frame-ancestors 'self'", got)
+	if got := h.Get("Content-Security-Policy"); got != "frame-ancestors http://127.0.0.1:7777 http://localhost:7777" {
+		t.Errorf("CSP = %q, want the dashboard's frame-ancestors origins", got)
 	}
 	if got := h.Get("Content-Security-Policy-Report-Only"); got != "" {
 		t.Errorf("report-only CSP should be removed, got %q", got)

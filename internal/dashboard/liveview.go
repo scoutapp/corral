@@ -208,13 +208,13 @@ func (d *dashboardServer) handleLiveProxy(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	liveProxyTo(w, r, container, id, port, rest)
+	liveProxyTo(w, r, container, id, port, rest, d.dashPort)
 }
 
 // liveProxyTo builds and runs the reverse-proxy for one request. Split out from
 // handleLiveProxy (which resolves id→workspace→container) so it can be tested
 // against a container name directly.
-func liveProxyTo(w http.ResponseWriter, r *http.Request, container, id string, port int, rest string) {
+func liveProxyTo(w http.ResponseWriter, r *http.Request, container, id string, port int, rest string, dashPort int) {
 	// The path the app sees is everything after /live/<port> — rooted at "/".
 	upstreamPath := "/" + rest
 
@@ -250,7 +250,7 @@ func liveProxyTo(w http.ResponseWriter, r *http.Request, container, id string, p
 			ResponseHeaderTimeout: 30 * time.Second,
 		},
 		ModifyResponse: func(resp *http.Response) error {
-			return hardenLiveResponse(resp, fmt.Sprintf("/p/%s/live/%d", id, port), port)
+			return hardenLiveResponse(resp, fmt.Sprintf("/p/%s/live/%d", id, port), port, dashPort)
 		},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, e error) {
 			http.Error(w, fmt.Sprintf("live view: could not reach the app on port %d (%v)", port, e), http.StatusBadGateway)
@@ -275,14 +275,31 @@ func liveProxyTo(w http.ResponseWriter, r *http.Request, container, id string, p
 //     Set-Cookie's Path to <prefix>/ and strip any Domain, so project A's session
 //     rides only project A's path. (We used to DELETE Set-Cookie — that's why login
 //     never persisted.)
-func hardenLiveResponse(resp *http.Response, prefix string, port int) error {
+// liveFrameAncestors builds the frame-ancestors CSP for the framed app: the
+// dashboard's origins (127.0.0.1 and localhost at dashPort) may embed it, nobody
+// else. If dashPort is unset (shouldn't happen in a served daemon), fall back to
+// allowing loopback framing so Live View isn't dead.
+func liveFrameAncestors(dashPort int) string {
+	if dashPort == 0 {
+		return "frame-ancestors http://127.0.0.1:* http://localhost:*"
+	}
+	return fmt.Sprintf("frame-ancestors http://127.0.0.1:%d http://localhost:%d", dashPort, dashPort)
+}
+
+func hardenLiveResponse(resp *http.Response, prefix string, port, dashPort int) error {
 	h := resp.Header
 	// The app's own anti-framing headers would block our legitimate embed; drop
 	// them and assert our own frame-ancestors policy.
 	h.Del("X-Frame-Options")
 	h.Del("Content-Security-Policy")
 	h.Del("Content-Security-Policy-Report-Only")
-	h.Set("Content-Security-Policy", "frame-ancestors 'self'")
+	// The iframe (localhost:<livePort>) is framed by the DASHBOARD, which is a
+	// DIFFERENT origin (127.0.0.1:<dashPort>, or localhost:<dashPort> if opened
+	// that way). `frame-ancestors 'self'` would only allow the iframe's own origin
+	// → the browser refuses the cross-origin embed → white screen. Name the
+	// dashboard's actual origins instead (both loopback hosts, since either may be
+	// how the user opened it).
+	h.Set("Content-Security-Policy", liveFrameAncestors(dashPort))
 	// Path-scope the app's cookies to this project's mount (see doc above).
 	rewriteLiveSetCookies(h, prefix)
 

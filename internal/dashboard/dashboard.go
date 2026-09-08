@@ -318,6 +318,12 @@ type dashboardServer struct {
 	// token/apiToken (which are never accepted there). See liveview_server.go.
 	livePort  int
 	liveToken string
+	// dashPort is the dashboard's own listen port. Needed so the live listener can
+	// name the dashboard's ORIGIN in the framed app's frame-ancestors CSP — the
+	// parent (dashboard) is 127.0.0.1:<dashPort>/localhost:<dashPort>, a different
+	// origin from the live iframe (localhost:<livePort>), so `'self'` alone would
+	// (and did) block the embed → white screen.
+	dashPort int
 	// bootID is a fresh random value each time the dashboard daemon starts. It is
 	// surfaced in /status so the browser can tell when the server has restarted
 	// and drop stale per-project UI state (e.g. mute prefs keyed by project id).
@@ -1616,6 +1622,7 @@ func CmdDashboardServe(args []string) error {
 	}
 	server.livePort = *livePort
 	server.liveToken = *liveToken
+	server.dashPort = *port
 	server.startLogRetention()    // prune app_logs on start + hourly
 	server.startConvRetention()   // prune conversations.db on start + hourly
 	server.startSandboxConvTail() // mirror running sandboxes' own Claude transcripts

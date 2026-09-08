@@ -70,7 +70,7 @@ func TestLiveProxyAgainstContainer(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/p/x/live/"+port+"/lv.txt", nil)
 	rec := httptest.NewRecorder()
-	liveProxyTo(rec, req, container, "x", p, "lv.txt")
+	liveProxyTo(rec, req, container, "x", p, "lv.txt", 7777)
 
 	res := rec.Result()
 	body, _ := io.ReadAll(res.Body)
