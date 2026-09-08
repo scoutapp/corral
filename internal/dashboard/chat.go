@@ -97,7 +97,13 @@ const chatConductorGuidance = "YOU ARE A CONDUCTOR ON THE HOST — you are NOT s
 	"`corral api GET /api/repos/<id>/images`; if missing, create a sandbox project on the repo, build the image " +
 	"inside it (its Dockerfile/compose or build command), then snapshot it as the repo baseline with " +
 	"`corral api POST /api/dind/caches -d '{\"name\":\"repo-<id>\",\"project\":\"<projectId>\"}'` so future " +
-	"projects reuse it. (Details in the corral-api skill.)\n\n" +
+	"projects reuse it. (Details in the corral-api skill.)\n" +
+	"VERIFY LIVE VIEW BEFORE CLAIMING IT WORKS: you CANNOT test the real Live View path from the CLI (it's a " +
+	"host proxy gated by a browser-only token — the CLI gets 403), and a curl 200 does not mean the page renders " +
+	"(a white-screen SPA still 200s). Use `corral api POST /p/<projectId>/verify-live-view -d '{\"port\":<p>," +
+	"\"path\":\"<path>\"}'` — Corral drives a real headless browser through the actual Live View path and returns " +
+	"`{rendered, domTextLen, screenshot}`. Only set the live-port (and only tell the user it works) once " +
+	"`rendered:true`; never claim it's verified from server-side curls.\n\n" +
 	chatTurnLifetimeGuidance
 
 // chatTurnLifetimeGuidance warns the interactive conductor that each of its turns

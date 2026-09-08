@@ -50,6 +50,9 @@ func TestWithContextHint(t *testing.T) {
 	if !strings.Contains(got, "BUILD A REPO'S DOCKER IMAGE") || !strings.Contains(got, "/api/dind/caches") {
 		t.Errorf("global first-turn prompt should carry the image-build capability: %q", got)
 	}
+	if !strings.Contains(got, "VERIFY LIVE VIEW") || !strings.Contains(got, "verify-live-view") {
+		t.Errorf("global first-turn prompt should carry the live-view verify guidance: %q", got)
+	}
 	// The turn-lifetime warning must be present so the conductor doesn't start a
 	// Monitor/background task and end its turn (it would be orphaned).
 	if !strings.Contains(got, "FIRE-AND-FORGET") || !strings.Contains(got, "Monitor") {
