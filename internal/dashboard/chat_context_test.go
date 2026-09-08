@@ -1,9 +1,35 @@
 package dashboard
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// TestChatReposContext seeds a repo registry in a temp CORRAL_HOME and checks the
+// conductor's repo context lists the id/name/branch (so it doesn't hunt on disk).
+func TestChatReposContext(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CORRAL_HOME", home)
+
+	// No repos yet → empty context (must not disturb the prompt).
+	if got := chatReposContext(); got != "" {
+		t.Errorf("no repos should yield empty context, got %q", got)
+	}
+
+	// Seed one repo directly into the registry file.
+	reg := `{"repos":[{"id":"abc123","name":"core-agent","url":"https://github.com/scoutapp/core-agent","default_branch":"master"}]}`
+	if err := os.WriteFile(filepath.Join(home, "repos.json"), []byte(reg), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got := chatReposContext()
+	for _, want := range []string{"core-agent", "abc123", "master", "/projects/create"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("repo context missing %q: %q", want, got)
+		}
+	}
+}
 
 func TestWithContextHint(t *testing.T) {
 	hint := "The user is viewing repo acme/widget."
