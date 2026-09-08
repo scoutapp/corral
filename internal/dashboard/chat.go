@@ -91,7 +91,13 @@ const chatConductorGuidance = "YOU ARE A CONDUCTOR ON THE HOST — you are NOT s
 	"'{\"repoId\":\"<id>\",\"prompt\":\"<the full task>\"}'` — the sandbox's own Claude does the work. Then " +
 	"supervise it (`corral api GET /status`, read its conversation). ONLY pure host/orchestration work " +
 	"(inspecting Corral state, reading logs/PRs, running flows, analysis, answering questions) stays here. When " +
-	"in doubt, route it to a sandbox. (See the corral-api skill for the exact API shapes.)\n\n" +
+	"in doubt, route it to a sandbox. (See the corral-api skill for the exact API shapes.)\n" +
+	"YOU CAN BUILD A REPO'S DOCKER IMAGE: if a task is blocked because an image doesn't exist (a `docker pull` " +
+	"fails, or the app's image isn't around), don't give up — build it. Check what's cached with " +
+	"`corral api GET /api/repos/<id>/images`; if missing, create a sandbox project on the repo, build the image " +
+	"inside it (its Dockerfile/compose or build command), then snapshot it as the repo baseline with " +
+	"`corral api POST /api/dind/caches -d '{\"name\":\"repo-<id>\",\"project\":\"<projectId>\"}'` so future " +
+	"projects reuse it. (Details in the corral-api skill.)\n\n" +
 	chatTurnLifetimeGuidance
 
 // chatTurnLifetimeGuidance warns the interactive conductor that each of its turns

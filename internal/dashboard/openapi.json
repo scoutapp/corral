@@ -173,1327 +173,6 @@
         }
       }
     },
-    "/api/hooks": {
-      "get": {
-        "summary": "List hooks bound to an event",
-        "parameters": [
-          {
-            "name": "event",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/Event"
-            }
-          },
-          {
-            "name": "repo",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Hooks",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "hooks": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/Hook"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "summary": "Bind an event to an action or flow",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/HookInput"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Created"
-          }
-        }
-      }
-    },
-    "/api/hooks/{id}": {
-      "delete": {
-        "summary": "Unbind a hook",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Deleted"
-          }
-        }
-      }
-    },
-    "/api/flows": {
-      "get": {
-        "summary": "List flows",
-        "parameters": [
-          {
-            "name": "repo",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Flows",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "flows": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/Flow"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "summary": "Create a flow (optionally with inline steps)",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FlowInput"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Flow"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/flows/{id}": {
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "integer"
-          }
-        }
-      ],
-      "get": {
-        "summary": "Fetch a flow with its steps",
-        "responses": {
-          "200": {
-            "description": "Flow",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Flow"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "summary": "Delete a flow",
-        "responses": {
-          "200": {
-            "description": "Deleted"
-          }
-        }
-      }
-    },
-    "/api/flows/{id}/steps": {
-      "post": {
-        "summary": "Append a step to a flow",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FlowStep"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Added"
-          }
-        }
-      }
-    },
-    "/api/flows/{id}:run": {
-      "post": {
-        "summary": "Run a flow ad-hoc",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RunContext"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Flow result"
-          }
-        }
-      }
-    },
-    "/api/runs": {
-      "get": {
-        "summary": "Recent run history",
-        "parameters": [
-          {
-            "name": "limit",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "default": 50
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Runs",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "runs": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/Run"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/runs/{id}": {
-      "get": {
-        "summary": "Fetch a run",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Run",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Run"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/logs": {
-      "get": {
-        "summary": "Application log (host-wide), newest-first, keyset-paginated",
-        "parameters": [
-          {
-            "name": "limit",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "default": 50
-            }
-          },
-          {
-            "name": "before",
-            "in": "query",
-            "schema": {
-              "type": "integer"
-            },
-            "description": "keyset cursor: rows older than this id"
-          },
-          {
-            "name": "category",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "project",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "repo",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "level",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "q",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "description": "free-text search over message + meta"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "A page of logs",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "logs": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/LogRecord"
-                      }
-                    },
-                    "nextCursor": {
-                      "type": "integer"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/logs/facets": {
-      "get": {
-        "summary": "Distinct categories + projects for the log filters",
-        "responses": {
-          "200": {
-            "description": "Facets",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "categories": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "projects": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/prompts/project-start": {
-      "get": {
-        "summary": "Resolve the effective project-start prompt for a repo",
-        "parameters": [
-          {
-            "name": "repo",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Effective template + source + presets"
-          }
-        }
-      }
-    },
-    "/api/prompts/default": {
-      "get": {
-        "summary": "Get (creating if needed) the editable global project-start prompt",
-        "responses": {
-          "200": {
-            "description": "The prompt action id + template"
-          }
-        }
-      }
-    },
-    "/api/prompts": {
-      "get": {
-        "summary": "Editable prompt catalog (default/effective/source/slots per prompt)",
-        "parameters": [
-          {
-            "name": "repo",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Prompts",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "prompts": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/PromptItem"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/prompts/{key}": {
-      "parameters": [
-        {
-          "name": "key",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        },
-        {
-          "name": "repo",
-          "in": "query",
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "put": {
-        "summary": "Save a prompt override (repo scope with ?repo=)",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "template": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Updated prompt item"
-          }
-        }
-      },
-      "delete": {
-        "summary": "Reset a prompt (remove the override at this scope)",
-        "responses": {
-          "200": {
-            "description": "Updated prompt item"
-          }
-        }
-      }
-    },
-    "/api/triggers": {
-      "get": {
-        "summary": "User-facing trigger catalog (friendly labels + built-in steps)",
-        "responses": {
-          "200": {
-            "description": "Triggers",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "triggers": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/Trigger"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/tools": {
-      "get": {
-        "summary": "Tool manifest (actions exposed as Claude tools)",
-        "description": "Empty unless the user enabled AutomationsToolsEnabled. Gated so Claude can't act without opt-in.",
-        "responses": {
-          "200": {
-            "description": "Manifest",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "enabled": {
-                      "type": "boolean"
-                    },
-                    "tools": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/ToolDescriptor"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/tools/{name}:invoke": {
-      "post": {
-        "summary": "Invoke an action by tool name",
-        "description": "403 when tools are disabled.",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "description": "Tool input = run-context vars."
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Step result",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StepResult"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Tools disabled"
-          }
-        }
-      }
-    },
-    "/status": {
-      "get": {
-        "summary": "Live per-project status \u2014 up/down, and the working/waiting activity signal",
-        "description": "The activity field is how you tell whether a project's Claude is actively working ('working') or idle at the prompt waiting on the user ('waiting'), or the container is down ('off'). It's computed from real completion activity (POST /v1/messages when the traffic is decrypted, else a proxy.log heuristic).",
-        "responses": {
-          "200": {
-            "description": "Project statuses",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StatusResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/repos": {
-      "get": {
-        "summary": "List repos (cross-project)",
-        "responses": {
-          "200": {
-            "description": "Repos",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "repos": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/Repo"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "summary": "Add a repo",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RepoInput"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Added",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Repo"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/repos/{id}/fetch": {
-      "post": {
-        "summary": "Refresh a repo's cache mirror",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Fetched"
-          }
-        }
-      }
-    },
-    "/repos/{id}": {
-      "delete": {
-        "summary": "Remove a repo (and its cache)",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Removed"
-          }
-        }
-      }
-    },
-    "/projects/create": {
-      "post": {
-        "summary": "Create a new project workspace",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProjectCreateInput"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string"
-                    },
-                    "workspace": {
-                      "type": "string"
-                    },
-                    "start_prompt": {
-                      "type": "string"
-                    },
-                    "issue_prompt": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/p/{id}/start": {
-      "post": {
-        "summary": "Start a project's container",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Starting"
-          }
-        }
-      }
-    },
-    "/p/{id}/dind/status": {
-      "get": {
-        "summary": "DinD cache reuse status for a project (cheap; no inner-docker exec)",
-        "description": "Whether this project's inner Docker is starting FROM a cache: which cache is attached (repo-<id> or hand-named), its mode (copy/shared), and whether it's actually being reused (seeded copy / mounted shared) vs a fresh empty volume. Reads config + docker volume existence only.",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The reuse status",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "cacheName": {
-                      "type": "string"
-                    },
-                    "mode": {
-                      "type": "string",
-                      "enum": [
-                        "copy",
-                        "shared"
-                      ]
-                    },
-                    "isRepo": {
-                      "type": "boolean"
-                    },
-                    "reused": {
-                      "type": "boolean"
-                    },
-                    "reason": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/p/{id}/dind/images": {
-      "get": {
-        "summary": "List images in a project's inner Docker daemon (live)",
-        "description": "Runs `docker images` inside the project's sandbox container to show what's actually cached/available (so you can confirm e.g. the app image is present without a rebuild). Requires the container to be up; returns containerUp=false with an empty list otherwise.",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The inner-docker image list",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "containerUp": {
-                      "type": "boolean"
-                    },
-                    "images": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "repository": {
-                            "type": "string"
-                          },
-                          "tag": {
-                            "type": "string"
-                          },
-                          "id": {
-                            "type": "string"
-                          },
-                          "size": {
-                            "type": "string"
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/p/{id}/live-port": {
-      "get": {
-        "summary": "Get the Live View default port (0 = unset)",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The stored preferred port",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "port": {
-                      "type": "integer"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "summary": "Set the port (and path) the Live View tab shows by default",
-        "description": "After starting a web app in the sandbox, set the user-facing port to watch (e.g. a docs site on 1313), so the Live View tab opens it without the user hunting for it. Include `path` when the app serves under a sub-path (e.g. \"/docs/node/\") \u2014 the app's root \"/\" may 404 and show a blank page. Send port 0 to clear.",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "port"
-                ],
-                "properties": {
-                  "port": {
-                    "type": "integer",
-                    "description": "1-65535, or 0 to clear"
-                  },
-                  "path": {
-                    "type": "string",
-                    "description": "optional path to open, e.g. /docs/node/ (blank = app root)"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Saved"
-          }
-        }
-      }
-    },
-    "/p/{id}/stop": {
-      "post": {
-        "summary": "Stop a project's container",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Stopped"
-          }
-        }
-      }
-    },
-    "/p/{id}/remove": {
-      "post": {
-        "summary": "Unregister a project from the dashboard",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Removed"
-          }
-        }
-      }
-    },
-    "/gh/repos": {
-      "get": {
-        "summary": "List the operator's GitHub repos",
-        "responses": {
-          "200": {
-            "description": "Repos"
-          }
-        }
-      }
-    },
-    "/gh/branches": {
-      "get": {
-        "summary": "List branches for a repo",
-        "parameters": [
-          {
-            "name": "repo",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Branches"
-          }
-        }
-      }
-    },
-    "/gh/issues": {
-      "get": {
-        "summary": "List issues for a repo",
-        "parameters": [
-          {
-            "name": "repo",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Issues"
-          }
-        }
-      }
-    },
-    "/gh/issues/create": {
-      "post": {
-        "summary": "Create a GitHub issue",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/IssueCreateInput"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/IssueCreated"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/global/config": {
-      "get": {
-        "summary": "Read global settings",
-        "responses": {
-          "200": {
-            "description": "Global settings"
-          }
-        }
-      }
-    },
-    "/global/apply": {
-      "post": {
-        "summary": "Apply global settings changes",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Applied"
-          }
-        }
-      }
-    },
-    "/api/logs/trace/{traceId}": {
-      "get": {
-        "summary": "Reconstructed span tree for one trace",
-        "parameters": [
-          {
-            "name": "traceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Trace",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Trace"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/mcp": {
-      "get": {
-        "summary": "List connected MCP servers with live status",
-        "description": "Drives `claude mcp list` on the host. status is connected | needs_auth | pending | unknown. A read \u2014 always allowed.",
-        "responses": {
-          "200": {
-            "description": "Servers",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "servers": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/McpServer"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "summary": "Connect a remote MCP server",
-        "description": "Runs `claude mcp add --scope user`. A mutating call \u2014 when made by the CLI/host Claude it requires API writes to be enabled; the browser is never gated.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/McpAddInput"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Connected"
-          },
-          "403": {
-            "description": "API writes disabled (CLI/Claude only)"
-          }
-        }
-      }
-    },
-    "/api/mcp/{name}": {
-      "delete": {
-        "summary": "Remove an MCP server",
-        "description": "Runs `claude mcp remove <name>`. Mutating \u2014 gated for the CLI/Claude, never for the browser.",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Removed"
-          },
-          "403": {
-            "description": "API writes disabled (CLI/Claude only)"
-          }
-        }
-      }
-    },
-    "/api/mcp/{name}/login": {
-      "post": {
-        "summary": "Start the interactive OAuth login for an MCP server",
-        "description": "Runs `claude mcp login <name>` in a bridged terminal (the browser attaches over a WebSocket). Use this for a server whose status is needs_auth. Mutating \u2014 gated for the CLI/Claude; in practice the user completes the browser OAuth.",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Login session started",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "session": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "API writes disabled (CLI/Claude only)"
-          }
-        }
-      }
-    },
-    "/api/flows/{id}/schedule": {
-      "get": {
-        "summary": "Get a flow's pseudo-cron schedule",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Schedule or null",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "schedule": {
-                      "$ref": "#/components/schemas/Schedule"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "summary": "Set a flow's schedule (drift-tolerant pseudo-cron)",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "description": "cadenceSeconds is the interval; catchUp fires once on wake when overdue (else the miss is skipped); enabled pauses it. Mutating \u2014 gated for CLI/Claude, not the browser. The tick that FIRES a scheduled flow is never gated.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ScheduleInput"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Saved schedule"
-          }
-        }
-      },
-      "delete": {
-        "summary": "Remove a flow's schedule",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Removed"
-          }
-        }
-      }
-    },
     "/api/chat/capability": {
       "get": {
         "summary": "Get the global assistant's capability (read-only vs act)",
@@ -1555,1114 +234,6 @@
         "responses": {
           "200": {
             "description": "Saved"
-          }
-        }
-      }
-    },
-    "/api/prompts/library": {
-      "get": {
-        "summary": "List saved (named) prompts",
-        "parameters": [
-          {
-            "name": "repo",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Prompts",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "prompts": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/NamedPrompt"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "summary": "Save a named prompt",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NamedPromptInput"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NamedPrompt"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/prompts/library/{id}": {
-      "put": {
-        "summary": "Update a named prompt",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string"
-                  },
-                  "template": {
-                    "type": "string"
-                  },
-                  "description": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Updated"
-          }
-        }
-      },
-      "delete": {
-        "summary": "Delete a named prompt",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Deleted"
-          }
-        }
-      }
-    },
-    "/api/skills": {
-      "get": {
-        "summary": "List a repo's skills",
-        "parameters": [
-          {
-            "name": "repo",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Skills",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "skills": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/RepoSkill"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "summary": "Add a skill to a repo",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RepoSkillInput"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RepoSkill"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/skills/{id}": {
-      "put": {
-        "summary": "Update a skill",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string"
-                  },
-                  "content": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Updated"
-          }
-        }
-      },
-      "delete": {
-        "summary": "Delete a skill",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Deleted"
-          }
-        }
-      }
-    },
-    "/api/repos/{id}/agent-context": {
-      "get": {
-        "summary": "Get a repo's CLAUDE.md agent context",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Context",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "content": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "summary": "Set a repo's CLAUDE.md agent context (empty clears)",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "content": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Saved"
-          }
-        }
-      }
-    },
-    "/api/prs/prune": {
-      "get": {
-        "summary": "Count local PR records that a prune would delete (dry run)",
-        "description": "Counts local Corral DB PR records whose fetched_at is older than olderThanDays, without deleting. LOCAL ONLY \u2014 never touches GitHub.",
-        "parameters": [
-          {
-            "name": "olderThanDays",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 30,
-              "minimum": 1
-            }
-          },
-          {
-            "name": "repo",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Count",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "would_prune": {
-                      "type": "integer"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "summary": "Prune old local PR records (local DB cleanup, not GitHub)",
-        "description": "Deletes local Corral DB PR records whose fetched_at is older than olderThanDays (default 30; floor 1), cascading to their blocks/links/chat. LOCAL ONLY \u2014 it does not close or delete anything on GitHub. Optional repo scopes it.",
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "olderThanDays": {
-                    "type": "integer",
-                    "default": 30,
-                    "minimum": 1
-                  },
-                  "repo": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Pruned",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "pruned": {
-                      "type": "integer"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/dind/caches": {
-      "get": {
-        "summary": "List DinD data caches",
-        "responses": {
-          "200": {
-            "description": "Caches",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "caches": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/DindCache"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "summary": "Snapshot a project's DinD volume into a named cache",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "name",
-                  "project"
-                ],
-                "properties": {
-                  "name": {
-                    "type": "string"
-                  },
-                  "project": {
-                    "type": "string",
-                    "description": "project id whose DinD volume to snapshot"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DindCache"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/dind/caches/{name}": {
-      "delete": {
-        "summary": "Delete a DinD data cache",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Deleted"
-          }
-        }
-      }
-    },
-    "/api/prs/{id}/notes": {
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "get": {
-        "summary": "List a PR's local notes",
-        "description": "Private, LOCAL notes on a PR \u2014 stored only in Corral's DB, never posted to GitHub (unlike a PR comment). Newest first.",
-        "responses": {
-          "200": {
-            "description": "Notes",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "notes": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "integer"
-                          },
-                          "prId": {
-                            "type": "integer"
-                          },
-                          "body": {
-                            "type": "string"
-                          },
-                          "author": {
-                            "type": "string"
-                          },
-                          "createdAt": {
-                            "type": "string"
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "summary": "Add a local note to a PR",
-        "description": "Adds a private, local note (never sent to GitHub). Body required; author is an optional free-text label.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "body": {
-                    "type": "string"
-                  },
-                  "author": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Created note",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "note": {
-                      "type": "object",
-                      "properties": {
-                        "id": {
-                          "type": "integer"
-                        },
-                        "prId": {
-                          "type": "integer"
-                        },
-                        "body": {
-                          "type": "string"
-                        },
-                        "author": {
-                          "type": "string"
-                        },
-                        "createdAt": {
-                          "type": "string"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/prs/{id}/notes/{noteId}": {
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        },
-        {
-          "name": "noteId",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "integer"
-          }
-        }
-      ],
-      "delete": {
-        "summary": "Delete a local PR note",
-        "responses": {
-          "200": {
-            "description": "Deleted"
-          }
-        }
-      }
-    },
-    "/api/prs/{id}/merge": {
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "post": {
-        "summary": "Merge a PR (host | plain)",
-        "description": "Merges a PR. mode \"plain\" does a direct `gh pr merge` (fails if not mergeable). mode \"host\" starts a detached host-merge background job (rebase onto base, resolve conflicts, wait for CI, merge) and returns its jobId \u2014 watch it in the Work tab; NOT sandboxed. If no merge strategy is set for the repo or globally (and none is passed), returns 400 telling you to set a per-repo default first. mode defaults to the global default mode.",
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "mode": {
-                    "type": "string",
-                    "enum": [
-                      "host",
-                      "sandbox",
-                      "plain"
-                    ]
-                  },
-                  "strategy": {
-                    "type": "string",
-                    "enum": [
-                      "squash",
-                      "merge",
-                      "rebase"
-                    ]
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Merged or job started",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    },
-                    "mode": {
-                      "type": "string"
-                    },
-                    "strategy": {
-                      "type": "string"
-                    },
-                    "jobId": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "No strategy set / invalid mode or strategy"
-          }
-        }
-      }
-    },
-    "/api/repos/{id}/merge-strategy": {
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "get": {
-        "summary": "Get a repo's merge-strategy state",
-        "description": "Returns the merge methods GitHub allows for the repo, the per-repo preference, the global default, and the resolved effective strategy.",
-        "responses": {
-          "200": {
-            "description": "Strategy state",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "allowed": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "preferred": {
-                      "type": "string"
-                    },
-                    "global_default": {
-                      "type": "string"
-                    },
-                    "effective": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "summary": "Set a repo's PREFERRED merge strategy",
-        "description": "Sets the per-repo merge strategy preference (the preferred place to record a choice \u2014 repo beats global). Empty string clears it. This is what to call when a merge errored because no strategy was set.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "strategy": {
-                    "type": "string",
-                    "enum": [
-                      "squash",
-                      "merge",
-                      "rebase",
-                      ""
-                    ]
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Saved",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    },
-                    "preferred": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/prs/{id}/enrich": {
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "post": {
-        "summary": "Start AI analysis (enrich) on a PR \u2014 fire and return",
-        "description": "Kicks off the per-block AI analysis (title/explanation/edge-cases/risk + a PR summary) via host Claude, in the BACKGROUND, and returns immediately. Poll GET /api/prs/{id}/analysis for completion, then read GET /api/prs/{id}/blocks. Idempotent while running.",
-        "responses": {
-          "200": {
-            "description": "Started",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    },
-                    "kind": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "claude CLI unavailable"
-          }
-        }
-      }
-    },
-    "/api/prs/{id}/analyze": {
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "post": {
-        "summary": "Start the PR-level risk verdict \u2014 fire and return",
-        "description": "Kicks off the PR risk assessment via host Claude in the BACKGROUND; returns immediately. Poll GET /api/prs/{id}/analysis, then read GET /api/prs/{id}/risk.",
-        "responses": {
-          "200": {
-            "description": "Started",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    },
-                    "kind": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "claude CLI unavailable"
-          }
-        }
-      }
-    },
-    "/api/prs/{id}/analysis": {
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "get": {
-        "summary": "Poll AI analysis job status (enrich + risk)",
-        "description": "Returns the background-job state for both the enrich and risk analyses of a PR, so a caller knows when a fired analysis has finished.",
-        "responses": {
-          "200": {
-            "description": "Job states",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "enrich": {
-                      "type": "object",
-                      "properties": {
-                        "status": {
-                          "type": "string",
-                          "enum": [
-                            "idle",
-                            "running",
-                            "done",
-                            "failed"
-                          ]
-                        },
-                        "error": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "risk": {
-                      "type": "object",
-                      "properties": {
-                        "status": {
-                          "type": "string",
-                          "enum": [
-                            "idle",
-                            "running",
-                            "done",
-                            "failed"
-                          ]
-                        },
-                        "error": {
-                          "type": "string"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/prs/{id}/blocks": {
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "get": {
-        "summary": "Read a PR's analyzed blocks",
-        "description": "The hotness-ranked code blocks for a PR, including any AI enrichment. Read after enrich finishes.",
-        "responses": {
-          "200": {
-            "description": "Blocks",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "blocks": {
-                      "type": "array",
-                      "items": {
-                        "type": "object"
-                      }
-                    },
-                    "status": {
-                      "type": "object"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/prs/{id}/risk": {
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "get": {
-        "summary": "Read a PR's stored risk verdict",
-        "description": "The last computed risk assessment (null if never analyzed). Read after analyze finishes.",
-        "responses": {
-          "200": {
-            "description": "Risk",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "risk": {
-                      "type": "object",
-                      "nullable": true
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/repos/{id}/analyze": {
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "post": {
-        "summary": "Run repo forensics (git history hotness) \u2014 not AI",
-        "description": "Computes per-file git-history signals (churn, fix ratio, staleness) used to rank PR blocks. Synchronous; git-only, no LLM. Poll/read GET /api/repos/{id}/analysis-status.",
-        "responses": {
-          "200": {
-            "description": "Analyzed"
-          },
-          "400": {
-            "description": "repo has no local cache"
-          }
-        }
-      }
-    },
-    "/api/repos/{id}/analysis-status": {
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "get": {
-        "summary": "Whether a repo's forensics analysis is present/fresh",
-        "responses": {
-          "200": {
-            "description": "Status",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "analyzed": {
-                      "type": "boolean"
-                    },
-                    "upToDate": {
-                      "type": "boolean"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/merge-jobs/{id}/wake": {
-      "post": {
-        "summary": "Resume a detached worker/merge job (self-wake)",
-        "description": "Enqueues a continuation turn for a detached job (worker or host-merge) now, or after `inSeconds`. This is how a worker resumes itself: a detached `claude -p` turn ends its process on completion, and the model's own ScheduleWakeup can't re-invoke it \u2014 only this can. A worker waiting on slow background work should call this before ending its turn (e.g. `corral worker wake <id> --in 30`). The continuation runs with full prior context (--resume). Capped at 30m; dropped if the job is removed before it fires.",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "prompt": {
-                    "type": "string",
-                    "description": "Continuation prompt (defaults to a generic 'resume where you left off')."
-                  },
-                  "inSeconds": {
-                    "type": "integer",
-                    "description": "Delay before waking; 0/omitted = now. Capped at 1800."
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Wake scheduled",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean"
-                    },
-                    "jobId": {
-                      "type": "string"
-                    },
-                    "wakeInSeconds": {
-                      "type": "integer"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "unknown job"
           }
         }
       }
@@ -2796,6 +367,59 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/conversations/analyze": {
+      "post": {
+        "summary": "Analyze a captured conversation with AI (recursive, captured)",
+        "description": "Spawns a fresh Claude to analyze the given conversation's transcript and returns its job id (watch it in the Work tab). The analysis runs as a log-analysis worker whose OWN conversation is captured, with parent_conversation_id = the analyzed conversation \u2014 so it joins the causal chain. Mutating (spawns host Claude): subject to the API-writes gate.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "conversationId"
+                ],
+                "properties": {
+                  "conversationId": {
+                    "type": "integer"
+                  },
+                  "question": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Analysis started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "jobId": {
+                      "type": "string"
+                    },
+                    "analyzing": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "conversationId required"
+          },
+          "404": {
+            "description": "conversation not found"
           }
         }
       }
@@ -3037,6 +661,42 @@
         }
       }
     },
+    "/api/conversations/{id}/chain": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Get the causal chain (forest) a conversation belongs to",
+        "description": "Walks parent_conversation_id to the root, then collects all descendants \u2014 every conversation spawned in the same chain (e.g. a global chat, the project it created via the API, and that project's conversations). Ordered by creation. Use with GET /api/logs/trace/{traceId} to render the shared trace waterfall.",
+        "responses": {
+          "200": {
+            "description": "Chain",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "conversations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/conversations/{id}/messages": {
       "parameters": [
         {
@@ -3112,7 +772,149 @@
         }
       }
     },
-    "/api/conversations/{id}/chain": {
+    "/api/dind/caches": {
+      "get": {
+        "summary": "List DinD data caches",
+        "responses": {
+          "200": {
+            "description": "Caches",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "caches": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DindCache"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Snapshot a project's DinD volume into a named cache",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "project"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "project": {
+                    "type": "string",
+                    "description": "project id whose DinD volume to snapshot"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DindCache"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dind/caches/{name}": {
+      "delete": {
+        "summary": "Delete a DinD data cache",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/flows": {
+      "get": {
+        "summary": "List flows",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Flows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "flows": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Flow"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a flow (optionally with inline steps)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FlowInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Flow"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/flows/{id}": {
       "parameters": [
         {
           "name": "id",
@@ -3124,20 +926,350 @@
         }
       ],
       "get": {
-        "summary": "Get the causal chain (forest) a conversation belongs to",
-        "description": "Walks parent_conversation_id to the root, then collects all descendants \u2014 every conversation spawned in the same chain (e.g. a global chat, the project it created via the API, and that project's conversations). Ordered by creation. Use with GET /api/logs/trace/{traceId} to render the shared trace waterfall.",
+        "summary": "Fetch a flow with its steps",
         "responses": {
           "200": {
-            "description": "Chain",
+            "description": "Flow",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Flow"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a flow",
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/flows/{id}/schedule": {
+      "get": {
+        "summary": "Get a flow's pseudo-cron schedule",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Schedule or null",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "conversations": {
+                    "schedule": {
+                      "$ref": "#/components/schemas/Schedule"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Set a flow's schedule (drift-tolerant pseudo-cron)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "description": "cadenceSeconds is the interval; catchUp fires once on wake when overdue (else the miss is skipped); enabled pauses it. Mutating \u2014 gated for CLI/Claude, not the browser. The tick that FIRES a scheduled flow is never gated.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved schedule"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove a flow's schedule",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed"
+          }
+        }
+      }
+    },
+    "/api/flows/{id}/steps": {
+      "post": {
+        "summary": "Append a step to a flow",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FlowStep"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Added"
+          }
+        }
+      }
+    },
+    "/api/flows/{id}:run": {
+      "post": {
+        "summary": "Run a flow ad-hoc",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunContext"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Flow result"
+          }
+        }
+      }
+    },
+    "/api/hooks": {
+      "get": {
+        "summary": "List hooks bound to an event",
+        "parameters": [
+          {
+            "name": "event",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Event"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Hooks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "hooks": {
                       "type": "array",
                       "items": {
-                        "type": "object"
+                        "$ref": "#/components/schemas/Hook"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Bind an event to an action or flow",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HookInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/api/hooks/{id}": {
+      "delete": {
+        "summary": "Unbind a hook",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/logs": {
+      "get": {
+        "summary": "Application log (host-wide), newest-first, keyset-paginated",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "keyset cursor: rows older than this id"
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "free-text search over message + meta"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "logs": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LogRecord"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/logs/facets": {
+      "get": {
+        "summary": "Distinct categories + projects for the log filters",
+        "responses": {
+          "200": {
+            "description": "Facets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "categories": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "projects": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
                       }
                     }
                   }
@@ -3148,24 +1280,271 @@
         }
       }
     },
-    "/api/conversations/analyze": {
+    "/api/logs/trace/{traceId}": {
+      "get": {
+        "summary": "Reconstructed span tree for one trace",
+        "parameters": [
+          {
+            "name": "traceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Trace"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp": {
+      "get": {
+        "summary": "List connected MCP servers with live status",
+        "description": "Drives `claude mcp list` on the host. status is connected | needs_auth | pending | unknown. A read \u2014 always allowed.",
+        "responses": {
+          "200": {
+            "description": "Servers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "servers": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/McpServer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
-        "summary": "Analyze a captured conversation with AI (recursive, captured)",
-        "description": "Spawns a fresh Claude to analyze the given conversation's transcript and returns its job id (watch it in the Work tab). The analysis runs as a log-analysis worker whose OWN conversation is captured, with parent_conversation_id = the analyzed conversation \u2014 so it joins the causal chain. Mutating (spawns host Claude): subject to the API-writes gate.",
+        "summary": "Connect a remote MCP server",
+        "description": "Runs `claude mcp add --scope user`. A mutating call \u2014 when made by the CLI/host Claude it requires API writes to be enabled; the browser is never gated.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpAddInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Connected"
+          },
+          "403": {
+            "description": "API writes disabled (CLI/Claude only)"
+          }
+        }
+      }
+    },
+    "/api/mcp/{name}": {
+      "delete": {
+        "summary": "Remove an MCP server",
+        "description": "Runs `claude mcp remove <name>`. Mutating \u2014 gated for the CLI/Claude, never for the browser.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed"
+          },
+          "403": {
+            "description": "API writes disabled (CLI/Claude only)"
+          }
+        }
+      }
+    },
+    "/api/mcp/{name}/login": {
+      "post": {
+        "summary": "Start the interactive OAuth login for an MCP server",
+        "description": "Runs `claude mcp login <name>` in a bridged terminal (the browser attaches over a WebSocket). Use this for a server whose status is needs_auth. Mutating \u2014 gated for the CLI/Claude; in practice the user completes the browser OAuth.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Login session started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "API writes disabled (CLI/Claude only)"
+          }
+        }
+      }
+    },
+    "/api/prompts": {
+      "get": {
+        "summary": "Editable prompt catalog (default/effective/source/slots per prompt)",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Prompts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "prompts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PromptItem"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/prompts/default": {
+      "get": {
+        "summary": "Get (creating if needed) the editable global project-start prompt",
+        "responses": {
+          "200": {
+            "description": "The prompt action id + template"
+          }
+        }
+      }
+    },
+    "/api/prompts/library": {
+      "get": {
+        "summary": "List saved (named) prompts",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Prompts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "prompts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/NamedPrompt"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Save a named prompt",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NamedPromptInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NamedPrompt"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/prompts/library/{id}": {
+      "put": {
+        "summary": "Update a named prompt",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "conversationId"
-                ],
                 "properties": {
-                  "conversationId": {
-                    "type": "integer"
+                  "name": {
+                    "type": "string"
                   },
-                  "question": {
+                  "template": {
+                    "type": "string"
+                  },
+                  "description": {
                     "type": "string"
                   }
                 }
@@ -3175,28 +1554,425 @@
         },
         "responses": {
           "200": {
-            "description": "Analysis started",
+            "description": "Updated"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a named prompt",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/prompts/project-start": {
+      "get": {
+        "summary": "Resolve the effective project-start prompt for a repo",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Effective template + source + presets"
+          }
+        }
+      }
+    },
+    "/api/prompts/{key}": {
+      "parameters": [
+        {
+          "name": "key",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "repo",
+          "in": "query",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "summary": "Save a prompt override (repo scope with ?repo=)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "template": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated prompt item"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Reset a prompt (remove the override at this scope)",
+        "responses": {
+          "200": {
+            "description": "Updated prompt item"
+          }
+        }
+      }
+    },
+    "/api/prs/inbox": {
+      "get": {
+        "summary": "List open PRs across all repos (the inbox)",
+        "description": "Open PRs aggregated across every GitHub repo in the Repos list, live via gh. Each carries its repo id + GitHub NUMBER (not a Corral internal id \u2014 these aren't cached yet). To act on one, first POST /api/repos/{id}/prs/fetch with its number to cache it and get its internal id.",
+        "responses": {
+          "200": {
+            "description": "Inbox",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "jobId": {
-                      "type": "string"
+                    "prs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "repoId": {
+                            "type": "string"
+                          },
+                          "repoName": {
+                            "type": "string"
+                          },
+                          "pr": {
+                            "type": "object",
+                            "properties": {
+                              "number": {
+                                "type": "integer"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "url": {
+                                "type": "string"
+                              },
+                              "author": {
+                                "type": "string"
+                              },
+                              "isDraft": {
+                                "type": "boolean"
+                              },
+                              "reviewDecision": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
                     },
-                    "analyzing": {
+                    "currentUser": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/prs/prune": {
+      "get": {
+        "summary": "Count local PR records that a prune would delete (dry run)",
+        "description": "Counts local Corral DB PR records whose fetched_at is older than olderThanDays, without deleting. LOCAL ONLY \u2014 never touches GitHub.",
+        "parameters": [
+          {
+            "name": "olderThanDays",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 30,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "repo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "would_prune": {
                       "type": "integer"
                     }
                   }
                 }
               }
             }
+          }
+        }
+      },
+      "post": {
+        "summary": "Prune old local PR records (local DB cleanup, not GitHub)",
+        "description": "Deletes local Corral DB PR records whose fetched_at is older than olderThanDays (default 30; floor 1), cascading to their blocks/links/chat. LOCAL ONLY \u2014 it does not close or delete anything on GitHub. Optional repo scopes it.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "olderThanDays": {
+                    "type": "integer",
+                    "default": 30,
+                    "minimum": 1
+                  },
+                  "repo": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pruned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "pruned": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/prs/{id}/analysis": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Poll AI analysis job status (enrich + risk)",
+        "description": "Returns the background-job state for both the enrich and risk analyses of a PR, so a caller knows when a fired analysis has finished.",
+        "responses": {
+          "200": {
+            "description": "Job states",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enrich": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "idle",
+                            "running",
+                            "done",
+                            "failed"
+                          ]
+                        },
+                        "error": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "risk": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "idle",
+                            "running",
+                            "done",
+                            "failed"
+                          ]
+                        },
+                        "error": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/prs/{id}/analyze": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Start the PR-level risk verdict \u2014 fire and return",
+        "description": "Kicks off the PR risk assessment via host Claude in the BACKGROUND; returns immediately. Poll GET /api/prs/{id}/analysis, then read GET /api/prs/{id}/risk.",
+        "responses": {
+          "200": {
+            "description": "Started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           },
-          "400": {
-            "description": "conversationId required"
+          "502": {
+            "description": "claude CLI unavailable"
+          }
+        }
+      }
+    },
+    "/api/prs/{id}/blocks": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Read a PR's analyzed blocks",
+        "description": "The hotness-ranked code blocks for a PR, including any AI enrichment. Read after enrich finishes.",
+        "responses": {
+          "200": {
+            "description": "Blocks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "blocks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "status": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/prs/{id}/enrich": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Start AI analysis (enrich) on a PR \u2014 fire and return",
+        "description": "Kicks off the per-block AI analysis (title/explanation/edge-cases/risk + a PR summary) via host Claude, in the BACKGROUND, and returns immediately. Poll GET /api/prs/{id}/analysis for completion, then read GET /api/prs/{id}/blocks. Idempotent while running.",
+        "responses": {
+          "200": {
+            "description": "Started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           },
-          "404": {
-            "description": "conversation not found"
+          "502": {
+            "description": "claude CLI unavailable"
           }
         }
       }
@@ -3411,6 +2187,250 @@
         }
       }
     },
+    "/api/prs/{id}/merge": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Merge a PR (host | plain)",
+        "description": "Merges a PR. mode \"plain\" does a direct `gh pr merge` (fails if not mergeable). mode \"host\" starts a detached host-merge background job (rebase onto base, resolve conflicts, wait for CI, merge) and returns its jobId \u2014 watch it in the Work tab; NOT sandboxed. If no merge strategy is set for the repo or globally (and none is passed), returns 400 telling you to set a per-repo default first. mode defaults to the global default mode.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "host",
+                      "sandbox",
+                      "plain"
+                    ]
+                  },
+                  "strategy": {
+                    "type": "string",
+                    "enum": [
+                      "squash",
+                      "merge",
+                      "rebase"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Merged or job started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "mode": {
+                      "type": "string"
+                    },
+                    "strategy": {
+                      "type": "string"
+                    },
+                    "jobId": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No strategy set / invalid mode or strategy"
+          }
+        }
+      }
+    },
+    "/api/prs/{id}/notes": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "List a PR's local notes",
+        "description": "Private, LOCAL notes on a PR \u2014 stored only in Corral's DB, never posted to GitHub (unlike a PR comment). Newest first.",
+        "responses": {
+          "200": {
+            "description": "Notes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "prId": {
+                            "type": "integer"
+                          },
+                          "body": {
+                            "type": "string"
+                          },
+                          "author": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add a local note to a PR",
+        "description": "Adds a private, local note (never sent to GitHub). Body required; author is an optional free-text label.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "body": {
+                    "type": "string"
+                  },
+                  "author": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created note",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "note": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "prId": {
+                          "type": "integer"
+                        },
+                        "body": {
+                          "type": "string"
+                        },
+                        "author": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/prs/{id}/notes/{noteId}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "noteId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "delete": {
+        "summary": "Delete a local PR note",
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/prs/{id}/risk": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Read a PR's stored risk verdict",
+        "description": "The last computed risk assessment (null if never analyzed). Read after analyze finishes.",
+        "responses": {
+          "200": {
+            "description": "Risk",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "risk": {
+                      "type": "object",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/prs/{id}/stack": {
       "parameters": [
         {
@@ -3495,56 +2515,251 @@
         }
       }
     },
-    "/api/prs/inbox": {
+    "/api/repos/{id}/agent-context": {
       "get": {
-        "summary": "List open PRs across all repos (the inbox)",
-        "description": "Open PRs aggregated across every GitHub repo in the Repos list, live via gh. Each carries its repo id + GitHub NUMBER (not a Corral internal id \u2014 these aren't cached yet). To act on one, first POST /api/repos/{id}/prs/fetch with its number to cache it and get its internal id.",
+        "summary": "Get a repo's CLAUDE.md agent context",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Inbox",
+            "description": "Context",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "prs": {
+                    "content": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Set a repo's CLAUDE.md agent context (empty clears)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved"
+          }
+        }
+      }
+    },
+    "/api/repos/{id}/analysis-status": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Whether a repo's forensics analysis is present/fresh",
+        "responses": {
+          "200": {
+            "description": "Status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "analyzed": {
+                      "type": "boolean"
+                    },
+                    "upToDate": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{id}/analyze": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Run repo forensics (git history hotness) \u2014 not AI",
+        "description": "Computes per-file git-history signals (churn, fix ratio, staleness) used to rank PR blocks. Synchronous; git-only, no LLM. Poll/read GET /api/repos/{id}/analysis-status.",
+        "responses": {
+          "200": {
+            "description": "Analyzed"
+          },
+          "400": {
+            "description": "repo has no local cache"
+          }
+        }
+      }
+    },
+    "/api/repos/{id}/generate-agents-md": {
+      "post": {
+        "summary": "Generate the repo's AGENTS.md via an async host worker",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Generation started"
+          }
+        }
+      }
+    },
+    "/api/repos/{id}/images": {
+      "get": {
+        "summary": "Docker images/caches Corral has for a repo",
+        "description": "The repo's DinD baseline cache (repo-<id>) if built, plus live inner-docker images from a running project cloned from this repo (if any). Reads only.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "repo image/cache view"
+          }
+        }
+      }
+    },
+    "/api/repos/{id}/merge-strategy": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "Get a repo's merge-strategy state",
+        "description": "Returns the merge methods GitHub allows for the repo, the per-repo preference, the global default, and the resolved effective strategy.",
+        "responses": {
+          "200": {
+            "description": "Strategy state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "allowed": {
                       "type": "array",
                       "items": {
-                        "type": "object",
-                        "properties": {
-                          "repoId": {
-                            "type": "string"
-                          },
-                          "repoName": {
-                            "type": "string"
-                          },
-                          "pr": {
-                            "type": "object",
-                            "properties": {
-                              "number": {
-                                "type": "integer"
-                              },
-                              "title": {
-                                "type": "string"
-                              },
-                              "url": {
-                                "type": "string"
-                              },
-                              "author": {
-                                "type": "string"
-                              },
-                              "isDraft": {
-                                "type": "boolean"
-                              },
-                              "reviewDecision": {
-                                "type": "string"
-                              }
-                            }
-                          }
-                        }
+                        "type": "string"
                       }
                     },
-                    "currentUser": {
+                    "preferred": {
+                      "type": "string"
+                    },
+                    "global_default": {
+                      "type": "string"
+                    },
+                    "effective": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Set a repo's PREFERRED merge strategy",
+        "description": "Sets the per-repo merge strategy preference (the preferred place to record a choice \u2014 repo beats global). Empty string clears it. This is what to call when a merge errored because no strategy was set.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "strategy": {
+                    "type": "string",
+                    "enum": [
+                      "squash",
+                      "merge",
+                      "rebase",
+                      ""
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "preferred": {
                       "type": "string"
                     }
                   }
@@ -3599,65 +2814,6 @@
                             "type": "string"
                           },
                           "headRef": {
-                            "type": "string"
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/repos/{id}/prs/open": {
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "get": {
-        "summary": "List a repo's live open PRs from GitHub",
-        "description": "The repo's currently-open PRs via gh (by GitHub number). Fetch one to get an internal id to act on.",
-        "responses": {
-          "200": {
-            "description": "Open PRs",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "available": {
-                      "type": "boolean"
-                    },
-                    "prs": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "number": {
-                            "type": "integer"
-                          },
-                          "title": {
-                            "type": "string"
-                          },
-                          "url": {
-                            "type": "string"
-                          },
-                          "author": {
-                            "type": "string"
-                          },
-                          "isDraft": {
-                            "type": "boolean"
-                          },
-                          "reviewDecision": {
                             "type": "string"
                           }
                         }
@@ -3743,37 +2899,61 @@
         }
       }
     },
-    "/api/skills/{id}/promote": {
-      "post": {
-        "summary": "Promote a repo skill to the global catalog",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
+    "/api/repos/{id}/prs/open": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
           }
-        ],
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "autoAll": {
-                    "type": "boolean"
+        }
+      ],
+      "get": {
+        "summary": "List a repo's live open PRs from GitHub",
+        "description": "The repo's currently-open PRs via gh (by GitHub number). Fetch one to get an internal id to act on.",
+        "responses": {
+          "200": {
+            "description": "Open PRs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "prs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "number": {
+                            "type": "integer"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          },
+                          "author": {
+                            "type": "string"
+                          },
+                          "isDraft": {
+                            "type": "boolean"
+                          },
+                          "reviewDecision": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
                   }
                 }
               }
             }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Promoted global skill"
           }
         }
       }
@@ -3867,9 +3047,487 @@
         }
       }
     },
-    "/api/repos/{id}/generate-agents-md": {
+    "/api/runs": {
+      "get": {
+        "summary": "Recent run history",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Runs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "runs": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Run"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runs/{id}": {
+      "get": {
+        "summary": "Fetch a run",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/skills": {
+      "get": {
+        "summary": "List a repo's skills",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Skills",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skills": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RepoSkill"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
-        "summary": "Generate the repo's AGENTS.md via an async host worker",
+        "summary": "Add a skill to a repo",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepoSkillInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoSkill"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/skills/{id}": {
+      "put": {
+        "summary": "Update a skill",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "content": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a skill",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/skills/{id}/promote": {
+      "post": {
+        "summary": "Promote a repo skill to the global catalog",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "autoAll": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Promoted global skill"
+          }
+        }
+      }
+    },
+    "/api/tools": {
+      "get": {
+        "summary": "Tool manifest (actions exposed as Claude tools)",
+        "description": "Empty unless the user enabled AutomationsToolsEnabled. Gated so Claude can't act without opt-in.",
+        "responses": {
+          "200": {
+            "description": "Manifest",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "tools": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ToolDescriptor"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tools/{name}:invoke": {
+      "post": {
+        "summary": "Invoke an action by tool name",
+        "description": "403 when tools are disabled.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "Tool input = run-context vars."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Step result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tools disabled"
+          }
+        }
+      }
+    },
+    "/api/triggers": {
+      "get": {
+        "summary": "User-facing trigger catalog (friendly labels + built-in steps)",
+        "responses": {
+          "200": {
+            "description": "Triggers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "triggers": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Trigger"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/gh/branches": {
+      "get": {
+        "summary": "List branches for a repo",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Branches"
+          }
+        }
+      }
+    },
+    "/gh/issues": {
+      "get": {
+        "summary": "List issues for a repo",
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Issues"
+          }
+        }
+      }
+    },
+    "/gh/issues/create": {
+      "post": {
+        "summary": "Create a GitHub issue",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueCreateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueCreated"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/gh/repos": {
+      "get": {
+        "summary": "List the operator's GitHub repos",
+        "responses": {
+          "200": {
+            "description": "Repos"
+          }
+        }
+      }
+    },
+    "/global/apply": {
+      "post": {
+        "summary": "Apply global settings changes",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Applied"
+          }
+        }
+      }
+    },
+    "/global/config": {
+      "get": {
+        "summary": "Read global settings",
+        "responses": {
+          "200": {
+            "description": "Global settings"
+          }
+        }
+      }
+    },
+    "/merge-jobs/{id}/wake": {
+      "post": {
+        "summary": "Resume a detached worker/merge job (self-wake)",
+        "description": "Enqueues a continuation turn for a detached job (worker or host-merge) now, or after `inSeconds`. This is how a worker resumes itself: a detached `claude -p` turn ends its process on completion, and the model's own ScheduleWakeup can't re-invoke it \u2014 only this can. A worker waiting on slow background work should call this before ending its turn (e.g. `corral worker wake <id> --in 30`). The continuation runs with full prior context (--resume). Capped at 30m; dropped if the job is removed before it fires.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "prompt": {
+                    "type": "string",
+                    "description": "Continuation prompt (defaults to a generic 'resume where you left off')."
+                  },
+                  "inSeconds": {
+                    "type": "integer",
+                    "description": "Delay before waking; 0/omitted = now. Capped at 1800."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Wake scheduled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "jobId": {
+                      "type": "string"
+                    },
+                    "wakeInSeconds": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "unknown job"
+          }
+        }
+      }
+    },
+    "/p/{id}/dind/images": {
+      "get": {
+        "summary": "List images in a project's inner Docker daemon (live)",
+        "description": "Runs `docker images` inside the project's sandbox container to show what's actually cached/available (so you can confirm e.g. the app image is present without a rebuild). Requires the container to be up; returns containerUp=false with an empty list otherwise.",
         "parameters": [
           {
             "name": "id",
@@ -3882,7 +3540,370 @@
         ],
         "responses": {
           "200": {
-            "description": "Generation started"
+            "description": "The inner-docker image list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "containerUp": {
+                      "type": "boolean"
+                    },
+                    "images": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "repository": {
+                            "type": "string"
+                          },
+                          "tag": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "size": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/p/{id}/dind/status": {
+      "get": {
+        "summary": "DinD cache reuse status for a project (cheap; no inner-docker exec)",
+        "description": "Whether this project's inner Docker is starting FROM a cache: which cache is attached (repo-<id> or hand-named), its mode (copy/shared), and whether it's actually being reused (seeded copy / mounted shared) vs a fresh empty volume. Reads config + docker volume existence only.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The reuse status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cacheName": {
+                      "type": "string"
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "copy",
+                        "shared"
+                      ]
+                    },
+                    "isRepo": {
+                      "type": "boolean"
+                    },
+                    "reused": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/p/{id}/live-port": {
+      "get": {
+        "summary": "Get the Live View default port (0 = unset)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The stored preferred port",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "port": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Set the port (and path) the Live View tab shows by default",
+        "description": "After starting a web app in the sandbox, set the user-facing port to watch (e.g. a docs site on 1313), so the Live View tab opens it without the user hunting for it. Include `path` when the app serves under a sub-path (e.g. \"/docs/node/\") \u2014 the app's root \"/\" may 404 and show a blank page. Send port 0 to clear.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "port"
+                ],
+                "properties": {
+                  "port": {
+                    "type": "integer",
+                    "description": "1-65535, or 0 to clear"
+                  },
+                  "path": {
+                    "type": "string",
+                    "description": "optional path to open, e.g. /docs/node/ (blank = app root)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved"
+          }
+        }
+      }
+    },
+    "/p/{id}/remove": {
+      "post": {
+        "summary": "Unregister a project from the dashboard",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed"
+          }
+        }
+      }
+    },
+    "/p/{id}/start": {
+      "post": {
+        "summary": "Start a project's container",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Starting"
+          }
+        }
+      }
+    },
+    "/p/{id}/stop": {
+      "post": {
+        "summary": "Stop a project's container",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stopped"
+          }
+        }
+      }
+    },
+    "/projects/create": {
+      "post": {
+        "summary": "Create a new project workspace",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectCreateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "workspace": {
+                      "type": "string"
+                    },
+                    "start_prompt": {
+                      "type": "string"
+                    },
+                    "issue_prompt": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/repos": {
+      "get": {
+        "summary": "List repos (cross-project)",
+        "responses": {
+          "200": {
+            "description": "Repos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "repos": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Repo"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add a repo",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepoInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Added",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Repo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/repos/{id}": {
+      "delete": {
+        "summary": "Remove a repo (and its cache)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed"
+          }
+        }
+      }
+    },
+    "/repos/{id}/fetch": {
+      "post": {
+        "summary": "Refresh a repo's cache mirror",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Fetched"
+          }
+        }
+      }
+    },
+    "/status": {
+      "get": {
+        "summary": "Live per-project status \u2014 up/down, and the working/waiting activity signal",
+        "description": "The activity field is how you tell whether a project's Claude is actively working ('working') or idle at the prompt waiting on the user ('waiting'), or the container is down ('off'). It's computed from real completion activity (POST /v1/messages when the traffic is decrypted, else a proxy.log heuristic).",
+        "responses": {
+          "200": {
+            "description": "Project statuses",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
           }
         }
       }
