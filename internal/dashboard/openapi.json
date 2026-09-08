@@ -2639,6 +2639,47 @@
         }
       }
     },
+    "/api/repos/{id}/build-image": {
+      "post": {
+        "summary": "Build the repo's Docker image and save it as the repo DinD baseline",
+        "description": "Kicks a detached background job: create a throwaway sandbox project on the repo, build its image inside (inferred from Dockerfile/compose, or the given command), snapshot it as the repo baseline cache (repo-<id>) so future projects reuse it, then tear the project down. Returns {jobId}; watch it in the Global chat's Jobs list.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "description": "Optional explicit build command (else inferred from the repo)."
+                  },
+                  "imageTag": {
+                    "type": "string",
+                    "description": "Optional resulting image tag/name."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "build job started"
+          }
+        }
+      }
+    },
     "/api/repos/{id}/generate-agents-md": {
       "post": {
         "summary": "Generate the repo's AGENTS.md via an async host worker",
