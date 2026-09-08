@@ -11,7 +11,7 @@ import (
 // is a real safety boundary — it must never be bypassed. Fails loudly if anyone
 // reintroduces a bypass into the argv.
 func TestHostClaudeStaysGated(t *testing.T) {
-	args := strings.Join(buildClaudeArgs("hi", []string{"Bash"}, ""), " ")
+	args := strings.Join(buildClaudeArgs("hi", "", []string{"Bash"}, ""), " ")
 	if !strings.Contains(args, "--permission-mode default") {
 		t.Fatalf("host claude must use --permission-mode default, got: %s", args)
 	}

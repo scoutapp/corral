@@ -124,29 +124,30 @@ const chatTurnLifetimeGuidance = "SUPERVISE WITHIN A TURN, DON'T FIRE-AND-FORGET
 	"progress, and re-check on the next turn by reading its state fresh (`corral api GET /status`, its " +
 	"conversation) rather than assuming a prior background watcher is still alive."
 
-// withContextHint prepends a page-context note (and, on the first turn, the
-// question-asking convention plus — for the global chat — the conductor rule) to
-// a prompt. firstTurn gates them — later turns already carry them via --resume.
-// isGlobal is true only for the app-wide global chat (workspace==""); a project
-// chat already runs inside a sandbox, so the conductor rule is skipped there.
-func withContextHint(prompt, hint string, firstTurn, isGlobal bool) string {
-	if !firstTurn {
+// conductorSystemPrompt assembles the global chat's standing operating rules —
+// the question-asking convention, and (for the conductor) the sandbox-routing +
+// image-build + Live-View-verify + background-task-lifetime rules, plus Corral's
+// known repos. It's passed as --append-system-prompt on EVERY turn, so it survives
+// --resume instead of decaying after turn 1 (the bug: a resumed conductor forgot
+// it could verify Live View via the endpoint and hand-rolled a broken CLI check).
+func conductorSystemPrompt() string {
+	parts := []string{chatConductorGuidance, chatQuestionGuidance}
+	if repoCtx := chatReposContext(); repoCtx != "" {
+		parts = append(parts, repoCtx)
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// withContextHint prepends a page-context note (which page the user is on) to the
+// FIRST turn. The operating rules used to live here too, but a first-turn-only
+// user-message prefix decayed out of a resumed session — they now travel on every
+// turn via --append-system-prompt (see conductorSystemPrompt). This keeps only the
+// per-page hint, which is genuinely first-turn (later turns carry it via --resume).
+func withContextHint(prompt, hint string, firstTurn bool) string {
+	if !firstTurn || hint == "" {
 		return prompt
 	}
-	prefix := chatQuestionGuidance + "\n\n"
-	if isGlobal {
-		prefix = chatConductorGuidance + "\n\n" + prefix
-		// Hand the conductor Corral's known repos upfront so it doesn't burn turns
-		// discovering where a checkout lives — it can go straight to
-		// POST /projects/create with the right id.
-		if repoCtx := chatReposContext(); repoCtx != "" {
-			prefix = repoCtx + "\n" + prefix
-		}
-	}
-	if hint != "" {
-		prefix = "[Context: " + hint + "]\n\n" + prefix
-	}
-	return prefix + prompt
+	return "[Context: " + hint + "]\n\n" + prompt
 }
 
 // truncate shortens s to at most n runes, appending an ellipsis when clipped.
@@ -359,7 +360,7 @@ func (d *dashboardServer) runChatSession(w http.ResponseWriter, r *http.Request,
 		if hint == "" {
 			hint = contextHint
 		}
-		prompt := withContextHint(msg.Prompt, hint, sessionID == "", workspace == "")
+		prompt := withContextHint(msg.Prompt, hint, sessionID == "")
 
 		// Capture the user's prompt (the raw text, not the context-hinted wrapper)
 		// before the turn — the stream doesn't echo it back. Best-effort. This also
@@ -509,7 +510,7 @@ func isExecutable(path string) bool {
 // --allowedTools entirely when no tools are granted: a bare "--allowedTools"
 // with no following value is a malformed flag that makes `claude` fail — the
 // bug that broke the PR-review chat (which grants no tools).
-func buildClaudeArgs(prompt string, tools []string, sessionID string) []string {
+func buildClaudeArgs(prompt, systemPrompt string, tools []string, sessionID string) []string {
 	args := []string{
 		"-p", prompt,
 		"--output-format", "stream-json", "--verbose",
@@ -519,6 +520,14 @@ func buildClaudeArgs(prompt string, tools []string, sessionID string) []string {
 		// one it is inside the sandbox. It is deliberately NOT bypassable here; a
 		// worker gets capability via its bounded --allowedTools list instead.
 		"--permission-mode", "default",
+	}
+	// The conductor's operating rules go in the SYSTEM prompt so they apply on
+	// EVERY turn (including --resume'd follow-ups), not just the first user message.
+	// A first-turn-only user-message prefix decayed out of a multi-turn session —
+	// which is why a resumed conductor forgot it could verify Live View via the
+	// endpoint and hand-rolled a broken CLI check instead.
+	if strings.TrimSpace(systemPrompt) != "" {
+		args = append(args, "--append-system-prompt", systemPrompt)
 	}
 	// Load the corral-api skill for THIS chat session only, via --plugin-dir. We
 	// deliberately don't install it into ~/.claude/skills: that would make its
@@ -557,7 +566,13 @@ func (d *dashboardServer) runChatTurn(ctx context.Context, claudeBin, workspace 
 	// captureSend wrap (redacting already-stripped text is a no-op).
 	send = redactedSend(send)
 
-	args := buildClaudeArgs(prompt, tools, sessionID)
+	// The global chat (workspace=="") is the conductor: give it its operating rules
+	// as a system prompt on EVERY turn, so a resumed/multi-turn session keeps them.
+	sysPrompt := ""
+	if workspace == "" {
+		sysPrompt = conductorSystemPrompt()
+	}
+	args := buildClaudeArgs(prompt, sysPrompt, tools, sessionID)
 
 	cmd := exec.CommandContext(ctx, claudeBin, args...)
 	// Cross-origin linkage: stamp the conversation driving THIS turn into the
