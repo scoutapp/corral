@@ -1541,8 +1541,30 @@ func EnsureDashboardRunning() (*DashboardState, bool, error) {
 		return nil, false, err
 	}
 
-	time.Sleep(500 * time.Millisecond) // give it a moment to bind before use
+	// Wait until the daemon is actually serving before returning, so callers print
+	// the URL / open a tab only once it's reachable. Previously we slept a fixed
+	// 500ms and returned — on a slower start (migrations, asset extraction) the
+	// server wasn't listening yet, so clicking the link showed "not reachable" for
+	// a few seconds. Poll /healthz until it answers, up to a bounded timeout; we
+	// don't hard-fail on timeout (the daemon may still be coming up) — the poll
+	// just holds the return until it's live in the normal case.
+	waitDashboardHealthy(port, 15*time.Second)
 	return state, true, nil
+}
+
+// waitDashboardHealthy polls /healthz until the dashboard answers OK or the
+// timeout elapses. Returns true once healthy.
+func waitDashboardHealthy(port int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		if dashboardHealthy(port) {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 func cmdDashboardStop() error {
