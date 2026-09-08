@@ -82,9 +82,19 @@ func (d *dashboardServer) handleLiveRoot(w http.ResponseWriter, r *http.Request)
 
 // requireLiveAuth gates the live listener with liveToken ONLY. It accepts the
 // corral_live_token cookie, or a one-time ?__live_token=<t> that sets the cookie
-// (host-only on localhost, HttpOnly, SameSite=Strict) and redirects to strip the
+// (host-only on localhost, HttpOnly, SameSite=None) and redirects to strip the
 // param. The dashboard's token / apiToken are NEVER accepted here — the two
 // origins keep separate credentials.
+//
+// SameSite=None (NOT Strict) is REQUIRED: the iframe's origin is localhost:<live>
+// but it is EMBEDDED by the dashboard at 127.0.0.1:<dash>. The browser treats
+// 127.0.0.1 and localhost as different sites, so every framed request is a
+// cross-site (third-party) context. A Strict/Lax cookie is dropped there — the
+// 302 sets it, but the follow-up framed request omits it → 403 → white screen.
+// None+Secure cookies are the only ones sent cross-site; browsers accept
+// Secure cookies over http://localhost as a loopback exception, so this works
+// on plain HTTP. This is safe: the token is single-purpose (frames the app, no
+// dashboard access) and the origin is loopback-only.
 func (d *dashboardServer) requireLiveAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if c, err := r.Cookie(liveCookieName); err == nil &&
@@ -99,7 +109,8 @@ func (d *dashboardServer) requireLiveAuth(next http.HandlerFunc) http.HandlerFun
 				Value:    d.liveToken,
 				Path:     "/",
 				HttpOnly: true,
-				SameSite: http.SameSiteStrictMode,
+				Secure:   true, // required alongside SameSite=None; accepted over http://localhost (loopback exception)
+				SameSite: http.SameSiteNoneMode,
 				// No Domain → host-only on localhost; never sent to 127.0.0.1.
 			})
 			q := r.URL.Query()
