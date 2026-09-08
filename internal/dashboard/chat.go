@@ -15,7 +15,48 @@ import (
 
 	"github.com/scoutapp/corral/internal/applog"
 	"github.com/scoutapp/corral/internal/config"
+	"github.com/scoutapp/corral/internal/repos"
 )
+
+// chatReposContext renders Corral's known repos into a compact block for the
+// global chat's first turn, so the conductor doesn't waste turns DISCOVERING
+// where a repo lives (a real session burned several turns `ls ~/`-ing and
+// globbing for "core-agent" before finding it — Corral already knew the id). It
+// lists the repo id + name + default branch, which is exactly what
+// `POST /projects/create {"repoId":…}` needs. Returns "" when no repos are known.
+// Pinned repos sort first (repos.List already returns them that way); capped so a
+// huge registry can't blow up the prompt.
+func chatReposContext() string {
+	list, err := repos.List()
+	if err != nil || len(list) == 0 {
+		return ""
+	}
+	const cap = 30
+	var b strings.Builder
+	b.WriteString("Corral already tracks these repos — use these ids directly with `corral api POST /projects/create` " +
+		"(don't go hunting on disk for a checkout):\n")
+	for i, r := range list {
+		if i >= cap {
+			b.WriteString(fmt.Sprintf("  …and %d more (see `corral api GET /repos`).\n", len(list)-cap))
+			break
+		}
+		branch := r.DefaultBranch
+		if branch == "" {
+			branch = "?"
+		}
+		src := r.URL
+		if src == "" {
+			src = r.LocalPath
+		}
+		b.WriteString(fmt.Sprintf("  - %s — id `%s`, default branch `%s`%s\n", r.Name, r.ID, branch, func() string {
+			if src != "" {
+				return " (" + src + ")"
+			}
+			return ""
+		}()))
+	}
+	return b.String()
+}
 
 // chatQuestionGuidance teaches the host chat a tiny convention for asking the
 // user a quick multiple-choice question, which the browser renders as clickable
@@ -83,6 +124,12 @@ func withContextHint(prompt, hint string, firstTurn, isGlobal bool) string {
 	prefix := chatQuestionGuidance + "\n\n"
 	if isGlobal {
 		prefix = chatConductorGuidance + "\n\n" + prefix
+		// Hand the conductor Corral's known repos upfront so it doesn't burn turns
+		// discovering where a checkout lives — it can go straight to
+		// POST /projects/create with the right id.
+		if repoCtx := chatReposContext(); repoCtx != "" {
+			prefix = repoCtx + "\n" + prefix
+		}
 	}
 	if hint != "" {
 		prefix = "[Context: " + hint + "]\n\n" + prefix
