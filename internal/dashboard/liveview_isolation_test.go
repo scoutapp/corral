@@ -217,8 +217,14 @@ func TestRequireLiveAuth(t *testing.T) {
 	if loc := rec.Header().Get("Location"); strings.Contains(loc, "__live_token") {
 		t.Errorf("redirect should strip the token param, got %q", loc)
 	}
-	if sc := rec.Header().Get("Set-Cookie"); !strings.Contains(sc, liveCookieName+"=LIVE") || !strings.Contains(sc, "HttpOnly") {
-		t.Errorf("should set the HttpOnly live cookie, got %q", sc)
+	// Must be HttpOnly AND SameSite=None; Secure — the iframe is cross-site to the
+	// dashboard (localhost vs 127.0.0.1), so a Strict/Lax cookie would be dropped
+	// on the framed follow-up request → 403 → white screen.
+	if sc := rec.Header().Get("Set-Cookie"); !strings.Contains(sc, liveCookieName+"=LIVE") ||
+		!strings.Contains(sc, "HttpOnly") ||
+		!strings.Contains(sc, "SameSite=None") ||
+		!strings.Contains(sc, "Secure") {
+		t.Errorf("live cookie must be HttpOnly, SameSite=None, Secure; got %q", sc)
 	}
 
 	// Valid cookie → passes through.
