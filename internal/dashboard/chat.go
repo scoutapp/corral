@@ -50,7 +50,26 @@ const chatConductorGuidance = "YOU ARE A CONDUCTOR ON THE HOST — you are NOT s
 	"'{\"repoId\":\"<id>\",\"prompt\":\"<the full task>\"}'` — the sandbox's own Claude does the work. Then " +
 	"supervise it (`corral api GET /status`, read its conversation). ONLY pure host/orchestration work " +
 	"(inspecting Corral state, reading logs/PRs, running flows, analysis, answering questions) stays here. When " +
-	"in doubt, route it to a sandbox. (See the corral-api skill for the exact API shapes.)"
+	"in doubt, route it to a sandbox. (See the corral-api skill for the exact API shapes.)\n\n" +
+	chatTurnLifetimeGuidance
+
+// chatTurnLifetimeGuidance warns the interactive conductor that each of its turns
+// is a SEPARATE headless `claude -p` process (multi-turn only via --resume): when
+// a turn ends the process EXITS, so any background task it started — a Monitor, a
+// ScheduleWakeup, a detached `&` job — is orphaned and its notifications never
+// arrive. This is exactly what stranded a real session: the conductor started a
+// 1-hour Monitor to watch a sandbox, ended its turn, and the Monitor died at the
+// process boundary ("the monitor was stopped"). Tell it to supervise SYNCHRONOUSLY
+// instead of fire-and-forget.
+const chatTurnLifetimeGuidance = "SUPERVISE WITHIN A TURN, DON'T FIRE-AND-FORGET: each of your turns is a " +
+	"separate short-lived process. When your reply ends, that process exits — so a background task you " +
+	"start (the Monitor tool, ScheduleWakeup, a detached `&` command) is KILLED at the turn boundary and you " +
+	"will NOT receive its events. To watch a sandbox (or any long job) reliably, poll it IN THE SAME TURN with a " +
+	"bounded Bash loop (e.g. `until <done-condition>; do sleep 15; done`, with an overall timeout) or a " +
+	"foreground `Monitor` you wait on, then report once it reaches the milestone — do not start a Monitor and " +
+	"end the turn expecting to be notified later. If a job is genuinely long, do a bounded check now, report " +
+	"progress, and re-check on the next turn by reading its state fresh (`corral api GET /status`, its " +
+	"conversation) rather than assuming a prior background watcher is still alive."
 
 // withContextHint prepends a page-context note (and, on the first turn, the
 // question-asking convention plus — for the global chat — the conductor rule) to

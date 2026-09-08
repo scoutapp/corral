@@ -21,6 +21,11 @@ func TestWithContextHint(t *testing.T) {
 	if !strings.Contains(got, "CONDUCTOR") || !strings.Contains(got, "/projects/create") {
 		t.Errorf("global first-turn prompt should carry the conductor/sandbox rule: %q", got)
 	}
+	// The turn-lifetime warning must be present so the conductor doesn't start a
+	// Monitor/background task and end its turn (it would be orphaned).
+	if !strings.Contains(got, "FIRE-AND-FORGET") || !strings.Contains(got, "Monitor") {
+		t.Errorf("global first-turn prompt should carry the turn-lifetime warning: %q", got)
+	}
 
 	// Later turns: nothing prepended (context + guidance already carried via
 	// --resume) — the prompt is passed through verbatim.
