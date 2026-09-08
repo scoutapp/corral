@@ -2,9 +2,7 @@ package dashboard
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 
 	"github.com/scoutapp/corral/internal/applog"
@@ -87,40 +85,10 @@ func (d *dashboardServer) repoWorkerGuidance(repoID string) string {
 	return g + "\n\n---\n\n"
 }
 
-// handleConductorWorkerCreate: POST /api/conductor/workers { prompt, title?, repoId? }
-// spawns a detached worker Claude and returns its job id. The worker starts
-// immediately on the given prompt; watch/steer it in the Work tab.
-func (d *dashboardServer) handleConductorWorkerCreate(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	var body struct {
-		Prompt string `json:"prompt"`
-		Title  string `json:"title"`
-		// RepoID selects which repo's `worker.boot_guidance` prompt applies — the
-		// repo's editable override if set, else the generic default. Optional; omit
-		// for a repo-agnostic worker (still gets the generic default).
-		RepoID string `json:"repoId"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
-		return
-	}
-	if strings.TrimSpace(body.Prompt) == "" {
-		http.Error(w, "prompt is required", http.StatusBadRequest)
-		return
-	}
-	// Cross-origin linkage: if a captured Claude drove this request (via corral
-	// api), the parent conversation id rides in on this header — thread it so the
-	// worker's own conversation chains back to it.
-	job, err := d.startWorkerJob(body.Prompt, body.Title, parentConvFromRequest(r), "", body.RepoID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	writeFilesJSON(w, map[string]any{"jobId": job.ID, "title": job.Title})
-}
+// NOTE: the user-facing POST /api/conductor/workers endpoint was removed — the
+// conductor now does the work itself (or delegates to a sandbox project), rather
+// than spawning a separate host worker. startWorkerJob below is still used
+// INTERNALLY (AGENTS.md generation, log-analysis) as a detached background job.
 
 // startWorkerJob builds, registers, and launches a detached worker Claude job,
 // returning it. The worker runs headless (`claude -p`) in the neutral global-chat

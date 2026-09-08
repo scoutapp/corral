@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { ChatPanel } from "./ChatPanel";
 import { GlobalConductors } from "./GlobalConductors";
-import { WorkTab } from "./WorkTab";
 import { useRouter, matchProject } from "../router";
 import { useDragResize } from "../hooks/useDragResize";
 import { usePersistentState } from "../hooks/usePersistentState";
@@ -21,7 +20,10 @@ const DOCK_W_DEFAULT = 440;
 // chat first. Everywhere else it's just the global chat, no tabs. One surface,
 // context-aware.
 
-type Tab = "project" | "global" | "work";
+// Background merge/host jobs are no longer a separate "Work" tab — they show
+// inline in the Global conductor rail. Only two surfaces remain: the current
+// project's chat and the global conductor(s).
+type Tab = "project" | "global";
 
 // contextLabel is a short chip showing where the global chat is scoped, mirroring
 // the fuller hint sent to the backend (see FirstRunChat.pageContext).
@@ -61,41 +63,20 @@ export function ChatDock() {
   // Default to the project chat when on a project (you're looking at it); the
   // global chat otherwise. Re-defaults to project whenever the project changes.
   const [tab, setTab] = useState<Tab>("project");
-  const [workCount, setWorkCount] = useState(0);
   // Captured conversation UUID per host chat tab, shown in the header. These are
-  // HOST conversations (this dock is the host chat); sandbox chats never render
-  // a UUID. The Work tab has no single conversation, so it shows none.
+  // HOST conversations (this dock is the host chat); sandbox chats never render one.
   const [globalUuid, setGlobalUuid] = useState("");
   const [projectUuid, setProjectUuid] = useState("");
   useEffect(() => {
     setTab(projectId ? "project" : "global");
   }, [projectId]);
 
-  // Poll the host-merge job count so the "Work" tab appears/updates even before
-  // the dock is opened. Lightweight (a small JSON list); the WorkTab itself does
-  // the richer polling + streaming once shown.
-  useEffect(() => {
-    let live = true;
-    const poll = () => {
-      fetch("/merge-jobs", { credentials: "same-origin" })
-        .then((r) => (r.ok ? r.json() : { jobs: [] }))
-        .then((d: { jobs?: unknown[] }) => live && setWorkCount((d.jobs || []).length))
-        .catch(() => {});
-    };
-    poll();
-    const t = setInterval(poll, 5000);
-    return () => {
-      live = false;
-      clearInterval(t);
-    };
-  }, []);
-
-  // Other surfaces (e.g. the PR "Merge with host" button) ask the dock to open
-  // on the Work tab via a window event, so a launched job is immediately visible.
+  // Other surfaces (e.g. the PR "Merge with host" button) ask the dock to open on
+  // the Global tab — where background merge/host jobs now appear inline in the
+  // conductor rail — so a launched job is immediately visible.
   useEffect(() => {
     const openWork = () => {
-      setWorkCount((c) => Math.max(c, 1)); // ensure the tab renders before its poll catches up
-      setTab("work");
+      setTab("global");
       setOpen(true);
       setEverOpened(true);
     };
@@ -124,17 +105,10 @@ export function ChatDock() {
   }
 
   const showProjectTab = !!projectId;
-  const showWorkTab = workCount > 0;
-  // Resolve the effective tab: honor the chosen tab when it's available, else
-  // fall back to global. (project only on a project route; work only when jobs
-  // exist.)
-  const activeTab: Tab =
-    tab === "project" && showProjectTab
-      ? "project"
-      : tab === "work" && showWorkTab
-        ? "work"
-        : "global";
-  const showTabs = showProjectTab || showWorkTab;
+  // Resolve the effective tab: the project chat only on a project route, else the
+  // global conductor(s).
+  const activeTab: Tab = tab === "project" && showProjectTab ? "project" : "global";
+  const showTabs = showProjectTab; // only when there's a project chat to switch to
   const headerUuid = activeTabUuid(activeTab, globalUuid, projectUuid);
 
   return (
@@ -196,16 +170,6 @@ export function ChatDock() {
             >
               Global
             </button>
-            {showWorkTab && (
-              <button
-                type="button"
-                className={`chatdock-tab${activeTab === "work" ? " active" : ""}`}
-                onClick={() => setTab("work")}
-                title="Host-merge jobs running in the background"
-              >
-                Work <span className="chatdock-tab-count">{workCount}</span>
-              </button>
-            )}
           </div>
         )}
 
@@ -224,17 +188,10 @@ export function ChatDock() {
                 </div>
               )}
               <div style={{ display: activeTab === "global" ? "flex" : "none", flex: 1, minHeight: 0, flexDirection: "column" }}>
-                {/* Multiple independent global conductors, each gated by the
-                    first-run capability choice before it spawns. */}
+                {/* Multiple independent global conductors + background merge/host
+                    jobs inline, each gated by the first-run capability choice. */}
                 <GlobalConductors onConvMeta={(m) => setGlobalUuid(m.convUuid)} />
               </div>
-              {/* Work tab: only mounted when active, so its job viewer WS opens
-                  lazily. It reports the live count back to keep the tab in sync. */}
-              {activeTab === "work" && (
-                <div style={{ display: "flex", flex: 1, minHeight: 0, flexDirection: "column" }}>
-                  <WorkTab onCount={setWorkCount} />
-                </div>
-              )}
             </>
           )}
         </div>

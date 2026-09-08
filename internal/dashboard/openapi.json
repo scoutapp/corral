@@ -2605,60 +2605,6 @@
         }
       }
     },
-    "/api/conductor/workers": {
-      "post": {
-        "summary": "Spawn a worker Claude (conductor delegation)",
-        "description": "Starts a fresh, INDEPENDENT worker Claude (not a subagent) as a detached background job that runs the given prompt on the host in a neutral dir, with the global chat's tool capability. Returns its job id; watch/steer/close it in the dashboard Work tab or via the /merge-jobs endpoints (workers are jobs). Use this to delegate tasks instead of doing everything in one conductor session.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "prompt"
-                ],
-                "properties": {
-                  "prompt": {
-                    "type": "string"
-                  },
-                  "title": {
-                    "type": "string"
-                  },
-                  "repoId": {
-                    "type": "string",
-                    "description": "Optional. When set, the worker's prompt is augmented with this repo's saved agent context (its editable, repo-specific boot/caching guidance) on top of the generic worker contract."
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Worker started",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "jobId": {
-                      "type": "string"
-                    },
-                    "title": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "prompt required"
-          }
-        }
-      }
-    },
     "/merge-jobs/{id}/wake": {
       "post": {
         "summary": "Resume a detached worker/merge job (self-wake)",
