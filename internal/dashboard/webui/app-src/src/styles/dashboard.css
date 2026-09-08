@@ -2826,6 +2826,16 @@ table.projects th, table.projects td {
   font-size: 0.72rem; text-transform: none; letter-spacing: 0;
 }
 .work-rail-new:hover { text-decoration: underline; }
+/* A small section header ("Jobs") separating background merge/host jobs from the
+   conductor chats above them in the rail. */
+.work-rail-subhead {
+  padding: 0.4rem 0.5rem 0.2rem; font-size: 0.66rem; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.04em; border-top: 1px solid var(--border);
+}
+/* Background job rows: a shade lighter than the conductor rows so they read as
+   machine jobs distinct from your own conductor chats. */
+.work-rail-job { background: color-mix(in srgb, var(--fg) 5%, transparent); }
+.work-rail-job.active { background: color-mix(in srgb, var(--fg) 9%, transparent); }
 .work-rail-compose { border-bottom: 1px solid var(--border); }
 .work-compose { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.5rem; }
 .work-compose-title, .work-compose-prompt {

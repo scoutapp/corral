@@ -131,8 +131,6 @@ func (d *dashboardServer) handleAPI(w http.ResponseWriter, r *http.Request, rest
 		d.handleRepoOpenPRs(w, r, strings.TrimSuffix(strings.TrimPrefix(rest, "repos/"), "/prs/open"))
 	case strings.HasPrefix(rest, "repos/") && strings.HasSuffix(rest, "/prs/fetch") && r.Method == http.MethodPost:
 		d.handleRepoPRFetch(w, r, strings.TrimSuffix(strings.TrimPrefix(rest, "repos/"), "/prs/fetch"))
-	case rest == "conductor/workers":
-		d.handleConductorWorkerCreate(w, r)
 	case rest == "conversations":
 		d.handleConversations(w, r, "")
 	case strings.HasPrefix(rest, "conversations/"):
