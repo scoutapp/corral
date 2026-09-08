@@ -375,46 +375,38 @@ endpoint, or a database/cache/internal service (5432, 6379, …) — those retur
 but show a human nothing. A 200 means "the route works," not "this is worth
 watching."
 
-### VERIFY IT ACTUALLY RENDERS — curl is not enough
+### VERIFY IT ACTUALLY RENDERS — use the verify endpoint, not curl
 
-**Do not trust a 200. `curl` fetches HTML but never runs the page's JavaScript, so
-a blank/white-screen SPA (JS error, empty `<div id="root">`, wrong route) passes a
-curl check and then shows the user nothing.** This has bitten us repeatedly. Before
-you set the Live View port, confirm the page truly renders — and do it **inside the
-sandbox** (that's where the app runs and where Chromium already lives; the host
-must not reach into the sandbox to drive a browser).
+**Do not trust a 200, and do not claim "verified" from server-side checks. `curl`
+fetches HTML but never runs the page's JavaScript, so a blank/white-screen SPA (JS
+error, empty `<div id="root">`, wrong route) passes a curl check and then shows the
+user nothing. And you CANNOT test the real path from the CLI yourself** — Live View
+is served by a host loopback proxy gated by a browser-only token; hitting it from
+the CLI returns 403. This has bitten us repeatedly: the conductor verifies the
+sandbox's own port, calls it "working," and the user sees a white screen.
 
-The sandbox image ships **Playwright + Chromium** (`npm playwright`, browsers at
-`/ms-playwright`). Have the sandbox load the exact URL Live View will show and
-assert it's non-empty — not just HTTP 200. A minimal check:
+Corral does the render check FOR you — it drives a headless browser on the host
+through the exact Live View proxy path (which the CLI can't reach), runs the page's
+JS, and reports whether it actually rendered:
 
 ```
-node -e '
-const { chromium } = require("playwright");
-(async () => {
-  const b = await chromium.launch();
-  const p = await b.newContext().then(c => c.newPage());
-  const errs = [];
-  p.on("pageerror", e => errs.push(String(e)));
-  const res = await p.goto("http://localhost:1313/docs/node/", { waitUntil: "networkidle", timeout: 20000 });
-  // Real content, not a blank shell: visible text length + a non-empty body.
-  const text = (await p.locator("body").innerText().catch(() => "")).trim();
-  const ok = res && res.ok() && text.length > 20 && errs.length === 0;
-  console.log(JSON.stringify({ status: res && res.status(), textLen: text.length, pageErrors: errs, ok }));
-  await b.close();
-  process.exit(ok ? 0 : 1);
-})();
-'
+corral api POST /p/<projectId>/verify-live-view -d '{"port":1313,"path":"/docs/node/"}'
+# → { "rendered": true|false, "domTextLen": <n>, "screenshot": "<host png path>", "note": "…" }
 ```
 
-- Use the **same port + path** you're about to set. `waitUntil: "networkidle"` lets
-  the SPA hydrate before you measure.
-- `ok` requires a 2xx **and** real rendered text **and** no page errors — that's
-  what catches a white screen. Adjust the assertion to something the page really
-  shows (a heading, a known selector) when you can.
-- If it fails, **fix the app first** (read the `pageErrors`, check the dev-server
-  log, confirm the route) and re-verify — do NOT set the Live View port to a page
-  you haven't seen render. Only set it once the check passes:
+- Pass the **exact port + path** you intend to publish. Omit the body to check the
+  project's currently-saved live-port.
+- `rendered:true` means the page produced real content through the real proxy path.
+  `rendered:false` with a low `domTextLen` is a **white screen** — the `note` says
+  so, and a `screenshot` is saved you can open to see it.
+- If `rendered:false`, **fix the app first** (check the dev-server log / the app's
+  console errors / the route), then re-verify. Do NOT set the Live View port to a
+  page you haven't confirmed renders.
+- If the response says no host browser was found (`browserFound:false`), you can't
+  auto-verify — tell the user to eyeball the Live View tab rather than claiming it
+  works.
+
+Only once `rendered:true` do you set the port:
 
 ```
 corral api PUT /p/<projectId>/live-port -d '{"port":1313,"path":"/docs/node/"}'
