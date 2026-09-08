@@ -157,6 +157,51 @@ such a worker prompt, tell it how to reach and run the app inside the sandbox:
   requirement. Make this fallback explicit in the prompt so the worker doesn't get
   stuck insisting on Docker for an app that doesn't support it.
 
+### Building a repo's image on demand — you CAN do this
+
+If a task needs a repo's Docker image and it doesn't exist yet (a `docker pull`
+fails, or the app's image just isn't around), **build it — don't give up.** You
+have everything you need: a sandbox has an inner Docker daemon, so build the image
+*inside a sandbox project* and then snapshot it as the repo's baseline so every
+future project reuses it.
+
+First, check what's already there for the repo (no running project needed):
+
+```
+corral api GET /api/repos/<repoId>/images
+# → { baseline: {name, bytes}|null, liveImages: [...], liveProject: <id>|null }
+```
+
+- `baseline` is the repo's DinD baseline cache (`repo-<repoId>`) if it's been
+  built/saved — present even when nothing is running.
+- `liveImages` are the images in a currently-running project of that repo (if one
+  is up).
+
+If the image you need isn't there, build it:
+
+1. **Create a sandbox project on the repo** (DinD is on by default) and start it:
+   ```
+   corral api POST /projects/create -d '{"repoId":"<repoId>","prompt":"Build this repo's Docker image."}'
+   corral api POST /p/<projectId>/start
+   ```
+2. **Build the image inside that sandbox** — exec its build (`docker build`, or
+   `docker compose build`, or the repo's documented build command). Prefer the
+   repo's own Dockerfile/compose; run it via `corral project exec <projectId> --
+   <cmd>` (or the sandbox Claude does it). Confirm it exists with
+   `corral api GET /p/<projectId>/dind/images`.
+3. **Snapshot it as the repo baseline** so future projects reuse it, then the
+   next project from this repo auto-starts from it:
+   ```
+   corral api POST /api/dind/caches -d '{"name":"repo-<repoId>","project":"<projectId>"}'
+   ```
+   (Remember: a snapshot captures IMAGES + NAMED VOLUMES, not a running
+   container's writable layer — so `docker build`/`docker commit` a real image, or
+   put deps/DB in named volumes, before snapshotting. See the DinD notes below.)
+
+That's the whole loop: **need an image → build it in a sandbox → snapshot to the
+baseline.** Do it proactively when a task is blocked on a missing image rather
+than reporting that the image doesn't exist.
+
 ### Reusing built images across projects (DinD caches)
 
 Building an app's inner-docker image every time is slow. Corral can reuse a
