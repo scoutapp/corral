@@ -31,60 +31,44 @@ func TestChatReposContext(t *testing.T) {
 	}
 }
 
+// withContextHint now only prepends the per-page context marker on the first turn;
+// the operating rules moved to the system prompt (conductorSystemPrompt).
 func TestWithContextHint(t *testing.T) {
 	hint := "The user is viewing repo acme/widget."
 
-	// First turn, GLOBAL chat, with a hint: the context marker is prepended, the
-	// question-asking guidance and the conductor rule are included, and the
-	// original prompt is preserved.
-	got := withContextHint("what's broken?", hint, true, true)
-	if !strings.HasPrefix(got, "[Context: "+hint+"]") || !strings.Contains(got, "what's broken?") {
+	// First turn with a hint: the context marker is prepended, prompt preserved.
+	got := withContextHint("what's broken?", hint, true)
+	if !strings.HasPrefix(got, "[Context: "+hint+"]") || !strings.HasSuffix(got, "what's broken?") {
 		t.Errorf("first-turn hint not prepended: %q", got)
 	}
-	if !strings.Contains(got, "corral-question") {
-		t.Errorf("first-turn prompt should carry the question guidance: %q", got)
-	}
-	if !strings.Contains(got, "CONDUCTOR") || !strings.Contains(got, "/projects/create") {
-		t.Errorf("global first-turn prompt should carry the conductor/sandbox rule: %q", got)
-	}
-	if !strings.Contains(got, "BUILD A REPO'S DOCKER IMAGE") || !strings.Contains(got, "/api/dind/caches") {
-		t.Errorf("global first-turn prompt should carry the image-build capability: %q", got)
-	}
-	if !strings.Contains(got, "VERIFY LIVE VIEW") || !strings.Contains(got, "verify-live-view") {
-		t.Errorf("global first-turn prompt should carry the live-view verify guidance: %q", got)
-	}
-	// The turn-lifetime warning must be present so the conductor doesn't start a
-	// Monitor/background task and end its turn (it would be orphaned).
-	if !strings.Contains(got, "FIRE-AND-FORGET") || !strings.Contains(got, "Monitor") {
-		t.Errorf("global first-turn prompt should carry the turn-lifetime warning: %q", got)
+	// The operating rules must NOT be in the user message anymore (they're system).
+	if strings.Contains(got, "CONDUCTOR") || strings.Contains(got, "corral-question") {
+		t.Errorf("operating rules should no longer be in the user prompt: %q", got)
 	}
 
-	// Later turns: nothing prepended (context + guidance already carried via
-	// --resume) — the prompt is passed through verbatim.
-	if got := withContextHint("and this one?", hint, false, true); got != "and this one?" {
+	// Later turns / no hint: passed through verbatim.
+	if got := withContextHint("and this one?", hint, false); got != "and this one?" {
 		t.Errorf("later turn should be unchanged, got %q", got)
 	}
-	if got := withContextHint("hello", "", false, false); got != "hello" {
-		t.Errorf("later turn with no hint should be unchanged, got %q", got)
+	if got := withContextHint("hello", "", true); got != "hello" {
+		t.Errorf("no-hint first turn should be just the prompt, got %q", got)
 	}
+}
 
-	// First turn with NO context hint, GLOBAL: no [Context:] marker, but the
-	// question guidance + conductor rule still apply and the prompt is preserved.
-	got = withContextHint("hello", "", true, true)
-	if strings.Contains(got, "[Context:") {
-		t.Errorf("no-hint first turn should not have a context marker: %q", got)
-	}
-	if !strings.Contains(got, "corral-question") || !strings.HasSuffix(got, "hello") {
-		t.Errorf("no-hint first turn should carry guidance + the prompt: %q", got)
-	}
-
-	// First turn, PROJECT chat (isGlobal=false): it already runs inside a sandbox,
-	// so the conductor rule is NOT injected — but the question guidance still is.
-	got = withContextHint("fix the bug", hint, true, false)
-	if strings.Contains(got, "CONDUCTOR") {
-		t.Errorf("project chat should NOT get the conductor rule: %q", got)
-	}
-	if !strings.Contains(got, "corral-question") || !strings.HasSuffix(got, "fix the bug") {
-		t.Errorf("project first turn should still carry the question guidance + prompt: %q", got)
+// TestConductorSystemPrompt: the standing rules that ride on EVERY turn via
+// --append-system-prompt (so a resumed conductor keeps them).
+func TestConductorSystemPrompt(t *testing.T) {
+	t.Setenv("CORRAL_HOME", t.TempDir()) // no repos → repo block omitted, rest present
+	sp := conductorSystemPrompt()
+	for _, want := range []string{
+		"CONDUCTOR", "/projects/create", // sandbox-routing
+		"corral-question",                        // ask-the-user convention
+		"BUILD A REPO'S DOCKER IMAGE", "/api/dind/caches", // image build
+		"VERIFY LIVE VIEW", "verify-live-view", // live-view render check
+		"FIRE-AND-FORGET", "Monitor", // turn-lifetime warning
+	} {
+		if !strings.Contains(sp, want) {
+			t.Errorf("conductor system prompt missing %q", want)
+		}
 	}
 }
