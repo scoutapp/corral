@@ -373,7 +373,53 @@ dashboard screen, the docs site, the thing they asked to see. **Do NOT** point i
 at a health/liveness probe (`/health_check`, `/healthz`, `/up`), an API/JSON
 endpoint, or a database/cache/internal service (5432, 6379, …) — those return 200
 but show a human nothing. A 200 means "the route works," not "this is worth
-watching." Verify the page renders (curl it inside the sandbox) before setting it.
+watching."
+
+### VERIFY IT ACTUALLY RENDERS — curl is not enough
+
+**Do not trust a 200. `curl` fetches HTML but never runs the page's JavaScript, so
+a blank/white-screen SPA (JS error, empty `<div id="root">`, wrong route) passes a
+curl check and then shows the user nothing.** This has bitten us repeatedly. Before
+you set the Live View port, confirm the page truly renders — and do it **inside the
+sandbox** (that's where the app runs and where Chromium already lives; the host
+must not reach into the sandbox to drive a browser).
+
+The sandbox image ships **Playwright + Chromium** (`npm playwright`, browsers at
+`/ms-playwright`). Have the sandbox load the exact URL Live View will show and
+assert it's non-empty — not just HTTP 200. A minimal check:
+
+```
+node -e '
+const { chromium } = require("playwright");
+(async () => {
+  const b = await chromium.launch();
+  const p = await b.newContext().then(c => c.newPage());
+  const errs = [];
+  p.on("pageerror", e => errs.push(String(e)));
+  const res = await p.goto("http://localhost:1313/docs/node/", { waitUntil: "networkidle", timeout: 20000 });
+  // Real content, not a blank shell: visible text length + a non-empty body.
+  const text = (await p.locator("body").innerText().catch(() => "")).trim();
+  const ok = res && res.ok() && text.length > 20 && errs.length === 0;
+  console.log(JSON.stringify({ status: res && res.status(), textLen: text.length, pageErrors: errs, ok }));
+  await b.close();
+  process.exit(ok ? 0 : 1);
+})();
+'
+```
+
+- Use the **same port + path** you're about to set. `waitUntil: "networkidle"` lets
+  the SPA hydrate before you measure.
+- `ok` requires a 2xx **and** real rendered text **and** no page errors — that's
+  what catches a white screen. Adjust the assertion to something the page really
+  shows (a heading, a known selector) when you can.
+- If it fails, **fix the app first** (read the `pageErrors`, check the dev-server
+  log, confirm the route) and re-verify — do NOT set the Live View port to a page
+  you haven't seen render. Only set it once the check passes:
+
+```
+corral api PUT /p/<projectId>/live-port -d '{"port":1313,"path":"/docs/node/"}'
+```
+
 The Live View tab then opens that port + path by default. Send `{"port":0}` to clear it.
 For an inner (Docker-in-Docker) service to be viewable, run its container with
 `-p <port>:<port>` so it's reachable.
