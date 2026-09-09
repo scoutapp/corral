@@ -15,9 +15,12 @@ func argsContain(args []string, flag string) bool {
 
 func TestBuildClaudeArgs(t *testing.T) {
 	// No tools (PR-review chat), no system prompt.
-	noTools := buildClaudeArgs("hi", "", nil, "")
+	noTools := buildClaudeArgs("hi", "", nil, nil, "")
 	if argsContain(noTools, "--allowedTools") {
 		t.Errorf("empty tools should omit --allowedTools, got: %v", noTools)
+	}
+	if argsContain(noTools, "--disallowedTools") {
+		t.Errorf("no disallowed should omit --disallowedTools, got: %v", noTools)
 	}
 	if argsContain(noTools, "--append-system-prompt") {
 		t.Errorf("empty system prompt should omit --append-system-prompt, got: %v", noTools)
@@ -27,8 +30,20 @@ func TestBuildClaudeArgs(t *testing.T) {
 		t.Errorf("missing base args: %v", noTools)
 	}
 
+	// Disallowed tools: --disallowedTools immediately followed by the names.
+	withDenied := buildClaudeArgs("hi", "", nil, []string{"AskUserQuestion"}, "")
+	d := -1
+	for k, a := range withDenied {
+		if a == "--disallowedTools" {
+			d = k
+		}
+	}
+	if d < 0 || d+1 >= len(withDenied) || withDenied[d+1] != "AskUserQuestion" {
+		t.Errorf("expected --disallowedTools followed by AskUserQuestion, got: %v", withDenied)
+	}
+
 	// With tools (project chat): --allowedTools immediately followed by tools.
-	withTools := buildClaudeArgs("hi", "", []string{"Read", "Grep"}, "")
+	withTools := buildClaudeArgs("hi", "", []string{"Read", "Grep"}, nil, "")
 	i := -1
 	for k, a := range withTools {
 		if a == "--allowedTools" {
@@ -43,7 +58,7 @@ func TestBuildClaudeArgs(t *testing.T) {
 	}
 
 	// A system prompt (the conductor) appends --append-system-prompt + its value.
-	withSys := buildClaudeArgs("hi", "RULES HERE", nil, "")
+	withSys := buildClaudeArgs("hi", "RULES HERE", nil, nil, "")
 	j := -1
 	for k, a := range withSys {
 		if a == "--append-system-prompt" {
@@ -55,7 +70,7 @@ func TestBuildClaudeArgs(t *testing.T) {
 	}
 
 	// Session id appends --resume.
-	resumed := buildClaudeArgs("hi", "", nil, "sess123")
+	resumed := buildClaudeArgs("hi", "", nil, nil, "sess123")
 	if !argsContain(resumed, "--resume") || !argsContain(resumed, "sess123") {
 		t.Errorf("expected --resume sess123, got: %v", resumed)
 	}

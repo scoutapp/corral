@@ -68,10 +68,12 @@ func chatReposContext() string {
 //
 // Injected on the first turn only (like the context hint); later turns inherit it
 // via --resume. Kept short and optional so it never forces a question.
-const chatQuestionGuidance = "When a choice is genuinely ambiguous and a quick decision from the user would " +
-	"unblock you, you MAY ask with a fenced `corral-question` block instead of prose — the UI renders the " +
-	"options as one-click buttons. Use it sparingly (skip it when you can reasonably proceed). Format:\n" +
-	"```corral-question\nquestion: <the question>\n- <option one>\n- <option two>\n```\n" +
+const chatQuestionGuidance = "ASKING THE USER A QUESTION: you do NOT have an interactive question tool here " +
+	"(any AskUserQuestion-style tool is unavailable and its call is silently discarded — the user never sees it). " +
+	"The ONLY way to ask the user something is a fenced `corral-question` block, which the UI renders as one-click " +
+	"buttons. When a choice is genuinely ambiguous and a quick decision would unblock you, ask with this block " +
+	"(never with a tool, never buried in prose). Use it sparingly — skip it when you can reasonably proceed. " +
+	"Format:\n```corral-question\nquestion: <the question>\n- <option one>\n- <option two>\n```\n" +
 	"One question per block, 2–4 short options. After the block, stop and wait for the answer."
 
 // chatConductorGuidance is prepended to the GLOBAL chat's first turn so the
@@ -510,7 +512,7 @@ func isExecutable(path string) bool {
 // --allowedTools entirely when no tools are granted: a bare "--allowedTools"
 // with no following value is a malformed flag that makes `claude` fail — the
 // bug that broke the PR-review chat (which grants no tools).
-func buildClaudeArgs(prompt, systemPrompt string, tools []string, sessionID string) []string {
+func buildClaudeArgs(prompt, systemPrompt string, tools, disallowed []string, sessionID string) []string {
 	args := []string{
 		"-p", prompt,
 		"--output-format", "stream-json", "--verbose",
@@ -541,6 +543,16 @@ func buildClaudeArgs(prompt, systemPrompt string, tools []string, sessionID stri
 		args = append(args, "--allowedTools")
 		args = append(args, tools...)
 	}
+	// Deny specific tools. The conductor passes AskUserQuestion here: that native
+	// tool is auto-DISMISSED in headless `claude -p` mode (no interactive channel
+	// to answer it over the stream), so a question asked with it silently vanishes
+	// — the user sees nothing and the model gets an empty "dismissed" result. It's
+	// intermittent because the model sometimes uses the answerable `corral-question`
+	// fenced convention instead; denying the native tool forces it onto that path.
+	if len(disallowed) > 0 {
+		args = append(args, "--disallowedTools")
+		args = append(args, disallowed...)
+	}
 	if sessionID != "" {
 		args = append(args, "--resume", sessionID)
 	}
@@ -569,10 +581,15 @@ func (d *dashboardServer) runChatTurn(ctx context.Context, claudeBin, workspace 
 	// The global chat (workspace=="") is the conductor: give it its operating rules
 	// as a system prompt on EVERY turn, so a resumed/multi-turn session keeps them.
 	sysPrompt := ""
+	var disallowed []string
 	if workspace == "" {
 		sysPrompt = conductorSystemPrompt()
+		// The conductor asks questions via the `corral-question` fenced convention
+		// (answerable over the stream). Deny the native AskUserQuestion tool, which
+		// is auto-dismissed in headless mode — so a question can't silently vanish.
+		disallowed = []string{"AskUserQuestion"}
 	}
-	args := buildClaudeArgs(prompt, sysPrompt, tools, sessionID)
+	args := buildClaudeArgs(prompt, sysPrompt, tools, disallowed, sessionID)
 
 	cmd := exec.CommandContext(ctx, claudeBin, args...)
 	// Cross-origin linkage: stamp the conversation driving THIS turn into the
