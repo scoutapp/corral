@@ -2431,6 +2431,113 @@
         }
       }
     },
+    "/api/prs/{id}/review": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Start a FULL REVIEW of a PR — fire and return",
+        "description": "Runs the full-review WORKFLOW in the BACKGROUND (returns immediately): auto-runs the block/heuristics + risk analysis if missing, then feeds those findings + the PR description + diff into the editable pr.review prompt (host Claude, read-only) and stores the markdown. This is a REVIEW ONLY — it reads the PR and writes a review; it does NOT run the code. To also run the change (build/tests) in an isolated container, ALSO start a sandbox verify (POST /projects/create with the PR branch + a verify prompt, then POST /p/{id}/start); the two are independent and can run at the same time. Poll GET /api/prs/{id}/analysis (the \"review\" field) for completion, then read the result from GET /api/prs/{id}/review.",
+        "responses": {
+          "200": {
+            "description": "Started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "claude CLI unavailable"
+          }
+        }
+      },
+      "get": {
+        "summary": "Read a PR's stored full review",
+        "description": "The last computed full-review markdown (null if never run). Read after the review job finishes (poll GET /api/prs/{id}/analysis). The markdown can be posted as a PR comment via POST /api/prs/{id}/comment.",
+        "responses": {
+          "200": {
+            "description": "Review",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "review": {
+                      "type": "object",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/prs/{id}/comment": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "summary": "Post a comment on the PR (to GitHub)",
+        "description": "Posts a comment on the PR via gh. Use it to PUBLISH a full-review result: read GET /api/prs/{id}/review, then POST its markdown here as {body}. This writes to GitHub, so it is subject to the API-writes gate.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "body": {
+                    "type": "string",
+                    "description": "The comment markdown to post."
+                  }
+                },
+                "required": [
+                  "body"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Posted"
+          },
+          "400": {
+            "description": "Not a GitHub remote"
+          }
+        }
+      }
+    },
     "/api/prs/{id}/stack": {
       "parameters": [
         {

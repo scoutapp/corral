@@ -151,6 +151,63 @@ func (d *dashboardServer) startRisk(prID, parentConvID int64) error {
 	return nil
 }
 
+// startReview kicks off the FULL-REVIEW workflow in the background: it auto-runs
+// the block/heuristics + risk analysis if missing, then feeds those findings +
+// the PR description + diff into the editable pr.review prompt (host, read-only)
+// and stores the markdown. Long-running, so it's fire-and-poll like enrich/risk.
+func (d *dashboardServer) startReview(prID, parentConvID int64) error {
+	claudeBin, err := resolveClaudeBin()
+	if err != nil {
+		return fmt.Errorf("the `claude` CLI could not be located — install Claude Code and restart the dashboard")
+	}
+	if !d.analysisJobs.begin(prID, "review") {
+		return nil // already running — idempotent start
+	}
+	go func() {
+		s, err := d.getStore()
+		if err != nil {
+			d.analysisJobs.finish(prID, "review", err)
+			return
+		}
+		svc := prreview.New(s).WithPromptResolver(d.promptResolver())
+		repoID, _ := svc.RepoIDForPR(prID)
+		num, _, _, _, _ := svc.PRHookContext(prID)
+		ctx, endSpan := d.applog().StartSpan(context.Background(), applog.Entry{
+			Category: applog.CatAI, Event: "ai.review",
+			Message: applog.Fmt("Full review PR #%d (api)", num),
+			RepoID:  repoID, Meta: map[string]any{"pr": num, "via": "api"},
+		})
+		runner := func(kind string) aiRunner {
+			return d.capturingRunner(ctx, convOrigin{
+				Kind: "analysis", OriginID: fmt.Sprintf("%s-%d", kind, prID), RepoID: repoID, PRNumber: num,
+				ParentConversationID: parentConvID,
+			}, prreview.NewClaudeRunner(claudeBin))
+		}
+		// Auto-run prereqs if missing (one call does the whole workflow); best-effort.
+		if blocks, _ := svc.Blocks(prID); len(blocks) == 0 {
+			_, _ = svc.ExtractBlocks(ctx, prID, runner("enrich"))
+		}
+		if risk, _ := svc.StoredRisk(prID); risk == nil {
+			_, _ = svc.AnalyzeRisk(ctx, prID, runner("risk"))
+		}
+		_, aerr := svc.RunFullReview(ctx, prID, runner("review"))
+		endSpan(aerr)
+		d.analysisJobs.finish(prID, "review", aerr)
+	}()
+	return nil
+}
+
+// handleAPIPRReviewStart: POST /api/prs/<id>/review — start the full-review
+// workflow in the background; poll GET /api/prs/<id>/analysis (the "review"
+// field), then read the result from GET /api/prs/<id>/review.
+func (d *dashboardServer) handleAPIPRReviewStart(w http.ResponseWriter, r *http.Request, prID int64) {
+	if err := d.startReview(prID, parentConvFromRequest(r)); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeFilesJSON(w, map[string]any{"ok": true, "kind": "review", "status": d.analysisJobs.state(prID, "review").Status})
+}
+
 // handleAPIPREnrich: POST /api/prs/<id>/enrich — start the per-block AI analysis
 // in the background; returns immediately. Poll GET /api/prs/<id>/analysis for
 // completion, then read GET /api/prs/<id>/blocks.
@@ -178,5 +235,6 @@ func (d *dashboardServer) handleAPIPRAnalysisStatus(w http.ResponseWriter, r *ht
 	writeFilesJSON(w, map[string]any{
 		"enrich": d.analysisJobs.state(prID, "enrich"),
 		"risk":   d.analysisJobs.state(prID, "risk"),
+		"review": d.analysisJobs.state(prID, "review"),
 	})
 }

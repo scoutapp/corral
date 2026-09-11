@@ -6,6 +6,7 @@ you a dashboard to drive them. For quick help while you're in the app, press
 
 ## Start here
 
+- [Cheat sheet](CHEAT_SHEET.md) — things you can just *say* to the dashboard's Claude.
 - [Using Corral](usage.md) — install, the CLI, and the end-to-end workflow.
 - [Security model](security.md) — the trust boundary, in detail.
 - [Architecture](architecture.md) — how the pieces fit (proxy, firewall, container).

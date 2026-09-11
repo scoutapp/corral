@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // CmdPR implements `corral pr` — inspect and manage a PR's LOCAL Corral links
@@ -37,6 +38,8 @@ func CmdPR(args []string) error {
 		return prLinksSuggest(rest)
 	case "stack":
 		return prStack(rest)
+	case "review":
+		return prReview(rest)
 	case "link":
 		return prLinkAdd(rest)
 	case "unlink":
@@ -54,6 +57,7 @@ func prUsage() error {
   links   <prId>                          list a PR's local links
   suggest <prId>                          suggest PRs to link (by changed-file overlap)
   stack   <prId>                          detect stacked PRs (git ancestry, from the mirror)
+  review  <prId> [--wait]                  run a FULL AI review (risk+heuristics → review prompt)
   link    <prId> <linkedPrId> [flags]     link two PRs
   unlink  <prId> <linkId>                 remove a link
 
@@ -199,6 +203,78 @@ func prStack(args []string) error {
 		return err
 	}
 	return prPrintResult(status, body)
+}
+
+// prReview starts a full AI review of a PR (background job). With --wait it polls
+// until the review finishes and prints the resulting markdown; otherwise it
+// returns immediately after starting (poll GET /api/prs/<id>/analysis yourself).
+//
+//	corral pr review <prId> [--wait]
+//
+// This is REVIEW ONLY — it reads the PR and writes a review; it does NOT run the
+// code. To also run the change in a sandbox, create+start a project on the PR
+// branch separately; the two are independent and can run at the same time.
+func prReview(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: corral pr review <prId> [--wait]")
+	}
+	id, err := parsePRID(args[0])
+	if err != nil {
+		return err
+	}
+	wait := false
+	for _, a := range args[1:] {
+		if a == "--wait" {
+			wait = true
+		}
+	}
+
+	status, body, err := dashboardRequest("POST", fmt.Sprintf("/api/prs/%d/review", id), "{}")
+	if err != nil {
+		return err
+	}
+	if status < 200 || status >= 300 {
+		return prPrintResult(status, body)
+	}
+	if !wait {
+		fmt.Printf("Started full review of PR %d. Poll GET /api/prs/%d/analysis (the \"review\" field), then read GET /api/prs/%d/review — or re-run with --wait.\n", id, id, id)
+		return nil
+	}
+
+	// Poll the analysis status until the review job leaves "running", then print
+	// the stored review markdown. Bounded so a stuck job doesn't hang forever.
+	fmt.Fprintln(os.Stderr, "Reviewing (risk + heuristics → review)… this can take a minute.")
+	for i := 0; i < 240; i++ { // ~4 min at 1s
+		time.Sleep(1 * time.Second)
+		st, sb, serr := dashboardRequest("GET", fmt.Sprintf("/api/prs/%d/analysis", id), "")
+		if serr != nil || st < 200 || st >= 300 {
+			continue
+		}
+		var an struct {
+			Review struct {
+				Status string `json:"status"`
+				Error  string `json:"error"`
+			} `json:"review"`
+		}
+		if json.Unmarshal(sb, &an) != nil {
+			continue
+		}
+		switch an.Review.Status {
+		case "done":
+			_, rb, rerr := dashboardRequest("GET", fmt.Sprintf("/api/prs/%d/review", id), "")
+			if rerr != nil {
+				return rerr
+			}
+			os.Stdout.Write(rb)
+			if len(rb) > 0 && rb[len(rb)-1] != '\n' {
+				fmt.Fprintln(os.Stdout)
+			}
+			return nil
+		case "failed":
+			return fmt.Errorf("review failed: %s", an.Review.Error)
+		}
+	}
+	return fmt.Errorf("timed out waiting for the review; poll GET /api/prs/%d/review", id)
 }
 
 func prLinkAdd(args []string) error {
