@@ -187,6 +187,8 @@ func (d *dashboardServer) handleAPIPRItem(w http.ResponseWriter, r *http.Request
 		d.handleAPIPRReviewStart(w, r, prID)
 	case action == "review" && r.Method == http.MethodGet:
 		d.handlePRReviewGet(w, r, prID)
+	case action == "review-status" && r.Method == http.MethodGet:
+		d.handlePRReviewStatus(w, r, prID)
 	case action == "comment" && r.Method == http.MethodPost:
 		// Post a comment on the PR (posts to GitHub via gh). Used to publish a
 		// full-review result: read GET .../review, then POST it here as {body}.
