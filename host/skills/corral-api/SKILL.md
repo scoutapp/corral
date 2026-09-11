@@ -95,8 +95,15 @@ corral api POST /projects/create -d '{
   "branch": "<branch>",           # optional; defaults to the repo default branch
   "prompt": "<the full coding task, with all context the sandbox Claude needs>"
 }'
-# → { "id": "<projectId>", ... }  — a sandbox is now running Claude on the task
+# → { "id": "<projectId>", ... }
+corral api POST /p/<projectId>/start   # boots the container AND auto-submits the
+                                       # prompt into the sandbox's Claude
 ```
+
+Create only clones + records the task; **you must then `POST /p/<id>/start`** —
+that boots the container and auto-delivers the `prompt` into the sandbox's Claude
+(no further call needed). Then supervise via `GET /status` + the conversations
+API. (If you forget to start, the project just sits idle with the task pending.)
 
 So the usual shape for a code request is: **conductor** spawns a **worker** whose
 prompt says "create a sandbox project for repo X on this task and drive it to

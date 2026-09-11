@@ -15,6 +15,14 @@ type ProjectConfig struct {
 	DindPorts    []string `json:"dind_ports,omitempty"`
 	LaunchTmux   bool     `json:"launch_tmux,omitempty"`
 
+	// PendingPrompt is the project's first-turn task prompt, awaiting delivery
+	// into Claude's TUI. The browser flow types it via POST /populate-prompt right
+	// after create; but a HEADLESSLY-created project (e.g. the conductor via the
+	// API) has no browser, so the backend delivers it on start instead (see
+	// handleStartProject) and CLEARS this so it fires exactly once. "" = nothing
+	// pending (already delivered, or a flow that pre-populates via ISSUE.md).
+	PendingPrompt string `json:"pending_prompt,omitempty"`
+
 	// DindCache, when set, makes this project start its inner-docker data root
 	// FROM a reusable named cache (see internal/dindcache) instead of an empty
 	// per-workspace volume. Only meaningful when DindEnabled. Nil = no cache
