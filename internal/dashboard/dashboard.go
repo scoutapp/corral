@@ -302,7 +302,13 @@ func lookupWorkspaceByID(id string) (string, error) {
 
 type dashboardServer struct {
 	mu    sync.Mutex
-	terms map[*termSession]struct{} // live browser-terminal PTYs (see terminal.go)
+	// promptClaimMu serializes the read-and-clear of a project's PendingPrompt so
+	// the first-turn task is delivered EXACTLY once. The browser fires /start and
+	// /populate-prompt near-simultaneously; both try to claim it. Without this
+	// lock the task could be typed twice (or, if both read "" after a clear,
+	// zero times). Tiny critical section (one config read + write).
+	promptClaimMu sync.Mutex
+	terms         map[*termSession]struct{} // live browser-terminal PTYs (see terminal.go)
 	token string
 	// apiToken is a SECOND credential, distinct from the browser's session token,
 	// carried by the `corral api` CLI and the host Claude skill. Requests

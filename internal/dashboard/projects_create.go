@@ -124,6 +124,12 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 		Dind  *bool    `json:"dind"`
 		Tmux  bool     `json:"tmux"`
 		Ports []string `json:"ports"`
+		// Prompt is the first-turn task handed to the sandbox's own Claude. Headless
+		// callers (the conductor via the API) set this to route a coding task INTO
+		// the sandbox; the backend persists it and auto-submits it on start (no
+		// browser needed). When set it OVERRIDES the generic project.start template.
+		// The corral-api skill documents this field — it must be honored here.
+		Prompt string `json:"prompt"`
 		// Source records a PR/issue this project was spawned from (back-link).
 		Source *config.ProjectSource `json:"source"`
 		// Repo-scoped DinD auto-cache controls. By default a repo-derived project
@@ -247,9 +253,36 @@ func (d *dashboardServer) handleCreateProject(w http.ResponseWriter, r *http.Req
 	// project-start prompt so the UI can auto-submit it — this is how the editable
 	// project.start prompt (with SSH guidance when a key is loaded) reaches a plain
 	// project. Issue-seeded projects use issuePrompt instead.
+	// A caller-supplied prompt (headless conductor routing a task into the sandbox)
+	// wins over the generic project.start template. Otherwise, for a plain new/clone
+	// project (not issue-seeded, not "existing"), build the editable project.start
+	// prompt so the UI can auto-submit it. Issue-seeded projects use issuePrompt.
 	var startPrompt string
-	if issuePrompt == "" && (body.Mode == "new" || body.Mode == "clone") && len(body.Repos) >= 1 {
+	if strings.TrimSpace(body.Prompt) != "" {
+		startPrompt = body.Prompt
+	} else if issuePrompt == "" && (body.Mode == "new" || body.Mode == "clone") && len(body.Repos) >= 1 {
 		startPrompt = d.buildStartPrompt(body.Repos[0])
+	}
+
+	// Persist the first-turn prompt so it can be delivered on START. The browser
+	// types it via POST /populate-prompt right after create, but a HEADLESSLY
+	// created project (the conductor via the API — no browser) relies on the
+	// backend delivering it on start (handleStartProject). Delivery needs the
+	// container to run with tmux, so force LaunchTmux whenever a prompt is pending
+	// — otherwise the launcher starts a bare interactive Claude with no pane to
+	// send-keys into, and the task never arrives (the conv-160 idle-forever bug).
+	// The issue-seeded flow already writes ISSUE.md; we still pending-deliver its
+	// prompt so a headless start kicks Claude off, same as the browser would.
+	if pending := issuePrompt; pending != "" || startPrompt != "" {
+		if startPrompt != "" {
+			pending = startPrompt // caller prompt / project.start beats issuePrompt when both exist
+		}
+		projectDir := config.ProjectDirFor(workspace)
+		if cfg, err := config.ReadConfig(projectDir); err == nil {
+			cfg.PendingPrompt = pending
+			cfg.LaunchTmux = true
+			_ = config.WriteConfig(projectDir, cfg)
+		}
 	}
 
 	writeFilesJSON(w, map[string]any{
