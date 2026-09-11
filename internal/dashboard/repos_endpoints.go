@@ -523,6 +523,10 @@ func (d *dashboardServer) handlePRItem(w http.ResponseWriter, r *http.Request, r
 		d.handlePRRiskGet(w, r, prID)
 	case action == "analyze" && r.Method == http.MethodPost:
 		d.handlePRAnalyze(w, r, prID)
+	case action == "review" && r.Method == http.MethodGet:
+		d.handlePRReviewGet(w, r, prID)
+	case action == "review" && r.Method == http.MethodPost:
+		d.handlePRReviewRun(w, r, prID)
 	case action == "issues" && r.Method == http.MethodGet:
 		d.handlePRIssues(w, r, prID)
 	case action == "notes" && r.Method == http.MethodGet:
@@ -947,6 +951,73 @@ func (d *dashboardServer) handlePRAnalyze(w http.ResponseWriter, r *http.Request
 	}
 	endSpan(nil)
 	writeFilesJSON(w, map[string]any{"risk": v})
+}
+
+// handlePRReviewGet returns the last stored full-review markdown (null if never run).
+func (d *dashboardServer) handlePRReviewGet(w http.ResponseWriter, r *http.Request, prID int64) {
+	s, err := d.getStore()
+	if err != nil {
+		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	rev, err := prreview.New(s).StoredReview(prID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeFilesJSON(w, map[string]any{"review": rev})
+}
+
+// handlePRReviewRun is the FULL-REVIEW WORKFLOW: it ensures the prior analysis
+// exists (extract blocks + risk verdict if missing — auto-run so one click does
+// everything), then feeds those findings + the PR description + diff into the
+// editable pr.review prompt (host claude, read-only) and stores the markdown.
+//
+//	POST /prs/<prId>/review
+func (d *dashboardServer) handlePRReviewRun(w http.ResponseWriter, r *http.Request, prID int64) {
+	claudeBin, err := resolveClaudeBin()
+	if err != nil {
+		http.Error(w, "the `claude` CLI could not be located — install Claude Code and restart the dashboard", http.StatusBadGateway)
+		return
+	}
+	s, err := d.getStore()
+	if err != nil {
+		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	svc := prreview.New(s).WithPromptResolver(d.promptResolver())
+	repoID, _ := svc.RepoIDForPR(prID)
+	num, _, _, _, _ := svc.PRHookContext(prID)
+
+	ctx, endSpan := d.applog().StartSpan(r.Context(), applog.Entry{
+		Category: applog.CatAI, Event: "ai.review",
+		Message: applog.Fmt("Full review PR #%d", num),
+		RepoID:  repoID, Meta: map[string]any{"pr": num},
+	})
+	runner := func(kind string) aiRunner {
+		return d.capturingRunner(ctx, convOrigin{
+			Kind: "analysis", OriginID: fmt.Sprintf("%s-%d", kind, prID), RepoID: repoID, PRNumber: num,
+		}, prreview.NewClaudeRunner(claudeBin))
+	}
+
+	// Auto-run the prerequisites if missing/stale, so a single click does the whole
+	// workflow. Best-effort: if a prereq step errors, RunFullReview still proceeds
+	// with whatever context exists (it degrades to "not available" notes).
+	if blocks, _ := svc.Blocks(prID); len(blocks) == 0 {
+		_, _ = svc.ExtractBlocks(ctx, prID, runner("enrich"))
+	}
+	if risk, _ := svc.StoredRisk(prID); risk == nil {
+		_, _ = svc.AnalyzeRisk(ctx, prID, runner("risk"))
+	}
+
+	rev, err := svc.RunFullReview(ctx, prID, runner("review"))
+	if err != nil {
+		endSpan(err)
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	endSpan(nil)
+	writeFilesJSON(w, map[string]any{"review": rev})
 }
 
 // handleRepoOpenPRs: GET /repos/<id>/prs/open — the repo's live open PRs via

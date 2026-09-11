@@ -30,6 +30,7 @@ const (
 	PromptProjectIssue   = "project.issue"
 	PromptPRVerify       = "pr.verify"
 	PromptPRMerge        = "pr.merge"
+	PromptPRReview       = "pr.review"
 	PromptAnalyzeBlock   = "analyze.block"
 	PromptAnalyzeSummary = "analyze.summary"
 	PromptRisk           = "pr.risk"
@@ -177,6 +178,31 @@ func PromptCatalog() []PromptDef {
 				"and any issues you find. Run the repo's linter/type-check as part of verifying. If it fails, find " +
 				"the ROOT CAUSE before proposing a fix — don't patch the symptom. The PR is {{pr_url}}.",
 			Slots: []string{"pr_number", "pr_title", "pr_url"},
+		},
+		{
+			Key:      PromptPRReview,
+			Name:     "Full PR review",
+			UsedWhen: "Run when you click \"Full Review\" on a PR. Corral first runs the risk + heuristics analysis, then feeds those findings + the PR description + the diff into this prompt (host Claude, read-only). The result can be posted as a PR comment.",
+			Default: "You are doing a thorough review of pull request #{{pr_number}} (\"{{pr_title}}\") in {{repo}}.\n\n" +
+				"You already have prior analysis to build on — use it as INPUT, not as the answer:\n\n" +
+				"PR description:\n{{pr_description}}\n\n" +
+				"Risk verdict (from the risk analysis):\n{{risk}}\n\n" +
+				"File heuristics / hot spots (historical signals):\n{{heuristics}}\n\n" +
+				"Per-block AI findings:\n{{findings}}\n\n" +
+				"The diff:\n```\n{{diff}}\n```\n\n" +
+				"While using the heuristics to find hot spots, don't treat these as binary. As in, if it's hot " +
+				"don't just look there, evaluate the entire PR. Look for things that are commonly missed in PRs, " +
+				"non handled edge cases, concurrency issues, idempotency issues, issues in regards to at least once, " +
+				"at most once, and trying to understand how that impacts this PR. Try and understand if this PR is " +
+				"purely additive verse subtractive. If additive, just look at common issues that would occur with " +
+				"the PR as stated above. If subtractive, or we are fixing something, understand the root cause of " +
+				"why something has happened and do your research. Do not try and just solve the symptom. Make a " +
+				"note of what the root cause probably is and justify it when reviewing the PR. If implementing these " +
+				"in a hot path, try and think about potential performance issues and note them.\n\n" +
+				"Write the review as clear markdown a human can paste into the PR: a short summary line, then the " +
+				"specific findings grouped sensibly (each with the file/area, what's wrong or risky, and why it " +
+				"matters). Call out the likely root cause where relevant. Be concrete and skip praise-filler.",
+			Slots: []string{"repo", "pr_number", "pr_title", "pr_description", "risk", "heuristics", "findings", "diff"},
 		},
 		{
 			Key:      PromptPRMerge,

@@ -27,11 +27,36 @@ import {
 // panel (body / merge-method) and confirms before submitting, since all of
 // these write to GitHub.
 type ActionKind = "approve" | "comment" | "request-changes" | null;
-function PRActions({ prId, repoId, pr, repoName }: { prId: number; repoId: string; pr: PrItem; repoName?: string }) {
+function PRActions({
+  prId,
+  repoId,
+  pr,
+  repoName,
+  commentDraft,
+}: {
+  prId: number;
+  repoId: string;
+  pr: PrItem;
+  repoName?: string;
+  // When set (from the Full Review panel's "Comment on PR"), open the comment
+  // box pre-filled with this text for the user to edit before posting. `seq`
+  // changes each request so re-sending the same text re-opens the box.
+  commentDraft?: { text: string; seq: number } | null;
+}) {
   const [open, setOpen] = useState<ActionKind>(null);
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; err: boolean } | null>(null);
+
+  // Pre-fill + open the comment box when the review panel requests it.
+  useEffect(() => {
+    if (commentDraft && commentDraft.text) {
+      setBody(commentDraft.text);
+      setOpen("comment");
+      setMsg(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commentDraft?.seq]);
 
   const submit = (kind: Exclude<ActionKind, null>) => {
     setBusy(true);
@@ -825,6 +850,99 @@ function PRNotes({ prId }: { prId: number }) {
   );
 }
 
+// FullReview is the stored result from GET/POST /prs/<id>/review.
+type FullReview = { markdown: string; reviewedAt?: string };
+
+// FullReviewPanel is the right-side drawer for the "Full Review" workflow. It
+// shows the last stored review (if any) and a Run button that POSTs /review —
+// the backend first runs risk + heuristics if missing, then feeds those findings
+// + the PR description + diff into the editable pr.review prompt (host Claude,
+// read-only) and returns markdown. "Comment on PR" hands the markdown up to the
+// action bar's comment box (pre-filled, for edit-then-post — nothing is posted
+// to GitHub without the user confirming there).
+function FullReviewPanel({
+  prId,
+  number,
+  onClose,
+  onComment,
+}: {
+  prId: number;
+  number: number;
+  onClose: () => void;
+  onComment: (markdown: string) => void;
+}) {
+  const [review, setReview] = useState<FullReview | null>(null);
+  const [running, setRunning] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  // Restore the last stored review on open.
+  useEffect(() => {
+    getJSON<{ review: FullReview | null }>(`/prs/${prId}/review`)
+      .then((d) => setReview(d.review))
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, [prId]);
+
+  const run = () => {
+    setRunning(true);
+    setErr(null);
+    postJSON<{ review: FullReview }>(`/prs/${prId}/review`, {})
+      .then((d) => setReview(d.review))
+      .catch((e) => setErr((e as Error).message))
+      .finally(() => setRunning(false));
+  };
+
+  return (
+    <div className="chat-panel pr-review-panel" id="pr-review-panel">
+      <div className="chat-panel-bar">
+        <span>
+          <i className="screen-dot" />
+          full review · PR #{number}
+        </span>
+        <span className="chat-panel-actions">
+          <button type="button" title="Close" onClick={onClose}>
+            ✕
+          </button>
+        </span>
+      </div>
+      <div className="pr-review-panel-body">
+        <div className="pr-review-panel-actions">
+          <button type="button" className="btn primary" disabled={running} onClick={run}>
+            {running ? "Reviewing…" : review ? "Re-run review" : "Run full review"}
+          </button>
+          {review && (
+            <button type="button" className="btn" disabled={running} onClick={() => onComment(review.markdown)}>
+              💬 Comment on PR
+            </button>
+          )}
+        </div>
+        {running && (
+          <p className="pr-review-panel-note">
+            Running risk + heuristics, then the full review — this can take a minute.
+          </p>
+        )}
+        {err && <p className="tab-note err">{err}</p>}
+        {!running && loaded && !review && !err && (
+          <p className="pr-review-panel-note">
+            No review yet. “Run full review” runs the risk + heuristics analysis, then reviews the whole PR
+            (edge cases, concurrency, idempotency, root cause) using the editable review prompt.
+          </p>
+        )}
+        {review && (
+          <>
+            <div
+              className="pr-review-panel-md markdown"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(review.markdown) }}
+            />
+            {review.reviewedAt && <p className="pr-review-panel-when">Last run: {review.reviewedAt} UTC</p>}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function PRReviewPage({ repoId, number }: { repoId: string; number: number }) {
   useBodyClass("console");
   const [repo, setRepo] = useState<CachedRepo | null>(null);
@@ -836,6 +954,10 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
   const [linksOpen, setLinksOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  // A comment body requested by the Full Review panel ("Comment on PR"). Bumping
+  // `seq` re-opens the comment box in PRActions even if the same text is sent twice.
+  const [commentDraft, setCommentDraft] = useState<{ text: string; seq: number } | null>(null);
 
   // Force a re-pull from GitHub: re-fetches the PR (body + diff) and re-extracts
   // blocks. Use when the stored copy is stale (e.g. the PR was updated, or was
@@ -924,6 +1046,14 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
             >
               🗒 Notes
             </button>
+            <button
+              type="button"
+              className={`pr-review-cta${reviewOpen ? " on" : ""}`}
+              title="Run a full AI review: risk + heuristics + block findings fed into the review prompt, then post as a comment"
+              onClick={() => setReviewOpen((v) => !v)}
+            >
+              ★ Full Review
+            </button>
             <VerifyLaunch repoId={repoId} pr={pr} repoName={repo?.name} />
             <button
               type="button"
@@ -959,7 +1089,7 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
           </div>
         )}
         {pr && notesOpen && <PRNotes prId={pr.id} />}
-        {pr && <PRActions prId={pr.id} repoId={repoId} pr={pr} repoName={repo?.name} />}
+        {pr && <PRActions prId={pr.id} repoId={repoId} pr={pr} repoName={repo?.name} commentDraft={commentDraft} />}
         {err ? (
           <p className="tab-note err">Failed to load PR #{number}: {err}</p>
         ) : !pr ? (
@@ -1008,6 +1138,21 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
             <ChatPanel wsPath={`/prs/${pr.id}/chat/ws`} />
           </div>
         </div>
+      )}
+
+      {/* Full-review drawer (right side). Runs the review workflow (risk +
+          heuristics + findings → the pr.review prompt) and renders the markdown,
+          with a button to post it as a PR comment (pre-fills the comment box). */}
+      {pr && reviewOpen && (
+        <FullReviewPanel
+          prId={pr.id}
+          number={number}
+          onClose={() => setReviewOpen(false)}
+          onComment={(text) => {
+            setCommentDraft({ text, seq: Date.now() });
+            setReviewOpen(false);
+          }}
+        />
       )}
 
       {pr && startOpen && (
