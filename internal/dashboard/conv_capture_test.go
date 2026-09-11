@@ -47,9 +47,20 @@ func TestCaptureSendRecordsAndPassesThrough(t *testing.T) {
 	}
 	finalize("done")
 
-	// Every frame reached the browser, in order.
-	if len(delivered) != len(frames) {
-		t.Fatalf("delivered %d frames, want %d", len(delivered), len(frames))
+	// Every frame reached the browser, PLUS the one-shot conv_meta frame the
+	// capturer injects when it first creates the conversation row (it carries the
+	// conv id/uuid to the UI). So delivered = the 6 sent frames + 1 conv_meta.
+	var metaCount int
+	for _, m := range delivered {
+		if m.Type == "conv_meta" {
+			metaCount++
+		}
+	}
+	if metaCount != 1 {
+		t.Fatalf("expected exactly 1 injected conv_meta frame, got %d", metaCount)
+	}
+	if len(delivered) != len(frames)+1 {
+		t.Fatalf("delivered %d frames, want %d (6 sent + 1 conv_meta)", len(delivered), len(frames)+1)
 	}
 
 	// The conversation + messages persisted. Prompt(user) + text + tool_use +
