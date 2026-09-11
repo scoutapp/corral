@@ -2495,6 +2495,40 @@
         }
       }
     },
+    "/api/prs/{id}/review-status": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "summary": "A PR's human-review rollup (approvals, comments)",
+        "description": "Read live from GitHub via gh: the review decision, approval count vs the branch rule's required count, per-reviewer state, and discussion comment count — so you can tell whether someone has already reviewed/approved the PR. Read-only and cheap. requiredApprovals is 0 when branch protection can't be read (no protection, or the token lacks access). Returns {status:null} if the repo isn't a GitHub remote or gh fails.",
+        "responses": {
+          "200": {
+            "description": "Review status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "object",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/prs/{id}/comment": {
       "parameters": [
         {

@@ -55,3 +55,19 @@ func TestAPIPRReviewRoutes(t *testing.T) {
 		t.Errorf("started review response should name the kind: %s", body)
 	}
 }
+
+// TestAPIPRReviewStatusRoute wires GET review-status. The seeded PR's repo isn't
+// a resolvable GitHub remote in the test, so it returns {status:null} (200) — the
+// graceful-degrade path — proving the route is reachable without needing network.
+func TestAPIPRReviewStatusRoute(t *testing.T) {
+	srv, _, prID := apiTestServer(t)
+	defer srv.Close()
+
+	code, body := apiReq(t, srv, http.MethodGet, "/api/prs/"+itoa(prID)+"/review-status", "")
+	if code != http.StatusOK {
+		t.Fatalf("GET review-status = %d, want 200 (%s)", code, body)
+	}
+	if !strings.Contains(body, `"status"`) {
+		t.Errorf("review-status response missing status field: %s", body)
+	}
+}

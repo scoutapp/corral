@@ -850,6 +850,83 @@ function PRNotes({ prId }: { prId: number }) {
   );
 }
 
+// ReviewStatus mirrors the backend rollup (GET /prs/<id>/review-status): who has
+// reviewed/approved a PR and whether it has enough approvals to merge.
+type ReviewStatus = {
+  decision: string; // APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED | ""
+  approvals: number;
+  requiredApprovals: number; // 0 when branch protection can't be read
+  changesRequested: boolean;
+  reviewers: { login: string; state: string }[];
+  comments: number;
+};
+
+// ReviewStatusStrip shows, at PR load, whether someone has already reviewed the
+// PR: the approval tally (X / N when the branch rule is known), any change
+// requests, who reviewed, and the discussion comment count. Read live from
+// GitHub; renders nothing until loaded and stays quiet if unavailable (private
+// repo / gh offline), so it never blocks the page.
+function ReviewStatusStrip({ prId }: { prId: number }) {
+  const [st, setSt] = useState<ReviewStatus | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let live = true;
+    getJSON<{ status: ReviewStatus | null }>(`/prs/${prId}/review-status`)
+      .then((d) => {
+        if (live) setSt(d.status);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (live) setLoaded(true);
+      });
+    return () => {
+      live = false;
+    };
+  }, [prId]);
+
+  if (!loaded || !st) return null;
+
+  // The approval chip: "✓ Approved 2/1", "1/2 approvals", or "No approvals yet".
+  const approvalText =
+    st.requiredApprovals > 0
+      ? `${st.approvals}/${st.requiredApprovals} approval${st.requiredApprovals === 1 ? "" : "s"}`
+      : st.approvals > 0
+        ? `${st.approvals} approval${st.approvals === 1 ? "" : "s"}`
+        : "No approvals yet";
+  const enough = st.requiredApprovals > 0 && st.approvals >= st.requiredApprovals;
+
+  return (
+    <div className="pr-reviewstatus">
+      {st.changesRequested ? (
+        <span className="pr-rs-chip changes" title="A reviewer requested changes">
+          ✗ Changes requested
+        </span>
+      ) : (
+        <span className={`pr-rs-chip${enough ? " approved" : st.approvals > 0 ? " partial" : ""}`}>
+          {enough ? "✓ " : ""}
+          {approvalText}
+        </span>
+      )}
+      {st.reviewers.length > 0 && (
+        <span className="pr-rs-reviewers">
+          {st.reviewers.map((rv) => (
+            <span
+              key={rv.login}
+              className={`pr-rs-reviewer ${rv.state.toLowerCase()}`}
+              title={`${rv.login} — ${rv.state.replace("_", " ").toLowerCase()}`}
+            >
+              {rv.state === "APPROVED" ? "✓" : rv.state === "CHANGES_REQUESTED" ? "✗" : "💬"} {rv.login}
+            </span>
+          ))}
+        </span>
+      )}
+      <span className="pr-rs-comments" title="Discussion comments on this PR">
+        💬 {st.comments} comment{st.comments === 1 ? "" : "s"}
+      </span>
+    </div>
+  );
+}
+
 // FullReview is the stored result from GET/POST /prs/<id>/review.
 type FullReview = { markdown: string; reviewedAt?: string };
 
@@ -1090,6 +1167,7 @@ export function PRReviewPage({ repoId, number }: { repoId: string; number: numbe
         )}
         {pr && notesOpen && <PRNotes prId={pr.id} />}
         {pr && <PRActions prId={pr.id} repoId={repoId} pr={pr} repoName={repo?.name} commentDraft={commentDraft} />}
+        {pr && <ReviewStatusStrip prId={pr.id} />}
         {err ? (
           <p className="tab-note err">Failed to load PR #{number}: {err}</p>
         ) : !pr ? (

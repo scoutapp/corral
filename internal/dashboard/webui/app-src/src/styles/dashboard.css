@@ -1814,6 +1814,25 @@ table.projects th, table.projects td {
 .pr-actions { margin-bottom: 0.9rem; }
 .pr-actions-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .pr-actions-msg { font-size: 0.8rem; color: var(--con-working); }
+
+/* Review-status strip — shown at PR load so you can see whether someone has
+   already reviewed/approved it, without opening the diff. */
+.pr-reviewstatus {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  margin: -0.3rem 0 0.9rem; font-size: 0.8rem;
+}
+.pr-rs-chip {
+  padding: 0.15rem 0.5rem; border-radius: 999px; font-weight: 600;
+  border: 1px solid var(--con-line); color: var(--con-muted, #9a958c);
+}
+.pr-rs-chip.approved { color: #2e7d4f; border-color: #2e7d4f; background: rgba(46,125,79,0.10); }
+.pr-rs-chip.partial { color: #b8860b; border-color: #b8860b; background: rgba(184,134,11,0.10); }
+.pr-rs-chip.changes { color: #b23; border-color: #b23; background: rgba(187,51,51,0.10); }
+.pr-rs-reviewers { display: inline-flex; gap: 0.35rem; flex-wrap: wrap; }
+.pr-rs-reviewer { color: var(--con-muted, #9a958c); }
+.pr-rs-reviewer.approved { color: #2e7d4f; }
+.pr-rs-reviewer.changes_requested { color: #b23; }
+.pr-rs-comments { color: var(--con-muted, #9a958c); margin-left: auto; }
 .pr-actions-msg.err { color: var(--con-waiting); }
 .pr-actions-link { font-size: 0.8rem; margin-left: 0.4rem; color: var(--con-working); }
 

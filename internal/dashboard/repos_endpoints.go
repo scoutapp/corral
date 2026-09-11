@@ -523,6 +523,8 @@ func (d *dashboardServer) handlePRItem(w http.ResponseWriter, r *http.Request, r
 		d.handlePRRiskGet(w, r, prID)
 	case action == "analyze" && r.Method == http.MethodPost:
 		d.handlePRAnalyze(w, r, prID)
+	case action == "review-status" && r.Method == http.MethodGet:
+		d.handlePRReviewStatus(w, r, prID)
 	case action == "review" && r.Method == http.MethodGet:
 		d.handlePRReviewGet(w, r, prID)
 	case action == "review" && r.Method == http.MethodPost:
@@ -951,6 +953,31 @@ func (d *dashboardServer) handlePRAnalyze(w http.ResponseWriter, r *http.Request
 	}
 	endSpan(nil)
 	writeFilesJSON(w, map[string]any{"risk": v})
+}
+
+// handlePRReviewStatus returns the PR's human-review rollup (approvals, required
+// count, reviewers, comment count) — read live from GitHub at load so you can see
+// whether someone already reviewed/approved it. Best-effort: {status:null} if the
+// repo isn't a GitHub remote or gh fails, so the UI degrades quietly.
+func (d *dashboardServer) handlePRReviewStatus(w http.ResponseWriter, r *http.Request, prID int64) {
+	s, err := d.getStore()
+	if err != nil {
+		http.Error(w, "database unavailable: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	svc := prreview.New(s)
+	ownerName := d.ownerNameForPR(svc, prID)
+	if ownerName == "" {
+		writeFilesJSON(w, map[string]any{"status": nil})
+		return
+	}
+	st, err := svc.ReviewStatus(prID, ownerName)
+	if err != nil {
+		// A gh hiccup (rate limit, offline) shouldn't error the page — return null.
+		writeFilesJSON(w, map[string]any{"status": nil})
+		return
+	}
+	writeFilesJSON(w, map[string]any{"status": st})
 }
 
 // handlePRReviewGet returns the last stored full-review markdown (null if never run).
