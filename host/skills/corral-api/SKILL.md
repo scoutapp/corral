@@ -513,6 +513,49 @@ corral api POST /api/repos/<repoId>/analyze          # git-only, synchronous
 corral api GET  /api/repos/<repoId>/analysis-status  # analyzed / up-to-date?
 ```
 
+### Full review of a PR (the "do a full review" ask)
+
+A **full review** is a single workflow that ties the above together: it auto-runs
+the block/heuristics + risk analysis if they're missing, then feeds those findings
+plus the PR description and diff into the editable **`pr.review`** prompt (host
+Claude, **read-only**) and stores a markdown review. Also fire-and-return:
+
+```
+corral api POST /api/prs/<prId>/review     # start the full review (background)
+corral api GET  /api/prs/<prId>/analysis   # poll → the "review" field {status}
+corral api GET  /api/prs/<prId>/review     # read the markdown once status=done
+# or, from the CLI, do all of that in one call:
+corral pr review <prId> --wait             # starts, waits, prints the review
+```
+
+To **post the review as a PR comment** (this writes to GitHub), take the markdown
+from `/review` and send it:
+
+```
+corral api POST /api/prs/<prId>/comment -d '{"body":"<the review markdown>"}'
+```
+
+**Full review ≠ sandbox verify — know which the user wants.** These are two
+different things and they are INDEPENDENT (you can run one, the other, or both at
+once):
+
+- **Full review** (this endpoint) — host, read-only. It READS the PR (diff +
+  prior analysis) and WRITES a review. It does NOT run the code, build, or test.
+  This is what "do a full review of PR #N" means.
+- **Sandbox verify** — spins up a sandbox project on the PR's branch and actually
+  RUNS the change (build, tests, the app) inside a container. This is the
+  `POST /projects/create` (PR branch + a verify prompt) → `POST /p/<id>/start`
+  flow above. This is what "verify it works" / "run it in a sandbox" means.
+
+Map the ask to the right action(s):
+
+- *"Do a full review of PR #14."* → just `POST /api/prs/<prId>/review`.
+- *"Verify PR #14 works in a sandbox."* → just the create+start sandbox verify.
+- *"Do a full review AND verify PR #14 in a sandbox."* → do BOTH, and you can
+  kick them off at the SAME TIME — the review runs on the host while the sandbox
+  builds/tests. They don't depend on each other; start both, then report each
+  result as it lands.
+
 ## PR notes (private, local)
 
 Notes are **local annotations stored only in Corral** — never posted to GitHub

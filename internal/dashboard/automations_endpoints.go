@@ -183,6 +183,14 @@ func (d *dashboardServer) handleAPIPRItem(w http.ResponseWriter, r *http.Request
 		d.handleAPIPREnrich(w, r, prID)
 	case action == "analyze" && r.Method == http.MethodPost:
 		d.handleAPIPRRiskStart(w, r, prID)
+	case action == "review" && r.Method == http.MethodPost:
+		d.handleAPIPRReviewStart(w, r, prID)
+	case action == "review" && r.Method == http.MethodGet:
+		d.handlePRReviewGet(w, r, prID)
+	case action == "comment" && r.Method == http.MethodPost:
+		// Post a comment on the PR (posts to GitHub via gh). Used to publish a
+		// full-review result: read GET .../review, then POST it here as {body}.
+		d.handlePRAction(w, r, prID, "comment")
 	case action == "analysis" && r.Method == http.MethodGet:
 		d.handleAPIPRAnalysisStatus(w, r, prID)
 	case action == "blocks" && r.Method == http.MethodGet:
