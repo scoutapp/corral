@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -54,6 +56,12 @@ const (
 // for display.
 func projectActivity(workspace string, containerUp, tmuxUp bool, mitmWebPort int) (string, int) {
 	if !containerUp {
+		// No sandbox container — but a host-terminal Claude may be running on the
+		// host (the ChatDock replacement), which has no proxy.log or mitmweb to count.
+		// Derive its working/waiting from how recently its transcript grew instead.
+		if act := hostTerminalActivity(workspace); act != "" {
+			return act, 0
+		}
 		return "off", 0
 	}
 
@@ -76,6 +84,61 @@ func projectActivity(workspace string, containerUp, tmuxUp bool, mitmWebPort int
 		return "working", hits
 	}
 	return "waiting", hits
+}
+
+// hostTerminalActivity classifies a host-terminal Claude session by the freshness
+// of its transcript, for the Work/landing dot when there's no container (hence no
+// proxy.log / mitmweb) to count. Returns:
+//   - "":        no live host -claude session — caller falls back to "off"
+//   - "working": the transcript grew within activityIdleAfter (Claude is mid-turn)
+//   - "waiting": session live but the transcript has been quiet (idle at the prompt,
+//     or nothing said yet)
+//
+// Transcript mtime is the signal because the host terminal is a raw PTY — there's
+// no event stream to observe like the merge-job emit() clock. Claude Code appends
+// to the session JSONL as a turn streams, so a recent mtime ≈ "working"; it stops
+// growing between turns, giving "waiting". Same idle threshold as the streamed dot.
+func hostTerminalActivity(workspace string) string {
+	if !hostSessionLive(claudeShellSession(workspace)) {
+		return ""
+	}
+	dir := hostClaudeProjectsDir()
+	if dir == "" {
+		return "waiting"
+	}
+	mt, ok := newestTranscriptMtime(filepath.Join(dir, claudeProjectSlug(workspace)))
+	if !ok {
+		return "waiting" // session up, no transcript yet
+	}
+	if time.Since(mt) <= activityIdleAfter {
+		return "working"
+	}
+	return "waiting"
+}
+
+// newestTranscriptMtime returns the most recent modification time among the .jsonl
+// transcripts in sessDir. ok is false when the dir is absent or holds no transcript.
+func newestTranscriptMtime(sessDir string) (time.Time, bool) {
+	entries, err := os.ReadDir(sessDir)
+	if err != nil {
+		return time.Time{}, false
+	}
+	var newest time.Time
+	found := false
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if mt := info.ModTime(); mt.After(newest) {
+			newest = mt
+			found = true
+		}
+	}
+	return newest, found
 }
 
 // mitmFlow is the subset of a mitmweb /flows entry we read.
