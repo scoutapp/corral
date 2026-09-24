@@ -371,11 +371,22 @@ func (d *dashboardServer) handleClaudeHostWS(w http.ResponseWriter, r *http.Requ
 		// Start the session with `claude` as its command (not a shell that we then
 		// type into): the pane IS the TUI, so a stray shell can't linger behind it,
 		// and if claude exits the pane closes rather than dropping to a prompt.
+		//
+		// Point it at a DEDICATED CLAUDE_CONFIG_DIR so its transcripts land in a tree
+		// the conversation tailer attributes to the host origin (the sandbox's Claude
+		// otherwise writes to the same ~/.claude/projects/<slug> dir, indistinguishable
+		// on disk). The dir shares auth/settings/plugins with ~/.claude via symlinks —
+		// only projects/ diverges. `exec` so claude is the pane's process directly.
+		cfgDir := ensureHostClaudeConfigDir()
+		launch := "exec " + shellQuote(claudeBin)
+		if cfgDir != "" {
+			launch = "CLAUDE_CONFIG_DIR=" + shellQuote(cfgDir) + " " + launch
+		}
 		args := []string{"new-session", "-d", "-s", sessionName}
 		if dir != "" {
 			args = append(args, "-c", dir)
 		}
-		args = append(args, claudeBin)
+		args = append(args, "sh", "-c", launch)
 		if hostTmux(args...).Run() == nil {
 			hostTmux("set-option", "-t", sessionName, "status", "off").Run()
 			hostTmux("set-option", "-t", sessionName, "mouse", "on").Run()
