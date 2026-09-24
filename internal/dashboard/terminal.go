@@ -312,6 +312,90 @@ func (d *dashboardServer) handleHostWS(w http.ResponseWriter, r *http.Request, i
 		})
 }
 
+// claudeShellSession returns the per-project tmux session name backing that
+// project's INTERACTIVE CLAUDE terminal — the real `claude` TUI, as opposed to
+// the plain host shell (hostShellSession) or the container's dev session
+// (TmuxSessionNameForWorkspace). Distinct "-claude" suffix, same host socket, so
+// its window sizing stays independent of the other sessions.
+func claudeShellSession(workspace string) string {
+	return session.TmuxSessionNameForWorkspace(workspace) + "-claude"
+}
+
+// hostClaudeTerminalEnabled reports whether the interactive host-Claude terminal
+// is turned on. It's behind a flag while the terminal is being brought up
+// alongside the existing ChatDock; the flag is removed once the terminal replaces
+// the bespoke chat UI (at which point this becomes the default host chat surface).
+func hostClaudeTerminalEnabled() bool {
+	return os.Getenv("CORRAL_HOST_CLAUDE_TERMINAL") == "1"
+}
+
+// handleClaudeHostWS bridges a browser terminal to an interactive `claude` TUI
+// running on the HOST, in the project's workspace directory. It mirrors
+// handleHostWS (persistent per-project tmux session on the isolated host socket,
+// created on first open and reattached thereafter) but the session's pane runs
+// the real `claude` TUI instead of a shell — so slash commands, /login,
+// permission prompts, plan mode, and the status line all work natively, with no
+// bespoke chat rendering to keep at parity.
+//
+// SECURITY: like handleHostWS this is NOT sandboxed — `claude` runs with the
+// operator's full host privileges and no firewall. That's acceptable on the same
+// terms: the dashboard is loopback-only and token-gated, and the WebSocket is
+// same-origin only (terminalUpgrader.CheckOrigin). The claude permission gate
+// (--permission-mode default, and here the interactive prompts) remains the real
+// guardrail. The trust banner is loudened where this surface is exposed.
+func (d *dashboardServer) handleClaudeHostWS(w http.ResponseWriter, r *http.Request, id string) {
+	if !hostClaudeTerminalEnabled() {
+		http.Error(w, "the host Claude terminal is not enabled", http.StatusNotFound)
+		return
+	}
+	claudeBin, err := resolveClaudeBin()
+	if err != nil {
+		http.Error(w, "couldn't find the claude executable on the host: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	workspace, err := lookupWorkspaceByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	sessionName := claudeShellSession(workspace)
+
+	// Create the session (on the isolated host socket) if it doesn't exist yet,
+	// rooted in the project dir so `claude` sees the repo, and launch the TUI in
+	// its initial pane. Reattaches to the SAME live claude across reloads.
+	if hostTmux("has-session", "-t", sessionName).Run() != nil {
+		dir := workspace
+		if _, serr := os.Stat(workspace); serr != nil {
+			dir = "" // workspace gone; let tmux use the default cwd
+		}
+		// Start the session with `claude` as its command (not a shell that we then
+		// type into): the pane IS the TUI, so a stray shell can't linger behind it,
+		// and if claude exits the pane closes rather than dropping to a prompt.
+		args := []string{"new-session", "-d", "-s", sessionName}
+		if dir != "" {
+			args = append(args, "-c", dir)
+		}
+		args = append(args, claudeBin)
+		if hostTmux(args...).Run() == nil {
+			hostTmux("set-option", "-t", sessionName, "status", "off").Run()
+			hostTmux("set-option", "-t", sessionName, "mouse", "on").Run()
+			enableTmuxClipboard(hostTmux, sessionName)
+		}
+	}
+
+	// Attach on the host socket, forcing a PTY, with the same explicit window-resize
+	// hook the host shell uses (SIGWINCH alone doesn't reliably grow a tmux window's
+	// height). Detaching on tab close leaves the claude session alive for next time.
+	d.bridgePTY(w, r, hostTmux("attach-session", "-t", sessionName),
+		func(cols, rows uint16) {
+			if cols < 20 || rows < 6 {
+				return
+			}
+			hostTmux("resize-window", "-t", sessionName,
+				"-x", strconv.Itoa(int(cols)), "-y", strconv.Itoa(int(rows))).Run()
+		})
+}
+
 // handleUpdateWS bridges a browser terminal to `corral update` running on
 // the HOST. This is the dashboard's "Update" button: rather than a silent
 // privileged endpoint, it opens a real PTY so the update runs with the operator's

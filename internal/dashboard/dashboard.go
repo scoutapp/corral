@@ -802,6 +802,8 @@ func (d *dashboardServer) handleRoot(w http.ResponseWriter, r *http.Request) {
 		d.handleContainerWS(w, r, id)
 	case sub == "host/ws":
 		d.handleHostWS(w, r, id)
+	case sub == "claude/ws":
+		d.handleClaudeHostWS(w, r, id)
 	case sub == "start":
 		d.handleStartProject(w, r, id)
 	case sub == "stop":
