@@ -48,30 +48,45 @@ func claudeProjectsDir() string {
 }
 
 // startSandboxConvTail launches the host-pull tailer: every ~2s it mirrors any
-// new session-transcript lines from running projects into the conversations DB.
-// Best-effort throughout — an unopenable convstore (e.g. a tag-less dev build)
-// or a missing session dir just means nothing is captured.
+// new session-transcript lines into the conversations DB — from running sandboxes
+// (the Container tab's Claude) AND from the host's own interactive `claude`
+// terminals (the host-Claude terminal that replaces the bespoke ChatDock). Both
+// write the same ~/.claude/projects/<slug>/<sid>.jsonl transcripts, so one tailer
+// covers both; they differ only in which workspaces to sweep and how the resulting
+// conversation is stamped (origin kind + conv-key prefix + parent resolver).
+// Best-effort throughout — an unopenable convstore (e.g. a tag-less dev build) or
+// a missing session dir just means nothing is captured.
 func (d *dashboardServer) startSandboxConvTail() {
 	go func() {
 		t := time.NewTicker(2 * time.Second)
 		defer t.Stop()
 		st := &sandboxTailState{offsets: map[string]int64{}, convIDs: map[string]int64{}}
 		for {
-			d.tailSandboxConversationsOnce(st)
+			d.tailConversationsOnce(st)
 			<-t.C
 		}
 	}()
 }
 
 // sandboxTailState is the tailer's in-memory bookkeeping: byte offset per
-// transcript file, and the conversation id per Claude session id.
+// transcript file, and the conversation id per (origin-scoped) Claude session id.
 type sandboxTailState struct {
 	offsets map[string]int64 // file path → bytes already consumed
-	convIDs map[string]int64 // claude session id → convstore conversation id
+	convIDs map[string]int64 // "<origin>:<claude session id>" → convstore conversation id
 }
 
-// tailSandboxConversationsOnce does one sweep over running projects' transcripts.
-func (d *dashboardServer) tailSandboxConversationsOnce(st *sandboxTailState) {
+// convOriginProfile captures how a swept transcript's conversation is stamped —
+// the one axis on which the sandbox pull and the host-terminal pull differ. The
+// file-tail and line-ingest machinery is otherwise identical for both.
+type convOriginProfile struct {
+	kind      string                    // convstore OriginKind (e.g. "sandbox", "host-terminal")
+	keyPrefix string                    // conv-key namespace so the same session id can't collide across origins
+	parent    func(workspace string) int64 // resolves the spawning conversation id, or 0
+}
+
+// tailConversationsOnce does one sweep over both sandbox and host-Claude
+// transcripts.
+func (d *dashboardServer) tailConversationsOnce(st *sandboxTailState) {
 	cs, err := d.getConvStore()
 	if err != nil {
 		return
@@ -84,28 +99,54 @@ func (d *dashboardServer) tailSandboxConversationsOnce(st *sandboxTailState) {
 	if err != nil {
 		return
 	}
+
+	sandboxProfile := convOriginProfile{
+		kind:      "sandbox",
+		keyPrefix: "sandbox",
+		parent:    d.sandboxParentConv,
+	}
+	// The host interactive `claude` runs with a DEDICATED CLAUDE_CONFIG_DIR
+	// (hostClaudeProjectsDir), so its transcripts live in their own tree — cleanly
+	// separated from the sandbox's ~/.claude/projects, no on-disk ambiguity.
+	hostProfile := convOriginProfile{
+		kind:      "host-terminal",
+		keyPrefix: "host",
+		parent:    d.sandboxParentConv, // same project-level parent linkage
+	}
+
 	for _, p := range reg.Projects {
 		ws := p.Workspace
-		if !session.DockerContainerRunning(session.ContainerNameForWorkspace(ws)) {
-			continue // only tail live sandboxes
+		// Sandbox transcripts: shared ~/.claude/projects, only while the container is up.
+		if session.DockerContainerRunning(session.ContainerNameForWorkspace(ws)) {
+			d.tailProjectDir(cs, st, sandboxProfile, ws, filepath.Join(dir, claudeProjectSlug(ws)))
 		}
-		sessDir := filepath.Join(dir, claudeProjectSlug(ws))
-		entries, err := os.ReadDir(sessDir)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
-				continue
-			}
-			d.tailSandboxFile(cs, st, ws, filepath.Join(sessDir, e.Name()))
+		// Host-terminal transcripts: corral-owned tree, only while the -claude tmux
+		// session is live. Same <slug> subdir naming (cwd is the workspace either way).
+		if hostDir := hostClaudeProjectsDir(); hostDir != "" && hostSessionLive(claudeShellSession(ws)) {
+			d.tailProjectDir(cs, st, hostProfile, ws, filepath.Join(hostDir, claudeProjectSlug(ws)))
 		}
 	}
 }
 
-// tailSandboxFile reads new lines from one session transcript and appends them to
-// the conversations DB, tracking the byte offset so each line is consumed once.
-func (d *dashboardServer) tailSandboxFile(cs *convstore.ConvStore, st *sandboxTailState, workspace, path string) {
+// tailProjectDir ingests every .jsonl transcript in one <slug> session directory
+// under the given origin profile.
+func (d *dashboardServer) tailProjectDir(cs *convstore.ConvStore, st *sandboxTailState, profile convOriginProfile, workspace, sessDir string) {
+	entries, err := os.ReadDir(sessDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		d.tailTranscriptFile(cs, st, profile, workspace, filepath.Join(sessDir, e.Name()))
+	}
+}
+
+// tailTranscriptFile reads new lines from one session transcript and appends them
+// to the conversations DB under the given origin profile, tracking the byte offset
+// so each line is consumed once.
+func (d *dashboardServer) tailTranscriptFile(cs *convstore.ConvStore, st *sandboxTailState, profile convOriginProfile, workspace, path string) {
 	fi, err := os.Stat(path)
 	if err != nil {
 		return
@@ -129,7 +170,7 @@ func (d *dashboardServer) tailSandboxFile(cs *convstore.ConvStore, st *sandboxTa
 	for sc.Scan() {
 		line := sc.Bytes()
 		consumed += int64(len(line)) + 1 // + newline
-		d.ingestSandboxLine(cs, st, workspace, line)
+		d.ingestTranscriptLine(cs, st, profile, workspace, line)
 	}
 	// Advance the offset only by what we actually scanned (a final partial line,
 	// mid-write, is left for the next sweep by not counting it — Scanner drops an
@@ -156,11 +197,11 @@ type claudeContentBlock struct {
 	ToolUseID string          `json:"tool_use_id"`
 }
 
-// ingestSandboxLine parses one Claude Code session record and appends its
+// ingestTranscriptLine parses one Claude Code session record and appends its
 // message(s) to the conversation for its session id (creating the conversation
-// on first sight). Non-conversational record types (mode, snapshots, …) are
-// skipped. Best-effort.
-func (d *dashboardServer) ingestSandboxLine(cs *convstore.ConvStore, st *sandboxTailState, workspace string, line []byte) {
+// on first sight, stamped per the origin profile). Non-conversational record
+// types (mode, snapshots, …) are skipped. Best-effort.
+func (d *dashboardServer) ingestTranscriptLine(cs *convstore.ConvStore, st *sandboxTailState, profile convOriginProfile, workspace string, line []byte) {
 	var rec claudeSessionRecord
 	if json.Unmarshal(line, &rec) != nil {
 		return
@@ -169,22 +210,26 @@ func (d *dashboardServer) ingestSandboxLine(cs *convstore.ConvStore, st *sandbox
 		return
 	}
 
-	convID := st.convIDs[rec.SessionID]
+	// Key the conv map by origin+session so the same session id under two origins
+	// (it won't happen now that dirs are separate, but keep it unambiguous) maps to
+	// distinct conversations.
+	convKey := profile.keyPrefix + ":" + rec.SessionID
+	convID := st.convIDs[convKey]
 	if convID == 0 {
 		id, err := cs.StartConversation(convstore.ConvMeta{
-			ConvKey:              "sandbox:" + rec.SessionID,
+			ConvKey:              convKey,
 			ClaudeSessionID:      rec.SessionID,
-			OriginKind:           "sandbox",
+			OriginKind:           profile.kind,
 			OriginID:             rec.SessionID,
 			ProjectID:            ProjectID(workspace),
 			ProjectLabel:         filepath.Base(workspace),
-			ParentConversationID: d.sandboxParentConv(workspace),
+			ParentConversationID: profile.parent(workspace),
 		})
 		if err != nil {
 			return
 		}
 		convID = id
-		st.convIDs[rec.SessionID] = id
+		st.convIDs[convKey] = id
 		// Resume across restarts: if this session already has messages from a prior
 		// run, skip re-ingesting by seeding the offset is handled at the file level;
 		// here we simply continue appending (dup lines are avoided by the byte
